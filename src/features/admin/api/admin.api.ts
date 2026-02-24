@@ -9,6 +9,10 @@ export interface ApiResponse<T> {
   message?: string;
   data?: T;
   count?: number;
+  total?: number;
+  page?: number;
+  limit?: number;
+  totalPages?: number;
   error?: string;
 }
 
@@ -684,6 +688,8 @@ class AdminApi {
     fromDate?: string;
     toDate?: string;
     paymentStatus?: string;
+    page?: number;
+    limit?: number;
   }): Promise<ApiResponse<InsurancePaymentRow[]>> => {
     try {
       const response = await this.client.get("/insurance-payments/admin", {
@@ -692,10 +698,29 @@ class AdminApi {
 
       const payload = response.data;
       if (Array.isArray(payload)) {
-        return { success: true, data: payload as InsurancePaymentRow[] };
+        const page = Number(filters?.page) > 0 ? Number(filters?.page) : 1;
+        const limit = Number(filters?.limit) > 0 ? Number(filters?.limit) : 10;
+        const total = payload.length;
+        return {
+          success: true,
+          data: payload as InsurancePaymentRow[],
+          count: total,
+          total,
+          page,
+          limit,
+          totalPages: total === 0 ? 1 : Math.ceil(total / limit),
+        };
       }
       if (Array.isArray(payload?.data)) {
-        return { success: true, data: payload.data as InsurancePaymentRow[] };
+        return {
+          success: true,
+          data: payload.data as InsurancePaymentRow[],
+          count: payload.count,
+          total: payload.total,
+          page: payload.page,
+          limit: payload.limit,
+          totalPages: payload.totalPages,
+        };
       }
       return payload;
     } catch (error: any) {

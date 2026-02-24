@@ -768,6 +768,7 @@ function DamageFormModal({
     onClose: () => void;
     onSuccess: () => void;
 }) {
+    type DateField = 'damageCertificateDate' | 'transportReceiptDate' | 'accidentDate';
     const [formData, setFormData] = useState({
         damageCertificateDate: new Date().toISOString().split('T')[0],
         transportReceiptMemoNo: claim.invoice?.invoiceNumber || '',
@@ -783,7 +784,10 @@ function DamageFormModal({
         agreedDamageAmountWords: '',
         authorizedSignatoryName: '',
     });
+    const [activeDateField, setActiveDateField] = useState<DateField | null>(null);
     const [submitting, setSubmitting] = useState(false);
+    const getDateInputType = (field: DateField): 'text' | 'date' =>
+        activeDateField === field || Boolean(formData[field]) ? 'date' : 'text';
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -825,10 +829,15 @@ function DamageFormModal({
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700">Date</label>
                                             <input
-                                                type="date"
+                                                type={getDateInputType('damageCertificateDate')}
+                                                placeholder="DD-MM-YYYY"
                                                 required
                                                 className="mt-1 block w-full rounded-md border-gray-300 border py-2 px-3 text-sm"
                                                 value={formData.damageCertificateDate}
+                                                onFocus={() => setActiveDateField('damageCertificateDate')}
+                                                onBlur={() => {
+                                                    if (!formData.damageCertificateDate) setActiveDateField(null);
+                                                }}
                                                 onChange={(e) => setFormData({ ...formData, damageCertificateDate: e.target.value })}
                                             />
                                         </div>
@@ -858,10 +867,15 @@ function DamageFormModal({
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700">Receipt Date</label>
                                             <input
-                                                type="date"
+                                                type={getDateInputType('transportReceiptDate')}
+                                                placeholder="DD-MM-YYYY"
                                                 required
                                                 className="mt-1 block w-full rounded-md border-gray-300 border py-2 px-3 text-sm"
                                                 value={formData.transportReceiptDate}
+                                                onFocus={() => setActiveDateField('transportReceiptDate')}
+                                                onBlur={() => {
+                                                    if (!formData.transportReceiptDate) setActiveDateField(null);
+                                                }}
                                                 onChange={(e) => setFormData({ ...formData, transportReceiptDate: e.target.value })}
                                             />
                                         </div>
@@ -905,10 +919,15 @@ function DamageFormModal({
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700">Accident Date</label>
                                             <input
-                                                type="date"
+                                                type={getDateInputType('accidentDate')}
+                                                placeholder="DD-MM-YYYY"
                                                 required
                                                 className="mt-1 block w-full rounded-md border-gray-300 border py-2 px-3 text-sm"
                                                 value={formData.accidentDate}
+                                                onFocus={() => setActiveDateField('accidentDate')}
+                                                onBlur={() => {
+                                                    if (!formData.accidentDate) setActiveDateField(null);
+                                                }}
                                                 onChange={(e) => setFormData({ ...formData, accidentDate: e.target.value })}
                                             />
                                         </div>
