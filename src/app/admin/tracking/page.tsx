@@ -357,7 +357,7 @@ export default function AdminTrackingPage() {
   return (
     <div className="py-6 space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Traqo Tracking Setup</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">Tracking Setup</h1>
         <p className="text-sm text-gray-600">
           Admin flow: register driver number, confirm consent, then create trip for
           vehicle tracking.
