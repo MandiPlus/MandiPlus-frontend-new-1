@@ -31,6 +31,7 @@ interface InvoiceRecord {
     supplier: string;
     buyer: string;
     product: string;
+    category: string;
     state: string;
     agent: string;
     salesAmount: number;
@@ -84,6 +85,19 @@ interface DonutDatum {
 }
 
 const PALETTE = ['#1d4ed8', '#0f766e', '#b45309', '#be123c', '#7c3aed', '#475569'];
+
+const PRODUCT_CATEGORY: Record<string, string> = {
+    Onion: 'Vegetables',
+    Tomato: 'Vegetables',
+    Potato: 'Vegetables',
+    Mango: 'Fruits',
+    Pomegranate: 'Fruits',
+    Guava: 'Fruits',
+    Cotton: 'Cash Crop',
+    Soybean: 'Pulses',
+    Wheat: 'Cereals',
+    Rice: 'Cereals'
+};
 
 function formatCurrency(value: number) {
     return `Rs ${Math.round(value).toLocaleString('en-IN')}`;
@@ -142,22 +156,9 @@ function ChartCard({ title, subtitle, children }: { title: string; subtitle?: st
     );
 }
 
-function DonutChartCard({
-    title,
-    data,
-    valueFormatter,
-    legendLimit
-}: {
-    title: string;
-    data: DonutDatum[];
-    valueFormatter: (v: number) => string;
-    legendLimit?: number;
-}) {
+function DonutChartCard({ title, data, valueFormatter }: { title: string; data: DonutDatum[]; valueFormatter: (v: number) => string }) {
     const total = data.reduce((sum, item) => sum + item.value, 0);
     const chartData = data.filter((item) => item.value > 0);
-    const legendData = legendLimit
-        ? [...data].sort((a, b) => b.value - a.value).slice(0, legendLimit)
-        : data;
 
     return (
         <ChartCard title={title} subtitle="Hover to view absolute values and share percentage">
@@ -176,33 +177,31 @@ function DonutChartCard({
                                     nameKey="name"
                                     cx="50%"
                                     cy="50%"
-                                    innerRadius={0}
+                                    innerRadius={54}
                                     outerRadius={86}
-                                    labelLine
-                                    label={({ name }) => String(name || '')}
-                                    stroke="#0f172a"
-                                    strokeWidth={1}
+                                    labelLine={false}
+                                    label={false}
                                 >
                                     {chartData.map((entry) => (
                                         <Cell key={entry.name} fill={entry.color} />
                                     ))}
                                 </Pie>
-                                <Tooltip
-                                    contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 10 }}
-                                    labelStyle={{ color: '#0f172a', fontWeight: 600 }}
-                                    itemStyle={{ color: '#0f172a' }}
-                                    formatter={(raw: number | string | undefined, name: string | number | undefined) => {
-                                        const value = Number(raw) || 0;
-                                        const pct = total ? (value / total) * 100 : 0;
-                                        return [`${valueFormatter(value)} (${pct.toFixed(1)}%)`, String(name || '')];
-                                    }}
+                            <Tooltip
+                                contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 10 }}
+                                labelStyle={{ color: '#0f172a', fontWeight: 600 }}
+                                itemStyle={{ color: '#0f172a' }}
+                                formatter={(raw: number | string | undefined, name: string | number | undefined) => {
+                                    const value = Number(raw) || 0;
+                                    const pct = total ? (value / total) * 100 : 0;
+                                    return [`${valueFormatter(value)} (${pct.toFixed(1)}%)`, String(name || '')];
+                                }}
                                 />
                             </PieChart>
                         </ResponsiveContainer>
                     )}
                 </div>
                 <div className="space-y-2">
-                    {legendData.map((item) => {
+                    {data.map((item) => {
                         const pct = total ? (item.value / total) * 100 : 0;
                         return (
                             <div key={item.name} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
@@ -244,8 +243,6 @@ export default function AnalyticsDashboardPage() {
 
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState('');
-    const [fromDateInputType, setFromDateInputType] = useState<'text' | 'date'>('text');
-    const [toDateInputType, setToDateInputType] = useState<'text' | 'date'>('text');
     const [supplier, setSupplier] = useState('');
     const [buyer, setBuyer] = useState('');
     const [product, setProduct] = useState('');
@@ -318,6 +315,7 @@ export default function AnalyticsDashboardPage() {
                         supplier: String(row.supplierName || 'Unknown'),
                         buyer: String(row.billToName || 'Unknown'),
                         product,
+                        category: PRODUCT_CATEGORY[product] || 'Others',
                         state: String(row.placeOfSupply || 'Unknown'),
                         agent: String(row.user?.name || 'Unassigned'),
                         salesAmount: premiumBase,
@@ -462,9 +460,9 @@ export default function AnalyticsDashboardPage() {
         return [...bucket.entries()].map(([name, value], i) => ({ name, value, color: PALETTE[i % PALETTE.length] }));
     }, [premiumEligibleRecords]);
 
-    const productDistribution = useMemo<DonutDatum[]>(() => {
+    const categoryDistribution = useMemo<DonutDatum[]>(() => {
         const bucket = new Map<string, number>();
-        premiumEligibleRecords.forEach((r) => bucket.set(r.product, (bucket.get(r.product) || 0) + r.salesAmount));
+        premiumEligibleRecords.forEach((r) => bucket.set(r.category, (bucket.get(r.category) || 0) + r.salesAmount));
         return [...bucket.entries()].map(([name, value], i) => ({ name, value, color: PALETTE[i % PALETTE.length] }));
     }, [premiumEligibleRecords]);
 
@@ -617,28 +615,8 @@ export default function AnalyticsDashboardPage() {
                         <Filter className="h-4 w-4" /> Global Filters
                     </div>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
-                        <input
-                            type={fromDateInputType}
-                            placeholder="DD-MM-YYYY"
-                            value={fromDate}
-                            onFocus={() => setFromDateInputType('date')}
-                            onBlur={() => {
-                                if (!fromDate) setFromDateInputType('text');
-                            }}
-                            onChange={(e) => setFromDate(e.target.value)}
-                            className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                        />
-                        <input
-                            type={toDateInputType}
-                            placeholder="DD-MM-YYYY"
-                            value={toDate}
-                            onFocus={() => setToDateInputType('date')}
-                            onBlur={() => {
-                                if (!toDate) setToDateInputType('text');
-                            }}
-                            onChange={(e) => setToDate(e.target.value)}
-                            className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                        />
+                        <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+                        <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" />
                         <select value={supplier} onChange={(e) => setSupplier(e.target.value)} className="rounded-xl border border-slate-300 px-3 py-2 text-sm">
                             <option value="">All Suppliers</option>
                             {filters?.suppliers.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -754,12 +732,7 @@ export default function AnalyticsDashboardPage() {
                     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                         <DonutChartCard title="Invoice Created (Daily/Weekly/Monthly)" data={invoiceCreatedPeriodDistribution} valueFormatter={(v) => v.toLocaleString('en-IN')} />
                         <DonutChartCard title="Invoice Premium (Daily/Weekly/Monthly)" data={invoicePremiumPeriodDistribution} valueFormatter={formatCurrency} />
-                        <DonutChartCard
-                            title="Product Premium Distribution"
-                            data={productDistribution}
-                            valueFormatter={formatCurrency}
-                            legendLimit={5}
-                        />
+                        <DonutChartCard title="Product Category Premium Distribution" data={categoryDistribution} valueFormatter={formatCurrency} />
                         <DonutChartCard title="Invoice Status Breakdown" data={invoiceStatusDistribution} valueFormatter={(v) => v.toLocaleString('en-IN')} />
                         <DonutChartCard title="Claims Status Distribution" data={claimsStatusDistribution} valueFormatter={(v) => v.toLocaleString('en-IN')} />
                     </div>
