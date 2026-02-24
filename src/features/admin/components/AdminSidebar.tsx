@@ -3,7 +3,6 @@
 import { Fragment, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import {
-    ChartBarIcon,
     FolderIcon,
     HomeIcon,
     UsersIcon,
@@ -11,7 +10,8 @@ import {
     ClipboardDocumentListIcon,
     PencilSquareIcon,
     BanknotesIcon,
-    CreditCardIcon
+    CreditCardIcon,
+    MapPinIcon
 } from '@heroicons/react/24/outline';
 import { Bars3Icon } from '@heroicons/react/16/solid';
 import Link from 'next/link';
@@ -24,6 +24,8 @@ const navigation = [
     { name: 'Users', href: '/admin/users', icon: UsersIcon },
     { name: 'Invoice / Insurance Forms', href: '/admin/insurance-forms', icon: FolderIcon },
     { name: 'Claim Requests', href: '/admin/claims', icon: ClipboardDocumentListIcon },
+    { name: 'Tracking', href: '/admin/tracking', icon: MapPinIcon },
+    { name: 'Created Trips', href: '/admin/trips', icon: MapPinIcon },
     { name: 'Agent Commissions', href: '/admin/agent-commissions', icon: BanknotesIcon },
     { name: 'Insurance Payments', href: '/admin/insurance-payments', icon: CreditCardIcon },
     {

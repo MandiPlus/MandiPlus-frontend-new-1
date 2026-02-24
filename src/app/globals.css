@@ -29,12 +29,36 @@ input,
 select,
 textarea {
   color: #111827;
-  -webkit-text-fill-color: #111827;
 }
 
 input::placeholder,
 textarea::placeholder {
-  color: #9ca3af;
+  color: #cbd5e1 !important;
+  opacity: 1;
+}
+
+input::-webkit-input-placeholder,
+textarea::-webkit-input-placeholder {
+  color: #cbd5e1 !important;
+  opacity: 1;
+}
+
+input::-moz-placeholder,
+textarea::-moz-placeholder {
+  color: #cbd5e1 !important;
+  opacity: 1;
+}
+
+input[type="date"],
+input[type="datetime-local"] {
+  text-transform: uppercase;
+}
+
+input[type="date"]::-webkit-datetime-edit,
+input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+input[type="datetime-local"]::-webkit-datetime-edit,
+input[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
+  text-transform: uppercase;
 }
 
 select option {

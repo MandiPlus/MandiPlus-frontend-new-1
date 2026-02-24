@@ -15,6 +15,27 @@ const PAYMENT_STATUS_OPTIONS = [
   'FAILED',
   'REFUNDED',
 ];
+const ITEMS_PER_PAGE = 10;
+
+function getPaymentStatusBadgeClasses(status?: string | null) {
+  const normalized = String(status || '').toUpperCase();
+  if (normalized === 'PAID') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  }
+  if (normalized === 'PENDING') {
+    return 'border-red-200 bg-red-50 text-red-700';
+  }
+  if (normalized === 'FAILED') {
+    return 'border-rose-200 bg-rose-50 text-rose-700';
+  }
+  if (normalized === 'REFUNDED') {
+    return 'border-slate-200 bg-slate-50 text-slate-700';
+  }
+  if (normalized === 'NOT_REQUIRED') {
+    return 'border-red-200 bg-red-50 text-red-700';
+  }
+  return 'border-red-200 bg-red-50 text-red-700';
+}
 
 function formatCurrency(value: number) {
   return `Rs ${Math.round(value || 0).toLocaleString('en-IN')}`;
@@ -54,10 +75,16 @@ export default function AdminInsurancePaymentsPage() {
 
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
+  const [fromDateInputType, setFromDateInputType] = useState<'text' | 'date'>('text');
+  const [toDateInputType, setToDateInputType] = useState<'text' | 'date'>('text');
   const [paymentStatus, setPaymentStatus] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   const [editing, setEditing] = useState<InsurancePaymentRow | null>(null);
   const [saving, setSaving] = useState(false);
+  const [paymentCompletedInputType, setPaymentCompletedInputType] = useState<'text' | 'datetime-local'>('text');
   const [form, setForm] = useState<UpdateInsurancePaymentPayload>({});
 
   const fetchRows = async () => {
@@ -68,15 +95,24 @@ export default function AdminInsurancePaymentsPage() {
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
+        page: currentPage,
+        limit: ITEMS_PER_PAGE,
       });
 
       if (!response.success) {
         throw new Error(response.message || 'Failed to load insurance payments');
       }
       setRows(response.data || []);
+      setTotalRows(Number(response.total ?? response.count ?? (response.data?.length || 0)));
+      setTotalPages(Number(response.totalPages ?? 1));
+      if (response.page && response.page !== currentPage) {
+        setCurrentPage(response.page);
+      }
     } catch (err: any) {
       setError(err?.message || 'Failed to load insurance payments');
       setRows([]);
+      setTotalRows(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
@@ -88,7 +124,7 @@ export default function AdminInsurancePaymentsPage() {
       return;
     }
     fetchRows();
-  }, [isAuthenticated, router, fromDate, toDate, paymentStatus]);
+  }, [isAuthenticated, router, fromDate, toDate, paymentStatus, currentPage]);
 
   const totalPremium = useMemo(
     () => rows.reduce((sum, row) => sum + Number(row.premiumAmount || 0), 0),
@@ -99,21 +135,26 @@ export default function AdminInsurancePaymentsPage() {
     () => rows.reduce((sum, row) => sum + getEffectivePaidAmount(row), 0),
     [rows],
   );
+  const pageStart = totalRows === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
+  const pageEnd = Math.min(currentPage * ITEMS_PER_PAGE, totalRows);
 
   const openEditModal = (row: InsurancePaymentRow) => {
+    const paymentCompletedValue = toInputDateTimeLocal(row.paymentCompletedAt);
+    setPaymentCompletedInputType(paymentCompletedValue ? 'datetime-local' : 'text');
     setEditing(row);
     setForm({
       premiumAmount: Number(row.premiumAmount || 0),
       paymentAmount: Number(row.paymentAmount || 0),
       paymentStatus: row.paymentStatus,
       isPaymentRequired: Boolean(row.isPaymentRequired),
-      paymentCompletedAt: toInputDateTimeLocal(row.paymentCompletedAt),
+      paymentCompletedAt: paymentCompletedValue,
       remarks: row.remarks || '',
     });
   };
 
   const closeEditModal = () => {
     setEditing(null);
+    setPaymentCompletedInputType('text');
     setForm({});
   };
 
@@ -156,28 +197,45 @@ export default function AdminInsurancePaymentsPage() {
           <h1 className="text-2xl font-semibold text-gray-900">
             Insurance Payments
           </h1>
-          <p className="text-sm text-gray-600">
-            Mirror payment tracking synced with invoices (bi-directional).
-          </p>
+          
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
             <input
-              type="date"
+              type={fromDateInputType}
+              placeholder="DD-MM-YYYY"
               value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
+              onFocus={() => setFromDateInputType('date')}
+              onBlur={() => {
+                if (!fromDate) setFromDateInputType('text');
+              }}
+              onChange={(e) => {
+                setFromDate(e.target.value);
+                setCurrentPage(1);
+              }}
               className="rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
             <input
-              type="date"
+              type={toDateInputType}
+              placeholder="DD-MM-YYYY"
               value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
+              onFocus={() => setToDateInputType('date')}
+              onBlur={() => {
+                if (!toDate) setToDateInputType('text');
+              }}
+              onChange={(e) => {
+                setToDate(e.target.value);
+                setCurrentPage(1);
+              }}
               className="rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
             <select
               value={paymentStatus}
-              onChange={(e) => setPaymentStatus(e.target.value)}
+              onChange={(e) => {
+                setPaymentStatus(e.target.value);
+                setCurrentPage(1);
+              }}
               className="rounded-md border border-gray-300 px-3 py-2 text-sm"
             >
               <option value="">All Status</option>
@@ -192,7 +250,10 @@ export default function AdminInsurancePaymentsPage() {
               onClick={() => {
                 setFromDate('');
                 setToDate('');
+                setFromDateInputType('text');
+                setToDateInputType('text');
                 setPaymentStatus('');
+                setCurrentPage(1);
               }}
               className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
@@ -204,7 +265,7 @@ export default function AdminInsurancePaymentsPage() {
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <p className="text-xs uppercase tracking-wide text-gray-500">Rows</p>
-            <p className="mt-1 text-2xl font-bold text-gray-900">{rows.length}</p>
+            <p className="mt-1 text-2xl font-bold text-gray-900">{totalRows}</p>
           </div>
           <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <p className="text-xs uppercase tracking-wide text-gray-500">
@@ -296,7 +357,13 @@ export default function AdminInsurancePaymentsPage() {
                       <td className="px-4 py-3 text-right text-gray-900">
                         {formatCurrency(getEffectiveBalance(row))}
                       </td>
-                      <td className="px-4 py-3 text-gray-700">{row.paymentStatus}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${getPaymentStatusBadgeClasses(row.paymentStatus)}`}
+                        >
+                          {row.paymentStatus || 'PENDING'}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-gray-700">
                         {formatDate(row.updatedAt)}
                       </td>
@@ -315,6 +382,37 @@ export default function AdminInsurancePaymentsPage() {
               </tbody>
             </table>
           </div>
+          {!loading && totalRows > 0 ? (
+            <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3">
+              <p className="text-sm text-gray-600">
+                Showing <span className="font-medium">{pageStart}</span> to{' '}
+                <span className="font-medium">{pageEnd}</span> of{' '}
+                <span className="font-medium">{totalRows}</span>
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={currentPage <= 1}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <span className="text-sm text-gray-700">
+                  Page <span className="font-medium">{currentPage}</span> of{' '}
+                  <span className="font-medium">{totalPages}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage >= totalPages}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -364,7 +462,7 @@ export default function AdminInsurancePaymentsPage() {
               <label className="text-sm text-gray-700">
                 Payment Status
                 <select
-                  value={form.paymentStatus || 'NOT_REQUIRED'}
+                  value={form.paymentStatus || 'PENDING'}
                   onChange={(e) =>
                     setForm((prev) => ({ ...prev, paymentStatus: e.target.value }))
                   }
@@ -381,8 +479,13 @@ export default function AdminInsurancePaymentsPage() {
               <label className="text-sm text-gray-700">
                 Payment Completed At
                 <input
-                  type="datetime-local"
+                  type={paymentCompletedInputType}
+                  placeholder="DD-MM-YYYY --:--"
                   value={typeof form.paymentCompletedAt === 'string' ? form.paymentCompletedAt : ''}
+                  onFocus={() => setPaymentCompletedInputType('datetime-local')}
+                  onBlur={() => {
+                    if (!form.paymentCompletedAt) setPaymentCompletedInputType('text');
+                  }}
                   onChange={(e) =>
                     setForm((prev) => ({
                       ...prev,

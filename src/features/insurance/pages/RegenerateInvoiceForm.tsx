@@ -15,6 +15,7 @@ export const RegenerateInvoiceForm: React.FC<Props> = ({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [invoice, setInvoice] = useState<InsuranceForm | null>(null);
+    const [invoiceDateInputType, setInvoiceDateInputType] = useState<'text' | 'date'>('text');
 
     // Form state
     const [formData, setFormData] = useState({
@@ -69,6 +70,7 @@ export const RegenerateInvoiceForm: React.FC<Props> = ({
                     isClaim: data.isClaim || false,
                     claimDetails: data.claimDetails || ''
                 });
+                setInvoiceDateInputType(data.invoiceDate ? 'date' : 'text');
             } catch (err: any) {
                 setError(err.message || 'Failed to load invoice');
             } finally {
@@ -145,8 +147,13 @@ export const RegenerateInvoiceForm: React.FC<Props> = ({
                     <div>
                         <label className="block text-sm font-medium mb-1">Invoice Date</label>
                         <input
-                            type="date"
+                            type={invoiceDateInputType}
+                            placeholder="DD-MM-YYYY"
                             value={formData.invoiceDate}
+                            onFocus={() => setInvoiceDateInputType('date')}
+                            onBlur={() => {
+                                if (!formData.invoiceDate) setInvoiceDateInputType('text');
+                            }}
                             onChange={(e) => handleInputChange('invoiceDate', e.target.value)}
                             className="w-full p-2 border rounded"
                         />

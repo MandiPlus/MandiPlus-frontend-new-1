@@ -133,6 +133,9 @@ export default function InsuranceFormsPage() {
     const [rotation, setRotation] = useState(0);
     const [weightmentSlip, setWeightmentSlip] = useState<File | null>(null);
     const cropperRef = useRef<ReactCropperElement>(null);
+    const [startDateInputType, setStartDateInputType] = useState<'text' | 'datetime-local'>('text');
+    const [endDateInputType, setEndDateInputType] = useState<'text' | 'datetime-local'>('text');
+    const [invoiceDateInputType, setInvoiceDateInputType] = useState<'text' | 'date'>('text');
 
     const [filters, setFilters] = useState<InvoiceFilterParams>({
         invoiceType: '',
@@ -511,6 +514,7 @@ export default function InsuranceFormsPage() {
             terms: invoice.terms || ''
         });
         setIsEditing(true);
+        setInvoiceDateInputType(invoice.createdAt ? 'date' : 'text');
     };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -615,6 +619,7 @@ export default function InsuranceFormsPage() {
     const closeModal = () => {
         setIsEditing(false);
         setEditingInvoice(null);
+        setInvoiceDateInputType('text');
         setFormData({});
         setWeightmentSlip(null);
     };
@@ -635,6 +640,10 @@ export default function InsuranceFormsPage() {
         const raw = inv.paymentStatus || '';
         const s = raw.toUpperCase();
 
+        if (inv.isRejected) {
+            return { label: 'NOT_REQUIRED', classes: 'border-slate-200 bg-slate-50 text-slate-700' };
+        }
+
         if (s === 'PAID') {
             return { label: 'PAID', classes: 'border-emerald-200 bg-emerald-50 text-emerald-700' };
         }
@@ -645,13 +654,13 @@ export default function InsuranceFormsPage() {
             return { label: 'REFUNDED', classes: 'border-slate-200 bg-slate-50 text-slate-700' };
         }
         if (s === 'PENDING') {
-            return { label: 'PENDING', classes: 'border-amber-200 bg-amber-50 text-amber-700' };
+            return { label: 'PENDING', classes: 'border-red-200 bg-red-50 text-red-700' };
         }
         if (s === 'NOT_REQUIRED' || inv.isPaymentRequired === false) {
-            return { label: 'NOT_REQUIRED', classes: 'border-slate-200 bg-slate-50 text-slate-700' };
+            return { label: 'PENDING', classes: 'border-red-200 bg-red-50 text-red-700' };
         }
 
-        return { label: raw || 'PENDING', classes: 'border-amber-200 bg-amber-50 text-amber-700' };
+        return { label: raw || 'PENDING', classes: 'border-red-200 bg-red-50 text-red-700' };
     };
 
     const handleSendPaymentLink = async (inv: Invoice) => {
@@ -920,21 +929,29 @@ export default function InsuranceFormsPage() {
                         </select>
 
                         <input
-                            type="datetime-local"
+                            type={startDateInputType}
                             name="startDate"
+                            placeholder="DD-MM-YYYY --:--"
                             value={filters.startDate}
+                            onFocus={() => setStartDateInputType('datetime-local')}
+                            onBlur={() => {
+                                if (!filters.startDate) setStartDateInputType('text');
+                            }}
                             onChange={handleFilterChange}
                             className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
-                            placeholder="Start Date & Time"
                         />
 
                         <input
-                            type="datetime-local"
+                            type={endDateInputType}
                             name="endDate"
+                            placeholder="DD-MM-YYYY --:--"
                             value={filters.endDate}
+                            onFocus={() => setEndDateInputType('datetime-local')}
+                            onBlur={() => {
+                                if (!filters.endDate) setEndDateInputType('text');
+                            }}
                             onChange={handleFilterChange}
                             className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
-                            placeholder="End Date & Time"
                         />
 
                         <input
@@ -2031,8 +2048,13 @@ export default function InsuranceFormsPage() {
                                 <div>
                                     <label className="block text-sm font-medium text-slate-800 mb-1">Invoice Date</label>
                                     <input
-                                        type="date"
+                                        type={invoiceDateInputType}
+                                        placeholder="DD-MM-YYYY"
                                         value={formData.invoiceDate}
+                                        onFocus={() => setInvoiceDateInputType('date')}
+                                        onBlur={() => {
+                                            if (!formData.invoiceDate) setInvoiceDateInputType('text');
+                                        }}
                                         onChange={(e) => setFormData({ ...formData, invoiceDate: e.target.value })}
                                         className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#4309ac] focus:border-[#4309ac] focus:outline-none text-slate-800 bg-white text-sm"
                                     />
