@@ -14,6 +14,14 @@ export interface TruckLocation {
   lat: number;
   lng: number;
   speed?: number;
+  address?: string;
+  time?: string;
+  distance_remained?: number;
+}
+
+export interface LocationPoint {
+  lat: number;
+  lng: number;
 }
 
 export interface TruckSessionInfo {
@@ -22,11 +30,51 @@ export interface TruckSessionInfo {
   [key: string]: any;
 }
 
+export interface TripData {
+  trip_id: string;
+  trip_uid: string;
+  truck_number: string;
+  start_time: string;
+  tel: number;
+  invoice: string;
+  lr_number: string;
+  share_url: string;
+  consent_status: string;
+  origin: LocationPoint;
+  destination: LocationPoint;
+  last_loc: TruckLocation;
+  eta: string;
+  trip_status: string;
+  extra_status: string;
+  distance_travel: string;
+  total_distance: string;
+  speed: number;
+  origin_in: string;
+  origin_out: string;
+  destination_in: string;
+  destination_out: string;
+  total_halt_time: string;
+  halts: any[];
+}
+
 export interface TrackingData {
   vehicleNumber: string;
-  status: "online" | "offline" | "unknown";
-  lastSeen?: string; // ISO Date string
-  location?: TruckLocation;
+  truckId?: string;
+  tripId?: string;
+  tripStatus?: string;
+  status: string;
+  location?: {
+    lat: number;
+    lng: number;
+    address?: string;
+    timeRecorded?: string;
+    distanceRemained?: number;
+    timeRemained?: number;
+  };
+  origin?: LocationPoint;
+  destination?: LocationPoint;
+  consentStatus?: string;
+  eta?: string;
   shareUrl?: string;
   shareToken?: string;
   session?: TruckSessionInfo;
@@ -77,16 +125,22 @@ export const trackVehicle = async (
 
     // If backend returns raw tracking object, normalise it
     const raw = response.data as any;
+
+    // Direct mapping for the API response structure you provided
     const normalised: TrackingResponse = {
       success: raw.success ?? true,
-      data: raw.data ?? {
+      data: {
         vehicleNumber: raw.vehicleNumber ?? vehicleNumber,
-        status: raw.status ?? "unknown",
-        lastSeen: raw.lastSeen,
+        truckId: raw.truckId,
+        tripId: raw.tripId,
+        tripStatus: raw.tripStatus,
+        status: raw.status === 'tracking' ? 'online' : 'offline',
         location: raw.location,
+        origin: raw.origin,
+        destination: raw.destination,
+        consentStatus: raw.consentStatus,
+        eta: raw.eta,
         shareUrl: raw.shareUrl ?? raw.shareURL,
-        shareToken: raw.shareToken,
-        session: raw.session,
       },
       message: raw.message,
     };

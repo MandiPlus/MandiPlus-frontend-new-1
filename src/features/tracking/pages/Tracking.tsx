@@ -27,6 +27,7 @@ const TrackingPage = () => {
     },
   ]);
   const [inputValue, setInputValue] = useState<string>('');
+  const [locationNames, setLocationNames] = useState<{[key: string]: string}>({});
 
   // --- Effects ---
   useEffect(() => {
@@ -87,8 +88,62 @@ const TrackingPage = () => {
         ? `https://www.google.com/maps?q=${data.location!.lat},${data.location!.lng}`
         : 'https://maps.google.com';
 
-      // Create a more attractive message
-      const locationMsg = `📍 **Vehicle Found!**\n\n🚚 **Vehicle:** ${data.vehicleNumber || vehicleNum.toUpperCase()}\n${statusLabel}\n⏰ **Last Seen:** ${lastSeenText}${hasLocation && data.location ? `\n\n📍 **Location:** ${('placeName' in data.location && data.location.placeName) ? (data.location as any).placeName : `${data.location.lat.toFixed(5)}, ${data.location.lng.toFixed(5)}`}${typeof data.location.speed === 'number' ? `\n🚗 **Speed:** ${data.location.speed} km/h` : ''}` : ''}`;
+      // Get location name from API response, fallback to reverse geocoding
+      let locationName = 'Unknown Location';
+      if (hasLocation) {
+        // Use address from API response if available
+        if (data.location?.address) {
+          locationName = data.location.address;
+        } else {
+          // Fallback to reverse geocoding
+          const cacheKey = `${data.location!.lat},${data.location!.lng}`;
+          if (locationNames[cacheKey]) {
+            locationName = locationNames[cacheKey];
+          } else {
+            locationName = await reverseGeocode(data.location!.lat, data.location!.lng);
+            setLocationNames(prev => ({ ...prev, [cacheKey]: locationName }));
+          }
+        }
+      }
+
+      // Get source and destination from API response
+      let sourceLocation = '';
+      let destinationLocation = '';
+      
+      if (data.origin && typeof data.origin.lat === 'number' && typeof data.origin.lng === 'number') {
+        // If we have origin coordinates in lat, lng format
+        const originKey = `${data.origin.lat},${data.origin.lng}`;
+        if (locationNames[originKey]) {
+          sourceLocation = locationNames[originKey];
+        } else {
+          sourceLocation = await reverseGeocode(data.origin.lat, data.origin.lng);
+          setLocationNames(prev => ({ ...prev, [originKey]: sourceLocation }));
+        }
+      }
+      
+      if (data.destination && typeof data.destination.lat === 'number' && typeof data.destination.lng === 'number') {
+        // If we have destination coordinates in lat, lng format
+        const destKey = `${data.destination.lat},${data.destination.lng}`;
+        if (locationNames[destKey]) {
+          destinationLocation = locationNames[destKey];
+        } else {
+          destinationLocation = await reverseGeocode(data.destination.lat, data.destination.lng);
+          setLocationNames(prev => ({ ...prev, [destKey]: destinationLocation }));
+        }
+      }
+
+      // Create a more attractive message with source, destination and detailed location
+      let locationMsg = `📍 **Vehicle Found!**\n\n🚚 **Vehicle:** ${data.vehicleNumber || vehicleNum.toUpperCase()}\n${statusLabel}`;
+      
+      if (hasLocation) {
+        locationMsg += `\n\n📍 **Current Location:** ${locationName}`;
+        
+        // Only add source and destination if we have both
+        if (sourceLocation && destinationLocation) {
+          locationMsg += `\n📍 **Source:** ${sourceLocation}`;
+          locationMsg += `\n🎯 **Destination:** ${destinationLocation}`;
+        }
+      }
 
       setMessages(prev => [
         ...prev.slice(0, -1),
@@ -97,7 +152,7 @@ const TrackingPage = () => {
           sender: 'bot',
           isLocation: hasLocation,
           mapsUrl,
-          status: data.status,
+          status: data.status as 'online' | 'offline' | 'unknown',
           locationData: data,
           timestamp: new Date(),
         },
@@ -119,6 +174,78 @@ const TrackingPage = () => {
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     // You could add a toast notification here
+  };
+
+  async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return 'Unknown Location';
+
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`;
+    const response = await fetch(url);
+    if (!response.ok) return 'Unknown Location';
+    
+    const data = await response.json();
+    if (data.status === 'OK' && data.results?.length > 0) {
+      // Get the most detailed address
+      const result = data.results[0];
+      const formattedAddress = result.formatted_address;
+      
+      // Extract specific components for better formatting
+      const sublocality = result.address_components.find((comp: any) => 
+        comp.types.includes('sublocality') || comp.types.includes('neighborhood')
+      );
+      const locality = result.address_components.find((comp: any) => 
+        comp.types.includes('locality')
+      );
+      const administrativeArea2 = result.address_components.find((comp: any) => 
+        comp.types.includes('administrative_area_level_2')
+      );
+      const administrativeArea1 = result.address_components.find((comp: any) => 
+        comp.types.includes('administrative_area_level_1')
+      );
+      const country = result.address_components.find((comp: any) => 
+        comp.types.includes('country')
+      );
+      
+      // Build detailed address
+      let detailedAddress = '';
+      if (sublocality) detailedAddress += `${sublocality.long_name}, `;
+      if (locality) detailedAddress += `${locality.long_name}, `;
+      if (administrativeArea2 && administrativeArea2.long_name !== locality?.long_name) {
+        detailedAddress += `${administrativeArea2.long_name}, `;
+      }
+      if (administrativeArea1) detailedAddress += `${administrativeArea1.long_name}, `;
+      if (country) detailedAddress += country.long_name;
+      
+      // Remove trailing comma and space
+      detailedAddress = detailedAddress.replace(/,\s*$/, '');
+      
+      return detailedAddress || formattedAddress;
+    }
+    return 'Unknown Location';
+  } catch {
+    return 'Unknown Location';
+  }
+}
+
+const openMapModal = async (message: Message) => {
+    // Only proceed if we have valid origin and destination coordinates from API
+    if (!message.locationData?.origin?.lat || !message.locationData?.origin?.lng || 
+        !message.locationData?.destination?.lat || !message.locationData?.destination?.lng) {
+      // If no route data, just open current location
+      window.open(message.mapsUrl, '_blank');
+      return;
+    }
+
+    const startLat = message.locationData.origin.lat;
+    const startLng = message.locationData.origin.lng;
+    const endLat = message.locationData.destination.lat;
+    const endLng = message.locationData.destination.lng;
+
+    // Construct Google Maps URL for directions using actual API coordinates
+    const googleMapsUrl = `https://www.google.com/maps/dir/${startLat},${startLng}/${endLat},${endLng}`;
+    window.open(googleMapsUrl, '_blank');
   };
 
   const formatMessage = (text: string) => {
@@ -236,10 +363,9 @@ const TrackingPage = () => {
 
               {message.isLocation && message.mapsUrl && (
                 <div className="mt-3 space-y-2">
-                  <a
-                    href={message.mapsUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => openMapModal(message)}
                     className="flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white text-sm font-semibold rounded-xl transition-all duration-200 shadow-md hover:shadow-lg active:scale-95"
                   >
                     <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -247,7 +373,7 @@ const TrackingPage = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                     View on Google Maps
-                  </a>
+                  </button>
                   
                   {message.locationData?.shareUrl && (
                     <button
@@ -327,7 +453,8 @@ const TrackingPage = () => {
           💡 Tip: Enter your vehicle registration number to track it in real-time
         </p>
       </div>
-    </div>
+
+      </div>
   );
 };
 

@@ -288,16 +288,12 @@ export default function AdminTrackingPage() {
     }
 
     if (!payload.src && !payload.srcname) {
-      toast.error(
-        'Source is required. Fill either Source Coordinates (src) or Source Name (srcname).'
-      );
+      toast.error('Source Name is required to resolve source coordinates.');
       setBusyFlag('createTrip', false);
       return;
     }
     if (!payload.dest && !payload.destname) {
-      toast.error(
-        'Destination is required. Fill either Destination Coordinates (dest) or Destination Name (destname).'
-      );
+      toast.error('Destination Name is required to resolve destination coordinates.');
       setBusyFlag('createTrip', false);
       return;
     }
@@ -480,7 +476,7 @@ export default function AdminTrackingPage() {
         <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
           <input
             className={inputClass}
-            placeholder="Driver Phone (tel)"
+            placeholder="Driver Phone"
             value={tripForm.tel}
             onChange={(e) => setTripForm((prev) => ({ ...prev, tel: e.target.value }))}
           />
@@ -494,31 +490,7 @@ export default function AdminTrackingPage() {
           />
           <input
             className={inputClass}
-            placeholder="Source Coordinates lat,lng (or use srcname)"
-            value={tripForm.src || ''}
-            onChange={(e) => setTripForm((prev) => ({ ...prev, src: e.target.value }))}
-          />
-          <input
-            className={inputClass}
-            placeholder="Destination Coordinates lat,lng (or use destname)"
-            value={tripForm.dest || ''}
-            onChange={(e) => setTripForm((prev) => ({ ...prev, dest: e.target.value }))}
-          />
-          <input
-            type="number"
-            className={inputClass}
-            placeholder="ETA Hours (optional)"
-            value={tripForm.eta_hrs ?? ''}
-            onChange={(e) =>
-              setTripForm((prev) => ({
-                ...prev,
-                eta_hrs: e.target.value ? Number(e.target.value) : undefined,
-              }))
-            }
-          />
-          <input
-            className={inputClass}
-            placeholder="Source Name (use if src coords not given)"
+            placeholder="Source Name "
             value={tripForm.srcname || ''}
             onChange={(e) =>
               setTripForm((prev) => ({ ...prev, srcname: e.target.value }))
@@ -526,7 +498,7 @@ export default function AdminTrackingPage() {
           />
           <input
             className={inputClass}
-            placeholder="Destination Name (use if dest coords not given)"
+            placeholder="Destination Name "
             value={tripForm.destname || ''}
             onChange={(e) =>
               setTripForm((prev) => ({ ...prev, destname: e.target.value }))
@@ -537,14 +509,6 @@ export default function AdminTrackingPage() {
             placeholder="Invoice Ref (optional)"
             value={tripForm.invoice || ''}
             onChange={(e) => setTripForm((prev) => ({ ...prev, invoice: e.target.value }))}
-          />
-          <input
-            className={inputClass}
-            placeholder="Internal Truck ID (optional)"
-            value={tripForm.internalTruckId || ''}
-            onChange={(e) =>
-              setTripForm((prev) => ({ ...prev, internalTruckId: e.target.value }))
-            }
           />
         </div>
 
