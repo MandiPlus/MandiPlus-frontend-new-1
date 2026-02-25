@@ -161,7 +161,12 @@ const TrackingPage = () => {
           isLocation: hasLocation,
           mapsUrl,
           status: data.status as 'online' | 'offline' | 'unknown',
-          locationData: data,
+          locationData: {
+            ...data,
+            currentLocationName: locationName,
+            sourceName: sourceLocation,
+            destinationName: destinationLocation,
+          },
           timestamp: new Date(),
         },
       ]);
@@ -243,6 +248,9 @@ const openMapModal = async (message: Message) => {
     const destLat = message.locationData?.destination?.lat;
     const destLng = message.locationData?.destination?.lng;
     const vehicle = message.locationData?.vehicleNumber || 'Vehicle';
+    const currentName = message.locationData?.currentLocationName || '';
+    const sourceName = message.locationData?.sourceName || '';
+    const destinationName = message.locationData?.destinationName || '';
 
     // Open custom map view that shows only current + destination markers (no routing).
     const params = new URLSearchParams();
@@ -251,6 +259,9 @@ const openMapModal = async (message: Message) => {
     if (typeof destLat === 'number') params.set('dlat', String(destLat));
     if (typeof destLng === 'number') params.set('dlng', String(destLng));
     params.set('vehicle', vehicle);
+    if (currentName) params.set('currentName', currentName);
+    if (sourceName) params.set('sourceName', sourceName);
+    if (destinationName) params.set('destinationName', destinationName);
 
     const appMapUrl = `/tracking/live-map?${params.toString()}`;
     window.open(appMapUrl, '_blank');
