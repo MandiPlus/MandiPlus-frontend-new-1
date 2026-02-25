@@ -117,6 +117,10 @@ const TrackingPage = () => {
           sourceLocation = locationNames[originKey];
         } else {
           sourceLocation = await reverseGeocode(data.origin.lat, data.origin.lng);
+          // If reverse geocoding fails, use coordinates as fallback
+          if (sourceLocation === 'Unknown Location') {
+            sourceLocation = `${data.origin.lat.toFixed(5)}, ${data.origin.lng.toFixed(5)}`;
+          }
           setLocationNames(prev => ({ ...prev, [originKey]: sourceLocation }));
         }
       }
@@ -128,6 +132,10 @@ const TrackingPage = () => {
           destinationLocation = locationNames[destKey];
         } else {
           destinationLocation = await reverseGeocode(data.destination.lat, data.destination.lng);
+          // If reverse geocoding fails, use coordinates as fallback
+          if (destinationLocation === 'Unknown Location') {
+            destinationLocation = `${data.destination.lat.toFixed(5)}, ${data.destination.lng.toFixed(5)}`;
+          }
           setLocationNames(prev => ({ ...prev, [destKey]: destinationLocation }));
         }
       }
@@ -140,8 +148,8 @@ const TrackingPage = () => {
         
         // Only add source and destination if we have both
         if (sourceLocation && destinationLocation) {
-          locationMsg += `\n📍 **Source:** ${sourceLocation}`;
-          locationMsg += `\n🎯 **Destination:** ${destinationLocation}`;
+          locationMsg += `\n🚚 **Source:** ${sourceLocation}`;
+          locationMsg += `\n🏁 **Destination:** ${destinationLocation}`;
         }
       }
 
@@ -230,22 +238,22 @@ const TrackingPage = () => {
 }
 
 const openMapModal = async (message: Message) => {
-    // Only proceed if we have valid origin and destination coordinates from API
-    if (!message.locationData?.origin?.lat || !message.locationData?.origin?.lng || 
-        !message.locationData?.destination?.lat || !message.locationData?.destination?.lng) {
-      // If no route data, just open current location
-      window.open(message.mapsUrl, '_blank');
-      return;
-    }
+    const currentLat = message.locationData?.location?.lat;
+    const currentLng = message.locationData?.location?.lng;
+    const destLat = message.locationData?.destination?.lat;
+    const destLng = message.locationData?.destination?.lng;
+    const vehicle = message.locationData?.vehicleNumber || 'Vehicle';
 
-    const startLat = message.locationData.origin.lat;
-    const startLng = message.locationData.origin.lng;
-    const endLat = message.locationData.destination.lat;
-    const endLng = message.locationData.destination.lng;
+    // Open custom map view that shows only current + destination markers (no routing).
+    const params = new URLSearchParams();
+    if (typeof currentLat === 'number') params.set('clat', String(currentLat));
+    if (typeof currentLng === 'number') params.set('clng', String(currentLng));
+    if (typeof destLat === 'number') params.set('dlat', String(destLat));
+    if (typeof destLng === 'number') params.set('dlng', String(destLng));
+    params.set('vehicle', vehicle);
 
-    // Construct Google Maps URL for directions using actual API coordinates
-    const googleMapsUrl = `https://www.google.com/maps/dir/${startLat},${startLng}/${endLat},${endLng}`;
-    window.open(googleMapsUrl, '_blank');
+    const appMapUrl = `/tracking/live-map?${params.toString()}`;
+    window.open(appMapUrl, '_blank');
   };
 
   const formatMessage = (text: string) => {
