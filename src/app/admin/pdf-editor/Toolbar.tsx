@@ -50,7 +50,11 @@ export default function Toolbar({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${file.name.replace(/\.pdf$/i, "")}.pdf`;
+
+      // Clean up the name if it has a timestamp from our frontend refresh hack
+      const cleanName = file.name.replace(/^\d+_/, "");
+      a.download = `${cleanName.replace(/\.pdf$/i, "")}(1).pdf`;
+
       a.click();
       URL.revokeObjectURL(url);
     } catch (error) {
@@ -83,7 +87,11 @@ export default function Toolbar({
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${file.name.replace(/\.pdf$/i, "")}_edited.pdf`;
+
+        // Clean up the name if it has a timestamp from our frontend refresh hack
+        const cleanName = file.name.replace(/^\d+_/, "");
+        a.download = `${cleanName.replace(/\.pdf$/i, "")}(1).pdf`;
+
         a.click();
         URL.revokeObjectURL(url);
       }
