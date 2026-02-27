@@ -60,7 +60,7 @@ export default function PdfCanvas({
       overlayRef.current.width = canvasEl.width;
       overlayRef.current.height = canvasEl.height;
       setTotalPages(res.totalPages);
-      
+
       // Pass canvas dimensions to parent
       if (onCanvasDimensionsChange) {
         // IMPORTANT: actions are recorded in CSS pixel coordinates (mouse/pointer),
@@ -69,7 +69,7 @@ export default function PdfCanvas({
         const cssH = Number.parseFloat(canvasEl.style.height || "0") || 0;
         onCanvasDimensionsChange(cssW, cssH);
       }
-      
+
       // Redraw all white rectangles for current page
       redrawActions();
     });
@@ -87,10 +87,10 @@ export default function PdfCanvas({
   -------------------------------------------------- */
   function redrawActions() {
     if (!overlayRef.current) return;
-    
+
     const ctx = overlayRef.current.getContext("2d")!;
     ctx.clearRect(0, 0, overlayRef.current.width, overlayRef.current.height);
-    
+
     // Scale drawing so actions (CSS px) map correctly to device-pixel canvas buffer
     const rect = overlayRef.current.getBoundingClientRect();
     const scaleX = rect.width ? overlayRef.current.width / rect.width : 1;
@@ -104,7 +104,7 @@ export default function PdfCanvas({
       .forEach(a => {
         ctx.fillStyle = "white";
         ctx.fillRect(a.x, a.y, a.w, a.h);
-        
+
         // Add subtle border to see white rectangles clearly
         ctx.strokeStyle = "rgba(200, 200, 200, 0.5)";
         ctx.lineWidth = 1;
@@ -173,45 +173,50 @@ export default function PdfCanvas({
   }
 
   return (
-<div className="space-y-4">
-  <div
-    className="relative border bg-white overflow-hidden"
-    style={{
-      width: canvasEl?.style.width,
-      height: canvasEl?.style.height,
-    }}
-  >
-    <div ref={wrapperRef} />
-    <canvas
-      ref={overlayRef}
-      className="absolute top-0 left-0 cursor-crosshair"
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-    />
-  </div>
-
+    <div className="flex flex-col items-center space-y-6 w-full max-w-full overflow-x-auto pb-4">
+      <div
+        className="relative bg-white shadow-md ring-1 ring-slate-200 overflow-hidden shrink-0"
+        style={{
+          width: canvasEl?.style.width,
+          height: canvasEl?.style.height,
+        }}
+      >
+        <div ref={wrapperRef} />
+        <canvas
+          ref={overlayRef}
+          className="absolute top-0 left-0 cursor-crosshair"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+        />
+      </div>
 
       {totalPages > 1 && (
-        <div className="flex gap-2 items-center">
+        <div className="flex items-center gap-3 px-4 py-2 bg-white border border-slate-200 rounded-full shadow-sm">
           <button
             disabled={pageNumber === 1}
             onClick={() => onPageChange(pageNumber - 1)}
-            className="px-2 py-1 border rounded disabled:opacity-50"
+            className="flex items-center justify-center w-8 h-8 rounded-full hover:bg-slate-100 text-slate-600 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+            title="Previous Page"
           >
-            Prev
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
           </button>
 
-          <span>
-            Page {pageNumber} / {totalPages}
+          <span className="text-sm font-medium text-slate-600 min-w-[5rem] text-center">
+            {pageNumber} <span className="text-slate-400 font-normal">/ {totalPages}</span>
           </span>
 
           <button
             disabled={pageNumber === totalPages}
             onClick={() => onPageChange(pageNumber + 1)}
-            className="px-2 py-1 border rounded disabled:opacity-50"
+            className="flex items-center justify-center w-8 h-8 rounded-full hover:bg-slate-100 text-slate-600 disabled:opacity-40 disabled:hover:bg-transparent transition-colors"
+            title="Next Page"
           >
-            Next
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
           </button>
         </div>
       )}

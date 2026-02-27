@@ -96,30 +96,28 @@ export default function Toolbar({
   }
 
   return (
-    <div className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-lg shadow-sm flex-wrap">
+    <div className="flex items-center gap-3 px-6 py-4 bg-white flex-wrap">
       {/* History controls */}
-      <div className="flex gap-1 border-r border-gray-200 pr-3 mr-1">
+      <div className="flex gap-1.5 border-r border-slate-200 pr-5 mr-2">
         <button
           onClick={onUndo}
           disabled={!canUndo}
           title="Undo (Ctrl+Z)"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="inline-flex items-center justify-center w-9 h-9 text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
         >
-          <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
             <path d="M3 7 L7 3 L7 5 C11 5 14 8 14 12 C12 9 9 8 7 8 L7 10 Z" strokeLinejoin="round" strokeLinecap="round" />
           </svg>
-          Undo
         </button>
         <button
           onClick={onRedo}
           disabled={!canRedo}
           title="Redo (Ctrl+Shift+Z)"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="inline-flex items-center justify-center w-9 h-9 text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
         >
-          <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
             <path d="M13 7 L9 3 L9 5 C5 5 2 8 2 12 C4 9 7 8 9 8 L9 10 Z" strokeLinejoin="round" strokeLinecap="round" />
           </svg>
-          Redo
         </button>
       </div>
 
@@ -128,32 +126,42 @@ export default function Toolbar({
         onClick={onClearAll}
         disabled={actions.length === 0}
         title="Clear all redactions"
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
       >
-        <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
           <path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M3 4l1 9h8l1-9" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
         Clear All
       </button>
+
+      {/* Redaction count badge */}
+      {actions.length > 0 && (
+        <span className="flex items-center h-9 px-3 text-xs font-semibold text-slate-700 bg-slate-100/80 rounded-lg border border-slate-200/50">
+          {actions.length} redaction{actions.length !== 1 ? "s" : ""}
+        </span>
+      )}
+
+      {/* Spacer */}
+      <div className="flex-1" />
 
       {/* Remove Premium Row */}
       <button
         onClick={removePremiumRow}
         disabled={removingPremium}
         title="Remove PREMIUM / TAXES / TOTAL PREMIUM row via backend"
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-violet-600 border border-violet-700 rounded hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-200 focus:border-slate-400"
       >
         {removingPremium ? (
           <>
-            <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg className="w-4 h-4 animate-spin" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="8" cy="8" r="6" strokeOpacity="0.3" />
               <path d="M8 2a6 6 0 0 1 6 6" strokeLinecap="round" />
             </svg>
-            Processing…
+            Processing...
           </>
         ) : (
           <>
-            <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <svg className="w-4 h-4 text-slate-500" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
               <path d="M2 8h12M2 4h12M2 12h8" strokeLinecap="round" />
               <path d="M11 10l3 3m0-3l-3 3" strokeLinecap="round" />
             </svg>
@@ -162,24 +170,14 @@ export default function Toolbar({
         )}
       </button>
 
-      {/* Spacer */}
-      <div className="flex-1" />
-
-      {/* Redaction count badge */}
-      {actions.length > 0 && (
-        <span className="text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full">
-          {actions.length} redaction{actions.length !== 1 ? "s" : ""}
-        </span>
-      )}
-
       {/* Download */}
       <button
         onClick={downloadPdf}
         disabled={actions.length === 0}
         title="Download edited PDF"
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-emerald-600 border border-emerald-700 rounded hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2"
       >
-        <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8">
           <path d="M8 2v8m0 0l-3-3m3 3l3-3" strokeLinecap="round" strokeLinejoin="round" />
           <path d="M2 11v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2" strokeLinecap="round" />
         </svg>
