@@ -394,15 +394,30 @@ const InsuranceIOS = () => {
 
             const invoice = await createInsuranceForm(submitData);
             const rawPdfUrl = invoice.pdfUrl || invoice.pdfURL;
+            const isBotEmbed =
+                typeof window !== 'undefined' &&
+                window.self !== window.top &&
+                new URLSearchParams(window.location.search).get('embedBot') === '1';
 
             setMessages(prev => [...prev, { text: 'Success! Invoice created.', sender: 'bot' }]);
 
             if (rawPdfUrl) {
                 const finalLink = rawPdfUrl.startsWith('http') ? rawPdfUrl : `http://localhost:3000${rawPdfUrl}`;
-                window.location.href = finalLink;
+                if (isBotEmbed) {
+                    window.open(finalLink, '_blank');
+                    window.parent.postMessage({ type: 'MANDI_BOT_INVOICE_CREATED' }, '*');
+                } else {
+                    window.location.href = finalLink;
+                }
             } else {
                 setMessages(prev => [...prev, { text: 'PDF is generating... Redirecting to My Forms.', sender: 'bot' }]);
-                setTimeout(() => router.push("/home"), 2000);
+                if (isBotEmbed) {
+                    setTimeout(() => {
+                        window.parent.postMessage({ type: 'MANDI_BOT_INVOICE_CREATED' }, '*');
+                    }, 800);
+                } else {
+                    setTimeout(() => router.push("/home"), 2000);
+                }
             }
 
         } catch (err: any) {
@@ -702,7 +717,20 @@ const InsuranceIOS = () => {
             {/* Header */}
             <div className="bg-[#075E54] text-white px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between shadow z-10 shrink-0">
                 <div className="flex items-center gap-2 sm:gap-3">
-                    <button onClick={() => router.back()} className="p-1 -ml-1 sm:-ml-2 rounded-full hover:bg-[#128C7E] transition-colors touch-manipulation">
+                    <button
+                        onClick={() => {
+                            const isBotEmbed =
+                                typeof window !== 'undefined' &&
+                                window.self !== window.top &&
+                                new URLSearchParams(window.location.search).get('embedBot') === '1';
+                            if (isBotEmbed) {
+                                window.parent.postMessage({ type: 'MANDI_BOT_CLOSE' }, '*');
+                                return;
+                            }
+                            router.back();
+                        }}
+                        className="p-1 -ml-1 sm:-ml-2 rounded-full hover:bg-[#128C7E] transition-colors touch-manipulation"
+                    >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 sm:w-6 sm:h-6">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
                         </svg>

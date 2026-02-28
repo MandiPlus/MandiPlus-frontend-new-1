@@ -1,7 +1,7 @@
 import axios, { AxiosError } from "axios";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3005";
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 
 export interface AdminTrackingApiResponse<T> {
   success: boolean;

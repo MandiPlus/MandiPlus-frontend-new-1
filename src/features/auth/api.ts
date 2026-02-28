@@ -19,6 +19,10 @@ export interface SendOtpPayload {
     mobileNumber: string;
 }
 
+export interface CheckUserPayload {
+    mobileNumber: string;
+}
+
 export interface VerifyOtpPayload {
     mobileNumber: string;
     otp: string;
@@ -28,6 +32,7 @@ export interface RegisterPayload {
     name: string;
     mobileNumber: string;
     state: string;
+    identity: "BUYER" | "AGENT" | "SUPPLIER" | "CUSTOMER" | "TRANSPORTER";
 }
 
 export interface AgentRegisterPayload {
@@ -163,7 +168,8 @@ export const getCurrentUser = async (): Promise<any | null> => {
             headers: { Authorization: `Bearer ${token}` }
         });
 
-        return response.data;
+        // Some endpoints return wrapped payloads: { success, data: {...user} }
+        return response.data?.data ?? response.data;
     } catch (error) {
         console.error('Failed to fetch user:', error);
         return null;
@@ -183,5 +189,15 @@ export const logout = async (): Promise<void> => {
     } catch (error) {
         console.error('Logout error:', error);
         throw new Error('Failed to logout');
+    }
+};
+
+export const checkUser = async (data: CheckUserPayload): Promise<{ exists: boolean }> => {
+    try {
+        const response = await axios.post(`${API_BASE_URL}/auth/check-user`, data);
+        return response.data;
+    } catch (error) {
+        const err = error as AxiosError<{ message: string }>;
+        throw new Error(err.response?.data?.message || 'Failed to check user');
     }
 };

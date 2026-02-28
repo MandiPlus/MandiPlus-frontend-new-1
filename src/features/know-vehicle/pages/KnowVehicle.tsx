@@ -251,7 +251,20 @@ const KnowVehiclePage = () => {
             <div className="flex flex-col h-screen bg-[#efeae2]">
                 {/* HEADER */}
                 <div className="bg-[#075E54] text-white px-3 sm:px-4 py-2.5 sm:py-3 flex items-center shadow z-10">
-                    <button onClick={() => router.push('/home')} className="mr-2 sm:mr-3 p-1 rounded-full hover:bg-[#128C7E] touch-manipulation">
+                    <button
+                        onClick={() => {
+                            const isBotEmbed =
+                                typeof window !== 'undefined' &&
+                                window.self !== window.top &&
+                                new URLSearchParams(window.location.search).get('embedBot') === '1';
+                            if (isBotEmbed) {
+                                window.parent.postMessage({ type: 'MANDI_BOT_CLOSE' }, '*');
+                                return;
+                            }
+                            router.push('/home');
+                        }}
+                        className="mr-2 sm:mr-3 p-1 rounded-full hover:bg-[#128C7E] touch-manipulation"
+                    >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
                         </svg>

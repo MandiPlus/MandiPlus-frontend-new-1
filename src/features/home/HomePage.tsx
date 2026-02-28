@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import ProtectedRoute from "../auth/components/ProtectedRoute";
+import { useAuth } from "../auth/context/AuthContext";
 import {
   getMyInsuranceForms,
   regenerateInvoice,
@@ -18,21 +19,22 @@ import {
   uploadClaimMedia,
   submitDamageForm
 } from "../insurance/api";
+import {
+  getMyWalletSummary,
+  WalletSummary,
+} from "../customer/api";
 import 'cropperjs/dist/cropper.css';
 import Cropper, { ReactCropperElement } from "react-cropper";
 import { ArrowPathIcon, Bars3Icon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/";
 
-interface User {
-  mobileNumber?: string;
-}
-
 const HomePage = () => {
   const router = useRouter();
-  const [user, setUser] = useState<User>({});
+  const { user, logout } = useAuth();
   const [isMounted, setIsMounted] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [wallet, setWallet] = useState<WalletSummary | null>(null);
 
   // Invoice states
   const [invoices, setInvoices] = useState<InsuranceForm[]>([]);
@@ -111,21 +113,42 @@ const HomePage = () => {
 
   useEffect(() => {
     setIsMounted(true);
-    const token = localStorage.getItem("accessToken");
-    if (!token) {
-      router.push("/");
-      return;
-    }
+  }, []);
 
-    const storedUser = localStorage.getItem("user");
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (e) {
-        console.error("Failed to parse user data", e);
-      }
+  const isCustomer = user?.identity === "CUSTOMER";
+
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 2,
+    }).format(value || 0);
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return "-";
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const loadWalletData = async () => {
+    if (!isCustomer) return;
+    try {
+      const walletData = await getMyWalletSummary();
+      setWallet(walletData);
+    } catch (err: any) {
+      setWallet(null);
     }
-  }, [router]);
+  };
+
+  useEffect(() => {
+    loadWalletData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCustomer]);
 
   // Fetch invoices when modal opens
   const fetchInvoices = async () => {
@@ -392,14 +415,10 @@ const HomePage = () => {
     }
   };
 
-  const username = user.mobileNumber || "user";
+  const username = user?.mobileNumber || "user";
 
   const handleLogout = () => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("user");
-    }
-    router.push("/");
+    logout();
   };
 
   if (!isMounted) {
@@ -407,7 +426,7 @@ const HomePage = () => {
   }
 
   return (
-    <ProtectedRoute>
+    <ProtectedRoute allowedIdentities={["BUYER", "SUPPLIER", "CUSTOMER"]}>
       <div className="min-h-screen bg-[#e0d7fc] pb-28">
 
         {/* --- NEW: Cropper Overlay --- */}
@@ -450,14 +469,26 @@ const HomePage = () => {
               </p>
             </div>
 
-            <button
-              type="button"
-              aria-label="Open menu"
-              onClick={() => setMenuOpen(true)}
-              className="bg-white bg-opacity-20 backdrop-blur-sm hover:bg-opacity-30 text-purple-900 p-2.5 rounded-2xl transition-all duration-300 ease-out border border-white border-opacity-20 active:scale-95"
-            >
-              <Bars3Icon className="w-6 h-6" strokeWidth={2} />
-            </button>
+            <div className="flex items-center gap-2">
+              {isCustomer && (
+                <button
+                  type="button"
+                  onClick={() => router.push("/customer/wallet")}
+                  className="rounded-2xl border border-purple-200 bg-purple-50 px-3 py-2 text-right shadow-sm"
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-purple-700">Wallet</p>
+                  <p className="text-xs font-bold text-slate-900">{formatCurrency(wallet?.availableBalance ?? 0)}</p>
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label="Open menu"
+                onClick={() => setMenuOpen(true)}
+                className="bg-white bg-opacity-20 backdrop-blur-sm hover:bg-opacity-30 text-purple-900 p-2.5 rounded-2xl transition-all duration-300 ease-out border border-white border-opacity-20 active:scale-95"
+              >
+                <Bars3Icon className="w-6 h-6" strokeWidth={2} />
+              </button>
+            </div>
           </div>
 
           {/* Hamburger menu overlay + panel */}
@@ -512,6 +543,18 @@ const HomePage = () => {
                 >
                   Privacy Policy
                 </Link>
+                {isCustomer && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      router.push("/customer/wallet");
+                    }}
+                    className="px-5 py-3.5 text-left text-slate-800 hover:bg-[#e0d7fc]/50 hover:text-[#4309ac] transition-colors duration-200 flex items-center"
+                  >
+                    Wallet
+                  </button>
+                )}
                 <Link
                   href="/terms-and-conditions"
                   onClick={() => setMenuOpen(false)}
@@ -587,6 +630,16 @@ const HomePage = () => {
               <h4 className="font-semibold mb-1 text-slate-800">My Claims</h4>
               <p className="text-xs text-gray-500">View & File Claims</p>
             </div>
+
+            {isCustomer && (
+              <div
+                className="bg-white rounded-3xl p-4 shadow-sm cursor-pointer"
+                onClick={() => router.push("/customer/wallet")}
+              >
+                <h4 className="font-semibold mb-1 text-slate-800">Wallet</h4>
+                <p className="text-xs text-gray-500">View balance & statement</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1322,6 +1375,13 @@ const HomePage = () => {
               </div>
               <span className="mt-1">Home</span>
             </div>
+
+            {isCustomer && (
+              <div className="flex flex-col items-center opacity-60 cursor-pointer" onClick={() => router.push("/customer/wallet")}>
+                ₹
+                <span>Wallet</span>
+              </div>
+            )}
 
             <div className="flex flex-col items-center opacity-60 cursor-pointer" onClick={() => router.push('/support')}>
               💬
