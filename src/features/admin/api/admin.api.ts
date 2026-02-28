@@ -18,12 +18,27 @@ export interface ApiResponse<T> {
 
 interface User {
   _id: string;
+  id?: string;
+  name?: string;
   mobileNumber: string;
-  category: string;
-  state: string;
+  category?: string;
+  identity?: string;
+  state?: string;
   createdAt: string;
-  totalForms: number;
+  totalForms?: number;
+  walletId?: string | null;
+  walletBalance?: number;
+  availableBalance?: number;
+  holdBalance?: number;
+  totalBalance?: number;
 }
+
+export type UserIdentity =
+  | "CUSTOMER"
+  | "TRANSPORTER"
+  | "BUYER"
+  | "SUPPLIER"
+  | "AGENT";
 
 export interface InsuranceForm {
   _id: string;
@@ -57,12 +72,7 @@ export interface InsuranceForm {
 }
 
 interface LoginResponse {
-  success: boolean;
   token: string;
-  admin: {
-    email: string;
-    role: string;
-  };
 }
 
 export interface RegenerateInvoicePayload {
@@ -226,9 +236,18 @@ class AdminApi {
       (response) => response,
       (error) => {
         if (error.response?.status === 401) {
+          const requestUrl = String(error?.config?.url || "");
+          // Invalid admin login should stay on login page and show error,
+          // not redirect to session-expired.
+          const isAdminLoginRequest =
+            requestUrl.includes("/auth/admin/login") ||
+            requestUrl.endsWith("/admin/login");
+          if (isAdminLoginRequest) {
+            return Promise.reject(error);
+          }
           if (typeof window !== "undefined") {
             localStorage.removeItem("adminToken");
-            window.location.href = "/admin/login";
+            window.location.href = "/admin-session-expired";
           }
         }
         return Promise.reject(error);
@@ -272,14 +291,22 @@ class AdminApi {
     password: string,
   ): Promise<ApiResponse<LoginResponse>> => {
     try {
-      const response = await this.client.post<ApiResponse<LoginResponse>>(
-        "/admin/login",
-        { email, password },
+      const response = await this.client.post<{ success: boolean; data?: { token: string } }>(
+        "/auth/admin/login",
+        { username: email, password },
       );
-      if (response.data.success && response.data.data?.token) {
-        this.setAuthToken(response.data.data.token);
+      const token = response.data?.data?.token;
+      if (response.data.success && token) {
+        this.setAuthToken(token);
+        return {
+          success: true,
+          data: { token },
+        };
       }
-      return response.data;
+      return {
+        success: false,
+        message: "Login failed",
+      };
     } catch (error: any) {
       return {
         success: false,
@@ -330,6 +357,72 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || "Failed to fetch users",
+        error: error.message,
+      };
+    }
+  };
+
+  public getAdminCustomerWallets = async (): Promise<ApiResponse<User[]>> => {
+    try {
+      const response = await this.client.get<User[]>("/wallet/admin/customers");
+      const rows = Array.isArray(response.data)
+        ? response.data
+        : ((response.data as any)?.data ?? []);
+      return {
+        success: true,
+        data: rows,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to fetch customer wallets",
+        error: error.message,
+      };
+    }
+  };
+
+  public creditCustomerWallet = async (
+    userId: string,
+    amount: number,
+    narration?: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/wallet/admin/customers/${userId}/credit`,
+        { amount, narration },
+      );
+      const payload = response.data;
+      if (payload && typeof payload === "object" && "success" in payload) {
+        return payload;
+      }
+      return {
+        success: true,
+        data: payload,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to credit wallet",
+        error: error.message,
+      };
+    }
+  };
+
+  public convertUserIdentity = async (
+    userId: string,
+    identity: UserIdentity,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.patch(`/users/${userId}`, { identity });
+      return {
+        success: true,
+        data: response.data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to convert user identity",
         error: error.message,
       };
     }

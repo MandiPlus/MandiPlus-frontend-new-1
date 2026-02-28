@@ -377,16 +377,31 @@ const Insurance = () => {
 
             const invoice = await createInsuranceForm(submitData);
             const rawPdfUrl = invoice.pdfUrl || invoice.pdfURL;
+            const isBotEmbed =
+                typeof window !== 'undefined' &&
+                window.self !== window.top &&
+                new URLSearchParams(window.location.search).get('embedBot') === '1';
 
             setMessages(prev => [...prev, { text: 'Success! Invoice created.', sender: 'bot' }]);
 
             if (rawPdfUrl) {
                 const finalLink = rawPdfUrl.startsWith('http') ? rawPdfUrl : `http://localhost:3000${rawPdfUrl}`;
-                window.location.href = finalLink;
+                if (isBotEmbed) {
+                    window.open(finalLink, '_blank');
+                    window.parent.postMessage({ type: 'MANDI_BOT_INVOICE_CREATED' }, '*');
+                } else {
+                    window.location.href = finalLink;
+                }
             } else {
                 setMessages(prev => [...prev, { text: 'PDF is generating... Redirecting to My Forms.', sender: 'bot' }]);
-                const target = user?.identity === "AGENT" ? "/agent/dashboard" : "/home";
-                setTimeout(() => router.push(target), 2000);
+                if (isBotEmbed) {
+                    setTimeout(() => {
+                        window.parent.postMessage({ type: 'MANDI_BOT_INVOICE_CREATED' }, '*');
+                    }, 800);
+                } else {
+                    const target = user?.identity === "AGENT" ? "/agent/dashboard" : "/home";
+                    setTimeout(() => router.push(target), 2000);
+                }
             }
 
         } catch (err: any) {
@@ -648,6 +663,14 @@ const Insurance = () => {
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => {
+                            const isBotEmbed =
+                                typeof window !== 'undefined' &&
+                                window.self !== window.top &&
+                                new URLSearchParams(window.location.search).get('embedBot') === '1';
+                            if (isBotEmbed) {
+                                window.parent.postMessage({ type: 'MANDI_BOT_CLOSE' }, '*');
+                                return;
+                            }
                             const target = user?.identity === "AGENT" ? "/agent/dashboard" : "/home";
                             router.push(target);
                         }}

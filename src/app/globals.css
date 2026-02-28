@@ -104,3 +104,13 @@ select option {
 .animate-fadeIn {
   animation: fadeIn 0.3s ease-in;
 }
+
+/* Show hand cursor for functional CTAs */
+button:not(:disabled),
+a[href],
+[role="button"],
+input[type="button"]:not(:disabled),
+input[type="submit"]:not(:disabled),
+input[type="reset"]:not(:disabled) {
+  cursor: pointer;
+}
