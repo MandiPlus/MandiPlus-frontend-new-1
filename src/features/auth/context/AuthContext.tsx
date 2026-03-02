@@ -45,6 +45,7 @@ function getPostLoginRedirect(identity?: string | null): string {
     if (identity === "AGENT") return "/agent/dashboard";
     if (identity === "CUSTOMER") return "/customer/dashboard";
     if (identity === "TRANSPORTER") return "/transporter/dashboard";
+    if (identity === "INTERNAL_TEAM") return "/home";
     return "/home";
 }
 
@@ -86,11 +87,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 const storedUser = localStorage.getItem("user");
 
                 if (storedToken) {
-                    if (isJwtExpired(storedToken)) {
-                        forceSessionExpired();
-                        return;
-                    }
-
+                    // Do NOT auto-logout based on token expiry anymore.
+                    // As long as a token exists, keep the user logged in.
                     setAuthToken(storedToken);
 
                     if (storedUser) {
@@ -147,40 +145,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return () => window.removeEventListener("storage", handleStorageChange);
     }, [router]);
 
-    useEffect(() => {
-        const tick = () => {
-            const token = localStorage.getItem("accessToken");
-            if (!token) {
-                setShowSessionWarning(false);
-                setWarningShownForToken(null);
-                return;
-            }
-
-            const expiryMs = getJwtExpiryMs(token);
-            if (!expiryMs) return;
-
-            const remaining = expiryMs - Date.now();
-            if (remaining <= 0) {
-                forceSessionExpired();
-                return;
-            }
-
-            const minutesLeft = Math.max(1, Math.ceil(remaining / 60000));
-            setWarningMinutesLeft(minutesLeft);
-
-            if (
-                remaining <= WARNING_WINDOW_MS &&
-                warningShownForToken !== token
-            ) {
-                setShowSessionWarning(true);
-                setWarningShownForToken(token);
-            }
-        };
-
-        tick();
-        const timer = setInterval(tick, 30000);
-        return () => clearInterval(timer);
-    }, [warningShownForToken]);
+    // Auto token-expiry based logout has been disabled.
+    // We intentionally do NOT run a timer that logs the user out when JWT expires.
 
     const login = async (token: string, userData?: any) => {
         localStorage.setItem("accessToken", token);

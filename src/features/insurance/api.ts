@@ -103,6 +103,14 @@ export interface CreateDamageFormDto {
 
 export type CreateInsuranceResponse = InsuranceForm;
 
+export interface InvoiceCustomerAccount {
+  id: string;
+  name: string;
+  mobileNumber: string;
+  walletId?: string;
+  walletBalance?: number;
+}
+
 export interface ApiError {
   statusCode: number;
   message: string | string[];
@@ -133,6 +141,27 @@ export const createInsuranceForm = async (
   } catch (error) {
     const err = error as AxiosError<ApiError>;
     throw err.response?.data || { message: "Failed to create invoice" };
+  }
+};
+
+export const getInvoiceCustomerAccounts = async (): Promise<
+  InvoiceCustomerAccount[]
+> => {
+  try {
+    const token =
+      localStorage.getItem("accessToken") || localStorage.getItem("token");
+
+    const response = await axios.get(`${API_BASE_URL}/invoices/customer-accounts`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const payload = response.data?.data ?? response.data;
+    return Array.isArray(payload) ? payload : [];
+  } catch (error) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to fetch customer accounts" };
   }
 };
 
