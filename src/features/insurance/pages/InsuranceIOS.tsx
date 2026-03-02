@@ -234,7 +234,10 @@ const InsuranceIOS = () => {
     const [resumeQuestionIndex, setResumeQuestionIndex] = useState<number | null>(null);
     const [customerAccounts, setCustomerAccounts] = useState<InvoiceCustomerAccount[]>([]);
     const identity = user?.identity || '';
-    const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
+    // React state updates can lag behind the last chat answer; keep the selected customerUserId
+    // in a ref so submit always includes it when needed.
+    const selectedCustomerUserIdRef = useRef<string>('');
+    const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM', 'CUSTOMER'].includes(identity);
     const shouldAskCustomerPicker = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
 
     const formatCustomerOption = (account: InvoiceCustomerAccount) => {
@@ -449,8 +452,12 @@ const InsuranceIOS = () => {
 
             if (formData.hsn) submitData.append('hsnCode', formData.hsn);
             if (formData.notes) submitData.append('weighmentSlipNote', formData.notes);
-            if (shouldShowCustomerMappingQuestion && formData.addToCustomerAccount === 'Yes' && formData.customerUserId) {
-                submitData.append('customerUserId', formData.customerUserId);
+            if (shouldShowCustomerMappingQuestion && formData.addToCustomerAccount === 'Yes') {
+                const customerUserIdForSubmit =
+                    formData.customerUserId || selectedCustomerUserIdRef.current;
+                if (customerUserIdForSubmit) {
+                    submitData.append('customerUserId', customerUserIdForSubmit);
+                }
             }
 
             const finalFile = fileArgument || weightmentSlip;
@@ -538,13 +545,18 @@ const InsuranceIOS = () => {
         if (currentQuestion?.field === 'addToCustomerAccount') {
             const shouldMapToCustomer = (answerForCurrentQuestion ?? formData.addToCustomerAccount) === 'Yes';
             if (!shouldMapToCustomer) {
+                selectedCustomerUserIdRef.current = '';
+                setFormData(prev => ({ ...prev, customerUserId: '' }));
                 nextIndex += 1;
             } else if (!shouldAskCustomerPicker) {
                 if (user?.id) {
+                    selectedCustomerUserIdRef.current = user.id;
                     setFormData(prev => ({ ...prev, customerUserId: user.id }));
                 }
                 nextIndex += 1;
             } else if (customerAccounts.length === 0) {
+                selectedCustomerUserIdRef.current = '';
+                setFormData(prev => ({ ...prev, customerUserId: '' }));
                 setMessages(prev => [
                     ...prev,
                     {
@@ -655,6 +667,7 @@ const InsuranceIOS = () => {
                     setError('');
                 }
 
+                selectedCustomerUserIdRef.current = account?.id || '';
                 setFormData(prev => ({ ...prev, customerUserId: account?.id || '' }));
             } else {
                 setFormData(prev => ({ ...prev, [q.field]: valueToStore }));
