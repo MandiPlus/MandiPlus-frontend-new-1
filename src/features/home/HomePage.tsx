@@ -426,7 +426,7 @@ const HomePage = () => {
   }
 
   return (
-    <ProtectedRoute allowedIdentities={["BUYER", "SUPPLIER", "CUSTOMER"]}>
+    <ProtectedRoute allowedIdentities={["BUYER", "SUPPLIER", "CUSTOMER", "INTERNAL_TEAM"]}>
       <div className="min-h-screen bg-[#e0d7fc] pb-28">
 
         {/* --- NEW: Cropper Overlay --- */}

@@ -26,6 +26,7 @@ export default function ProtectedRoute({
         if (identity === "CUSTOMER") return "/customer/dashboard";
         if (identity === "AGENT") return "/agent/dashboard";
         if (identity === "TRANSPORTER") return "/transporter/dashboard";
+        if (identity === "INTERNAL_TEAM") return "/home";
         // BUYER, SUPPLIER, and normal user (null/undefined identity)
         return "/home";
     };

@@ -36,6 +36,7 @@ interface User {
 export type UserIdentity =
   | "CUSTOMER"
   | "TRANSPORTER"
+  | "INTERNAL_TEAM"
   | "BUYER"
   | "SUPPLIER"
   | "AGENT";
