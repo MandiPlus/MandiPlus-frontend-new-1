@@ -36,7 +36,7 @@ interface FormData {
     vehicleNumber: string;
     ownerName: string;
     cashOrCommission: string;
-    invoiceType: string;
+    insuredPartyPhone: string;
     notes: string;
     addToCustomerAccount: string;
     customerUserId: string;
@@ -138,11 +138,10 @@ const questions: Question[] = [
         text: { en: "Cash ya Commission", hi: "नकद या कमीशन" }
     },
     {
-        field: 'invoiceType',
-        type: 'select',
-        options: ['SUPPLIER_INVOICE', 'BUYER_INVOICE'],
+        field: 'insuredPartyPhone',
+        type: 'text',
         optional: true,
-        text: { en: "Invoice Type", hi: "इनवॉइस का प्रकार" }
+        text: { en: "WhatsApp Phone Number (Buyer)", hi: "खरीदार का WhatsApp नंबर" }
     },
     { field: 'weightmentSlip', type: 'file', optional: true, text: { en: "Kanta Parchi Photo", hi: "कांटा पर्ची" } },
     {
@@ -203,8 +202,8 @@ const Insurance = () => {
         vehicleNumber: '',
         ownerName: '',
         cashOrCommission: '',
+        insuredPartyPhone: '',
         notes: '',
-        invoiceType: 'BUYER_INVOICE',
         addToCustomerAccount: 'No',
         customerUserId: '',
     });
@@ -430,10 +429,13 @@ const Insurance = () => {
 
             const owner = sanitizeText(formData.ownerName || 'Unknown Owner');
             submitData.append('ownerName', owner);
-            submitData.append('invoiceType', formData.invoiceType || 'BUYER_INVOICE');
+            // Auto-derive invoiceType: Cash = BUYER_INVOICE (buyer pays), Commission = SUPPLIER_INVOICE
+            const isCash = (formData.notes || '').toLowerCase() === 'cash';
+            submitData.append('invoiceType', isCash ? 'BUYER_INVOICE' : 'SUPPLIER_INVOICE');
 
             if (formData.hsn) submitData.append('hsnCode', formData.hsn);
             if (formData.notes) submitData.append('weighmentSlipNote', sanitizeText(formData.notes));
+            if (formData.insuredPartyPhone?.trim()) submitData.append('insuredPartyPhone', formData.insuredPartyPhone.trim());
             if (shouldShowCustomerMappingQuestion && formData.addToCustomerAccount === 'Yes') {
                 const customerUserIdForSubmit =
                     formData.customerUserId || selectedCustomerUserIdRef.current;
@@ -513,6 +515,13 @@ const Insurance = () => {
     };
 
     const getQuestionText = (question: Question) => {
+        if (question.field === 'insuredPartyPhone') {
+            const isCash = (formData.notes || '').toLowerCase() === 'cash';
+            if (language === 'hi') {
+                return isCash ? 'खरीदार का WhatsApp नंबर' : 'सप्लायर का WhatsApp नंबर';
+            }
+            return isCash ? 'Buyer Ka WhatsApp Number' : 'Supplier Ka WhatsApp Number';
+        }
         return language ? question.text[language] : question.text.en;
     };
 
