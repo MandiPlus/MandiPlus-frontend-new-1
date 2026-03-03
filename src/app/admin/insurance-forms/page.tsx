@@ -72,6 +72,7 @@ interface Invoice {
     paymentLinkUrl?: string | null;
     paymentLinkSentAt?: string | null;
     paymentLinkSentCount?: number | null;
+    insuredPartyPhone?: string | null;
     insurance?: {
         fileUrl: string;
         fileType: string;
@@ -494,6 +495,7 @@ export default function InsuranceFormsPage() {
             billToAddress: (Array.isArray(invoice.billToAddress)
                 ? invoice.billToAddress.join('\n')
                 : invoice.billToAddress) || '',
+            insuredPartyPhone: invoice.insuredPartyPhone || '',
             shipToName: invoice.shipToName || '',
             shipToAddress: Array.isArray(invoice.shipToAddress)
                 ? invoice.shipToAddress.join('\n')
@@ -2069,6 +2071,21 @@ export default function InsuranceFormsPage() {
                                         className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#4309ac] focus:border-[#4309ac] focus:outline-none text-slate-800 bg-white text-sm"
                                         placeholder="Terms"
                                     />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-800 mb-1">
+                                        Insured Party Phone <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="tel"
+                                        value={formData.insuredPartyPhone ?? ''}
+                                        onChange={(e) => setFormData({ ...formData, insuredPartyPhone: e.target.value })}
+                                        className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#4309ac] focus:border-[#4309ac] focus:outline-none text-slate-800 bg-white text-sm"
+                                        placeholder="10-digit mobile number (WhatsApp + payment link sent here)"
+                                        maxLength={15}
+                                    />
+                                    <p className="text-xs text-slate-500 mt-1">Invoice PDF and payment link will be sent to this number via WhatsApp.</p>
                                 </div>
                             </div>
                         </div>

@@ -63,6 +63,7 @@ export interface RegenerateInvoicePayload {
   weighmentSlipNote?: string;
   isClaim?: boolean;
   claimDetails?: string;
+  insuredPartyPhone?: string;
 }
 export interface ClaimRequest {
   id: string;

@@ -40,6 +40,7 @@ interface FormData {
     notes: string;
     addToCustomerAccount: string;
     customerUserId: string;
+    insuredPartyPhone: string;
 }
 
 interface QuestionText {
@@ -138,11 +139,12 @@ const questions: Question[] = [
         text: { en: "Cash ya Commission", hi: "नकद या कमीशन" }
     },
     {
-        field: 'invoiceType',
-        type: 'select',
-        options: ['SUPPLIER_INVOICE', 'BUYER_INVOICE'],
-        optional: true,
-        text: { en: "Invoice Type", hi: "इनवॉइस का प्रकार" }
+        field: 'insuredPartyPhone',
+        type: 'text',
+        text: {
+            en: 'Phone Number (WhatsApp pe invoice aur payment link bheja jaayega)',
+            hi: 'फ़ोन नंबर (WhatsApp पर इनवॉइस और पेमेंट लिंक भेजा जाएगा)'
+        },
     },
     { field: 'weightmentSlip', type: 'file', optional: true, text: { en: "Kanta Parchi Photo", hi: "कांटा पर्ची" } },
     {
@@ -207,6 +209,7 @@ const Insurance = () => {
         invoiceType: 'BUYER_INVOICE',
         addToCustomerAccount: 'No',
         customerUserId: '',
+        insuredPartyPhone: '',
     });
 
     const [weightmentSlip, setWeightmentSlip] = useState<File | null>(null);
@@ -427,10 +430,13 @@ const Insurance = () => {
 
             const owner = sanitizeText(formData.ownerName || 'Unknown Owner');
             submitData.append('ownerName', owner);
-            submitData.append('invoiceType', formData.invoiceType || 'BUYER_INVOICE');
+            // Auto-set invoiceType: Cash = BUYER_INVOICE, Commission = SUPPLIER_INVOICE
+            const invoiceType = formData.notes === 'Commission' ? 'SUPPLIER_INVOICE' : 'BUYER_INVOICE';
+            submitData.append('invoiceType', invoiceType);
 
             if (formData.hsn) submitData.append('hsnCode', formData.hsn);
             if (formData.notes) submitData.append('weighmentSlipNote', sanitizeText(formData.notes));
+            if (formData.insuredPartyPhone) submitData.append('insuredPartyPhone', formData.insuredPartyPhone.trim());
             if (shouldShowCustomerMappingQuestion && formData.addToCustomerAccount === 'Yes' && formData.customerUserId) {
                 submitData.append('customerUserId', formData.customerUserId);
             }
@@ -450,7 +456,7 @@ const Insurance = () => {
             setMessages(prev => [...prev, { text: 'Success! Invoice created.', sender: 'bot' }]);
 
             if (rawPdfUrl) {
-                const finalLink = rawPdfUrl.startsWith('http') ? rawPdfUrl : `http://localhost:3000${rawPdfUrl}`;
+                const finalLink = rawPdfUrl.startsWith('http') ? rawPdfUrl : `${process.env.NEXT_PUBLIC_API_URL || ''}${rawPdfUrl}`;
                 if (isBotEmbed) {
                     window.open(finalLink, '_blank');
                     window.parent.postMessage({ type: 'MANDI_BOT_INVOICE_CREATED' }, '*');
@@ -506,7 +512,19 @@ const Insurance = () => {
     };
 
     const getQuestionText = (question: Question) => {
-        return language ? question.text[language] : question.text.en;
+        const lang = language ?? 'en';
+        if (question.field === 'insuredPartyPhone') {
+            const isCommission = formData.notes === 'Commission';
+            if (lang === 'hi') {
+                return isCommission
+                    ? 'Supplier Ka Phone Number (WhatsApp pe invoice aur payment link bheja jaayega)'
+                    : 'Buyer Ka Phone Number (WhatsApp pe invoice aur payment link bheja jaayega)';
+            }
+            return isCommission
+                ? 'Supplier Phone Number (Invoice & payment link will be sent on WhatsApp)'
+                : 'Buyer Phone Number (Invoice & payment link will be sent on WhatsApp)';
+        }
+        return question.text[lang];
     };
 
     const goToNextQuestion = (answerForCurrentQuestion?: string) => {

@@ -96,6 +96,7 @@ export interface RegenerateInvoicePayload {
   vehicleNumber?: string;
   truckNumber?: string;
   weighmentSlipNote?: string;
+  insuredPartyPhone?: string;
 }
 
 export interface InvoiceFilterParams {
