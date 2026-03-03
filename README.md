@@ -17,7 +17,7 @@ yarn install
 # or
 pnpm install
 # or
-bun install
+bun 
 ```
 
 ## Environment Setup
