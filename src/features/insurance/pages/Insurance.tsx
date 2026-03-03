@@ -430,8 +430,11 @@ const Insurance = () => {
 
             const owner = sanitizeText(formData.ownerName || 'Unknown Owner');
             submitData.append('ownerName', owner);
-            // Auto-set invoiceType: Cash = BUYER_INVOICE, Commission = SUPPLIER_INVOICE
-            const invoiceType = formData.notes === 'Commission' ? 'SUPPLIER_INVOICE' : 'BUYER_INVOICE';
+            // Auto-set invoiceType based on cashOrCommission: Cash = BUYER_INVOICE, Commission = SUPPLIER_INVOICE
+            const isCommissionInvoice =
+                formData.cashOrCommission &&
+                formData.cashOrCommission.toLowerCase() === 'commission';
+            const invoiceType = isCommissionInvoice ? 'SUPPLIER_INVOICE' : 'BUYER_INVOICE';
             submitData.append('invoiceType', invoiceType);
 
             if (formData.hsn) submitData.append('hsnCode', formData.hsn);
@@ -514,7 +517,7 @@ const Insurance = () => {
     const getQuestionText = (question: Question) => {
         const lang = language ?? 'en';
         if (question.field === 'insuredPartyPhone') {
-            const isCommission = formData.notes === 'Commission';
+            const isCommission = formData.cashOrCommission?.toLowerCase() === 'commission';
             if (lang === 'hi') {
                 return isCommission
                     ? 'Supplier Ka Phone Number (WhatsApp pe invoice aur payment link bheja jaayega)'
@@ -524,7 +527,7 @@ const Insurance = () => {
                 ? 'Supplier Phone Number (Invoice & payment link will be sent on WhatsApp)'
                 : 'Buyer Phone Number (Invoice & payment link will be sent on WhatsApp)';
         }
-        return question.text[lang];
+        return question.text[lang] ?? question.text.en;
     };
 
     const goToNextQuestion = (answerForCurrentQuestion?: string) => {

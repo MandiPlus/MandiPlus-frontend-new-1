@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useEffect, useState, Suspense } from 'react';
 
@@ -19,11 +20,19 @@ function PendingContent() {
                 if (res.ok) {
                     const data = await res.json();
                     if (data?.status === 'PAYMENT_SUCCESS') {
-                        router.replace(`/payment/success?transactionId=${txnId}&invoiceNumber=${invoiceNo}`);
+                        const successParams = new URLSearchParams({
+                            transactionId: txnId,
+                            invoiceNumber: invoiceNo,
+                        });
+                        router.replace(`/payment/success?${successParams.toString()}`);
                         return;
                     }
                     if (data?.status === 'PAYMENT_ERROR' || data?.status === 'PAYMENT_DECLINED') {
-                        router.replace(`/payment/failed?transactionId=${txnId}&invoiceNumber=${invoiceNo}`);
+                        const failedParams = new URLSearchParams({
+                            transactionId: txnId,
+                            invoiceNumber: invoiceNo,
+                        });
+                        router.replace(`/payment/failed?${failedParams.toString()}`);
                         return;
                     }
                 }
@@ -82,12 +91,12 @@ function PendingContent() {
                     </p>
                 )}
 
-                <a
+                <Link
                     href="/home"
                     className="block w-full border border-gray-200 text-gray-600 hover:bg-gray-50 font-semibold py-3 px-6 rounded-xl transition-colors"
                 >
                     Go to Home
-                </a>
+                </Link>
             </div>
         </div>
     );

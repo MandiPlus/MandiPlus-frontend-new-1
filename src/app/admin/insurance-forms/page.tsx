@@ -2084,6 +2084,7 @@ export default function InsuranceFormsPage() {
                                         className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#4309ac] focus:border-[#4309ac] focus:outline-none text-slate-800 bg-white text-sm"
                                         placeholder="10-digit mobile number (WhatsApp + payment link sent here)"
                                         maxLength={15}
+                                        required
                                     />
                                     <p className="text-xs text-slate-500 mt-1">Invoice PDF and payment link will be sent to this number via WhatsApp.</p>
                                 </div>
