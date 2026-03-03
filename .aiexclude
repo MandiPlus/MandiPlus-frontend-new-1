@@ -1,0 +1,16 @@
+# Secrets & Environment
+.env
+.env.*
+.env.local
+.env.production
+
+# Private keys & certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+
+# Credential files
+*credentials*
+*secret*
