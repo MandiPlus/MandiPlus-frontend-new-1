@@ -514,9 +514,10 @@ const Insurance = () => {
         setTimeout(() => textInputRef.current?.focus(), 100);
     };
 
-    const getQuestionText = (question: Question) => {
+    const getQuestionText = (question: Question, latestNotes?: string) => {
         if (question.field === 'insuredPartyPhone') {
-            const isCash = (formData.notes || '').toLowerCase() === 'cash';
+            const notesValue = latestNotes !== undefined ? latestNotes : (formData.notes || '');
+            const isCash = notesValue.toLowerCase() === 'cash';
             if (language === 'hi') {
                 return isCash ? 'खरीदार का WhatsApp नंबर' : 'सप्लायर का WhatsApp नंबर';
             }
@@ -525,7 +526,7 @@ const Insurance = () => {
         return language ? question.text[language] : question.text.en;
     };
 
-    const goToNextQuestion = (answerForCurrentQuestion?: string) => {
+    const goToNextQuestion = (answerForCurrentQuestion?: string, latestNotes?: string) => {
         const currentQuestion = questions[currentQuestionIndex];
         let nextIndex = currentQuestionIndex + 1;
 
@@ -566,7 +567,7 @@ const Insurance = () => {
         if (nextIndex < questions.length) {
             setCurrentQuestionIndex(nextIndex);
             const nextQuestion = questions[nextIndex];
-            setMessages(prev => [...prev, { text: getQuestionText(nextQuestion), sender: 'bot' }]);
+            setMessages(prev => [...prev, { text: getQuestionText(nextQuestion, latestNotes), sender: 'bot' }]);
 
             if (nextQuestion.type === 'file') {
                 setTimeout(() => fileInputRef.current?.click(), 300);
@@ -675,7 +676,8 @@ const Insurance = () => {
         } else {
             setMessages(prev => [...prev, { text: currentInput, sender: 'user', field: q.field }]);
             setInputValue('');
-            goToNextQuestion(currentInput);
+            const notesOverride = q.field === 'notes' ? currentInput : undefined;
+            goToNextQuestion(currentInput, notesOverride);
         }
     };
 
