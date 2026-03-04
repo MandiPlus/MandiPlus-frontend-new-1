@@ -15,7 +15,7 @@ const PAYMENT_STATUS_OPTIONS = [
   'FAILED',
   'REFUNDED',
 ];
-const ITEMS_PER_PAGE = 10;
+const ITEMS_PER_PAGE = 20;
 
 function getPaymentStatusBadgeClasses(status?: string | null) {
   const normalized = String(status || '').toUpperCase();
@@ -81,6 +81,7 @@ export default function AdminInsurancePaymentsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
   const [jumpPageInput, setJumpPageInput] = useState('1');
 
   const [editing, setEditing] = useState<InsurancePaymentRow | null>(null);
@@ -115,6 +116,7 @@ export default function AdminInsurancePaymentsPage() {
 
       setTotalRows(resolvedTotalRows);
       setTotalPages(Number(response.totalPages ?? fallbackTotalPages));
+      setPageSize(resolvedLimit > 0 ? resolvedLimit : ITEMS_PER_PAGE);
       if (response.page && response.page !== currentPage) {
         setCurrentPage(response.page);
       }
@@ -123,6 +125,7 @@ export default function AdminInsurancePaymentsPage() {
       setRows([]);
       setTotalRows(0);
       setTotalPages(1);
+      setPageSize(ITEMS_PER_PAGE);
     } finally {
       setLoading(false);
     }
@@ -145,8 +148,8 @@ export default function AdminInsurancePaymentsPage() {
     () => rows.reduce((sum, row) => sum + getEffectivePaidAmount(row), 0),
     [rows],
   );
-  const pageStart = totalRows === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
-  const pageEnd = Math.min(currentPage * ITEMS_PER_PAGE, totalRows);
+  const pageStart = totalRows === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(currentPage * pageSize, totalRows);
 
   useEffect(() => {
     setJumpPageInput(String(currentPage));

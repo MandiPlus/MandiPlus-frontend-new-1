@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import { formatDate } from '@/features/admin/utils/format';
 import { adminApi } from '@/features/admin/api/admin.api';
+import { toast } from 'react-toastify';
 
 // --- 1. Interface Updated ---
 interface User {
@@ -96,7 +97,9 @@ export default function UsersPage() {
                 setFilteredUsers(sortedData);
             } catch (err: any) {
                 console.error('Failed to fetch data:', err);
-                setError(err.response?.data?.message || 'Failed to load data');
+                const message = err.response?.data?.message || 'Failed to load data';
+                setError(message);
+                toast.error(message);
             } finally {
                 setLoading(false);
             }
@@ -134,21 +137,21 @@ export default function UsersPage() {
         currentPage * ITEMS_PER_PAGE
     );
 
-    const handleWalletCredit = async (user: User) => {
+    const handleWalletAdjust = async (user: User) => {
         const rawAmount = creditAmounts[user.id];
         const amount = Number(rawAmount);
 
-        if (!Number.isFinite(amount) || amount <= 0) {
-            setError('Please enter a valid amount greater than 0');
+        if (!Number.isFinite(amount) || amount === 0) {
+            toast.error('Please enter a valid non-zero amount');
             return;
         }
 
         setError('');
         setCreditLoadingByUser((prev) => ({ ...prev, [user.id]: true }));
         try {
-            const response = await adminApi.creditCustomerWallet(user.id, amount, 'Admin dashboard top-up');
+            const response = await adminApi.adjustUserWallet(user.id, amount, 'Admin wallet update');
             if (!response.success) {
-                setError(response.message || 'Failed to credit wallet');
+                toast.error(response.message || 'Failed to update wallet');
                 return;
             }
 
@@ -166,8 +169,9 @@ export default function UsersPage() {
                 ),
             );
             setCreditAmounts((prev) => ({ ...prev, [user.id]: '' }));
+            toast.success('Wallet updated successfully');
         } catch (err: any) {
-            setError(err?.message || 'Failed to credit wallet');
+            toast.error(err?.message || 'Failed to update wallet');
         } finally {
             setCreditLoadingByUser((prev) => ({ ...prev, [user.id]: false }));
         }
@@ -183,15 +187,16 @@ export default function UsersPage() {
         try {
             const response = await adminApi.convertUserIdentity(user.id, nextIdentity);
             if (!response.success) {
-                setError(response.message || 'Failed to convert user');
+                toast.error(response.message || 'Failed to convert user');
                 return;
             }
 
             setAllUsers((prev) => prev.map((u) => (
                 u.id === user.id ? { ...u, identity: nextIdentity } : u
             )));
+            toast.success('User identity updated');
         } catch (err: any) {
-            setError(err?.message || 'Failed to convert user');
+            toast.error(err?.message || 'Failed to convert user');
         } finally {
             setConvertingByUser((prev) => ({ ...prev, [user.id]: false }));
         }
@@ -201,14 +206,6 @@ export default function UsersPage() {
         return (
             <div className="flex justify-center items-center h-64">
                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="bg-red-50 border-l-4 border-red-400 p-4">
-                <p className="text-sm text-red-700">{error}</p>
             </div>
         );
     }
@@ -262,6 +259,12 @@ export default function UsersPage() {
                     </button>
                 </div>
 
+                {error && (
+                    <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        {error}
+                    </div>
+                )}
+
                 <div className="mt-8 flex flex-col">
                     <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
                         <div className="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
@@ -302,7 +305,7 @@ export default function UsersPage() {
                                             )}
                                             {showWalletColumns && (
                                                 <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                                                    Add Money
+                                                    Update Wallet
                                                 </th>
                                             )}
                                         </tr>
@@ -368,7 +371,6 @@ export default function UsersPage() {
                                                             <div className="flex items-center gap-2">
                                                                 <input
                                                                     type="number"
-                                                                    min="0"
                                                                     step="0.01"
                                                                     value={creditAmounts[user.id] || ''}
                                                                     onChange={(e) =>
@@ -377,15 +379,15 @@ export default function UsersPage() {
                                                                             [user.id]: e.target.value,
                                                                         }))
                                                                     }
-                                                                    placeholder="Amount"
+                                                                    placeholder="+/- Amount"
                                                                     className="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs"
                                                                 />
                                                                 <button
-                                                                    onClick={() => handleWalletCredit(user)}
+                                                                    onClick={() => handleWalletAdjust(user)}
                                                                     disabled={creditLoadingByUser[user.id]}
                                                                     className="rounded-md bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-60"
                                                                 >
-                                                                    {creditLoadingByUser[user.id] ? 'Adding...' : 'Add'}
+                                                                    {creditLoadingByUser[user.id] ? 'Updating...' : 'Update'}
                                                                 </button>
                                                             </div>
                                                         </td>

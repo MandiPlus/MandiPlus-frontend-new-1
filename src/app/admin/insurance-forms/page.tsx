@@ -266,24 +266,41 @@ export default function InsuranceFormsPage() {
     const handleExport = async () => {
         setExporting(true);
         try {
+            const invoiceIds = invoices
+                .map((invoice) => getInvoiceId(invoice))
+                .filter((id): id is string => Boolean(id));
+
             const body: any = {
                 exportType: exportType,
             };
 
-            if (filters.startDate && filters.endDate) {
+            // Prefer exact export of the currently filtered rows shown in the list.
+            if (invoiceIds.length > 0) {
+                body.invoiceIds = Array.from(new Set(invoiceIds));
+            } else if (filters.startDate && filters.endDate) {
                 body.startDate = new Date(filters.startDate).toISOString();
                 body.endDate = new Date(filters.endDate).toISOString();
             } else {
-                const endDate = new Date();
-                const startDate = new Date();
-                startDate.setDate(startDate.getDate() - 30);
-
-                body.startDate = startDate.toISOString();
-                body.endDate = endDate.toISOString();
+                toast.error('No filtered invoices available to export.');
+                return;
             }
 
             if (filters.invoiceType && exportType === 'all') {
                 body.invoiceType = filters.invoiceType;
+            }
+
+            if (filters.supplierName?.trim()) {
+                const supplierName = filters.supplierName.trim();
+                if (supplierName.length >= 3) {
+                    body.supplierName = supplierName;
+                }
+            }
+
+            if (filters.buyerName?.trim()) {
+                const buyerName = filters.buyerName.trim();
+                if (buyerName.length >= 3) {
+                    body.buyerName = buyerName;
+                }
             }
 
             console.log("📤 Export payload:", body);
