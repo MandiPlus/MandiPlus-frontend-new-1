@@ -138,6 +138,17 @@ export interface InsurancePaymentRow {
   updatedAt: string;
 }
 
+export interface AdminWalletStatementItem {
+  id: string;
+  type: string;
+  amount: number;
+  direction: "CREDIT" | "DEBIT";
+  balanceAfter?: number;
+  referenceId?: string;
+  narration?: string;
+  createdAt: string;
+}
+
 export interface UpdateInsurancePaymentPayload {
   premiumAmount?: number;
   paymentAmount?: number;
@@ -432,6 +443,31 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || "Failed to update wallet",
+        error: error.message,
+      };
+    }
+  };
+
+  public getAdminUserWalletStatement = async (
+    userId: string,
+  ): Promise<ApiResponse<AdminWalletStatementItem[]>> => {
+    try {
+      const response = await this.client.get<AdminWalletStatementItem[]>(
+        `/wallet/admin/users/${userId}/statement`,
+      );
+      const rows = Array.isArray(response.data)
+        ? response.data
+        : ((response.data as any)?.data ?? []);
+      return {
+        success: true,
+        data: rows,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to fetch wallet statement",
         error: error.message,
       };
     }

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import { formatDate } from '@/features/admin/utils/format';
-import { adminApi } from '@/features/admin/api/admin.api';
+import { AdminWalletStatementItem, adminApi } from '@/features/admin/api/admin.api';
 import { toast } from 'react-toastify';
 
 // --- 1. Interface Updated ---
@@ -46,6 +46,10 @@ export default function UsersPage() {
     const [creditAmounts, setCreditAmounts] = useState<Record<string, string>>({});
     const [creditLoadingByUser, setCreditLoadingByUser] = useState<Record<string, boolean>>({});
     const [convertingByUser, setConvertingByUser] = useState<Record<string, boolean>>({});
+    const [walletLogsOpen, setWalletLogsOpen] = useState(false);
+    const [walletLogsLoading, setWalletLogsLoading] = useState(false);
+    const [walletLogUser, setWalletLogUser] = useState<User | null>(null);
+    const [walletLogs, setWalletLogs] = useState<AdminWalletStatementItem[]>([]);
     const ITEMS_PER_PAGE = 10;
     const showWalletColumns = activeSection !== 'ALL';
     const sectionTitle =
@@ -199,6 +203,25 @@ export default function UsersPage() {
             toast.error(err?.message || 'Failed to convert user');
         } finally {
             setConvertingByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
+    };
+
+    const handleOpenWalletLogs = async (user: User) => {
+        if (!user?.id) return;
+        setWalletLogUser(user);
+        setWalletLogsOpen(true);
+        setWalletLogsLoading(true);
+        try {
+            const response = await adminApi.getAdminUserWalletStatement(user.id);
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to fetch wallet logs');
+            }
+            setWalletLogs(Array.isArray(response.data) ? response.data : []);
+        } catch (err: any) {
+            setWalletLogs([]);
+            toast.error(err?.message || 'Failed to fetch wallet logs');
+        } finally {
+            setWalletLogsLoading(false);
         }
     };
 
@@ -389,6 +412,12 @@ export default function UsersPage() {
                                                                 >
                                                                     {creditLoadingByUser[user.id] ? 'Updating...' : 'Update'}
                                                                 </button>
+                                                                <button
+                                                                    onClick={() => handleOpenWalletLogs(user)}
+                                                                    className="rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+                                                                >
+                                                                    Logs
+                                                                </button>
                                                             </div>
                                                         </td>
                                                     )}
@@ -459,6 +488,64 @@ export default function UsersPage() {
                     </div>
                 )}
             </div>
+
+            {walletLogsOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <div className="w-full max-w-3xl rounded-xl bg-white shadow-2xl">
+                        <div className="flex items-center justify-between border-b px-5 py-4">
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-900">Wallet Logs</h3>
+                                <p className="text-xs text-gray-500">
+                                    {walletLogUser?.name || 'User'} ({formatIndianMobile(walletLogUser?.mobileNumber)})
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setWalletLogsOpen(false)}
+                                className="rounded-md border px-3 py-1 text-sm text-gray-600 hover:bg-gray-50"
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        <div className="max-h-[65vh] overflow-auto">
+                            {walletLogsLoading ? (
+                                <div className="px-5 py-8 text-sm text-gray-500">Loading wallet logs...</div>
+                            ) : walletLogs.length === 0 ? (
+                                <div className="px-5 py-8 text-sm text-gray-500">No wallet transactions found.</div>
+                            ) : (
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Date</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Narration</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Type</th>
+                                            <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Amount</th>
+                                            <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Balance After</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100 bg-white">
+                                        {walletLogs.map((tx) => (
+                                            <tr key={tx.id}>
+                                                <td className="px-4 py-3 text-xs text-gray-600">{formatDate(tx.createdAt)}</td>
+                                                <td className="px-4 py-3 text-sm text-gray-800">{tx.narration || tx.type || '-'}</td>
+                                                <td className="px-4 py-3 text-xs">
+                                                    <span className={`rounded-full px-2 py-1 font-semibold ${tx.direction === 'CREDIT' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                                                        {tx.direction}
+                                                    </span>
+                                                </td>
+                                                <td className={`px-4 py-3 text-right text-sm font-semibold ${tx.direction === 'CREDIT' ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                                    {tx.direction === 'CREDIT' ? '+' : '-'}₹{Number(tx.amount || 0).toFixed(2)}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-sm text-gray-700">₹{Number(tx.balanceAfter || 0).toFixed(2)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
