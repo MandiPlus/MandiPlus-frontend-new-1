@@ -410,6 +410,33 @@ class AdminApi {
     }
   };
 
+  public adjustUserWallet = async (
+    userId: string,
+    amount: number,
+    narration?: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/wallet/admin/users/${userId}/adjust`,
+        { amount, narration },
+      );
+      const payload = response.data;
+      if (payload && typeof payload === "object" && "success" in payload) {
+        return payload;
+      }
+      return {
+        success: true,
+        data: payload,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to update wallet",
+        error: error.message,
+      };
+    }
+  };
+
   public convertUserIdentity = async (
     userId: string,
     identity: UserIdentity,
@@ -528,7 +555,10 @@ class AdminApi {
     invoiceType?: string;
     startDate?: string;
     endDate?: string;
+    supplierName?: string;
+    buyerName?: string;
     invoiceIds?: string[];
+    exportType?: "all" | "payment";
   }): Promise<Blob | null> => {
     try {
       const response = await this.client.post("/invoices/admin/export", body, {
@@ -793,16 +823,23 @@ class AdminApi {
       const payload = response.data;
       if (Array.isArray(payload)) {
         const page = Number(filters?.page) > 0 ? Number(filters?.page) : 1;
-        const limit = Number(filters?.limit) > 0 ? Number(filters?.limit) : 10;
+        const limit = Number(filters?.limit) > 0 ? Number(filters?.limit) : 20;
         const total = payload.length;
+        const totalPages = total === 0 ? 1 : Math.ceil(total / limit);
+        const safePage = Math.min(Math.max(Math.trunc(page), 1), totalPages);
+        const start = (safePage - 1) * limit;
+        const pageRows = (payload as InsurancePaymentRow[]).slice(
+          start,
+          start + limit,
+        );
         return {
           success: true,
-          data: payload as InsurancePaymentRow[],
-          count: total,
+          data: pageRows,
+          count: pageRows.length,
           total,
-          page,
+          page: safePage,
           limit,
-          totalPages: total === 0 ? 1 : Math.ceil(total / limit),
+          totalPages,
         };
       }
       if (Array.isArray(payload?.data)) {

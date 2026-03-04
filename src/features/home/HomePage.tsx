@@ -49,6 +49,9 @@ const HomePage = () => {
   const [showClaimsModal, setShowClaimsModal] = useState(false);
   const [newClaimTruckNo, setNewClaimTruckNo] = useState('');
   const [creatingClaim, setCreatingClaim] = useState(false);
+  const [statusLookupInput, setStatusLookupInput] = useState('');
+  const [statusLookupResult, setStatusLookupResult] = useState<ClaimRequest | null>(null);
+  const [statusLookupError, setStatusLookupError] = useState<string | null>(null);
   const [showClaimInvoiceModal, setShowClaimInvoiceModal] = useState(false);
   const [selectedClaimForInvoice, setSelectedClaimForInvoice] = useState<ClaimRequest | null>(null);
   const [showClaimSuccessModal, setShowClaimSuccessModal] = useState(false);
@@ -178,6 +181,7 @@ const HomePage = () => {
     }
   };
 
+
   const handleOpenInvoiceModal = () => {
     setShowInvoiceModal(true);
     fetchInvoices();
@@ -186,6 +190,9 @@ const HomePage = () => {
   // --- NEW: Open Claims Modal ---
   const handleOpenClaimsModal = () => {
     setShowClaimsModal(true);
+    setStatusLookupInput('');
+    setStatusLookupResult(null);
+    setStatusLookupError(null);
     fetchClaims();
   };
 
@@ -205,6 +212,37 @@ const HomePage = () => {
     } finally {
       setCreatingClaim(false);
     }
+  };
+
+  const handleCheckClaimStatus = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const query = statusLookupInput.trim().toLowerCase();
+    if (!query) {
+      setStatusLookupResult(null);
+      setStatusLookupError("Please enter claim id, invoice number, or truck number.");
+      return;
+    }
+
+    const source = claims.length > 0 ? claims : await getMyClaimsForms();
+    if (claims.length === 0) {
+      setClaims(source);
+    }
+
+    const matched = source.find((claim) => {
+      const claimId = String(claim.id || '').toLowerCase();
+      const invoiceNo = String(claim.invoice?.invoiceNumber || '').toLowerCase();
+      const truckNo = String(claim.invoice?.vehicleNumber || '').toLowerCase();
+      return claimId.includes(query) || invoiceNo.includes(query) || truckNo.includes(query);
+    });
+
+    if (!matched) {
+      setStatusLookupResult(null);
+      setStatusLookupError("No claim found for this reference.");
+      return;
+    }
+
+    setStatusLookupError(null);
+    setStatusLookupResult(matched);
   };
 
   // --- NEW: Upload Media Handler (Individual Media Types) ---
@@ -416,6 +454,8 @@ const HomePage = () => {
   };
 
   const username = user?.mobileNumber || "user";
+  const welcomeName = user?.name?.trim() || username;
+  const welcomeMeta = user?.mobileNumber || user?.identity || "Account";
 
   const handleLogout = () => {
     logout();
@@ -470,6 +510,14 @@ const HomePage = () => {
             </div>
 
             <div className="flex items-center gap-2">
+              <div className="hidden md:flex flex-col items-end rounded-2xl border border-purple-200 bg-purple-50 px-3 py-2 text-right shadow-sm leading-tight">
+                <p className="text-xs font-semibold tracking-wide text-purple-700">
+                  Welcome {welcomeName}
+                </p>
+                <p className="text-sm font-bold text-slate-900">
+                  {welcomeMeta}
+                </p>
+              </div>
               {isCustomer && (
                 <button
                   type="button"
@@ -489,6 +537,17 @@ const HomePage = () => {
                 <Bars3Icon className="w-6 h-6" strokeWidth={2} />
               </button>
             </div>
+          </div>
+
+          <div className="mt-2 flex items-center justify-between gap-2 md:hidden">
+            <div className="min-w-0 rounded-full border border-purple-200 bg-purple-50 px-3 py-1.5 shadow-sm">
+              <p className="truncate text-[11px] font-semibold text-[#4309ac]">
+                Welcome {welcomeName}
+              </p>
+            </div>
+            <p className="max-w-[45%] truncate text-right text-[10px] font-medium text-slate-500">
+              {welcomeMeta}
+            </p>
           </div>
 
           {/* Hamburger menu overlay + panel */}
@@ -761,6 +820,53 @@ const HomePage = () => {
                     </button>
                   </form>
                   <p className="text-xs text-gray-500 mt-2">Latest invoice for this truck will be used.</p>
+                </div>
+
+                <div className="bg-slate-50 p-4 rounded-2xl mb-6 border border-slate-200">
+                  <h4 className="font-semibold text-slate-800 mb-2">Check Claim Status</h4>
+                  <form onSubmit={handleCheckClaimStatus} className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Enter Claim ID / Invoice No / Truck No"
+                      value={statusLookupInput}
+                      onChange={(e) => setStatusLookupInput(e.target.value)}
+                      className="flex-1 px-4 py-2 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#4309ac] text-black"
+                    />
+                    <button
+                      type="submit"
+                      className="bg-[#4309ac] text-white px-4 py-2 rounded-xl font-medium"
+                    >
+                      Check
+                    </button>
+                  </form>
+
+                  {statusLookupError && (
+                    <p className="text-xs text-rose-700 mt-2">{statusLookupError}</p>
+                  )}
+
+                  {statusLookupResult && (
+                    <div className="mt-3 rounded-xl bg-white border border-gray-200 px-3 py-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-slate-800">
+                          {statusLookupResult.invoice?.invoiceNumber || statusLookupResult.id}
+                        </p>
+                        <span className={`inline-block px-2 py-1 rounded-lg text-xs font-bold ${
+                          statusLookupResult.status === 'pending'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : statusLookupResult.status === 'inprogress' || statusLookupResult.status === 'surveyor_assigned'
+                            ? 'bg-blue-100 text-blue-800'
+                            : statusLookupResult.status === 'completed'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {statusLookupResult.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Created: {new Date(statusLookupResult.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Claims List */}
@@ -1363,29 +1469,30 @@ const HomePage = () => {
 
         {/* BOTTOM NAV */}
         <div className="fixed bottom-0 left-0 right-0 bg-black text-white rounded-t-[28px] py-3">
-          <div className="flex justify-around items-center text-xs">
-            <div className="flex flex-col items-center opacity-60 cursor-pointer" onClick={() => router.push('/explore')}>
+          <div className="relative mx-auto flex max-w-3xl items-end justify-between px-8 text-xs">
+            <div
+              className="flex flex-col items-center opacity-60 cursor-pointer"
+              onClick={() => router.push('/explore')}
+            >
               ⬜
               <span>Explore</span>
             </div>
 
-            <div className="flex flex-col items-center">
+            <div className="ml-auto flex items-end pr-1">
+              <div
+                className="flex flex-col items-center opacity-60 cursor-pointer"
+                onClick={() => router.push('/support')}
+              >
+                {"\uD83D\uDCAC"}
+                <span>Support</span>
+              </div>
+            </div>
+
+            <div className="absolute left-1/2 bottom-0 -translate-x-1/2 flex flex-col items-center">
               <div className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center -mt-6">
                 👤
               </div>
               <span className="mt-1">Home</span>
-            </div>
-
-            {isCustomer && (
-              <div className="flex flex-col items-center opacity-60 cursor-pointer" onClick={() => router.push("/customer/wallet")}>
-                ₹
-                <span>Wallet</span>
-              </div>
-            )}
-
-            <div className="flex flex-col items-center opacity-60 cursor-pointer" onClick={() => router.push('/support')}>
-              💬
-              <span>Support</span>
             </div>
           </div>
         </div>
@@ -1441,3 +1548,6 @@ function UserMediaUploadSection({
 }
 
 export default HomePage;
+
+
+
