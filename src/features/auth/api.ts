@@ -76,11 +76,16 @@ export const sendOtp = async (data: SendOtpPayload): Promise<AuthResponse> => {
 // Step 2: Verify OTP
 export const verifyOtp = async (data: VerifyOtpPayload): Promise<AuthResponse> => {
     try {
-        const response = await axios.post(`${API_BASE_URL}/auth/verify-otp`, data);
+        const response = await axios.post(`${API_BASE_URL}/auth/verify-otp`, data, {
+            withCredentials: true,
+        });
 
         // If Login Successful (User existed)
         if (response.data.accessToken) {
             setAuthToken(response.data.accessToken);
+        }
+        if (response.data.refreshToken && typeof window !== "undefined") {
+            localStorage.setItem("refreshToken", response.data.refreshToken);
         }
 
         return response.data;
@@ -93,11 +98,16 @@ export const verifyOtp = async (data: VerifyOtpPayload): Promise<AuthResponse> =
 // Step 3: Register (Final Step)
 export const register = async (data: RegisterPayload): Promise<AuthResponse> => {
     try {
-        const response = await axios.post(`${API_BASE_URL}/auth/register`, data);
+        const response = await axios.post(`${API_BASE_URL}/auth/register`, data, {
+            withCredentials: true,
+        });
 
         // Registration automatically logs the user in
         if (response.data.accessToken) {
             setAuthToken(response.data.accessToken);
+        }
+        if (response.data.refreshToken && typeof window !== "undefined") {
+            localStorage.setItem("refreshToken", response.data.refreshToken);
         }
 
         return response.data;
@@ -128,6 +138,9 @@ export const agentRegister = async (data: AgentRegisterPayload): Promise<{ acces
 
         if (response.data?.accessToken) {
             setAuthToken(response.data.accessToken);
+        }
+        if (response.data?.refreshToken && typeof window !== "undefined") {
+            localStorage.setItem("refreshToken", response.data.refreshToken);
         }
 
         return response.data;
@@ -184,6 +197,7 @@ export const logout = async (): Promise<void> => {
 
         if (typeof window !== 'undefined') {
             localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
             localStorage.removeItem('user');
         }
     } catch (error) {
@@ -199,5 +213,27 @@ export const checkUser = async (data: CheckUserPayload): Promise<{ exists: boole
     } catch (error) {
         const err = error as AxiosError<{ message: string }>;
         throw new Error(err.response?.data?.message || 'Failed to check user');
+    }
+};
+
+export const refreshAccessToken = async (): Promise<string | null> => {
+    try {
+        const localRefresh =
+            typeof window !== "undefined" ? localStorage.getItem("refreshToken") : null;
+
+        const response = await axios.post(
+            `${API_BASE_URL}/auth/refresh`,
+            localRefresh ? { refreshToken: localRefresh } : {},
+            { withCredentials: true },
+        );
+
+        const token = response.data?.accessToken || null;
+        if (token) {
+            setAuthToken(token);
+            return token;
+        }
+        return null;
+    } catch {
+        return null;
     }
 };

@@ -599,7 +599,7 @@ export default function AnalyticsDashboardPage() {
 
     return (
         <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100/80 py-8">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="mx-auto w-full max-w-[1560px] px-2 sm:px-3 lg:px-4">
                 <div className="mb-5">
                     <h1 className="text-3xl font-bold tracking-tight text-slate-900">MandiPlus Analytics Dashboard</h1>
                     <p className="mt-1 text-sm text-slate-500">     </p>

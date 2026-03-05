@@ -150,8 +150,8 @@ const questions: Question[] = [
         options: ['No', 'Yes'],
         optional: true,
         text: {
-            en: 'Add this invoice to a customer account?',
-            hi: 'Kya aap ise kisi customer account me add karna chahte hain?',
+            en: 'Add this invoice to an account?',
+            hi: 'Kya aap ise kisi account me add karna chahte hain?',
         },
     },
     {
@@ -159,8 +159,8 @@ const questions: Question[] = [
         type: 'select',
         optional: true,
         text: {
-            en: 'Select customer account',
-            hi: 'Customer account select karein',
+            en: 'Select account',
+            hi: 'Account select karein',
         },
     },
 ];
