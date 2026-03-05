@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import ProtectedRoute from "@/features/auth/components/ProtectedRoute";
 import { useAuth } from "@/features/auth/context/AuthContext";
 import {
@@ -14,21 +13,17 @@ import {
   getMyWalletStatement,
   getMyWalletSummary,
   exportMyWalletStatementExcel,
-  getCustomerDashboardInvoices,
+  getTransporterDashboardInvoices,
   getMyUserInvoices,
-  getCustomerDashboardClaims,
+  getTransporterDashboardClaims,
   WalletStatementItem,
   WalletSummary,
 } from "@/features/customer/api";
 
 type DashboardTab = "overview" | "wallet" | "claims" | "policies";
 type BotView = "tracking" | "knowVehicle" | "createNew";
-type ServiceLinkCard = { title: string; subtitle: string; href: string };
-type ServiceActionCard = {
-  title: string;
-  subtitle: string;
-  action: "tracking" | "knowVehicle" | "support";
-};
+type RangeKey = "7D" | "1M" | "3M" | "6M" | "1Y";
+const RANGE_OPTIONS: RangeKey[] = ["7D", "1M", "3M", "6M", "1Y"];
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-IN", {
@@ -47,6 +42,23 @@ function formatDate(dateStr?: string) {
     month: "short",
     year: "numeric",
   });
+}
+
+function formatDateTime(dateStr?: string) {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "-";
+  const date = d.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const time = d.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).toLowerCase();
+  return `${date} | ${time}`;
 }
 
 function getPremiumAmount(invoice: InsuranceForm) {
@@ -83,8 +95,8 @@ function getEditProduct(invoice: InsuranceForm) {
 
 export default function TransporterDashboardPage() {
   const { user, logout } = useAuth();
-  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
+  const [rangeKey, setRangeKey] = useState<RangeKey>("1Y");
   const [botView, setBotView] = useState<BotView>("tracking");
   const [botOpen, setBotOpen] = useState(false);
   const [botStage, setBotStage] = useState<"question" | "view">("question");
@@ -93,7 +105,8 @@ export default function TransporterDashboardPage() {
   const [claims, setClaims] = useState<ClaimRequest[]>([]);
   const [wallet, setWallet] = useState<WalletSummary | null>(null);
   const [statement, setStatement] = useState<WalletStatementItem[]>([]);
-  const [walletError, setWalletError] = useState<string | null>(null);
+  const [walletSearch, setWalletSearch] = useState("");
+  const [walletTxnFilter, setWalletTxnFilter] = useState<"ALL" | "CREDITS" | "DEBITS">("ALL");
   const [exportingStatement, setExportingStatement] = useState(false);
   const [newClaimTruckNo, setNewClaimTruckNo] = useState("");
   const [creatingClaim, setCreatingClaim] = useState(false);
@@ -121,7 +134,6 @@ export default function TransporterDashboardPage() {
   });
 
   const loadWalletData = useCallback(async () => {
-    setWalletError(null);
     try {
       const [walletData, statementData] = await Promise.all([
         getMyWalletSummary(),
@@ -129,25 +141,19 @@ export default function TransporterDashboardPage() {
       ]);
       setWallet(walletData);
       setStatement(statementData);
-    } catch (err: any) {
-      const message =
-        err?.response?.data?.message ||
-        err?.message ||
-        "Failed to load wallet data";
-      setWalletError(Array.isArray(message) ? message.join(", ") : message);
+    } catch {
       setWallet(null);
       setStatement([]);
     }
   }, []);
 
   const loadDashboardData = useCallback(async () => {
-    setLoading(true);
     try {
       const [customerInvoices, ownInvoices, ownClaims, customerClaims] = await Promise.all([
-        getCustomerDashboardInvoices().catch(() => []),
+        getTransporterDashboardInvoices().catch(() => []),
         getMyUserInvoices().catch(() => []),
         getMyClaimsForms().catch(() => []),
-        getCustomerDashboardClaims().catch(() => []),
+        getTransporterDashboardClaims().catch(() => []),
       ]);
 
       const mergedInvoicesMap = new Map<string, InsuranceForm>();
@@ -179,8 +185,9 @@ export default function TransporterDashboardPage() {
       setInvoices(mergedInvoices);
       setClaims(mergedClaims);
       await loadWalletData();
-    } finally {
-      setLoading(false);
+    } catch {
+      setInvoices([]);
+      setClaims([]);
     }
   }, [loadWalletData]);
 
@@ -221,12 +228,272 @@ export default function TransporterDashboardPage() {
     };
   }, [claims, invoices.length]);
 
-  const serviceCards: Array<ServiceLinkCard | ServiceActionCard> = [
-    { title: "Track Deliveries", subtitle: "Real-time updates", action: "tracking" as const },
-    { title: "Know Your Vehicle", subtitle: "Vehicle details in one click", action: "knowVehicle" as const },
-    { title: "Explore", subtitle: "Discover routes and products", href: "/explore" },
-    { title: "Support", subtitle: "Need help? Talk to our team", action: "support" as const },
-  ];
+  const now = new Date();
+
+  const rangeStart = useMemo(() => {
+    const d = new Date();
+    if (rangeKey === "7D") {
+      d.setDate(d.getDate() - 6);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+    const months = rangeKey === "1M" ? 1 : rangeKey === "3M" ? 3 : rangeKey === "6M" ? 6 : 12;
+    d.setMonth(d.getMonth() - (months - 1));
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, [rangeKey]);
+
+  const rangeMs = now.getTime() - rangeStart.getTime();
+  const prevRangeStart = new Date(rangeStart.getTime() - rangeMs);
+  const prevRangeEnd = new Date(rangeStart.getTime() - 1);
+
+  const isInRange = (value?: string | Date, from?: Date, to?: Date) => {
+    if (!value || !from || !to) return false;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return false;
+    return d >= from && d <= to;
+  };
+
+  const currentClaims = useMemo(
+    () => claims.filter((c) => isInRange(c.createdAt, rangeStart, now)),
+    [claims, rangeStart, now],
+  );
+
+  const previousClaims = useMemo(
+    () => claims.filter((c) => isInRange(c.createdAt, prevRangeStart, prevRangeEnd)),
+    [claims, prevRangeStart, prevRangeEnd],
+  );
+
+  const currentInvoices = useMemo(
+    () => invoices.filter((i) => isInRange(i.createdAt, rangeStart, now)),
+    [invoices, rangeStart, now],
+  );
+
+  const previousInvoices = useMemo(
+    () => invoices.filter((i) => isInRange(i.createdAt, prevRangeStart, prevRangeEnd)),
+    [invoices, prevRangeStart, prevRangeEnd],
+  );
+
+  const deltaPct = (current: number, previous: number): number | null => {
+    if (previous === 0) return current === 0 ? 0 : null;
+    return ((current - previous) / Math.abs(previous)) * 100;
+  };
+
+  const totalFormsDelta = deltaPct(currentInvoices.length, previousInvoices.length);
+  const currentBusinessValue = useMemo(
+    () => Number(currentInvoices.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0).toFixed(2)),
+    [currentInvoices],
+  );
+  const previousBusinessValue = useMemo(
+    () => Number(previousInvoices.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0).toFixed(2)),
+    [previousInvoices],
+  );
+  const totalBusinessDelta = deltaPct(currentBusinessValue, previousBusinessValue);
+
+  const totalClaimsDelta = deltaPct(currentClaims.length, previousClaims.length);
+  const activeClaimsDelta = deltaPct(
+    currentClaims.filter((c) => c.status !== "REJECTED").length,
+    previousClaims.filter((c) => c.status !== "REJECTED").length,
+  );
+  const approvedClaimsDelta = deltaPct(
+    currentClaims.filter((c) => c.status === "APPROVED").length,
+    previousClaims.filter((c) => c.status === "APPROVED").length,
+  );
+  const pendingClaimsDelta = deltaPct(
+    currentClaims.filter((c) => c.status === "PENDING").length,
+    previousClaims.filter((c) => c.status === "PENDING").length,
+  );
+
+  const walletCredits = useMemo(
+    () => statement.filter((s) => s.direction === "CREDIT").reduce((sum, s) => sum + (Number(s.amount) || 0), 0),
+    [statement],
+  );
+
+  const walletDebits = useMemo(
+    () => statement.filter((s) => s.direction === "DEBIT").reduce((sum, s) => sum + (Number(s.amount) || 0), 0),
+    [statement],
+  );
+  const invoiceDebitTotal = useMemo(
+    () =>
+      statement
+        .filter((s) => s.type === "INVOICE_DEBIT")
+        .reduce((sum, s) => sum + (Number(s.amount) || 0), 0),
+    [statement],
+  );
+  const invoiceRefundTotal = useMemo(
+    () =>
+      statement
+        .filter((s) => s.type === "INVOICE_REFUND")
+        .reduce((sum, s) => sum + (Number(s.amount) || 0), 0),
+    [statement],
+  );
+
+  const currentSpentBalance = useMemo(
+    () =>
+      Number(
+        statement
+          .filter((tx) => tx.direction === "DEBIT" && isInRange(tx.createdAt, rangeStart, now))
+          .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0)
+          .toFixed(2),
+      ),
+    [statement, rangeStart, now],
+  );
+  const previousSpentBalance = useMemo(
+    () =>
+      Number(
+        statement
+          .filter((tx) => tx.direction === "DEBIT" && isInRange(tx.createdAt, prevRangeStart, prevRangeEnd))
+          .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0)
+          .toFixed(2),
+      ),
+    [statement, prevRangeStart, prevRangeEnd],
+  );
+  const spentBalanceDelta = deltaPct(currentSpentBalance, previousSpentBalance);
+
+  const businessTrendData = useMemo(() => {
+    const monthCount =
+      rangeKey === "1M" ? 1 : rangeKey === "3M" ? 3 : rangeKey === "6M" ? 6 : rangeKey === "1Y" ? 12 : 6;
+    const labels: string[] = [];
+    const values: number[] = [];
+
+    for (let i = monthCount - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(1);
+      d.setMonth(d.getMonth() - i);
+      d.setHours(0, 0, 0, 0);
+      const next = new Date(d);
+      next.setMonth(next.getMonth() + 1);
+
+      labels.push(d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" }));
+      const bucket = invoices.filter((inv) =>
+        isInRange(inv.createdAt, d, new Date(next.getTime() - 1)),
+      );
+      const monthValue = bucket.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
+      values.push(Number(monthValue.toFixed(2)));
+    }
+
+    return {
+      labels,
+      values,
+      monthCount,
+      totalValue: Number(values.reduce((sum, value) => sum + value, 0).toFixed(2)),
+    };
+  }, [invoices, rangeKey]);
+
+  const policyDistribution = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const inv of currentInvoices) {
+      const label = getProductLabel(inv) || "Unknown";
+      map.set(label, (map.get(label) || 0) + 1);
+    }
+    const entries = Array.from(map.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const total = entries.reduce((sum, [, count]) => sum + count, 0);
+    return entries.map(([label, count]) => ({
+      label,
+      count,
+      percent: total > 0 ? Math.round((count / total) * 100) : 0,
+    }));
+  }, [currentInvoices]);
+
+  const pieCreatedBreakdown = useMemo(() => {
+    const sourceInvoices = currentInvoices;
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const startOfWeek = new Date(startOfToday);
+    const day = startOfWeek.getDay();
+    const diffToMonday = (day + 6) % 7;
+    startOfWeek.setDate(startOfWeek.getDate() - diffToMonday);
+
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const daily = sourceInvoices.filter((inv) => isInRange(inv.createdAt, startOfToday, now)).length;
+    const weekly = sourceInvoices.filter((inv) => isInRange(inv.createdAt, startOfWeek, now)).length;
+    const monthly = sourceInvoices.filter((inv) => isInRange(inv.createdAt, startOfMonth, now)).length;
+
+    const rows = [
+      { label: "Daily", value: daily },
+      { label: "Weekly", value: weekly },
+      { label: "Monthly", value: monthly },
+    ];
+    const total = rows.reduce((sum, row) => sum + row.value, 0);
+    return rows.map((row) => ({
+      ...row,
+      percent: total > 0 ? Number(((row.value / total) * 100).toFixed(1)) : 0,
+    }));
+  }, [currentInvoices, now]);
+
+  const pieBusinessBreakdown = useMemo(() => {
+    const sourceInvoices = currentInvoices;
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const startOfWeek = new Date(startOfToday);
+    const day = startOfWeek.getDay();
+    const diffToMonday = (day + 6) % 7;
+    startOfWeek.setDate(startOfWeek.getDate() - diffToMonday);
+
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const sumAmount = (from: Date) =>
+      sourceInvoices
+        .filter((inv) => isInRange(inv.createdAt, from, now))
+        .reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
+
+    const daily = Number(sumAmount(startOfToday).toFixed(2));
+    const weekly = Number(sumAmount(startOfWeek).toFixed(2));
+    const monthly = Number(sumAmount(startOfMonth).toFixed(2));
+
+    const rows = [
+      { label: "Daily", value: daily },
+      { label: "Weekly", value: weekly },
+      { label: "Monthly", value: monthly },
+    ];
+    const total = rows.reduce((sum, row) => sum + row.value, 0);
+    return rows.map((row) => ({
+      ...row,
+      percent: total > 0 ? Number(((row.value / total) * 100).toFixed(1)) : 0,
+    }));
+  }, [currentInvoices, now]);
+
+  const pieProductBreakdown = useMemo(() => {
+    const byProduct = new Map<string, number>();
+    for (const inv of currentInvoices) {
+      const label = getProductLabel(inv) || "Others";
+      byProduct.set(label, (byProduct.get(label) || 0) + (Number(inv.amount) || 0));
+    }
+    const rows = Array.from(byProduct.entries())
+      .map(([label, value]) => ({ label, value: Number(value.toFixed(2)) }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 3);
+    const total = rows.reduce((sum, row) => sum + row.value, 0);
+    return rows.map((row) => ({
+      ...row,
+      percent: total > 0 ? Number(((row.value / total) * 100).toFixed(1)) : 0,
+    }));
+  }, [currentInvoices]);
+
+  const usedBalanceFallback = Number(Math.max(0, invoiceDebitTotal - invoiceRefundTotal).toFixed(2));
+  const usedBalanceValue = Number(wallet?.usedBalance ?? usedBalanceFallback ?? 0);
+  const totalBalanceValue = Number(wallet?.totalBalance ?? (Number(wallet?.availableBalance || 0) + usedBalanceValue));
+  const totalDebitsDisplay = usedBalanceValue;
+
+  const filteredStatement = useMemo(() => {
+    const q = walletSearch.trim().toLowerCase();
+    return statement
+      .filter((tx) => {
+        if (walletTxnFilter === "CREDITS" && tx.direction !== "CREDIT") return false;
+        if (walletTxnFilter === "DEBITS" && tx.direction !== "DEBIT") return false;
+        if (!q) return true;
+        const hay = `${tx.narration || ""} ${tx.type || ""} ${tx.referenceId || ""}`.toLowerCase();
+        return hay.includes(q);
+      })
+      .sort((a, b) => {
+        const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tb - ta;
+      });
+  }, [statement, walletSearch, walletTxnFilter]);
 
   const navItems: Array<{ key: DashboardTab; label: string }> = [
     { key: "overview", label: "Overview" },
@@ -237,25 +504,25 @@ export default function TransporterDashboardPage() {
 
   return (
     <ProtectedRoute allowedIdentities={["TRANSPORTER"]}>
-      <div className="min-h-screen bg-gradient-to-br from-[#f6f4ff] via-[#f9f9ff] to-[#f4f2ff] text-slate-900">
+      <div className="min-h-screen bg-[#eef2f7] text-slate-900">
         <div className="flex min-h-screen">
-          <aside className="hidden w-[280px] border-r border-[#2a3150] bg-[#0e1428] text-slate-100 lg:flex lg:flex-col">
+          <aside className="sticky top-0 hidden h-screen w-[280px] border-r border-[#1b3158] bg-gradient-to-b from-[#071a35] to-[#041227] text-slate-100 lg:flex lg:flex-col">
             <div className="border-b border-white/10 px-6 py-8">
-              <h1 className="text-4xl font-extrabold tracking-tight">
+              <h1 className="text-3xl font-extrabold tracking-tight">
                 <span className="text-white">Mandi</span>
                 <span className="bg-gradient-to-r from-[#6d1cff] to-[#9d33ff] bg-clip-text text-transparent">Plus</span>
               </h1>
               <p className="mt-1 text-sm text-slate-300">Transporter Dashboard</p>
             </div>
 
-            <nav className="space-y-2 px-4 py-6">
+            <nav className="flex-1 space-y-2 overflow-y-auto px-4 py-6">
               {navItems.map((item) => (
                 <button
                   key={item.key}
                   onClick={() => setActiveTab(item.key)}
                   className={`w-full rounded-xl px-4 py-3 text-left text-sm font-semibold transition ${
                     activeTab === item.key
-                      ? "bg-gradient-to-r from-[#6d1cff] to-[#9d33ff] text-white shadow-lg shadow-purple-900/30"
+                      ? "bg-[#1155b8] text-white shadow-lg shadow-[#1155b8]/30"
                       : "text-slate-200 hover:bg-white/10"
                   }`}
                 >
@@ -274,134 +541,183 @@ export default function TransporterDashboardPage() {
             </div>
           </aside>
 
-          <main className="flex-1">
+          <main className="flex-1 bg-[#eef2f7]">
             <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
-              <div className="flex items-center justify-between px-5 py-4 lg:px-8">
+              <div className="mx-auto flex w-full max-w-[1560px] items-center justify-between px-2 py-4 lg:px-4">
                 <div>
-                  <h2 className="text-3xl font-bold text-slate-900">
+                  <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">
                     Welcome, {user?.name || "User"}
                   </h2>
-                  <p className="text-sm text-slate-500">Here&apos;s your insurance overview</p>
+                  <p className="text-base text-slate-600">Here&apos;s your insurance overview for today</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="rounded-xl border border-purple-200 bg-purple-50 px-4 py-2 text-right shadow-sm">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-purple-700">
-                      Wallet
-                    </p>
-                    <p className="text-sm font-bold text-slate-900">
-                      {formatCurrency(wallet?.availableBalance ?? 0)}
-                    </p>
-                  </div>
+                  <button className="grid h-11 w-11 place-items-center rounded-full border border-slate-300 bg-slate-100 text-slate-600">{"\u2315"}</button>
+                  <button className="relative grid h-11 w-11 place-items-center rounded-full border border-slate-300 bg-slate-100 text-slate-600">
+                    {"\u23F0"}
+                    <span className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">{stats.pendingClaims}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("wallet")}
+                    className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-1.5 text-right shadow-sm transition hover:border-[#1155b8] hover:bg-white"
+                    title="Open wallet"
+                  >
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Wallet</p>
+                    <p className="text-xl font-extrabold text-slate-900">{formatCurrency(wallet?.availableBalance ?? 0)}</p>
+                  </button>
                   <button
                     onClick={() => setSupportOpen(true)}
-                    className="rounded-xl bg-gradient-to-r from-[#6d1cff] to-[#9d33ff] px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:scale-[1.02]"
+                    className="rounded-2xl bg-[#1155b8] px-5 py-2.5 text-lg font-semibold text-white shadow-md transition hover:bg-[#0e4da7]"
                   >
                     Support
+                  </button>
+                  <button className="grid h-11 w-11 place-items-center rounded-full border border-slate-300 bg-[#dbeafe] text-sm font-bold text-[#1155b8]">
+                    {(user?.name || "NK").slice(0, 2).toUpperCase()}
                   </button>
                 </div>
               </div>
             </header>
 
-            <div className="space-y-8 p-5 lg:p-8">
+            <div className="mx-auto w-full max-w-[1560px] space-y-5 px-2 py-5 lg:px-4">
               {activeTab === "overview" && (
-                <>
+                <section className="space-y-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm lg:p-6">
+                  <div className="flex justify-end">
+                    <div className="rounded-2xl border border-slate-300 bg-white p-1">
+                      <div className="flex items-center gap-1 text-sm">
+                        {RANGE_OPTIONS.map((opt) => (
+                          <button
+                            key={opt}
+                            onClick={() => setRangeKey(opt)}
+                            className={`rounded-xl px-3 py-1.5 ${rangeKey === opt ? "bg-[#1155b8] font-semibold text-white" : "text-slate-600"}`}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
                   <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                    <StatCard label="Total Forms" value={stats.totalForms} />
-                    <StatCard label="Active Claims" value={stats.activeClaims} />
-                    <StatCard label="Approved Claims" value={stats.approvedClaims} />
-                    <StatCard label="Pending Claims" value={stats.pendingClaims} />
+                    <StatCard label="Total Invoices" value={currentInvoices.length} accent="blue" delta={totalFormsDelta} />
+                    <StatCard label="Total Business" value={currentBusinessValue} accent="green" delta={totalBusinessDelta} valueFormatter={formatCurrency} />
+                    <StatCard label="Total Claims" value={currentClaims.length} accent="green" delta={totalClaimsDelta} />
+                    <StatCard label="Total Spent Balance" value={usedBalanceValue} accent="orange" delta={spentBalanceDelta} valueFormatter={formatCurrency} />
                   </section>
 
                   <section>
-                    <h3 className="text-3xl font-bold text-slate-900">Our Services</h3>
-                    <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                      {serviceCards.map((item) => {
-                        if ("href" in item) {
-                          return (
-                            <Link
-                              key={item.title}
-                              href={item.href}
-                              className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
-                            >
-                              <p className="text-2xl font-bold text-slate-900">{item.title}</p>
-                              <p className="mt-2 text-slate-600">{item.subtitle}</p>
-                              <div className="mt-4 h-1 w-16 rounded bg-gradient-to-r from-[#6d1cff] to-[#9d33ff] opacity-0 transition group-hover:opacity-100" />
-                            </Link>
-                          );
-                        }
+                    <div className="mb-4 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-3xl font-extrabold text-slate-900">Analytics</h3>
+                        <p className="text-lg text-slate-600">Performance insights and trends</p>
+                      </div>
+                    </div>
 
-                        return (
-                          <button
-                            key={item.title}
-                            onClick={() => {
-                              if (item.action === "support") {
-                                setSupportOpen(true);
-                                return;
-                              }
-                              setBotView(item.action);
-                              setBotStage("question");
-                              setBotOpen(true);
-                            }}
-                            className="group rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
-                          >
-                            <p className="text-2xl font-bold text-slate-900">{item.title}</p>
-                            <p className="mt-2 text-slate-600">{item.subtitle}</p>
-                            <div className="mt-4 h-1 w-16 rounded bg-gradient-to-r from-[#6d1cff] to-[#9d33ff] opacity-0 transition group-hover:opacity-100" />
-                          </button>
-                        );
-                      })}
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <div className="mb-4 flex items-start justify-between">
+                          <div>
+                            <h4 className="text-2xl font-bold text-slate-900">Monthly Business Trend</h4>
+                            <p className="text-base text-slate-500">Business value from invoice amount ({businessTrendData.monthCount} months)</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm text-slate-500">Business Value ({rangeKey})</p>
+                            <p className="text-3xl font-extrabold text-slate-900">{formatCurrency(businessTrendData.totalValue)}</p>
+                          </div>
+                        </div>
+                        <MonthlyBusinessTrendChart labels={businessTrendData.labels} values={businessTrendData.values} />
+                      </div>
+
+                      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                        <div className="mb-4 flex items-start justify-between">
+                          <div>
+                            <h4 className="text-2xl font-bold text-slate-900">Policy Distribution</h4>
+                            <p className="text-base text-slate-500">Breakdown by insurance type</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm text-slate-500">Active Policies ({rangeKey})</p>
+                            <p className="text-3xl font-extrabold text-slate-900">{currentInvoices.length}</p>
+                          </div>
+                        </div>
+                        <PolicyDonutChart items={policyDistribution} />
+                      </div>
+                    </div>
+
+                    <div className="mt-6">
+                      <h3 className="text-3xl font-extrabold text-slate-900">Pie Chart Analytics</h3>
+                      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                        <DonutAnalyticsCard
+                          title="Invoice Created (Daily/Weekly/Monthly)"
+                          subtitle="Hover to view absolute values and share percentage"
+                          items={pieCreatedBreakdown}
+                        />
+                        <DonutAnalyticsCard
+                          title="Invoice Business Value (Daily/Weekly/Monthly)"
+                          subtitle="Based on invoice amount values"
+                          items={pieBusinessBreakdown}
+                          valueFormatter={(value) => formatCurrency(value)}
+                        />
+                        <DonutAnalyticsCard
+                          title="Product Category Business Distribution"
+                          subtitle={`For selected range (${rangeKey})`}
+                          items={pieProductBreakdown}
+                          valueFormatter={(value) => formatCurrency(value)}
+                        />
+                      </div>
                     </div>
                   </section>
-                </>
+                </section>
               )}
 
               {activeTab === "wallet" && (
-                <section className="max-w-6xl space-y-5">
-                  <div className="overflow-hidden rounded-3xl border border-[#1a2550] bg-gradient-to-r from-[#0b1638] via-[#13224f] to-[#1b1842] p-6 text-white shadow-2xl lg:p-8">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
+                <section className="space-y-4 rounded-3xl bg-[#ede7ff] p-4 lg:p-5">
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-[2fr_1fr]">
+                    <div className="rounded-3xl bg-[#1555b7] p-5 text-white shadow-lg">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-100">Available Balance</p>
+                      <p className="mt-1 text-4xl font-extrabold">{formatCurrency(wallet?.availableBalance ?? 0)}</p>
+                      <p className="mt-1 text-sm text-blue-100">
+                        Last updated: {wallet?.updatedAt ? formatDate(wallet.updatedAt) : "-"}
+                      </p>
+
+                      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <div className="rounded-2xl bg-white/10 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-100">Used Balance</p>
+                          <p className="mt-1 text-2xl font-bold">{formatCurrency(usedBalanceValue)}</p>
+                        </div>
+                        <div className="rounded-2xl bg-white/10 p-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-blue-100">Total Balance</p>
+                          <p className="mt-1 text-2xl font-bold">{formatCurrency(totalBalanceValue)}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3">
+                      <div className="rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Total Credits</p>
+                        <p className="mt-1 text-3xl font-extrabold text-[#0f2547]">{formatCurrency(walletCredits)}</p>
+                      </div>
+                      <div className="rounded-2xl border border-rose-200 bg-white p-4 shadow-sm">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-rose-700">Total Debits</p>
+                        <p className="mt-1 text-3xl font-extrabold text-[#0f2547]">{formatCurrency(totalDebitsDisplay)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-4 md:px-5">
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#b6c3ff]">MandiPlus Wallet</p>
-                        <h3 className="mt-2 text-3xl font-extrabold leading-tight">Available Balance</h3>
-                        <p className="mt-1 text-sm text-slate-300">Auto debited by invoice amount (quantity x rate).</p>
-                        <p className="mt-4 text-5xl font-extrabold leading-none">
-                          {formatCurrency(wallet?.availableBalance ?? 0)}
-                        </p>
+                        <h4 className="text-2xl font-bold text-slate-900">Transaction History</h4>
+                        <p className="text-sm text-slate-600">{filteredStatement.length} transactions found</p>
                       </div>
-                      <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-right">
-                        <p className="text-[10px] uppercase tracking-wider text-slate-300">Last Updated</p>
-                        <p className="text-sm font-semibold text-white">{formatDate(wallet?.updatedAt)}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Available</p>
-                      <p className="mt-2 text-2xl font-extrabold text-emerald-900">
-                        {formatCurrency(wallet?.availableBalance ?? 0)}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-amber-700">Used</p>
-                      <p className="mt-2 text-2xl font-extrabold text-amber-900">
-                        {formatCurrency(wallet?.usedBalance ?? 0)}
-                      </p>
-                    </div>
-                    <div className="rounded-2xl border border-sky-200 bg-sky-50 p-5 shadow-sm">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-sky-700">Total</p>
-                      <p className="mt-2 text-2xl font-extrabold text-sky-900">
-                        {formatCurrency(wallet?.totalBalance ?? 0)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xl font-bold text-slate-900">Recent Statement</h4>
-                      <div className="flex items-center gap-2">
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                          {statement.length} entries
-                        </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-2 rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                          <span>{"⌕"}</span>
+                          <input
+                            value={walletSearch}
+                            onChange={(e) => setWalletSearch(e.target.value)}
+                            placeholder="Search transactions..."
+                            className="h-6 w-44 bg-transparent outline-none placeholder:text-slate-400"
+                          />
+                        </div>
                         <button
                           onClick={async () => {
                             try {
@@ -415,65 +731,76 @@ export default function TransporterDashboardPage() {
                               a.click();
                               a.remove();
                               window.URL.revokeObjectURL(url);
-                            } catch (err: any) {
-                              const message =
-                                err?.response?.data?.message ||
-                                err?.message ||
-                                "Failed to export wallet statement";
-                              setWalletError(Array.isArray(message) ? message.join(", ") : message);
                             } finally {
                               setExportingStatement(false);
                             }
                           }}
                           disabled={exportingStatement}
-                          className="rounded-lg bg-[#6d1cff] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#5d18df] disabled:opacity-60"
+                          className="h-10 rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
                         >
-                          {exportingStatement ? "Exporting..." : "Export to Excel"}
+                          {exportingStatement ? "Exporting..." : "Export"}
                         </button>
                       </div>
                     </div>
-                    {walletError && (
-                      <div className="mt-3 rounded-lg border border-rose-300 bg-rose-100/90 px-3 py-2 text-sm text-rose-700">
-                        {walletError}
-                      </div>
-                    )}
-                    {statement.length === 0 ? (
-                      <p className="mt-3 text-sm text-slate-500">No wallet transactions yet.</p>
-                    ) : (
-                      <div className="mt-4 space-y-3">
-                        {statement.map((item) => (
-                          <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900">{item.narration || item.type}</p>
-                                <p className="mt-0.5 text-xs text-slate-500">{formatDate(item.createdAt)}</p>
+
+                    <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3 md:px-5">
+                      <button
+                        onClick={() => setWalletTxnFilter("ALL")}
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${walletTxnFilter === "ALL" ? "bg-[#1155b8] text-white" : "bg-slate-100 text-slate-700"}`}
+                      >
+                        All
+                      </button>
+                      <button
+                        onClick={() => setWalletTxnFilter("CREDITS")}
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${walletTxnFilter === "CREDITS" ? "bg-[#1155b8] text-white" : "bg-slate-100 text-slate-700"}`}
+                      >
+                        Credits
+                      </button>
+                      <button
+                        onClick={() => setWalletTxnFilter("DEBITS")}
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${walletTxnFilter === "DEBITS" ? "bg-[#1155b8] text-white" : "bg-slate-100 text-slate-700"}`}
+                      >
+                        Debits
+                      </button>
+                    </div>
+
+                    <div className="max-h-[420px] overflow-auto">
+                      {filteredStatement.length === 0 ? (
+                        <div className="px-5 py-12 text-center text-sm text-slate-500">No transactions found</div>
+                      ) : (
+                        filteredStatement.map((tx) => {
+                          const isCredit = tx.direction === "CREDIT";
+                          return (
+                            <div key={tx.id} className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3.5 md:px-5">
+                              <div className="flex items-start gap-3">
+                                <div className={`mt-0.5 grid h-9 w-9 place-items-center rounded-full text-sm ${isCredit ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+                                  {isCredit ? "↗" : "↘"}
+                                </div>
+                                <div>
+                                  <p className="text-base font-semibold text-slate-900">{tx.narration || tx.type || "Wallet transaction"}</p>
+                                  <p className="text-xs text-slate-500">{formatDateTime(tx.createdAt)}</p>
+                                </div>
                               </div>
+
                               <div className="text-right">
-                                <p
-                                  className={`text-sm font-bold ${
-                                    item.direction === "CREDIT" ? "text-emerald-600" : "text-rose-600"
-                                  }`}
-                                >
-                                  {item.direction === "CREDIT" ? "+ " : "- "}
-                                  {formatCurrency(item.amount)}
+                                <p className={`text-2xl font-extrabold ${isCredit ? "text-emerald-600" : "text-rose-600"}`}>
+                                  {isCredit ? "+" : "-"}{formatCurrency(Number(tx.amount || 0)).replace(/₹/g, "")}
                                 </p>
-                                <p className="mt-0.5 text-[11px] text-slate-500">
-                                  Bal: {formatCurrency(item.balanceAfter ?? 0)}
-                                </p>
+                                <p className="text-xs text-slate-500">{isCredit ? "Credit" : "Debit"}</p>
                               </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
                 </section>
               )}
 
               {activeTab === "claims" && (
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <h3 className="text-2xl font-bold">My Claims</h3>
+                <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm lg:p-6">
+                  <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+                    <h3 className="text-2xl font-bold text-slate-900">My Claims</h3>
                     <form
                       onSubmit={async (e) => {
                         e.preventDefault();
@@ -489,15 +816,11 @@ export default function TransporterDashboardPage() {
                           setNewClaimTruckNo("");
                           const [refreshedOwnClaims, refreshedCustomerClaims] = await Promise.all([
                             getMyClaimsForms().catch(() => []),
-                            getCustomerDashboardClaims().catch(() => []),
+                            getTransporterDashboardClaims().catch(() => []),
                           ]);
                           const refreshedClaimsMap = new Map<string, ClaimRequest>();
-                          for (const c of refreshedOwnClaims) {
-                            refreshedClaimsMap.set(c.id, c);
-                          }
-                          for (const c of refreshedCustomerClaims) {
-                            refreshedClaimsMap.set(c.id, c);
-                          }
+                          for (const c of refreshedOwnClaims) refreshedClaimsMap.set(c.id, c);
+                          for (const c of refreshedCustomerClaims) refreshedClaimsMap.set(c.id, c);
                           const refreshedClaims = Array.from(refreshedClaimsMap.values()).sort((a, b) => {
                             const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
                             const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -505,10 +828,7 @@ export default function TransporterDashboardPage() {
                           });
                           setClaims(refreshedClaims);
                         } catch (err: any) {
-                          const msg =
-                            err?.message ||
-                            err?.response?.data?.message ||
-                            "Failed to create claim request.";
+                          const msg = err?.message || err?.response?.data?.message || "Failed to create claim request.";
                           setClaimActionMessage(Array.isArray(msg) ? msg.join(", ") : msg);
                         } finally {
                           setCreatingClaim(false);
@@ -521,109 +841,123 @@ export default function TransporterDashboardPage() {
                         value={newClaimTruckNo}
                         onChange={(e) => setNewClaimTruckNo(e.target.value.toUpperCase())}
                         placeholder="Enter truck number (e.g., MH12AB1234)"
-                        className="w-72 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-[#6d1cff] focus:ring-2 focus:ring-[#6d1cff]/20"
+                        className="h-10 w-full sm:w-80 rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-[#1155b8] focus:ring-2 focus:ring-[#1155b8]/20"
                       />
                       <button
                         type="submit"
                         disabled={creatingClaim || !newClaimTruckNo.trim()}
-                        className="rounded-lg bg-[#6d1cff] px-3 py-2 text-xs font-semibold text-white hover:bg-[#5915d1] disabled:cursor-not-allowed disabled:opacity-60"
+                        className="h-10 rounded-xl bg-[#1155b8] px-4 text-sm font-semibold text-white hover:bg-[#0e4da7] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {creatingClaim ? "Creating..." : "Create Claim Request"}
                       </button>
                     </form>
                   </div>
+
                   {claimActionMessage && (
-                    <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">
+                    <p className="mb-4 rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-700">
                       {claimActionMessage}
                     </p>
                   )}
-                  <div className="mt-5 overflow-x-auto">
-                    <table className="min-w-full text-left text-sm">
-                      <thead>
-                        <tr className="border-b text-slate-600">
-                          <th className="px-3 py-2 font-semibold">Invoice Number</th>
-                          <th className="px-3 py-2 font-semibold">Date</th>
-                          <th className="px-3 py-2 font-semibold">Vehicle</th>
-                          <th className="px-3 py-2 font-semibold">Status</th>
-                          <th className="px-3 py-2 font-semibold">Claim PDF</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {loading ? (
-                          <tr><td colSpan={5} className="px-3 py-10 text-center text-slate-500">Loading...</td></tr>
-                        ) : claims.length === 0 ? (
-                          <tr><td colSpan={5} className="px-3 py-10 text-center text-slate-500">No claims found.</td></tr>
-                        ) : (
-                          claims.map((claim) => (
+
+                  {claims.length === 0 ? (
+                    <div className="grid min-h-[420px] place-items-center">
+                      <div className="text-center">
+                        <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">{"\uD83D\uDCC4"}</div>
+                        <h4 className="text-2xl font-bold text-slate-900">My Claims</h4>
+                        <p className="mt-2 text-base text-slate-500">No claims found yet</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-left text-sm">
+                        <thead>
+                          <tr className="border-b text-slate-600">
+                            <th className="px-3 py-3 font-semibold">Invoice Number</th>
+                            <th className="px-3 py-3 font-semibold">Date</th>
+                            <th className="px-3 py-3 font-semibold">Vehicle</th>
+                            <th className="px-3 py-3 font-semibold">Status</th>
+                            <th className="px-3 py-3 font-semibold">Claim PDF</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {claims.map((claim) => (
                             <tr key={claim.id} className="border-b last:border-none">
-                              <td className="px-3 py-3">{claim.invoice?.invoiceNumber || "-"}</td>
-                              <td className="px-3 py-3">{formatDate(claim.createdAt)}</td>
-                              <td className="px-3 py-3">{claim.invoice?.vehicleNumber || "-"}</td>
-                              <td className="px-3 py-3">
+                              <td className="px-3 py-3.5">{claim.invoice?.invoiceNumber || "-"}</td>
+                              <td className="px-3 py-3.5">{formatDate(claim.createdAt)}</td>
+                              <td className="px-3 py-3.5">{claim.invoice?.vehicleNumber || "-"}</td>
+                              <td className="px-3 py-3.5">
                                 <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{claim.status}</span>
                               </td>
-                              <td className="px-3 py-3">
+                              <td className="px-3 py-3.5">
                                 {claim.claimFormUrl ? (
-                                  <a href={claim.claimFormUrl} target="_blank" className="text-[#6d1cff] hover:underline">Open PDF</a>
+                                  <a href={claim.claimFormUrl} target="_blank" className="text-[#1155b8] hover:underline">Open PDF</a>
                                 ) : "-"}
                               </td>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </section>
               )}
 
               {activeTab === "policies" && (
-                <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-2xl font-bold">My Policies</h3>
+                <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm lg:p-6">
+                  <div className="mb-5 flex items-center justify-between">
+                    <h3 className="text-2xl font-bold text-slate-900">My Policies</h3>
                     <button
                       onClick={() => {
                         setBotView("createNew");
                         setBotStage("question");
                         setBotOpen(true);
                       }}
-                      className="rounded-xl bg-gradient-to-r from-[#6d1cff] to-[#9d33ff] px-4 py-2 text-sm font-semibold text-white"
+                      className="h-10 rounded-xl bg-[#1155b8] px-4 text-sm font-semibold text-white shadow-sm"
                     >
                       Create New
                     </button>
                   </div>
 
-                  <div className="mt-5 overflow-x-auto">
-                    <table className="min-w-full text-left text-sm">
-                      <thead>
-                        <tr className="border-b text-slate-600">
-                          <th className="px-3 py-2 font-semibold">Invoice Number</th>
-                          <th className="px-3 py-2 font-semibold">Date</th>
-                          <th className="px-3 py-2 font-semibold">Product</th>
-                          <th className="px-3 py-2 font-semibold">Vehicle</th>
-                          <th className="px-3 py-2 font-semibold">Premium Amount</th>
-                          <th className="px-3 py-2 font-semibold">PDF</th>
-                          <th className="px-3 py-2 font-semibold">Edit</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {loading ? (
-                          <tr><td colSpan={7} className="px-3 py-10 text-center text-slate-500">Loading...</td></tr>
-                        ) : invoices.length === 0 ? (
-                          <tr><td colSpan={7} className="px-3 py-10 text-center text-slate-500">No policies found.</td></tr>
-                        ) : (
-                          invoices.map((inv) => (
+                  {invoices.length === 0 ? (
+                    <div className="grid min-h-[420px] place-items-center">
+                      <div className="text-center">
+                        <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">{"\uD83D\uDEE1"}</div>
+                        <h4 className="text-2xl font-bold text-slate-900">My Policies</h4>
+                        <p className="mt-2 text-base text-slate-500">Policy management coming soon</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-left text-sm">
+                        <thead>
+                          <tr className="border-b text-slate-600">
+                            <th className="px-3 py-3 font-semibold">Invoice Number</th>
+                            <th className="px-3 py-3 font-semibold">Date</th>
+                            <th className="px-3 py-3 font-semibold">Product</th>
+                            <th className="px-3 py-3 font-semibold">Vehicle</th>
+                            <th className="px-3 py-3 font-semibold">Amount</th>
+                            <th className="px-3 py-3 font-semibold">Premium Amount</th>
+                            <th className="px-3 py-3 font-semibold">PDF</th>
+                            <th className="px-3 py-3 font-semibold">Edit</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {invoices.map((inv) => (
                             <tr key={inv.id} className="border-b last:border-none">
-                              <td className="px-3 py-3 font-semibold text-slate-900">{inv.invoiceNumber}</td>
-                              <td className="px-3 py-3">{formatDate(inv.createdAt)}</td>
-                              <td className="px-3 py-3">{getProductLabel(inv)}</td>
-                              <td className="px-3 py-3">{inv.vehicleNumber || inv.truckNumber || "-"}</td>
-                              <td className="px-3 py-3">{formatCurrency(getPremiumAmount(inv))}</td>
-                              <td className="px-3 py-3">
+                              <td className="px-3 py-3.5 font-semibold text-slate-900">{inv.invoiceNumber}</td>
+                              <td className="px-3 py-3.5">{formatDate(inv.createdAt)}</td>
+                              <td className="px-3 py-3.5">{getProductLabel(inv)}</td>
+                              <td className="px-3 py-3.5">{inv.vehicleNumber || inv.truckNumber || "-"}</td>
+                              <td className="px-3 py-3.5">{formatCurrency(Number(inv.amount || 0))}</td>
+                              <td className="px-3 py-3.5">{formatCurrency(getPremiumAmount(inv))}</td>
+                              <td className="px-3 py-3.5">
                                 {inv.pdfUrl || inv.pdfURL ? (
-                                  <a href={inv.pdfUrl || inv.pdfURL} target="_blank" className="text-[#6d1cff] hover:underline">View PDF</a>
-                                ) : "-"}
+                                  <a href={inv.pdfUrl || inv.pdfURL} target="_blank" className="text-[#1155b8] hover:underline">View PDF</a>
+                                 ) : (
+                                  <span className="text-slate-400">Generating...</span>
+                                )}
                               </td>
-                              <td className="px-3 py-3">
+                              <td className="px-3 py-3.5">
                                 <button
                                   onClick={() => {
                                     setEditingInvoice(inv);
@@ -651,17 +985,17 @@ export default function TransporterDashboardPage() {
                                     setEditSlipFile(null);
                                     setShowEditModal(true);
                                   }}
-                                  className="rounded-lg border border-[#6d1cff] px-3 py-1 text-[#6d1cff] transition hover:bg-[#6d1cff] hover:text-white"
+                                  className="rounded-lg border border-[#1155b8] px-3 py-1 text-[#1155b8] transition hover:bg-[#1155b8] hover:text-white"
                                 >
                                   Edit
                                 </button>
                               </td>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </section>
               )}
             </div>
@@ -689,7 +1023,7 @@ export default function TransporterDashboardPage() {
               <div className="mt-5 space-y-3">
                 <div className="rounded-xl border border-slate-200 p-3">
                   <p className="text-sm font-semibold text-slate-800">Call Support</p>
-                  <p className="text-sm text-slate-600">+91 90000 00000</p>
+                  <p className="text-sm text-slate-600">+91 99001 86757</p>
                 </div>
                 <div className="rounded-xl border border-slate-200 p-3">
                   <p className="text-sm font-semibold text-slate-800">Email</p>
@@ -698,7 +1032,7 @@ export default function TransporterDashboardPage() {
                 <div className="rounded-xl border border-slate-200 p-3">
                   <p className="text-sm font-semibold text-slate-800">WhatsApp</p>
                   <a
-                    href="https://wa.me/919000000000"
+                    href="https://wa.me/919900186757"
                     target="_blank"
                     className="text-sm text-[#6d1cff] hover:underline"
                   >
@@ -854,96 +1188,543 @@ export default function TransporterDashboardPage() {
         )}
 
         {botOpen && (
-          <div className="fixed inset-0 z-40 bg-black/20">
-            <div className="absolute right-4 top-4 h-[92vh] w-[420px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-              <div className="flex items-center justify-between border-b bg-slate-50 px-4 py-3">
-                <div>
-                  <p className="text-sm font-bold text-slate-900">
-                    {botView === "tracking"
-                      ? "Track Deliveries Bot"
-                      : botView === "knowVehicle"
-                        ? "Know Your Vehicle Bot"
-                        : "Create New Policy"}
-                  </p>
-                  <p className="text-xs text-slate-500">Live assistant inside dashboard</p>
-                </div>
-                <button
-                  onClick={() => setBotOpen(false)}
-                  className="rounded-md px-2 py-1 text-slate-600 hover:bg-slate-200"
-                >
-                  X
-                </button>
+          <div className="fixed bottom-24 right-5 z-40 w-[380px] max-w-[calc(100vw-24px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between bg-[#1155b8] px-4 py-3 text-white">
+              <div>
+                <p className="text-2xl font-bold leading-none">MandiPlus Assistant</p>
+                <p className="mt-1 text-sm text-blue-100">Your live dashboard helper</p>
               </div>
-              {botStage === "question" ? (
-                <div className="h-[calc(92vh-64px)] w-full bg-[#ece5dd] p-4">
-                  <div className="rounded-2xl bg-white p-4 shadow">
-                    <p className="text-sm text-slate-800">
-                      Hi! What do you want to do right now?
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        onClick={() => {
-                          setBotView("tracking");
-                          setBotStage("view");
-                        }}
-                        className="rounded-full bg-[#6d1cff] px-3 py-1.5 text-xs font-semibold text-white"
-                      >
-                        Track Deliveries
-                      </button>
-                      <button
-                        onClick={() => {
-                          setBotView("knowVehicle");
-                          setBotStage("view");
-                        }}
-                        className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
-                      >
-                        Know Vehicle
-                      </button>
-                      <button
-                        onClick={() => {
-                          setBotView("createNew");
-                          setBotStage("view");
-                        }}
-                        className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700"
-                      >
-                        Create New Policy
-                      </button>
-                    </div>
+              <button
+                onClick={() => setBotOpen(false)}
+                className="rounded-md px-2 py-1 text-blue-100 hover:bg-white/10"
+              >
+                X
+              </button>
+            </div>
+            {botStage === "question" ? (
+              <div className="max-h-[62vh] overflow-y-auto bg-[#f8f6f3] p-4">
+                <div className="rounded-2xl bg-white p-4 shadow-sm">
+                  <p className="text-sm text-slate-800">Hi! What do you want to do right now?</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => {
+                        setBotView("tracking");
+                        setBotStage("view");
+                      }}
+                      className="rounded-full bg-[#6d1cff] px-3 py-1.5 text-xs font-semibold text-white"
+                    >
+                      Track Deliveries
+                    </button>
+                    <button
+                      onClick={() => {
+                        setBotView("knowVehicle");
+                        setBotStage("view");
+                      }}
+                      className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+                    >
+                      Know Vehicle
+                    </button>
+                    <button
+                      onClick={() => {
+                        setBotView("createNew");
+                        setBotStage("view");
+                      }}
+                      className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+                    >
+                      Create New Policy
+                    </button>
                   </div>
                 </div>
-              ) : (
-                <iframe
-                  key={botView}
-                  title={
-                    botView === "tracking"
-                      ? "Track Deliveries"
-                      : botView === "knowVehicle"
-                        ? "Know Your Vehicle"
-                        : "Create New Policy"
-                  }
-                  src={
-                    botView === "tracking"
-                      ? "/tracking?embedBot=1"
-                      : botView === "knowVehicle"
-                        ? "/know-your-vehicle?embedBot=1"
-                        : "/insurance?embedBot=1"
-                  }
-                  className="h-[calc(92vh-64px)] w-full"
-                />
-              )}
-            </div>
+              </div>
+            ) : (
+              <iframe
+                key={botView}
+                title={
+                  botView === "tracking"
+                    ? "Track Deliveries"
+                    : botView === "knowVehicle"
+                      ? "Know Your Vehicle"
+                      : "Create New Policy"
+                }
+                src={
+                  botView === "tracking"
+                    ? "/tracking?embedBot=1"
+                    : botView === "knowVehicle"
+                      ? "/know-your-vehicle?embedBot=1"
+                      : "/insurance?embedBot=1"
+                }
+                className="h-[60vh] w-full"
+              />
+            )}
           </div>
         )}
+
+        <div className="fixed bottom-5 right-5 z-40">
+          <button
+            onClick={() => {
+              setBotStage("question");
+              setBotOpen((prev) => !prev);
+            }}
+            className={`relative grid h-16 w-16 place-items-center rounded-full text-white transition ${
+              botOpen
+                ? "scale-[0.98] bg-[#0e4da7]"
+                : "bg-[#1155b8] hover:bg-[#0e4da7]"
+            }`}
+            style={{
+              boxShadow:
+                "0 14px 28px rgba(17,85,184,0.38), inset 0 1px 0 rgba(255,255,255,0.22)",
+            }}
+            aria-label="Open assistant"
+            title="Assistant"
+            type="button"
+          >
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute -inset-3 rounded-full"
+              style={{
+                background:
+                  "radial-gradient(circle, rgba(17,85,184,0.22) 0%, rgba(17,85,184,0.12) 45%, rgba(17,85,184,0.05) 68%, rgba(17,85,184,0) 78%)",
+              }}
+            />
+            <svg
+              viewBox="0 0 24 24"
+              className="relative h-8 w-8"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M12 4.75c-4.28 0-7.75 3.11-7.75 6.95 0 2.09 1.03 3.97 2.66 5.25-.1 1.02-.54 2.02-1.28 2.74-.19.19-.07.52.2.55 1.66.15 3.1-.46 4.17-1.37.63.16 1.3.25 2 .25 4.28 0 7.75-3.11 7.75-6.95S16.28 4.75 12 4.75Z"
+                stroke="currentColor"
+                strokeWidth="1.9"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
     </ProtectedRoute>
   );
 }
 
-function StatCard({ label, value }: { label: string; value: number }) {
+function StatCard({
+  label,
+  value,
+  accent,
+  delta,
+  valueFormatter,
+}: {
+  label: string;
+  value: number;
+  accent: "blue" | "green" | "orange";
+  delta?: number | null;
+  valueFormatter?: (value: number) => string;
+}) {
+  const styles = {
+    blue: "border-[#bfd4f8] bg-[#f9fbff]",
+    green: "border-[#ccead7] bg-[#f8fdf9]",
+    orange: "border-[#f3dccf] bg-[#fffaf8]",
+  } as const;
+
+  const deltaLabel =
+    delta === null || delta === undefined
+      ? "No previous period"
+      : `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}% from previous`;
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-      <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-2 text-4xl font-extrabold text-[#111827]">{value}</p>
+    <div className={`rounded-2xl border p-4 shadow-sm ${styles[accent]}`}>
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className="mt-1 text-3xl font-extrabold text-slate-900">
+        {valueFormatter ? valueFormatter(value) : value}
+      </p>
+      <p className="mt-1 text-xs text-slate-500">{deltaLabel}</p>
     </div>
   );
 }
+
+function MonthlyBusinessTrendChart({
+  labels,
+  values,
+}: {
+  labels: string[];
+  values: number[];
+}) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const width = 640;
+  const height = 260;
+  const left = 46;
+  const right = 16;
+  const top = 18;
+  const bottom = 44;
+  const innerW = width - left - right;
+  const innerH = height - top - bottom;
+  const maxValue = Math.max(...values, 1);
+  const stepX = values.length > 1 ? innerW / (values.length - 1) : innerW;
+
+  const formatAxis = (value: number) => {
+    if (value >= 10000000) return `${(value / 10000000).toFixed(1)}Cr`;
+    if (value >= 100000) return `${(value / 100000).toFixed(1)}L`;
+    if (value >= 1000) return `${Math.round(value / 1000)}k`;
+    return `${Math.round(value)}`;
+  };
+
+  const points = values.map((value, i) => {
+    const x = left + i * stepX;
+    const y = top + innerH - (value / maxValue) * innerH;
+    return { x, y, value };
+  });
+
+  const polyline = points.map((p) => `${p.x},${p.y}`).join(" ");
+  const yTicks = [0, 0.25, 0.5, 0.75, 1];
+  const activeIndex = hoveredIndex;
+  const findClosestIndex = (svgX: number) => {
+    if (!points.length) return null;
+    let idx = 0;
+    let minDiff = Math.abs(points[0].x - svgX);
+    for (let i = 1; i < points.length; i++) {
+      const diff = Math.abs(points[i].x - svgX);
+      if (diff < minDiff) {
+        minDiff = diff;
+        idx = i;
+      }
+    }
+    return idx;
+  };
+
+  return (
+    <div className="rounded-2xl bg-slate-50 p-4">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="w-full"
+        onMouseMove={(e) => {
+          const bounds = e.currentTarget.getBoundingClientRect();
+          const relativeX = e.clientX - bounds.left;
+          const svgX = (relativeX / bounds.width) * width;
+          setHoveredIndex(findClosestIndex(svgX));
+        }}
+        onMouseLeave={() => setHoveredIndex(null)}
+      >
+        {yTicks.map((tick) => {
+          const y = top + innerH - tick * innerH;
+          const value = maxValue * tick;
+          return (
+            <g key={tick}>
+              <line x1={left} y1={y} x2={width - right} y2={y} stroke="#d8dee8" strokeDasharray="4 4" />
+              <text x={left - 8} y={y + 4} textAnchor="end" fontSize="11" fill="#64748b">
+                {formatAxis(value)}
+              </text>
+            </g>
+          );
+        })}
+
+        {points.map((point, i) => (
+          <line
+            key={`v-${i}`}
+            x1={point.x}
+            y1={top}
+            x2={point.x}
+            y2={top + innerH}
+            stroke="#eef2f7"
+          />
+        ))}
+
+        <polyline fill="none" stroke="#1d4ed8" strokeWidth="3" points={polyline} />
+
+        {activeIndex !== null && points[activeIndex] && (
+          <>
+            <line
+              x1={points[activeIndex].x}
+              y1={top}
+              x2={points[activeIndex].x}
+              y2={top + innerH}
+              stroke="#94a3b8"
+              strokeDasharray="4 4"
+            />
+            <g>
+              <rect
+                x={Math.max(left, Math.min(points[activeIndex].x - 86, width - right - 172))}
+                y={Math.max(top, points[activeIndex].y - 60)}
+                rx="10"
+                ry="10"
+                width="172"
+                height="48"
+                fill="#ffffff"
+                stroke="#cbd5e1"
+              />
+              <text
+                x={Math.max(left + 10, Math.min(points[activeIndex].x - 76, width - right - 162))}
+                y={Math.max(top + 16, points[activeIndex].y - 44)}
+                fontSize="12"
+                fontWeight="700"
+                fill="#0f172a"
+              >
+                {labels[activeIndex]}
+              </text>
+              <text
+                x={Math.max(left + 10, Math.min(points[activeIndex].x - 76, width - right - 162))}
+                y={Math.max(top + 34, points[activeIndex].y - 26)}
+                fontSize="12"
+                fill="#0f172a"
+              >
+                {`Value: ${formatCurrency(points[activeIndex].value)}`}
+              </text>
+            </g>
+          </>
+        )}
+
+        {points.map((point, i) => (
+          <g key={`p-${i}`}>
+            <circle cx={point.x} cy={point.y} r="8" fill="transparent" />
+            <circle cx={point.x} cy={point.y} r="4" fill="#fff" stroke="#1d4ed8" strokeWidth="2.5" />
+          </g>
+        ))}
+
+        {labels.map((label, i) => {
+          const x = left + i * stepX;
+          return (
+            <text key={`x-${label}-${i}`} x={x} y={height - 14} textAnchor="middle" fontSize="11" fill="#64748b">
+              {label}
+            </text>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function DonutAnalyticsCard({
+  title,
+  subtitle,
+  items,
+  valueFormatter,
+}: {
+  title: string;
+  subtitle: string;
+  items: Array<{ label: string; value: number; percent: number }>;
+  valueFormatter?: (value: number) => string;
+}) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const chartId = useId().replace(/:/g, "");
+  const palette = ["#2563eb", "#0f766e", "#b45309", "#7c3aed", "#0891b2"];
+  const usableItems = items.length > 0 ? items : [{ label: "No Data", value: 1, percent: 100 }];
+  const total = usableItems.reduce((sum, item) => sum + Math.max(0, item.value), 0) || 1;
+  const segments = usableItems.map((item, idx) => ({
+    ...item,
+    color: palette[idx % palette.length],
+    ratio: Math.max(0, item.value) / total,
+  }));
+
+  const size = 220;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = 86;
+  let angleAcc = -Math.PI / 2;
+  const slicePaths = segments.map((segment) => {
+    const start = angleAcc;
+    const sweep = segment.ratio * Math.PI * 2;
+    const end = start + sweep;
+    angleAcc = end;
+
+    const x1 = cx + r * Math.cos(start);
+    const y1 = cy + r * Math.sin(start);
+    const x2 = cx + r * Math.cos(end);
+    const y2 = cy + r * Math.sin(end);
+    const largeArc = sweep > Math.PI ? 1 : 0;
+    const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+    return { path, segment };
+  });
+  const singleFullSlice =
+    segments.length === 1 && Math.abs(segments[0].ratio - 1) < 0.0001;
+
+  const active = hoveredIndex !== null ? segments[hoveredIndex] : null;
+
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h4 className="text-2xl font-bold leading-none text-slate-900">{title}</h4>
+      <p className="mt-2 text-base text-slate-600">{subtitle}</p>
+
+      <div className="mt-4 grid grid-cols-1 items-center gap-5 md:grid-cols-[230px_1fr]">
+        <div className="relative mx-auto h-[220px] w-[220px]">
+          {active && (
+            <div className="absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs shadow">
+              <p className="font-semibold text-slate-900">{active.label}</p>
+              <p className="text-slate-700">
+                {valueFormatter ? valueFormatter(active.value) : active.value} ({active.percent}%)
+              </p>
+            </div>
+          )}
+          <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full">
+            <defs>
+              <radialGradient id={`sphereShine-${chartId}`} cx="32%" cy="30%" r="70%">
+                <stop offset="0%" stopColor="#ffffff" stopOpacity="0.5" />
+                <stop offset="55%" stopColor="#ffffff" stopOpacity="0.08" />
+                <stop offset="100%" stopColor="#000000" stopOpacity="0.12" />
+              </radialGradient>
+            </defs>
+            {singleFullSlice ? (
+              <circle
+                cx={cx}
+                cy={cy}
+                r={r}
+                fill={segments[0].color}
+                stroke="#ffffff"
+                strokeWidth={hoveredIndex === 0 ? 3 : 1.5}
+                onMouseEnter={() => setHoveredIndex(0)}
+                onMouseLeave={() => setHoveredIndex(null)}
+              />
+            ) : (
+              slicePaths.map((slice, idx) => (
+                <path
+                  key={`${slice.segment.label}-${idx}`}
+                  d={slice.path}
+                  fill={slice.segment.color}
+                  stroke="#ffffff"
+                  strokeWidth={hoveredIndex === idx ? 3 : 1.5}
+                  opacity={hoveredIndex === null || hoveredIndex === idx ? 1 : 0.45}
+                  onMouseEnter={() => setHoveredIndex(idx)}
+                  onMouseLeave={() => setHoveredIndex(null)}
+                />
+              ))
+            )}
+            <circle cx={cx} cy={cy} r={r} fill={`url(#sphereShine-${chartId})`} pointerEvents="none" />
+          </svg>
+        </div>
+
+        <div className="space-y-3">
+          {usableItems.map((item, idx) => (
+            <div
+              key={`${item.label}-${idx}`}
+              className={`flex items-center justify-between rounded-2xl px-4 py-3 transition ${
+                hoveredIndex === idx ? "bg-blue-50 ring-1 ring-blue-200" : "bg-slate-50"
+              }`}
+              onMouseEnter={() => setHoveredIndex(idx)}
+              onMouseLeave={() => setHoveredIndex(null)}
+            >
+              <div className="flex items-center gap-2">
+                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: palette[idx % palette.length] }} />
+                <span className="text-lg text-slate-800">{item.label}</span>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-bold text-slate-900">
+                  {valueFormatter ? valueFormatter(item.value) : item.value}
+                </p>
+                <p className="text-sm text-slate-500">{item.percent}%</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PolicyDonutChart({ items }: { items: Array<{ label: string; count: number; percent: number }> }) {
+  if (!items.length) {
+    return <div className="grid h-52 place-items-center rounded-2xl bg-slate-50 text-sm text-slate-500">No policy distribution data</div>;
+  }
+
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const chartId = useId().replace(/:/g, "");
+  const palette = ["#1555b7", "#0ea334", "#d86c3f", "#12aebb", "#6b7280"];
+  const total = items.reduce((sum, item) => sum + Math.max(0, item.count), 0) || 1;
+  const segments = items.map((item, idx) => ({
+    ...item,
+    color: palette[idx % palette.length],
+    ratio: Math.max(0, item.count) / total,
+  }));
+
+  const size = 180;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = 58;
+  let angleAcc = -Math.PI / 2;
+  const paths = segments.map((segment) => {
+    const start = angleAcc;
+    const sweep = segment.ratio * Math.PI * 2;
+    const end = start + sweep;
+    angleAcc = end;
+    const x1 = cx + r * Math.cos(start);
+    const y1 = cy + r * Math.sin(start);
+    const x2 = cx + r * Math.cos(end);
+    const y2 = cy + r * Math.sin(end);
+    const largeArc = sweep > Math.PI ? 1 : 0;
+    return {
+      segment,
+      path: `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`,
+    };
+  });
+  const singleFullSlice =
+    segments.length === 1 && Math.abs(segments[0].ratio - 1) < 0.0001;
+
+  return (
+    <div className="grid grid-cols-1 items-center gap-5 md:grid-cols-[200px_1fr]">
+      <div className="relative mx-auto h-40 w-40">
+        <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full">
+          <defs>
+            <radialGradient id={`policySphere-${chartId}`} cx="32%" cy="30%" r="70%">
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.45" />
+              <stop offset="55%" stopColor="#ffffff" stopOpacity="0.08" />
+              <stop offset="100%" stopColor="#000000" stopOpacity="0.12" />
+            </radialGradient>
+          </defs>
+          {singleFullSlice ? (
+            <circle
+              cx={cx}
+              cy={cy}
+              r={r}
+              fill={segments[0].color}
+              stroke="#ffffff"
+              strokeWidth={hoveredIndex === 0 ? 3 : 1.5}
+              onMouseEnter={() => setHoveredIndex(0)}
+              onMouseLeave={() => setHoveredIndex(null)}
+            />
+          ) : (
+            paths.map((slice, idx) => (
+              <path
+                key={`${slice.segment.label}-${idx}`}
+                d={slice.path}
+                fill={slice.segment.color}
+                stroke="#ffffff"
+                strokeWidth={hoveredIndex === idx ? 3 : 1.5}
+                opacity={hoveredIndex === null || hoveredIndex === idx ? 1 : 0.45}
+                onMouseEnter={() => setHoveredIndex(idx)}
+                onMouseLeave={() => setHoveredIndex(null)}
+              />
+            ))
+          )}
+          <circle cx={cx} cy={cy} r={r} fill={`url(#policySphere-${chartId})`} pointerEvents="none" />
+        </svg>
+      </div>
+      <div className="space-y-2">
+        {items.map((item, idx) => (
+          <div
+            key={item.label}
+            className={`flex items-center justify-between gap-3 rounded-xl px-2 py-1 ${
+              hoveredIndex === idx ? "bg-blue-50" : ""
+            }`}
+            onMouseEnter={() => setHoveredIndex(idx)}
+            onMouseLeave={() => setHoveredIndex(null)}
+          >
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full" style={{ backgroundColor: palette[idx % palette.length] }} />
+              <span className="text-sm text-slate-700">{item.label}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="h-2 w-20 rounded-full bg-slate-200">
+                <div className="h-2 rounded-full" style={{ width: `${item.percent}%`, backgroundColor: palette[idx % palette.length] }} />
+              </div>
+              <span className="text-xs font-semibold text-slate-700">{item.percent}%</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+
+
+
+
+

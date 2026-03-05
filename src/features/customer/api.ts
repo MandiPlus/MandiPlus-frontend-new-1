@@ -1,5 +1,6 @@
 import axios, { AxiosError } from "axios";
 import type { ClaimRequest, InsuranceForm } from "@/features/insurance/api";
+import { refreshAccessToken } from "@/features/auth/api";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
@@ -32,18 +33,34 @@ function getAuthHeader() {
 
 function handleUnauthorized(err: AxiosError) {
   if (err.response?.status === 401 && typeof window !== "undefined") {
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    window.location.href = "/session-expired";
+    // Do not force logout on background 401s.
+    // Keep session until user explicitly logs out.
+    console.warn("401 received from customer API; preserving local auth state.");
+  }
+}
+
+async function withAuthRetry<T>(request: () => Promise<T>): Promise<T> {
+  try {
+    return await request();
+  } catch (error) {
+    const err = error as AxiosError;
+    if (err.response?.status === 401) {
+      const refreshed = await refreshAccessToken();
+      if (refreshed) {
+        return await request();
+      }
+    }
+    throw error;
   }
 }
 
 export async function getMyWalletSummary(): Promise<WalletSummary | null> {
   try {
-    const response = await axios.get(`${API_BASE_URL}/wallet/me`, {
-      headers: getAuthHeader(),
-    });
+    const response = await withAuthRetry(() =>
+      axios.get(`${API_BASE_URL}/wallet/me`, {
+        headers: getAuthHeader(),
+      }),
+    );
     return response.data;
   } catch (error) {
     const err = error as AxiosError;
@@ -61,9 +78,11 @@ export async function getMyWalletSummary(): Promise<WalletSummary | null> {
 
 export async function getMyWalletStatement(): Promise<WalletStatementItem[]> {
   try {
-    const response = await axios.get(`${API_BASE_URL}/wallet/me/statement`, {
-      headers: getAuthHeader(),
-    });
+    const response = await withAuthRetry(() =>
+      axios.get(`${API_BASE_URL}/wallet/me/statement`, {
+        headers: getAuthHeader(),
+      }),
+    );
     return Array.isArray(response.data) ? response.data : [];
   } catch (error) {
     const err = error as AxiosError;
@@ -81,10 +100,12 @@ export async function getMyWalletStatement(): Promise<WalletStatementItem[]> {
 
 export async function exportMyWalletStatementExcel(): Promise<Blob> {
   try {
-    const response = await axios.get(`${API_BASE_URL}/wallet/me/statement/export`, {
-      headers: getAuthHeader(),
-      responseType: "blob",
-    });
+    const response = await withAuthRetry(() =>
+      axios.get(`${API_BASE_URL}/wallet/me/statement/export`, {
+        headers: getAuthHeader(),
+        responseType: "blob",
+      }),
+    );
     return response.data;
   } catch (error) {
     const err = error as AxiosError;
@@ -95,9 +116,30 @@ export async function exportMyWalletStatementExcel(): Promise<Blob> {
 
 export async function getCustomerDashboardInvoices(): Promise<InsuranceForm[]> {
   try {
-    const response = await axios.get(`${API_BASE_URL}/invoices/customer/dashboard`, {
-      headers: getAuthHeader(),
-    });
+    const response = await withAuthRetry(() =>
+      axios.get(`${API_BASE_URL}/invoices/customer/dashboard`, {
+        headers: getAuthHeader(),
+      }),
+    );
+    return Array.isArray(response.data) ? response.data : [];
+  } catch (error) {
+    const err = error as AxiosError;
+    handleUnauthorized(err);
+    if (err.response?.status === 404) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+
+export async function getTransporterDashboardInvoices(): Promise<InsuranceForm[]> {
+  try {
+    const response = await withAuthRetry(() =>
+      axios.get(`${API_BASE_URL}/invoices/transporter/dashboard`, {
+        headers: getAuthHeader(),
+      }),
+    );
     return Array.isArray(response.data) ? response.data : [];
   } catch (error) {
     const err = error as AxiosError;
@@ -117,9 +159,11 @@ export async function getMyUserInvoices(): Promise<InsuranceForm[]> {
     const user = JSON.parse(userRaw);
     if (!user?.id) return [];
 
-    const response = await axios.get(`${API_BASE_URL}/invoices/user/${user.id}`, {
-      headers: getAuthHeader(),
-    });
+    const response = await withAuthRetry(() =>
+      axios.get(`${API_BASE_URL}/invoices/user/${user.id}`, {
+        headers: getAuthHeader(),
+      }),
+    );
     return Array.isArray(response.data) ? response.data : [];
   } catch (error) {
     const err = error as AxiosError;
@@ -133,9 +177,30 @@ export async function getMyUserInvoices(): Promise<InsuranceForm[]> {
 
 export async function getCustomerDashboardClaims(): Promise<ClaimRequest[]> {
   try {
-    const response = await axios.get(`${API_BASE_URL}/claim-requests/customer/dashboard`, {
-      headers: getAuthHeader(),
-    });
+    const response = await withAuthRetry(() =>
+      axios.get(`${API_BASE_URL}/claim-requests/customer/dashboard`, {
+        headers: getAuthHeader(),
+      }),
+    );
+    return Array.isArray(response.data) ? response.data : [];
+  } catch (error) {
+    const err = error as AxiosError;
+    handleUnauthorized(err);
+    if (err.response?.status === 404) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+
+export async function getTransporterDashboardClaims(): Promise<ClaimRequest[]> {
+  try {
+    const response = await withAuthRetry(() =>
+      axios.get(`${API_BASE_URL}/claim-requests/transporter/dashboard`, {
+        headers: getAuthHeader(),
+      }),
+    );
     return Array.isArray(response.data) ? response.data : [];
   } catch (error) {
     const err = error as AxiosError;
