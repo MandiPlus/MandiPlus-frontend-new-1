@@ -305,13 +305,24 @@ export default function TransporterDashboardPage() {
     previousClaims.filter((c) => c.status === "PENDING").length,
   );
 
-  const walletCredits = useMemo(
-    () => statement.filter((s) => s.direction === "CREDIT").reduce((sum, s) => sum + (Number(s.amount) || 0), 0),
+  const totalCreditsDisplay = useMemo(
+    () =>
+      Number(
+        statement
+          .filter((tx) => tx.direction === "CREDIT")
+          .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0)
+          .toFixed(2),
+      ),
     [statement],
   );
-
-  const walletDebits = useMemo(
-    () => statement.filter((s) => s.direction === "DEBIT").reduce((sum, s) => sum + (Number(s.amount) || 0), 0),
+  const totalDebitsDisplay = useMemo(
+    () =>
+      Number(
+        statement
+          .filter((tx) => tx.direction === "DEBIT")
+          .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0)
+          .toFixed(2),
+      ),
     [statement],
   );
   const invoiceDebitTotal = useMemo(
@@ -476,7 +487,6 @@ export default function TransporterDashboardPage() {
   const usedBalanceFallback = Number(Math.max(0, invoiceDebitTotal - invoiceRefundTotal).toFixed(2));
   const usedBalanceValue = Number(wallet?.usedBalance ?? usedBalanceFallback ?? 0);
   const totalBalanceValue = Number(wallet?.totalBalance ?? (Number(wallet?.availableBalance || 0) + usedBalanceValue));
-  const totalDebitsDisplay = usedBalanceValue;
 
   const filteredStatement = useMemo(() => {
     const q = walletSearch.trim().toLowerCase();
@@ -693,7 +703,7 @@ export default function TransporterDashboardPage() {
                     <div className="grid grid-cols-1 gap-3">
                       <div className="rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
                         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Total Credits</p>
-                        <p className="mt-1 text-3xl font-extrabold text-[#0f2547]">{formatCurrency(walletCredits)}</p>
+                        <p className="mt-1 text-3xl font-extrabold text-[#0f2547]">{formatCurrency(totalCreditsDisplay)}</p>
                       </div>
                       <div className="rounded-2xl border border-rose-200 bg-white p-4 shadow-sm">
                         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-rose-700">Total Debits</p>
