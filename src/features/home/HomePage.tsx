@@ -13,6 +13,7 @@ import {
   uploadWeighmentSlips,
   updateInvoice,
   getMyClaimsForms,
+  getAdminClaimsForms,
   ClaimRequest,
   CreateDamageFormDto,
   createClaimByTruck,
@@ -167,11 +168,19 @@ const HomePage = () => {
     }
   };
 
+  const fetchClaimsByRole = async (): Promise<ClaimRequest[]> => {
+    if (user?.identity === "INTERNAL_TEAM") {
+      return await getAdminClaimsForms();
+    }
+    // Non-internal users remain user-scoped.
+    return await getMyClaimsForms();
+  };
+
   // --- NEW: Fetch Claims ---
   const fetchClaims = async () => {
     setLoadingClaims(true);
     try {
-      const data = await getMyClaimsForms();
+      const data = await fetchClaimsByRole();
       setClaims(data);
     } catch (err: any) {
       console.error('Failed to fetch claims:', err);
@@ -223,7 +232,7 @@ const HomePage = () => {
       return;
     }
 
-    const source = claims.length > 0 ? claims : await getMyClaimsForms();
+    const source = claims.length > 0 ? claims : await fetchClaimsByRole();
     if (claims.length === 0) {
       setClaims(source);
     }
@@ -231,8 +240,9 @@ const HomePage = () => {
     const matched = source.find((claim) => {
       const claimId = String(claim.id || '').toLowerCase();
       const invoiceNo = String(claim.invoice?.invoiceNumber || '').toLowerCase();
-      const truckNo = String(claim.invoice?.vehicleNumber || '').toLowerCase();
-      return claimId.includes(query) || invoiceNo.includes(query) || truckNo.includes(query);
+      const vehicleNo = String(claim.invoice?.vehicleNumber || '').toLowerCase();
+      const truckNo = String(claim.invoice?.truckNumber || '').toLowerCase();
+      return claimId.includes(query) || invoiceNo.includes(query) || vehicleNo.includes(query) || truckNo.includes(query);
     });
 
     if (!matched) {
@@ -255,7 +265,7 @@ const HomePage = () => {
         fetchClaims();
         // Refresh selected claim if detail modal is open
         if (selectedClaimForDetail && selectedClaimForDetail.id === activeClaimIdForUpload) {
-          const updatedClaims = await getMyClaimsForms();
+          const updatedClaims = await fetchClaimsByRole();
           const updatedClaim = updatedClaims.find(c => c.id === activeClaimIdForUpload);
           if (updatedClaim) {
             setSelectedClaimForDetail(updatedClaim);

@@ -223,6 +223,26 @@ export const getMyClaimsForms = async (): Promise<ClaimRequest[]> => {
 };
 
 /**
+ * Get all claim requests via admin endpoint
+ * GET /claim-requests/admin
+ */
+export const getAdminClaimsForms = async (): Promise<ClaimRequest[]> => {
+  try {
+    const token =
+      localStorage.getItem("accessToken") || localStorage.getItem("token");
+
+    const response = await axios.get(`${API_BASE_URL}/claim-requests/admin`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    return Array.isArray(response.data) ? response.data : [];
+  } catch (error) {
+    const err = error as AxiosError<any>;
+    throw err.response?.data || { message: "Failed to fetch admin claims" };
+  }
+};
+
+/**
  * NEW: Create a new Claim by Truck Number
  * POST /claim-requests/by-truck
  */
