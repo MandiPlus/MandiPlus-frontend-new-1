@@ -23,6 +23,13 @@ import {
 type DashboardTab = "overview" | "wallet" | "claims" | "policies";
 type BotView = "tracking" | "knowVehicle" | "createNew";
 type RangeKey = "7D" | "1M" | "3M" | "6M" | "1Y";
+type InvoiceNotification = {
+  id: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  createdAt?: string;
+  isRead: boolean;
+};
 const RANGE_OPTIONS: RangeKey[] = ["7D", "1M", "3M", "6M", "1Y"];
 
 function formatCurrency(value: number) {
@@ -100,6 +107,15 @@ export default function TransporterDashboardPage() {
   const [botView, setBotView] = useState<BotView>("tracking");
   const [botOpen, setBotOpen] = useState(false);
   const [botStage, setBotStage] = useState<"question" | "view">("question");
+  const [botGreetingVisible, setBotGreetingVisible] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [invoiceNotifications, setInvoiceNotifications] = useState<InvoiceNotification[]>([]);
+  const [dashboardInitialized, setDashboardInitialized] = useState(false);
+  const [browserNotificationSupported, setBrowserNotificationSupported] = useState(false);
+  const [browserNotificationPermission, setBrowserNotificationPermission] =
+    useState<NotificationPermission>("default");
+  const [showBrowserNotificationPrompt, setShowBrowserNotificationPrompt] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [invoices, setInvoices] = useState<InsuranceForm[]>([]);
   const [claims, setClaims] = useState<ClaimRequest[]>([]);
@@ -116,6 +132,11 @@ export default function TransporterDashboardPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [editSlipFile, setEditSlipFile] = useState<File | null>(null);
   const editSlipInputRef = useRef<HTMLInputElement>(null);
+  const botGreetingTimerRef = useRef<number | null>(null);
+  const notificationPanelRef = useRef<HTMLDivElement>(null);
+  const knownInvoiceIdsRef = useRef<Set<string>>(new Set());
+  const hasPrimedNotificationsRef = useRef(false);
+  const prevUnreadNotificationCountRef = useRef(0);
   const [editForm, setEditForm] = useState({
     invoiceType: "BUYER_INVOICE" as "BUYER_INVOICE" | "SUPPLIER_INVOICE",
     supplierName: "",
@@ -188,6 +209,8 @@ export default function TransporterDashboardPage() {
     } catch {
       setInvoices([]);
       setClaims([]);
+    } finally {
+      setDashboardInitialized(true);
     }
   }, [loadWalletData]);
 
@@ -215,6 +238,239 @@ export default function TransporterDashboardPage() {
       loadWalletData();
     }
   }, [activeTab, loadWalletData]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const supported = "Notification" in window;
+    setBrowserNotificationSupported(supported);
+    if (!supported) return;
+
+    const permission = window.Notification.permission;
+    setBrowserNotificationPermission(permission);
+    const dismissed = window.sessionStorage.getItem("transporter_notification_prompt_dismissed") === "1";
+    if (permission === "default" && !dismissed) {
+      setShowBrowserNotificationPrompt(true);
+    }
+  }, []);
+
+  const requestBrowserNotificationPermission = useCallback(async () => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    try {
+      const permission = await window.Notification.requestPermission();
+      setBrowserNotificationPermission(permission);
+      if (permission !== "default") {
+        setShowBrowserNotificationPrompt(false);
+      }
+      if (permission === "granted") {
+        const welcomeNotification = new window.Notification("MandiPlus notifications enabled", {
+          body: "You will now get invoice alerts on this device.",
+          tag: "mandiplus-notification-enabled",
+        });
+        welcomeNotification.onclick = () => {
+          window.focus();
+          welcomeNotification.close();
+        };
+      }
+    } catch {
+      // Ignore permission request errors.
+    }
+  }, []);
+
+  const dismissBrowserNotificationPrompt = useCallback(() => {
+    setShowBrowserNotificationPrompt(false);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem("transporter_notification_prompt_dismissed", "1");
+    }
+  }, []);
+
+  const pollInvoicesForNotifications = useCallback(async () => {
+    try {
+      const [customerInvoices, ownInvoices] = await Promise.all([
+        getTransporterDashboardInvoices().catch(() => []),
+        getMyUserInvoices().catch(() => []),
+      ]);
+
+      const mergedInvoicesMap = new Map<string, InsuranceForm>();
+      for (const inv of ownInvoices) {
+        mergedInvoicesMap.set(inv.id, inv);
+      }
+      for (const inv of customerInvoices) {
+        mergedInvoicesMap.set(inv.id, inv);
+      }
+      const mergedInvoices = Array.from(mergedInvoicesMap.values()).sort((a, b) => {
+        const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tb - ta;
+      });
+      setInvoices(mergedInvoices);
+    } catch {
+      // Ignore polling failures and keep existing state.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!dashboardInitialized) return;
+
+    const currentIds = new Set(
+      invoices
+        .map((inv) => inv.id)
+        .filter((id): id is string => Boolean(id)),
+    );
+
+    if (!hasPrimedNotificationsRef.current) {
+      knownInvoiceIdsRef.current = currentIds;
+      hasPrimedNotificationsRef.current = true;
+      return;
+    }
+
+    const newInvoices = invoices.filter(
+      (inv) => Boolean(inv.id) && !knownInvoiceIdsRef.current.has(inv.id),
+    );
+
+    if (newInvoices.length > 0) {
+      setInvoiceNotifications((prev) => {
+        const dedupe = new Set(prev.map((n) => n.invoiceId));
+        const nextItems: InvoiceNotification[] = [];
+
+        for (const inv of newInvoices) {
+          if (!inv.id || dedupe.has(inv.id)) continue;
+          nextItems.push({
+            id: `${inv.id}-${Date.now()}`,
+            invoiceId: inv.id,
+            invoiceNumber: inv.invoiceNumber || inv.id,
+            createdAt: inv.createdAt,
+            isRead: false,
+          });
+        }
+
+        if (!nextItems.length) return prev;
+        return [...nextItems, ...prev].slice(0, 25);
+      });
+
+      if (
+        browserNotificationSupported &&
+        browserNotificationPermission === "granted" &&
+        typeof window !== "undefined"
+      ) {
+        for (const inv of newInvoices.slice(0, 3)) {
+          const invoiceNumber = inv.invoiceNumber || inv.id;
+          const n = new window.Notification("New invoice created", {
+            body: `Invoice ${invoiceNumber} is now available.`,
+            tag: `invoice-${inv.id}`,
+          });
+          n.onclick = () => {
+            window.focus();
+            setActiveTab("policies");
+            n.close();
+          };
+        }
+      }
+    }
+
+    knownInvoiceIdsRef.current = currentIds;
+  }, [browserNotificationPermission, browserNotificationSupported, dashboardInitialized, invoices]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        pollInvoicesForNotifications();
+      }
+    }, 20000);
+    return () => window.clearInterval(interval);
+  }, [pollInvoicesForNotifications]);
+
+  useEffect(() => {
+    const onMouseDown = (event: MouseEvent) => {
+      if (!notificationPanelRef.current) return;
+      if (!notificationPanelRef.current.contains(event.target as Node)) {
+        setNotificationOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, []);
+
+  useEffect(() => {
+    const unreadCount = invoiceNotifications.filter((n) => !n.isRead).length;
+    if (unreadCount <= prevUnreadNotificationCountRef.current) {
+      prevUnreadNotificationCountRef.current = unreadCount;
+      return;
+    }
+
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const gain = audioContext.createGain();
+      gain.gain.value = 0.0001;
+      gain.connect(audioContext.destination);
+
+      const osc = audioContext.createOscillator();
+      osc.type = "triangle";
+      osc.frequency.value = 820;
+      osc.connect(gain);
+
+      const start = audioContext.currentTime;
+      gain.gain.exponentialRampToValueAtTime(0.045, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.22);
+      osc.start(start);
+      osc.stop(start + 0.22);
+      window.setTimeout(() => {
+        audioContext.close().catch(() => undefined);
+      }, 350);
+    } catch {
+      // Ignore sound failures due to autoplay/browser restrictions.
+    }
+
+    prevUnreadNotificationCountRef.current = unreadCount;
+  }, [invoiceNotifications]);
+
+  useEffect(() => {
+    const greetingSessionKey = "transporter_bot_greeting_seen";
+    if (typeof window === "undefined") return;
+    if (window.sessionStorage.getItem(greetingSessionKey)) return;
+
+    const playGreetingTone = async () => {
+      try {
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const gainNode = audioContext.createGain();
+        gainNode.gain.value = 0.0001;
+        gainNode.connect(audioContext.destination);
+
+        const createNote = (freq: number, start: number, duration: number) => {
+          const osc = audioContext.createOscillator();
+          osc.type = "sine";
+          osc.frequency.value = freq;
+          osc.connect(gainNode);
+          osc.start(start);
+          osc.stop(start + duration);
+        };
+
+        const start = audioContext.currentTime;
+        gainNode.gain.exponentialRampToValueAtTime(0.06, start + 0.02);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, start + 0.32);
+        createNote(740, start, 0.12);
+        createNote(920, start + 0.14, 0.12);
+
+        window.setTimeout(() => {
+          audioContext.close().catch(() => undefined);
+        }, 500);
+      } catch {
+        // Ignore audio errors (autoplay restrictions/browser support).
+      }
+    };
+
+    playGreetingTone();
+    setBotGreetingVisible(true);
+    window.sessionStorage.setItem(greetingSessionKey, "1");
+    botGreetingTimerRef.current = window.setTimeout(() => {
+      setBotGreetingVisible(false);
+    }, 6500);
+
+    return () => {
+      if (botGreetingTimerRef.current !== null) {
+        window.clearTimeout(botGreetingTimerRef.current);
+      }
+    };
+  }, []);
 
   const stats = useMemo(() => {
     const activeClaims = claims.filter((c) => c.status !== "REJECTED").length;
@@ -511,6 +767,11 @@ export default function TransporterDashboardPage() {
     { key: "claims", label: "My Claims" },
     { key: "policies", label: "My Policies" },
   ];
+  const unreadInvoiceNotificationCount = invoiceNotifications.filter((n) => !n.isRead).length;
+
+  const markAllInvoiceNotificationsAsRead = () => {
+    setInvoiceNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+  };
 
   return (
     <ProtectedRoute allowedIdentities={["TRANSPORTER"]}>
@@ -551,49 +812,288 @@ export default function TransporterDashboardPage() {
             </div>
           </aside>
 
-          <main className="flex-1 bg-[#eef2f7]">
+          <main className="min-w-0 flex-1 bg-[#eef2f7]">
             <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
-              <div className="mx-auto flex w-full max-w-[1560px] items-center justify-between px-2 py-4 lg:px-4">
-                <div>
-                  <h2 className="text-3xl font-extrabold tracking-tight text-slate-900">
-                    Welcome, {user?.name || "User"}
-                  </h2>
-                  <p className="text-base text-slate-600">Here&apos;s your insurance overview for today</p>
+              <div className="mx-auto w-full max-w-[1560px] space-y-3 px-3 py-3 sm:px-4 sm:py-4">
+                <div className="flex items-start justify-between gap-2 lg:items-center">
+                  <div className="flex items-start gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMobileMenuOpen(true)}
+                      className="mt-1 grid h-10 w-10 place-items-center rounded-lg border border-slate-300 bg-slate-100 text-slate-700 lg:hidden"
+                      aria-label="Open menu"
+                    >
+                      <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                      </svg>
+                    </button>
+                    <div>
+                      <h2 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
+                        Welcome, {user?.name || "User"}
+                      </h2>
+                      <p className="text-sm text-slate-600 sm:text-base">Here&apos;s your insurance overview for today</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button className="grid h-11 w-11 place-items-center rounded-full border border-slate-300 bg-[#dbeafe] text-sm font-bold text-[#1155b8] lg:hidden">
+                      {(user?.name || "NK").slice(0, 2).toUpperCase()}
+                    </button>
+
+                    <div className="hidden items-center justify-end gap-3 lg:flex">
+                      <button className="grid h-11 w-11 place-items-center rounded-full border border-slate-300 bg-slate-100 text-slate-600">{"\u2315"}</button>
+                      <div className="relative" ref={notificationPanelRef}>
+                        <button
+                          type="button"
+                          onClick={() => setNotificationOpen((prev) => !prev)}
+                          className="relative grid h-11 w-11 place-items-center rounded-full border border-slate-300 bg-slate-100 text-slate-600"
+                          aria-label="Open invoice notifications"
+                          title="Invoice notifications"
+                        >
+                          {"\u23F0"}
+                          {unreadInvoiceNotificationCount > 0 && (
+                            <span className="absolute -right-1 -top-1 grid h-5 min-w-[20px] place-items-center rounded-full bg-emerald-500 px-1 text-[10px] font-bold text-white">
+                              {unreadInvoiceNotificationCount > 9 ? "9+" : unreadInvoiceNotificationCount}
+                            </span>
+                          )}
+                        </button>
+                        {notificationOpen && (
+                          <div className="absolute right-0 top-14 z-50 w-[360px] max-w-[85vw] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                              <p className="text-sm font-bold text-slate-900">Invoice Notifications</p>
+                              <button
+                                type="button"
+                                onClick={markAllInvoiceNotificationsAsRead}
+                                className="text-xs font-semibold text-[#1155b8] hover:underline"
+                              >
+                                Mark all read
+                              </button>
+                            </div>
+                            <div className="max-h-[320px] overflow-y-auto">
+                              {invoiceNotifications.length === 0 ? (
+                                <p className="px-4 py-6 text-sm text-slate-500">No new invoice notifications yet.</p>
+                              ) : (
+                                invoiceNotifications.map((n) => (
+                                  <button
+                                    key={n.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setInvoiceNotifications((prev) =>
+                                        prev.map((item) =>
+                                          item.id === n.id ? { ...item, isRead: true } : item,
+                                        ),
+                                      );
+                                      setActiveTab("policies");
+                                      setNotificationOpen(false);
+                                    }}
+                                    className={`block w-full border-b border-slate-100 px-4 py-3 text-left transition last:border-b-0 ${
+                                      n.isRead ? "bg-white" : "bg-blue-50/70"
+                                    }`}
+                                  >
+                                    <p className="text-sm font-semibold text-slate-900">
+                                      New invoice created: {n.invoiceNumber}
+                                    </p>
+                                    <p className="mt-1 text-xs text-slate-600">
+                                      {n.createdAt ? formatDateTime(n.createdAt) : "Just now"}
+                                    </p>
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                            {invoiceNotifications.length > 0 && (
+                              <div className="flex justify-end border-t border-slate-200 px-4 py-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setInvoiceNotifications([])}
+                                  className="text-xs font-semibold text-slate-600 hover:text-slate-900"
+                                >
+                                  Clear all
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab("wallet")}
+                        className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-1.5 text-right shadow-sm transition hover:border-[#1155b8] hover:bg-white"
+                        title="Open wallet"
+                      >
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Wallet</p>
+                        <p className="text-xl font-extrabold text-slate-900">{formatCurrency(wallet?.availableBalance ?? 0)}</p>
+                      </button>
+                      <button
+                        onClick={() => setSupportOpen(true)}
+                        className="grid h-11 w-11 place-items-center rounded-full bg-[#1155b8] text-white shadow-md transition hover:bg-[#0e4da7]"
+                        aria-label="Open support"
+                        title="Support"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path
+                            d="M4.5 11.5a7.5 7.5 0 1 1 15 0"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <path
+                            d="M5.5 10.5h1.25A2.25 2.25 0 0 1 9 12.75v3A2.25 2.25 0 0 1 6.75 18H5.5A1.5 1.5 0 0 1 4 16.5V12a1.5 1.5 0 0 1 1.5-1.5Z"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <path
+                            d="M18.5 10.5h-1.25A2.25 2.25 0 0 0 15 12.75v3A2.25 2.25 0 0 0 17.25 18h1.25A1.5 1.5 0 0 0 20 16.5V12a1.5 1.5 0 0 0-1.5-1.5Z"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          <path d="M9.5 19.5h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                        </svg>
+                      </button>
+                      <button className="grid h-11 w-11 place-items-center rounded-full border border-slate-300 bg-[#dbeafe] text-sm font-bold text-[#1155b8]">
+                        {(user?.name || "NK").slice(0, 2).toUpperCase()}
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <button className="grid h-11 w-11 place-items-center rounded-full border border-slate-300 bg-slate-100 text-slate-600">{"\u2315"}</button>
-                  <button className="relative grid h-11 w-11 place-items-center rounded-full border border-slate-300 bg-slate-100 text-slate-600">
-                    {"\u23F0"}
-                    <span className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">{stats.pendingClaims}</span>
-                  </button>
+
+                <div className="flex items-center justify-between gap-2 lg:hidden">
                   <button
                     type="button"
                     onClick={() => setActiveTab("wallet")}
-                    className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-1.5 text-right shadow-sm transition hover:border-[#1155b8] hover:bg-white"
+                    className="flex-1 rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 text-left shadow-sm transition hover:border-[#1155b8] hover:bg-white"
                     title="Open wallet"
                   >
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Wallet</p>
-                    <p className="text-xl font-extrabold text-slate-900">{formatCurrency(wallet?.availableBalance ?? 0)}</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Wallet</p>
+                    <p className="text-lg font-extrabold text-slate-900">{formatCurrency(wallet?.availableBalance ?? 0)}</p>
                   </button>
                   <button
                     onClick={() => setSupportOpen(true)}
-                    className="rounded-2xl bg-[#1155b8] px-5 py-2.5 text-lg font-semibold text-white shadow-md transition hover:bg-[#0e4da7]"
+                    className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#1155b8] text-white shadow-md transition hover:bg-[#0e4da7]"
+                    aria-label="Open support"
+                    title="Support"
                   >
-                    Support
-                  </button>
-                  <button className="grid h-11 w-11 place-items-center rounded-full border border-slate-300 bg-[#dbeafe] text-sm font-bold text-[#1155b8]">
-                    {(user?.name || "NK").slice(0, 2).toUpperCase()}
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path
+                        d="M4.5 11.5a7.5 7.5 0 1 1 15 0"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M5.5 10.5h1.25A2.25 2.25 0 0 1 9 12.75v3A2.25 2.25 0 0 1 6.75 18H5.5A1.5 1.5 0 0 1 4 16.5V12a1.5 1.5 0 0 1 1.5-1.5Z"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M18.5 10.5h-1.25A2.25 2.25 0 0 0 15 12.75v3A2.25 2.25 0 0 0 17.25 18h1.25A1.5 1.5 0 0 0 20 16.5V12a1.5 1.5 0 0 0-1.5-1.5Z"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path d="M9.5 19.5h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
                   </button>
                 </div>
+
+                {browserNotificationSupported &&
+                  browserNotificationPermission === "default" &&
+                  showBrowserNotificationPrompt && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2">
+                      <p className="text-sm font-medium text-blue-900">
+                        Enable browser notifications to get instant alerts for new invoices.
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={requestBrowserNotificationPermission}
+                          className="rounded-lg bg-[#1155b8] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0e4da7]"
+                        >
+                          Enable notifications
+                        </button>
+                        <button
+                          type="button"
+                          onClick={dismissBrowserNotificationPrompt}
+                          className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-900 hover:bg-blue-100"
+                        >
+                          Not now
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
               </div>
             </header>
 
-            <div className="mx-auto w-full max-w-[1560px] space-y-5 px-2 py-5 lg:px-4">
+            {mobileMenuOpen && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+                  aria-label="Close menu"
+                />
+                <aside className="fixed left-0 top-0 z-40 flex h-screen w-[280px] max-w-[84vw] flex-col border-r border-[#1b3158] bg-gradient-to-b from-[#071a35] to-[#041227] text-slate-100 lg:hidden">
+                  <div className="flex items-center justify-between border-b border-white/10 px-4 py-5">
+                    <div>
+                      <h1 className="text-2xl font-extrabold tracking-tight">
+                        <span className="text-white">Mandi</span>
+                        <span className="bg-gradient-to-r from-[#6d1cff] to-[#9d33ff] bg-clip-text text-transparent">Plus</span>
+                      </h1>
+                      <p className="mt-1 text-xs text-slate-300">Transporter Dashboard</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="rounded-md px-2 py-1 text-slate-300 hover:bg-white/10"
+                      aria-label="Close menu"
+                    >
+                      X
+                    </button>
+                  </div>
+                  <nav className="flex-1 space-y-2 overflow-y-auto px-4 py-5">
+                    {navItems.map((item) => (
+                      <button
+                        key={`drawer-${item.key}`}
+                        onClick={() => {
+                          setActiveTab(item.key);
+                          setMobileMenuOpen(false);
+                        }}
+                        className={`w-full rounded-xl px-4 py-3 text-left text-sm font-semibold transition ${
+                          activeTab === item.key
+                            ? "bg-[#1155b8] text-white shadow-lg shadow-[#1155b8]/30"
+                            : "text-slate-200 hover:bg-white/10"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </nav>
+                  <div className="p-4">
+                    <button
+                      onClick={logout}
+                      className="w-full rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-700"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                </aside>
+              </>
+            )}
+
+            <div className="mx-auto w-full max-w-[1560px] space-y-5 px-3 py-4 sm:px-4 sm:py-5">
               {activeTab === "overview" && (
-                <section className="space-y-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm lg:p-6">
-                  <div className="flex justify-end">
+                <section className="space-y-5 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 lg:p-6">
+                  <div className="flex justify-start sm:justify-end">
                     <div className="rounded-2xl border border-slate-300 bg-white p-1">
-                      <div className="flex items-center gap-1 text-sm">
+                      <div className="flex flex-wrap items-center gap-1 text-sm">
                         {RANGE_OPTIONS.map((opt) => (
                           <button
                             key={opt}
@@ -617,35 +1117,35 @@ export default function TransporterDashboardPage() {
                   <section>
                     <div className="mb-4 flex items-center justify-between">
                       <div>
-                        <h3 className="text-3xl font-extrabold text-slate-900">Analytics</h3>
-                        <p className="text-lg text-slate-600">Performance insights and trends</p>
+                        <h3 className="text-2xl font-extrabold text-slate-900 sm:text-3xl">Analytics</h3>
+                        <p className="text-base text-slate-600 sm:text-lg">Performance insights and trends</p>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                       <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                        <div className="mb-4 flex items-start justify-between">
+                        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                           <div>
-                            <h4 className="text-2xl font-bold text-slate-900">Monthly Business Trend</h4>
-                            <p className="text-base text-slate-500">Business value from invoice amount ({businessTrendData.monthCount} months)</p>
+                            <h4 className="text-xl font-bold text-slate-900 sm:text-2xl">Monthly Business Trend</h4>
+                            <p className="text-sm text-slate-500 sm:text-base">Business value from invoice amount ({businessTrendData.monthCount} months)</p>
                           </div>
-                          <div className="text-right">
+                          <div className="text-left sm:text-right">
                             <p className="text-sm text-slate-500">Business Value ({rangeKey})</p>
-                            <p className="text-3xl font-extrabold text-slate-900">{formatCurrency(businessTrendData.totalValue)}</p>
+                            <p className="text-2xl font-extrabold text-slate-900 sm:text-3xl">{formatCurrency(businessTrendData.totalValue)}</p>
                           </div>
                         </div>
                         <MonthlyBusinessTrendChart labels={businessTrendData.labels} values={businessTrendData.values} />
                       </div>
 
                       <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                        <div className="mb-4 flex items-start justify-between">
+                        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                           <div>
-                            <h4 className="text-2xl font-bold text-slate-900">Policy Distribution</h4>
-                            <p className="text-base text-slate-500">Breakdown by insurance type</p>
+                            <h4 className="text-xl font-bold text-slate-900 sm:text-2xl">Policy Distribution</h4>
+                            <p className="text-sm text-slate-500 sm:text-base">Breakdown by insurance type</p>
                           </div>
-                          <div className="text-right">
+                          <div className="text-left sm:text-right">
                             <p className="text-sm text-slate-500">Active Policies ({rangeKey})</p>
-                            <p className="text-3xl font-extrabold text-slate-900">{currentInvoices.length}</p>
+                            <p className="text-2xl font-extrabold text-slate-900 sm:text-3xl">{currentInvoices.length}</p>
                           </div>
                         </div>
                         <PolicyDonutChart items={policyDistribution} />
@@ -653,7 +1153,7 @@ export default function TransporterDashboardPage() {
                     </div>
 
                     <div className="mt-6">
-                      <h3 className="text-3xl font-extrabold text-slate-900">Pie Chart Analytics</h3>
+                      <h3 className="text-2xl font-extrabold text-slate-900 sm:text-3xl">Pie Chart Analytics</h3>
                       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
                         <DonutAnalyticsCard
                           title="Invoice Created (Daily/Weekly/Monthly)"
@@ -683,7 +1183,7 @@ export default function TransporterDashboardPage() {
                   <div className="grid grid-cols-1 gap-3 xl:grid-cols-[2fr_1fr]">
                     <div className="rounded-3xl bg-[#1555b7] p-5 text-white shadow-lg">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-100">Available Balance</p>
-                      <p className="mt-1 text-4xl font-extrabold">{formatCurrency(wallet?.availableBalance ?? 0)}</p>
+                      <p className="mt-1 text-3xl font-extrabold sm:text-4xl">{formatCurrency(wallet?.availableBalance ?? 0)}</p>
                       <p className="mt-1 text-sm text-blue-100">
                         Last updated: {wallet?.updatedAt ? formatDate(wallet.updatedAt) : "-"}
                       </p>
@@ -725,7 +1225,7 @@ export default function TransporterDashboardPage() {
                             value={walletSearch}
                             onChange={(e) => setWalletSearch(e.target.value)}
                             placeholder="Search transactions..."
-                            className="h-6 w-44 bg-transparent outline-none placeholder:text-slate-400"
+                            className="h-6 w-36 bg-transparent outline-none placeholder:text-slate-400 sm:w-44"
                           />
                         </div>
                         <button
@@ -781,7 +1281,7 @@ export default function TransporterDashboardPage() {
                         filteredStatement.map((tx) => {
                           const isCredit = tx.direction === "CREDIT";
                           return (
-                            <div key={tx.id} className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3.5 md:px-5">
+                            <div key={tx.id} className="flex flex-col items-start justify-between gap-3 border-b border-slate-100 px-4 py-3.5 sm:flex-row md:px-5">
                               <div className="flex items-start gap-3">
                                 <div className={`mt-0.5 grid h-9 w-9 place-items-center rounded-full text-sm ${isCredit ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
                                   {isCredit ? "↗" : "↘"}
@@ -792,8 +1292,8 @@ export default function TransporterDashboardPage() {
                                 </div>
                               </div>
 
-                              <div className="text-right">
-                                <p className={`text-2xl font-extrabold ${isCredit ? "text-emerald-600" : "text-rose-600"}`}>
+                              <div className="text-left sm:text-right">
+                                <p className={`text-xl font-extrabold sm:text-2xl ${isCredit ? "text-emerald-600" : "text-rose-600"}`}>
                                   {isCredit ? "+" : "-"}{formatCurrency(Number(tx.amount || 0)).replace(/₹/g, "")}
                                 </p>
                                 <p className="text-xs text-slate-500">{isCredit ? "Credit" : "Debit"}</p>
@@ -914,7 +1414,7 @@ export default function TransporterDashboardPage() {
 
               {activeTab === "policies" && (
                 <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm lg:p-6">
-                  <div className="mb-5 flex items-center justify-between">
+                  <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                     <h3 className="text-2xl font-bold text-slate-900">My Policies</h3>
                     <button
                       onClick={() => {
@@ -1198,7 +1698,7 @@ export default function TransporterDashboardPage() {
         )}
 
         {botOpen && (
-          <div className="fixed bottom-24 right-5 z-40 w-[380px] max-w-[calc(100vw-24px)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+          <div className="fixed bottom-24 left-3 right-3 z-40 w-auto overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:left-auto sm:right-5 sm:w-[380px] sm:max-w-[calc(100vw-24px)]">
             <div className="flex items-center justify-between bg-[#1155b8] px-4 py-3 text-white">
               <div>
                 <p className="text-2xl font-bold leading-none">MandiPlus Assistant</p>
@@ -1269,13 +1769,46 @@ export default function TransporterDashboardPage() {
           </div>
         )}
 
-        <div className="fixed bottom-5 right-5 z-40">
+        {botGreetingVisible && !botOpen && (
+          <div className="fixed bottom-24 right-3 z-40 w-[min(340px,calc(100vw-24px))] rounded-2xl border border-blue-200 bg-white p-4 shadow-2xl sm:right-5">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-blue-100 text-blue-700">
+                <span className="text-sm font-bold">AI</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-slate-900">MandiPlus Assistant</p>
+                <p className="mt-1 text-sm text-slate-700">Hi, I am here to help you. Tap to explore quick actions.</p>
+              </div>
+              <button
+                onClick={() => setBotGreetingVisible(false)}
+                className="rounded-md px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Dismiss assistant greeting"
+                type="button"
+              >
+                X
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                setBotGreetingVisible(false);
+                setBotStage("question");
+                setBotOpen(true);
+              }}
+              className="mt-3 w-full rounded-xl bg-[#1155b8] px-3 py-2 text-sm font-semibold text-white hover:bg-[#0e4da7]"
+              type="button"
+            >
+              Open Assistant
+            </button>
+          </div>
+        )}
+
+        <div className="fixed bottom-4 right-4 z-40 sm:bottom-5 sm:right-5">
           <button
             onClick={() => {
               setBotStage("question");
               setBotOpen((prev) => !prev);
             }}
-            className={`relative grid h-16 w-16 place-items-center rounded-full text-white transition ${
+            className={`relative grid h-14 w-14 place-items-center rounded-full text-white transition sm:h-16 sm:w-16 ${
               botOpen
                 ? "scale-[0.98] bg-[#0e4da7]"
                 : "bg-[#1155b8] hover:bg-[#0e4da7]"
@@ -1298,7 +1831,7 @@ export default function TransporterDashboardPage() {
             />
             <svg
               viewBox="0 0 24 24"
-              className="relative h-8 w-8"
+              className="relative h-7 w-7 sm:h-8 sm:w-8"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
             >
@@ -1344,7 +1877,7 @@ function StatCard({
   return (
     <div className={`rounded-2xl border p-4 shadow-sm ${styles[accent]}`}>
       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className="mt-1 text-3xl font-extrabold text-slate-900">
+      <p className="mt-1 text-2xl font-extrabold text-slate-900 sm:text-3xl">
         {valueFormatter ? valueFormatter(value) : value}
       </p>
       <p className="mt-1 text-xs text-slate-500">{deltaLabel}</p>
@@ -1402,10 +1935,10 @@ function MonthlyBusinessTrendChart({
   };
 
   return (
-    <div className="rounded-2xl bg-slate-50 p-4">
+    <div className="overflow-x-auto rounded-2xl bg-slate-50 p-4">
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        className="w-full"
+        className="min-w-[640px] w-full"
         onMouseMove={(e) => {
           const bounds = e.currentTarget.getBoundingClientRect();
           const relativeX = e.clientX - bounds.left;
