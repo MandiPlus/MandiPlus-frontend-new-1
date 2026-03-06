@@ -47,7 +47,7 @@ To get the latest environment variables from the remote pushenv service, run:
 ```bash
 pushenv pull
 ```
-
+   
 This command will fetch and decrypt the latest environment variables and update your local `.env` file. You may be prompted for the passphrase.
 
 > **Note:** Use `pushenv pull` whenever you need to update your local environment variables with the latest changes from the remote repository.
@@ -80,7 +80,7 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Learn More
+## Learn more
 
 To learn more about Next.js, take a look at the following resources:
 

@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import axios from 'axios';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import { formatDate } from '@/features/admin/utils/format';
+import { AdminWalletStatementItem, adminApi } from '@/features/admin/api/admin.api';
+import { toast } from 'react-toastify';
 
 // --- 1. Interface Updated ---
 interface User {
@@ -12,10 +13,14 @@ interface User {
     _id?: string;
     name: string; // Added Name
     mobileNumber: string;
+    identity?: string;
     category?: string;
     state?: string;
+    walletBalance?: number;
     createdAt: string;
 }
+
+type UserSection = 'ALL' | 'CUSTOMER' | 'TRANSPORTER';
 
 // --- 2. Helper for Mobile Format ---
 const formatIndianMobile = (phone: string | undefined) => {
@@ -37,7 +42,22 @@ export default function UsersPage() {
 
     const [searchTerm, setSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
+    const [activeSection, setActiveSection] = useState<UserSection>('ALL');
+    const [creditAmounts, setCreditAmounts] = useState<Record<string, string>>({});
+    const [creditLoadingByUser, setCreditLoadingByUser] = useState<Record<string, boolean>>({});
+    const [convertingByUser, setConvertingByUser] = useState<Record<string, boolean>>({});
+    const [walletLogsOpen, setWalletLogsOpen] = useState(false);
+    const [walletLogsLoading, setWalletLogsLoading] = useState(false);
+    const [walletLogUser, setWalletLogUser] = useState<User | null>(null);
+    const [walletLogs, setWalletLogs] = useState<AdminWalletStatementItem[]>([]);
     const ITEMS_PER_PAGE = 10;
+    const showWalletColumns = activeSection !== 'ALL';
+    const sectionTitle =
+        activeSection === 'CUSTOMER'
+            ? 'Customers'
+            : activeSection === 'TRANSPORTER'
+                ? 'Transporters'
+                : 'Users';
 
     useEffect(() => {
         if (!isAuthenticated) {
@@ -49,20 +69,27 @@ export default function UsersPage() {
             try {
                 setLoading(true);
                 setError('');
-                const token = localStorage.getItem('adminToken');
-                const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
-                const headers = { Authorization: `Bearer ${token}` };
+                const walletsRes = await adminApi.getAdminCustomerWallets();
+                const usersRes = await adminApi.getUsers(1, 500);
 
-                // 1. Fetch Users ONLY (No longer need invoices here)
-                const usersRes = await axios.get(`${baseUrl}/users`, { headers });
+                const walletsRaw = walletsRes.success && Array.isArray(walletsRes.data)
+                    ? walletsRes.data
+                    : [];
+                const usersRaw = usersRes.success
+                    ? (Array.isArray(usersRes.data?.users) ? usersRes.data?.users : [])
+                    : [];
 
-                // 2. Process Users
-                const usersRaw = Array.isArray(usersRes.data) ? usersRes.data : usersRes.data.data || [];
+                const walletByUserId = new Map<string, any>(
+                    walletsRaw
+                        .map((u: any) => [String(u.userId || u.id || u._id || ''), u] as const)
+                        .filter(([id]) => Boolean(id))
+                );
 
                 // Map ID for consistency
-                const processedUsers = usersRaw.map((u: User) => ({
+                const processedUsers = usersRaw.map((u: any) => ({
                     ...u,
-                    id: u.id || u._id,
+                    id: String(u.id || u._id || ''),
+                    walletBalance: walletByUserId.get(String(u.id || u._id || ''))?.walletBalance ?? 0,
                 }));
 
                 // 3. Sort by Date (Newest First)
@@ -74,7 +101,9 @@ export default function UsersPage() {
                 setFilteredUsers(sortedData);
             } catch (err: any) {
                 console.error('Failed to fetch data:', err);
-                setError(err.response?.data?.message || 'Failed to load data');
+                const message = err.response?.data?.message || 'Failed to load data';
+                setError(message);
+                toast.error(message);
             } finally {
                 setLoading(false);
             }
@@ -85,11 +114,17 @@ export default function UsersPage() {
 
     // Search Logic
     useEffect(() => {
+        const bySection = allUsers.filter((user) => {
+            if (activeSection === 'CUSTOMER') return user.identity === 'CUSTOMER';
+            if (activeSection === 'TRANSPORTER') return user.identity === 'TRANSPORTER';
+            return true;
+        });
+
         if (!searchTerm) {
-            setFilteredUsers(allUsers);
+            setFilteredUsers(bySection);
         } else {
             const lowerTerm = searchTerm.toLowerCase();
-            const filtered = allUsers.filter(user =>
+            const filtered = bySection.filter(user =>
                 (user.name && user.name.toLowerCase().includes(lowerTerm)) ||
                 user.mobileNumber.includes(lowerTerm) ||
                 (user.state && user.state.toLowerCase().includes(lowerTerm))
@@ -97,7 +132,7 @@ export default function UsersPage() {
             setFilteredUsers(filtered);
         }
         setCurrentPage(1);
-    }, [searchTerm, allUsers]);
+    }, [searchTerm, allUsers, activeSection]);
 
     // Pagination Logic
     const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
@@ -106,8 +141,88 @@ export default function UsersPage() {
         currentPage * ITEMS_PER_PAGE
     );
 
-    const handleViewForms = (userId: string) => {
-        router.push(`/admin/users/${userId}/forms`);
+    const handleWalletAdjust = async (user: User) => {
+        const rawAmount = creditAmounts[user.id];
+        const amount = Number(rawAmount);
+
+        if (!Number.isFinite(amount) || amount === 0) {
+            toast.error('Please enter a valid non-zero amount');
+            return;
+        }
+
+        setError('');
+        setCreditLoadingByUser((prev) => ({ ...prev, [user.id]: true }));
+        try {
+            const response = await adminApi.adjustUserWallet(user.id, amount, 'Admin wallet update');
+            if (!response.success) {
+                toast.error(response.message || 'Failed to update wallet');
+                return;
+            }
+
+            const backendBalance = Number((response as any)?.data?.balance);
+            setAllUsers((prev) =>
+                prev.map((u) =>
+                    u.id === user.id
+                        ? {
+                            ...u,
+                            walletBalance: Number.isFinite(backendBalance)
+                                ? Number(backendBalance.toFixed(2))
+                                : Number((Number(u.walletBalance || 0) + amount).toFixed(2)),
+                        }
+                        : u,
+                ),
+            );
+            setCreditAmounts((prev) => ({ ...prev, [user.id]: '' }));
+            toast.success('Wallet updated successfully');
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to update wallet');
+        } finally {
+            setCreditLoadingByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
+    };
+
+    const handleConvertIdentity = async (
+        user: User,
+        nextIdentity: 'CUSTOMER' | 'TRANSPORTER',
+    ) => {
+        if (!user?.id || user.identity === nextIdentity) return;
+        setError('');
+        setConvertingByUser((prev) => ({ ...prev, [user.id]: true }));
+        try {
+            const response = await adminApi.convertUserIdentity(user.id, nextIdentity);
+            if (!response.success) {
+                toast.error(response.message || 'Failed to convert user');
+                return;
+            }
+
+            setAllUsers((prev) => prev.map((u) => (
+                u.id === user.id ? { ...u, identity: nextIdentity } : u
+            )));
+            toast.success('User identity updated');
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to convert user');
+        } finally {
+            setConvertingByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
+    };
+
+    const handleOpenWalletLogs = async (user: User) => {
+        if (!user?.id) return;
+        setWalletLogUser(user);
+        setWalletLogsOpen(true);
+        setWalletLogsLoading(true);
+        try {
+            const response = await adminApi.getAdminUserWalletStatement(user.id);
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to fetch wallet logs');
+            }
+            setWalletLogs(Array.isArray(response.data) ? response.data : []);
+        } catch (err: any) {
+            setWalletLogs([]);
+            toast.error(err?.message || 'Failed to fetch wallet logs');
+        } finally {
+            setWalletLogsLoading(false);
+        }
     };
 
     if (loading) {
@@ -118,29 +233,60 @@ export default function UsersPage() {
         );
     }
 
-    if (error) {
-        return (
-            <div className="bg-red-50 border-l-4 border-red-400 p-4">
-                <p className="text-sm text-red-700">{error}</p>
-            </div>
-        );
-    }
-
     return (
         <div className="py-6">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-                    <h1 className="text-2xl font-semibold text-gray-900">Users</h1>
+                    <h1 className="text-2xl font-semibold text-gray-900">{sectionTitle}</h1>
                     <div className="mt-4 md:mt-0">
                         <input
                             type="text"
-                            placeholder="Search by Name or Mobile..."
+                            placeholder={`Search ${sectionTitle.toLowerCase()} by Name or Mobile...`}
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm px-4 py-2 border"
                         />
                     </div>
                 </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                        onClick={() => setActiveSection('ALL')}
+                        className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+                            activeSection === 'ALL'
+                                ? 'bg-green-600 text-white'
+                                : 'bg-white text-gray-700 border border-gray-300'
+                        }`}
+                    >
+                        Users
+                    </button>
+                    <button
+                        onClick={() => setActiveSection('CUSTOMER')}
+                        className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+                            activeSection === 'CUSTOMER'
+                                ? 'bg-green-600 text-white'
+                                : 'bg-white text-gray-700 border border-gray-300'
+                        }`}
+                    >
+                        Customers
+                    </button>
+                    <button
+                        onClick={() => setActiveSection('TRANSPORTER')}
+                        className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+                            activeSection === 'TRANSPORTER'
+                                ? 'bg-green-600 text-white'
+                                : 'bg-white text-gray-700 border border-gray-300'
+                        }`}
+                    >
+                        Transporters
+                    </button>
+                </div>
+
+                {error && (
+                    <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        {error}
+                    </div>
+                )}
 
                 <div className="mt-8 flex flex-col">
                     <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
@@ -165,16 +311,32 @@ export default function UsersPage() {
                                             <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                 Registered Date
                                             </th>
-                                            {/* Actions */}
-                                            {/* <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
-                                                <span className="sr-only">Actions</span>
-                                            </th> */}
+                                            {!showWalletColumns && (
+                                                <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                    Identity
+                                                </th>
+                                            )}
+                                            {!showWalletColumns && (
+                                                <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                    Convert
+                                                </th>
+                                            )}
+                                            {showWalletColumns && (
+                                                <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                    Wallet Balance
+                                                </th>
+                                            )}
+                                            {showWalletColumns && (
+                                                <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                    Update Wallet
+                                                </th>
+                                            )}
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-200 bg-white">
                                         {paginatedUsers.length === 0 ? (
                                             <tr>
-                                                <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
+                                                <td colSpan={showWalletColumns ? 6 : 6} className="px-6 py-4 text-center text-sm text-gray-500">
                                                     No users found
                                                 </td>
                                             </tr>
@@ -197,15 +359,68 @@ export default function UsersPage() {
                                                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                         {formatDate(user.createdAt)}
                                                     </td>
-                                                    {/* Actions */}
-                                                    {/* <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                                                        <button
-                                                            onClick={() => handleViewForms(user.id)}
-                                                            className="text-green-600 hover:text-green-900"
-                                                        >
-                                                            View Forms
-                                                        </button>
-                                                    </td> */}
+                                                    {!showWalletColumns && (
+                                                        <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-gray-700">
+                                                            {user.identity || 'N/A'}
+                                                        </td>
+                                                    )}
+                                                    {!showWalletColumns && (
+                                                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                                            <div className="flex items-center gap-2">
+                                                                <button
+                                                                    onClick={() => handleConvertIdentity(user, 'CUSTOMER')}
+                                                                    disabled={convertingByUser[user.id] || user.identity === 'CUSTOMER'}
+                                                                    className="rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                                                                >
+                                                                    To Customer
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleConvertIdentity(user, 'TRANSPORTER')}
+                                                                    disabled={convertingByUser[user.id] || user.identity === 'TRANSPORTER'}
+                                                                    className="rounded-md bg-teal-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+                                                                >
+                                                                    To Transporter
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    )}
+                                                    {showWalletColumns && (
+                                                        <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-gray-700">
+                                                            Rs {Number(user.walletBalance || 0).toFixed(2)}
+                                                        </td>
+                                                    )}
+                                                    {showWalletColumns && (
+                                                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                                            <div className="flex items-center gap-2">
+                                                                <input
+                                                                    type="number"
+                                                                    step="0.01"
+                                                                    value={creditAmounts[user.id] || ''}
+                                                                    onChange={(e) =>
+                                                                        setCreditAmounts((prev) => ({
+                                                                            ...prev,
+                                                                            [user.id]: e.target.value,
+                                                                        }))
+                                                                    }
+                                                                    placeholder="+/- Amount"
+                                                                    className="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs"
+                                                                />
+                                                                <button
+                                                                    onClick={() => handleWalletAdjust(user)}
+                                                                    disabled={creditLoadingByUser[user.id]}
+                                                                    className="rounded-md bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-60"
+                                                                >
+                                                                    {creditLoadingByUser[user.id] ? 'Updating...' : 'Update'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleOpenWalletLogs(user)}
+                                                                    className="rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+                                                                >
+                                                                    Logs
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    )}
                                                 </tr>
                                             ))
                                         )}
@@ -273,6 +488,64 @@ export default function UsersPage() {
                     </div>
                 )}
             </div>
+
+            {walletLogsOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <div className="w-full max-w-3xl rounded-xl bg-white shadow-2xl">
+                        <div className="flex items-center justify-between border-b px-5 py-4">
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-900">Wallet Logs</h3>
+                                <p className="text-xs text-gray-500">
+                                    {walletLogUser?.name || 'User'} ({formatIndianMobile(walletLogUser?.mobileNumber)})
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setWalletLogsOpen(false)}
+                                className="rounded-md border px-3 py-1 text-sm text-gray-600 hover:bg-gray-50"
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        <div className="max-h-[65vh] overflow-auto">
+                            {walletLogsLoading ? (
+                                <div className="px-5 py-8 text-sm text-gray-500">Loading wallet logs...</div>
+                            ) : walletLogs.length === 0 ? (
+                                <div className="px-5 py-8 text-sm text-gray-500">No wallet transactions found.</div>
+                            ) : (
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Date</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Narration</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Type</th>
+                                            <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Amount</th>
+                                            <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Balance After</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100 bg-white">
+                                        {walletLogs.map((tx) => (
+                                            <tr key={tx.id}>
+                                                <td className="px-4 py-3 text-xs text-gray-600">{formatDate(tx.createdAt)}</td>
+                                                <td className="px-4 py-3 text-sm text-gray-800">{tx.narration || tx.type || '-'}</td>
+                                                <td className="px-4 py-3 text-xs">
+                                                    <span className={`rounded-full px-2 py-1 font-semibold ${tx.direction === 'CREDIT' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                                                        {tx.direction}
+                                                    </span>
+                                                </td>
+                                                <td className={`px-4 py-3 text-right text-sm font-semibold ${tx.direction === 'CREDIT' ? 'text-emerald-700' : 'text-rose-700'}`}>
+                                                    {tx.direction === 'CREDIT' ? '+' : '-'}₹{Number(tx.amount || 0).toFixed(2)}
+                                                </td>
+                                                <td className="px-4 py-3 text-right text-sm text-gray-700">₹{Number(tx.balanceAfter || 0).toFixed(2)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

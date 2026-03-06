@@ -14,7 +14,12 @@ import {
 } from '@heroicons/react/24/outline';
 import Cropper, { ReactCropperElement } from 'react-cropper';
 import "cropperjs/dist/cropper.css";
-import { createInsuranceForm } from '../api';
+import {
+    createInsuranceForm,
+    getInvoiceCustomerAccounts,
+    type InvoiceCustomerAccount,
+} from '../api';
+import { useAuth } from "@/features/auth/context/AuthContext";
 
 // --- Types ---
 
@@ -33,6 +38,8 @@ interface FormData {
     cashOrCommission: string;
     invoiceType: string;
     notes: string;
+    addToCustomerAccount: string;
+    customerUserId: string;
 }
 
 interface QuestionText {
@@ -139,6 +146,25 @@ const questions: Question[] = [
         text: { en: "Invoice Type", hi: "इनवॉइस का प्रकार" }
     },
     { field: 'weightmentSlip', type: 'file', optional: true, text: { en: "Kanta Parchi Photo", hi: "कांटा पर्ची" } },
+    {
+        field: 'addToCustomerAccount',
+        type: 'select',
+        options: ['No', 'Yes'],
+        optional: true,
+        text: {
+            en: 'Add this invoice to an account?',
+            hi: 'Kya aap ise kisi account me add karna chahte hain?',
+        },
+    },
+    {
+        field: 'customerUserId',
+        type: 'select',
+        optional: true,
+        text: {
+            en: 'Select account',
+            hi: 'Account select karein',
+        },
+    },
 ];
 
 // --- Debounce Hook ---
@@ -162,6 +188,7 @@ function useDebounce<T>(value: T, delay: number): T {
 
 const InsuranceIOS = () => {
     const router = useRouter();
+    const { user } = useAuth();
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const textInputRef = useRef<HTMLInputElement>(null);
@@ -182,6 +209,8 @@ const InsuranceIOS = () => {
         cashOrCommission: '',
         invoiceType: 'BUYER_INVOICE',
         notes: '',
+        addToCustomerAccount: 'No',
+        customerUserId: '',
     });
 
     const [weightmentSlip, setWeightmentSlip] = useState<File | null>(null);
@@ -203,6 +232,21 @@ const InsuranceIOS = () => {
     // Edit States
     const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
     const [resumeQuestionIndex, setResumeQuestionIndex] = useState<number | null>(null);
+    const [customerAccounts, setCustomerAccounts] = useState<InvoiceCustomerAccount[]>([]);
+    const identity = user?.identity || '';
+    // React state updates can lag behind the last chat answer; keep the selected customerUserId
+    // in a ref so submit always includes it when needed.
+    const selectedCustomerUserIdRef = useRef<string>('');
+    const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM', 'CUSTOMER'].includes(identity);
+    const shouldAskCustomerPicker = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
+
+    const formatCustomerOption = (account: InvoiceCustomerAccount) => {
+        const balance = Number(account.walletBalance || 0).toLocaleString('en-IN', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        });
+        return `${account.name} (${account.mobileNumber}) - Wallet: ₹${balance}`;
+    };
 
     // Cropper States
     const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -271,6 +315,22 @@ const InsuranceIOS = () => {
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, currentQuestionIndex]);
+
+    useEffect(() => {
+        const loadCustomers = async () => {
+            if (!shouldAskCustomerPicker) {
+                setCustomerAccounts([]);
+                return;
+            }
+            try {
+                const customers = await getInvoiceCustomerAccounts();
+                setCustomerAccounts(customers);
+            } catch (e) {
+                console.error('Failed to load customer accounts', e);
+            }
+        };
+        loadCustomers();
+    }, [shouldAskCustomerPicker]);
 
     // --- Address Search Effect ---
     useEffect(() => {
@@ -348,12 +408,18 @@ const InsuranceIOS = () => {
         try {
             const submitData = new FormData();
             const userData = localStorage.getItem('user');
+            let fallbackUserId = '';
             if (userData) {
                 try {
-                    const user = JSON.parse(userData);
-                    if (user.id) submitData.append('userId', user.id);
+                    const parsed = JSON.parse(userData);
+                    fallbackUserId = parsed?.id || '';
                 } catch (e) { console.error(e); }
             }
+            const effectiveUserId = user?.id || fallbackUserId;
+            if (!effectiveUserId) {
+                throw new Error('Authentication required. Please login again.');
+            }
+            submitData.append('userId', effectiveUserId);
 
             submitData.append('invoiceDate', new Date().toISOString());
             submitData.append('placeOfSupply', formData.placeOfSupply || 'State');
@@ -386,6 +452,13 @@ const InsuranceIOS = () => {
 
             if (formData.hsn) submitData.append('hsnCode', formData.hsn);
             if (formData.notes) submitData.append('weighmentSlipNote', formData.notes);
+            if (shouldShowCustomerMappingQuestion && formData.addToCustomerAccount === 'Yes') {
+                const customerUserIdForSubmit =
+                    formData.customerUserId || selectedCustomerUserIdRef.current;
+                if (customerUserIdForSubmit) {
+                    submitData.append('customerUserId', customerUserIdForSubmit);
+                }
+            }
 
             const finalFile = fileArgument || weightmentSlip;
             if (finalFile) {
@@ -394,15 +467,30 @@ const InsuranceIOS = () => {
 
             const invoice = await createInsuranceForm(submitData);
             const rawPdfUrl = invoice.pdfUrl || invoice.pdfURL;
+            const isBotEmbed =
+                typeof window !== 'undefined' &&
+                window.self !== window.top &&
+                new URLSearchParams(window.location.search).get('embedBot') === '1';
 
             setMessages(prev => [...prev, { text: 'Success! Invoice created.', sender: 'bot' }]);
 
             if (rawPdfUrl) {
                 const finalLink = rawPdfUrl.startsWith('http') ? rawPdfUrl : `http://localhost:3000${rawPdfUrl}`;
-                window.location.href = finalLink;
+                if (isBotEmbed) {
+                    window.open(finalLink, '_blank');
+                    window.parent.postMessage({ type: 'MANDI_BOT_INVOICE_CREATED' }, '*');
+                } else {
+                    window.location.href = finalLink;
+                }
             } else {
                 setMessages(prev => [...prev, { text: 'PDF is generating... Redirecting to My Forms.', sender: 'bot' }]);
-                setTimeout(() => router.push("/home"), 2000);
+                if (isBotEmbed) {
+                    setTimeout(() => {
+                        window.parent.postMessage({ type: 'MANDI_BOT_INVOICE_CREATED' }, '*');
+                    }, 800);
+                } else {
+                    setTimeout(() => router.push("/home"), 2000);
+                }
             }
 
         } catch (err: any) {
@@ -445,9 +533,43 @@ const InsuranceIOS = () => {
         return language ? question.text[language] : question.text.en;
     };
 
-    const goToNextQuestion = () => {
+    const goToNextQuestion = (answerForCurrentQuestion?: string) => {
         const currentQuestion = questions[currentQuestionIndex];
         let nextIndex = currentQuestionIndex + 1;
+
+        const nextQuestion = questions[nextIndex];
+        if (nextQuestion && nextQuestion.field === 'addToCustomerAccount' && !shouldShowCustomerMappingQuestion) {
+            nextIndex += 2;
+        }
+
+        if (currentQuestion?.field === 'addToCustomerAccount') {
+            const shouldMapToCustomer = (answerForCurrentQuestion ?? formData.addToCustomerAccount) === 'Yes';
+            if (!shouldMapToCustomer) {
+                selectedCustomerUserIdRef.current = '';
+                setFormData(prev => ({ ...prev, customerUserId: '' }));
+                nextIndex += 1;
+            } else if (!shouldAskCustomerPicker) {
+                if (user?.id) {
+                    selectedCustomerUserIdRef.current = user.id;
+                    setFormData(prev => ({ ...prev, customerUserId: user.id }));
+                }
+                nextIndex += 1;
+            } else if (customerAccounts.length === 0) {
+                selectedCustomerUserIdRef.current = '';
+                setFormData(prev => ({ ...prev, customerUserId: '' }));
+                setMessages(prev => [
+                    ...prev,
+                    {
+                        text:
+                            language === 'hi'
+                                ? 'Koi customer account available nahi mila. Invoice current user par save kiya jayega.'
+                                : 'No customer account found. Invoice will be saved for current user.',
+                        sender: 'bot',
+                    },
+                ]);
+                nextIndex += 1;
+            }
+        }
 
         if (nextIndex < questions.length) {
             setCurrentQuestionIndex(nextIndex);
@@ -521,6 +643,32 @@ const InsuranceIOS = () => {
                 const selectedItem = itemsData.find(item => item.name === currentInput);
                 const hsnCode = selectedItem ? selectedItem.hsn : '';
                 setFormData(prev => ({ ...prev, itemName: currentInput, hsn: hsnCode }));
+            } else if (q.field === 'customerUserId') {
+                const account = customerAccounts.find(
+                    (c) => formatCustomerOption(c) === currentInput,
+                );
+
+                if (account) {
+                    const qty = formData.quantity ? Number(formData.quantity) : 0;
+                    const rate = formData.rate ? Number(formData.rate) : 0;
+                    const amount = qty * rate;
+                    const walletBalance = Number(account.walletBalance || 0);
+
+                    if (amount > walletBalance) {
+                        setError(
+                            language === 'hi'
+                                ? 'Is customer ke wallet me itna balance nahi hai. Koi aur customer select karein'
+                                : 'This customer does not have enough wallet balance for this invoice. Please choose another customer.'
+                        );
+                        return;
+                    }
+
+                    // Clear any previous error once a valid customer is selected
+                    setError('');
+                }
+
+                selectedCustomerUserIdRef.current = account?.id || '';
+                setFormData(prev => ({ ...prev, customerUserId: account?.id || '' }));
             } else {
                 setFormData(prev => ({ ...prev, [q.field]: valueToStore }));
             }
@@ -542,7 +690,7 @@ const InsuranceIOS = () => {
         } else {
             setMessages(prev => [...prev, { text: currentInput, sender: 'user', field: q.field }]);
             setInputValue('');
-            goToNextQuestion();
+            goToNextQuestion(currentInput);
         }
     };
 
@@ -680,12 +828,16 @@ const InsuranceIOS = () => {
             { text: language === 'hi' ? 'सबमिट किया जा रहा है...' : 'Submitting...', sender: 'bot' }
         ]);
 
-        await submitInsuranceForm(weightmentSlip);
+        goToNextQuestion();
     };
 
     const currentQuestion = questions[currentQuestionIndex] || questions[questions.length - 1];
     const isFileInput = currentQuestion.type === 'file';
     const isSelectInput = currentQuestion.type === 'select';
+    const selectOptions =
+        currentQuestion.field === 'customerUserId'
+            ? customerAccounts.map((c) => formatCustomerOption(c))
+            : currentQuestion.options || [];
 
     return (
         <div
@@ -702,7 +854,20 @@ const InsuranceIOS = () => {
             {/* Header */}
             <div className="bg-[#075E54] text-white px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between shadow z-10 shrink-0">
                 <div className="flex items-center gap-2 sm:gap-3">
-                    <button onClick={() => router.back()} className="p-1 -ml-1 sm:-ml-2 rounded-full hover:bg-[#128C7E] transition-colors touch-manipulation">
+                    <button
+                        onClick={() => {
+                            const isBotEmbed =
+                                typeof window !== 'undefined' &&
+                                window.self !== window.top &&
+                                new URLSearchParams(window.location.search).get('embedBot') === '1';
+                            if (isBotEmbed) {
+                                window.parent.postMessage({ type: 'MANDI_BOT_CLOSE' }, '*');
+                                return;
+                            }
+                            router.back();
+                        }}
+                        className="p-1 -ml-1 sm:-ml-2 rounded-full hover:bg-[#128C7E] transition-colors touch-manipulation"
+                    >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 sm:w-6 sm:h-6">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
                         </svg>
@@ -831,14 +996,19 @@ const InsuranceIOS = () => {
                 ))}
 
                 {/* --- RENDER DROPDOWN OPTIONS IN CHAT --- */}
-                {isSelectInput && !isSubmitting && !editingMessageIndex && currentQuestion.options && (
+                {isSelectInput && !isSubmitting && !editingMessageIndex && (
                     <div className="flex justify-start w-full animate-in fade-in slide-in-from-bottom-2">
                         <div className="w-[85%] sm:w-[75%]">
                             <p className="text-[10px] text-gray-500 mb-1 ml-1 uppercase font-semibold tracking-wider">
                                 {language === 'hi' ? 'विकल्प चुनें' : 'Select an option'}
                             </p>
+                            {error && currentQuestion.field === 'customerUserId' && (
+                                <p className="text-[10px] text-red-600 mb-1 ml-1">
+                                    {error}
+                                </p>
+                            )}
                             <div className="flex flex-wrap gap-2">
-                                {currentQuestion.options.map((opt) => (
+                                {selectOptions.map((opt) => (
                                     <button
                                         key={opt}
                                         onClick={() => handleOptionSelect(opt)}

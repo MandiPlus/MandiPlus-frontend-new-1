@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Button from "@/shared/components/Button";
 import Input from "@/shared/components/Input";
 import Select from "@/shared/components/Select";
-import { register } from "@/features/auth/api";
+import { register, sendOtp, verifyOtp } from "@/features/auth/api";
 import { toast } from "react-toastify";
 import { useAuth } from "../context/AuthContext"; // Import useAuth
 import Image from "next/image";
@@ -42,11 +42,21 @@ const indianStates = [
   { value: "DELHI", label: "Delhi" },
 ];
 
+const roleOptions = [
+  { value: "BUYER", label: "Buyer" },
+  { value: "AGENT", label: "Agent" },
+  { value: "SUPPLIER", label: "Supplier" },
+  { value: "CUSTOMER", label: "Customer" },
+  { value: "TRANSPORTER", label: "Transporter" },
+];
+
 const RegisterPage = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth(); // Get login function
   const [isLoading, setIsLoading] = useState(false);
+  const [step, setStep] = useState<"FORM" | "OTP">("FORM");
+  const [otp, setOtp] = useState("");
 
   const initialMobile = searchParams.get('mobile') || "";
 
@@ -54,6 +64,7 @@ const RegisterPage = () => {
     name: "",
     mobileNumber: initialMobile,
     state: "",
+    identity: "",
   });
 
   useEffect(() => {
@@ -66,20 +77,38 @@ const RegisterPage = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    const { name, mobileNumber, state } = formData;
-
-    if (!name || !mobileNumber || !state) {
-      toast.error("Please fill all fields");
-      setIsLoading(false);
-      return;
-    }
+    const { name, mobileNumber, state, identity } = formData;
 
     try {
-      const response = await register({ name, mobileNumber, state });
+      if (step === "FORM") {
+        if (!name || !mobileNumber || !state || !identity) {
+          toast.error("Please fill all fields");
+          setIsLoading(false);
+          return;
+        }
 
-      // ----------------------------------------------------
-      // CRITICAL FIX: Update Context BEFORE redirecting
-      // ----------------------------------------------------
+        await sendOtp({ mobileNumber });
+        setStep("OTP");
+        toast.success("OTP sent. Please verify to complete signup.");
+        setIsLoading(false);
+        return;
+      }
+
+      if (!otp || otp.length !== 6) {
+        toast.error("Enter a valid 6-digit OTP");
+        setIsLoading(false);
+        return;
+      }
+
+      await verifyOtp({ mobileNumber, otp });
+
+      const response = await register({
+        name,
+        mobileNumber,
+        state,
+        identity: identity as "BUYER" | "AGENT" | "SUPPLIER" | "CUSTOMER" | "TRANSPORTER",
+      });
+
       if (response.accessToken) {
         await login(response.accessToken, response.user);
         toast.success("Account created successfully!");
@@ -113,29 +142,54 @@ const RegisterPage = () => {
         <p className="text-gray-800 mb-6">Complete your profile</p>
 
         <form onSubmit={handleSubmit} className="space-y-4 flex-1 flex flex-col">
-          <Input
-            className="bg-gray-100/80"
-            placeholder="Full Name"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          />
+          {step === "FORM" ? (
+            <>
+              <Input
+                className="bg-gray-100/80"
+                placeholder="Full Name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
 
-          <Input
-            className={`bg-gray-100/80 ${initialMobile ? "opacity-70" : ""}`}
-            placeholder="Mobile Number"
-            maxLength={10}
-            value={formData.mobileNumber}
-            onChange={(e) => setFormData({ ...formData, mobileNumber: e.target.value })}
-            readOnly={!!initialMobile}
-          />
+              <Input
+                className={`bg-gray-100/80 ${initialMobile ? "opacity-70" : ""}`}
+                placeholder="Mobile Number"
+                maxLength={10}
+                value={formData.mobileNumber}
+                onChange={(e) => setFormData({ ...formData, mobileNumber: e.target.value })}
+                readOnly={!!initialMobile}
+              />
 
-          <Select
-            className="bg-gray-200/80"
-            placeholder="Select State"
-            options={indianStates}
-            value={formData.state}
-            onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-          />
+              <Select
+                className="bg-gray-200/80"
+                placeholder="Select State"
+                options={indianStates}
+                value={formData.state}
+                onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+              />
+
+              <Select
+                className="bg-gray-200/80"
+                placeholder="Select Role"
+                options={roleOptions}
+                value={formData.identity}
+                onChange={(e) => setFormData({ ...formData, identity: e.target.value })}
+              />
+            </>
+          ) : (
+            <>
+              <p className="text-center text-sm text-gray-700">
+                OTP sent to {formData.mobileNumber}
+              </p>
+              <Input
+                className="bg-gray-100/80 text-center tracking-widest"
+                placeholder="Enter 6-digit OTP"
+                maxLength={6}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+              />
+            </>
+          )}
 
           <div className="pt-2">
             <Button
@@ -143,7 +197,7 @@ const RegisterPage = () => {
               disabled={isLoading}
               className={`w-full py-3 rounded-xl text-white ${isLoading ? "bg-gray-400" : "bg-[#4309ac]"}`}
             >
-              {isLoading ? "Creating Account..." : "Register"}
+              {isLoading ? "Processing..." : step === "FORM" ? "Sign Up" : "Verify & Sign Up"}
             </Button>
           </div>
         </form>

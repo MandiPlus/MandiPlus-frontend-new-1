@@ -310,7 +310,17 @@ const openMapModal = async (message: Message) => {
       <div className="bg-gradient-to-r from-[#075E54] to-[#128C7E] text-white px-4 py-4 flex items-center justify-between shadow-lg z-10">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => window.history.back()}
+            onClick={() => {
+              const isBotEmbed =
+                typeof window !== 'undefined' &&
+                window.self !== window.top &&
+                new URLSearchParams(window.location.search).get('embedBot') === '1';
+              if (isBotEmbed) {
+                window.parent.postMessage({ type: 'MANDI_BOT_CLOSE' }, '*');
+                return;
+              }
+              window.history.back();
+            }}
             className="p-2 rounded-full hover:bg-[#128C7E] transition-all duration-200 active:scale-95"
             aria-label="Go back"
           >

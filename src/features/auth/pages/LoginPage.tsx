@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Button from "@/shared/components/Button";
 import Input from "@/shared/components/Input";
-import { sendOtp, verifyOtp } from "@/features/auth/api";
+import { checkUser, sendOtp, verifyOtp } from "@/features/auth/api";
 import { toast } from "react-toastify";
 import { useAuth } from "../context/AuthContext"; // Import useAuth
 import Image from "next/image";
@@ -18,7 +18,6 @@ const LoginPage = () => {
     const [step, setStep] = useState<'PHONE' | 'OTP'>('PHONE');
     const [mobileNumber, setMobileNumber] = useState("");
     const [otp, setOtp] = useState("");
-    const [showRegistrationChoice, setShowRegistrationChoice] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -31,15 +30,17 @@ const LoginPage = () => {
                     setIsLoading(false);
                     return;
                 }
-                const res = await sendOtp({ mobileNumber });
 
-                // If backend already tells us this is a new user, we can remember that
-                if (res?.next === 'REGISTER') {
-                    toast.info("New number detected. Please verify OTP to register.");
+                const userCheck = await checkUser({ mobileNumber });
+                if (!userCheck.exists) {
+                    toast.info("New user detected. Please complete signup.");
+                    router.push(`/register?mobile=${mobileNumber}`);
+                    setIsLoading(false);
+                    return;
                 }
 
+                const res = await sendOtp({ mobileNumber });
                 setStep('OTP');
-                setShowRegistrationChoice(false);
                 toast.success(`OTP sent to ${mobileNumber}`);
 
             } else {
@@ -52,9 +53,8 @@ const LoginPage = () => {
                 const response = await verifyOtp({ mobileNumber, otp });
 
                 if (response.next === 'REGISTER') {
-                    // New user: ask how they want to register (Normal vs Agent)
-                    toast.info("New user detected. Choose how you want to register.");
-                    setShowRegistrationChoice(true);
+                    toast.info("New user detected. Please complete signup.");
+                    router.push(`/register?mobile=${mobileNumber}`);
                 }
                 else if (response.next === 'HOME') {
                     // ----------------------------------------------------
@@ -131,37 +131,10 @@ const LoginPage = () => {
                     {step === 'OTP' && (
                         <>
                             <div className="text-center text-sm">
-                                <button type="button" onClick={() => { setStep('PHONE'); setShowRegistrationChoice(false); }} className="text-[#4309ac]">
+                                <button type="button" onClick={() => { setStep('PHONE'); }} className="text-[#4309ac]">
                                     Change Mobile Number
                                 </button>
                             </div>
-
-                            {showRegistrationChoice && (
-                                <div className="mt-4 border border-purple-100 rounded-xl p-4 bg-purple-50/60">
-                                    <p className="text-sm font-medium text-gray-800 mb-2">
-                                        Aap kaise register karna chahte hain?
-                                    </p>
-                                    <p className="text-xs text-gray-600 mb-3">
-                                        Choose whether you are a normal user or an agent.
-                                    </p>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={() => router.push(`/register?mobile=${mobileNumber}`)}
-                                            className="w-full py-2.5 rounded-lg border border-gray-200 text-sm font-semibold text-gray-800 bg-white hover:bg-gray-50"
-                                        >
-                                            Normal User
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => router.push(`/agent/signup?mobile=${mobileNumber}`)}
-                                            className="w-full py-2.5 rounded-lg border border-[#4309ac] text-sm font-semibold text-white bg-[#4309ac] hover:bg-[#340b85]"
-                                        >
-                                            Agent
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
                         </>
                     )}
                 </form>

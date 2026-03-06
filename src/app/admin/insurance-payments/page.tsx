@@ -15,7 +15,7 @@ const PAYMENT_STATUS_OPTIONS = [
   'FAILED',
   'REFUNDED',
 ];
-const ITEMS_PER_PAGE = 10;
+const ITEMS_PER_PAGE = 20;
 
 function getPaymentStatusBadgeClasses(status?: string | null) {
   const normalized = String(status || '').toUpperCase();
@@ -81,6 +81,8 @@ export default function AdminInsurancePaymentsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
+  const [jumpPageInput, setJumpPageInput] = useState('1');
 
   const [editing, setEditing] = useState<InsurancePaymentRow | null>(null);
   const [saving, setSaving] = useState(false);
@@ -103,8 +105,18 @@ export default function AdminInsurancePaymentsPage() {
         throw new Error(response.message || 'Failed to load insurance payments');
       }
       setRows(response.data || []);
-      setTotalRows(Number(response.total ?? response.count ?? (response.data?.length || 0)));
-      setTotalPages(Number(response.totalPages ?? 1));
+      const resolvedTotalRows = Number(
+        response.total ?? response.count ?? (response.data?.length || 0),
+      );
+      const resolvedLimit = Number(response.limit ?? ITEMS_PER_PAGE);
+      const fallbackTotalPages =
+        resolvedTotalRows === 0
+          ? 1
+          : Math.max(1, Math.ceil(resolvedTotalRows / Math.max(resolvedLimit, 1)));
+
+      setTotalRows(resolvedTotalRows);
+      setTotalPages(Number(response.totalPages ?? fallbackTotalPages));
+      setPageSize(resolvedLimit > 0 ? resolvedLimit : ITEMS_PER_PAGE);
       if (response.page && response.page !== currentPage) {
         setCurrentPage(response.page);
       }
@@ -113,6 +125,7 @@ export default function AdminInsurancePaymentsPage() {
       setRows([]);
       setTotalRows(0);
       setTotalPages(1);
+      setPageSize(ITEMS_PER_PAGE);
     } finally {
       setLoading(false);
     }
@@ -135,8 +148,12 @@ export default function AdminInsurancePaymentsPage() {
     () => rows.reduce((sum, row) => sum + getEffectivePaidAmount(row), 0),
     [rows],
   );
-  const pageStart = totalRows === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
-  const pageEnd = Math.min(currentPage * ITEMS_PER_PAGE, totalRows);
+  const pageStart = totalRows === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const pageEnd = Math.min(currentPage * pageSize, totalRows);
+
+  useEffect(() => {
+    setJumpPageInput(String(currentPage));
+  }, [currentPage]);
 
   const openEditModal = (row: InsurancePaymentRow) => {
     const paymentCompletedValue = toInputDateTimeLocal(row.paymentCompletedAt);
@@ -402,6 +419,50 @@ export default function AdminInsurancePaymentsPage() {
                   Page <span className="font-medium">{currentPage}</span> of{' '}
                   <span className="font-medium">{totalPages}</span>
                 </span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    value={jumpPageInput}
+                    onChange={(e) => setJumpPageInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return;
+                      const targetPage = Number(jumpPageInput);
+                      if (!Number.isFinite(targetPage)) return;
+                      const safePage = Math.min(
+                        Math.max(Math.trunc(targetPage), 1),
+                        totalPages,
+                      );
+                      if (safePage !== currentPage) {
+                        setCurrentPage(safePage);
+                      } else {
+                        setJumpPageInput(String(safePage));
+                      }
+                    }}
+                    className="w-20 rounded-md border border-gray-300 px-2 py-1.5 text-sm text-gray-700"
+                    aria-label="Jump to page"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const targetPage = Number(jumpPageInput);
+                      if (!Number.isFinite(targetPage)) return;
+                      const safePage = Math.min(
+                        Math.max(Math.trunc(targetPage), 1),
+                        totalPages,
+                      );
+                      if (safePage !== currentPage) {
+                        setCurrentPage(safePage);
+                      } else {
+                        setJumpPageInput(String(safePage));
+                      }
+                    }}
+                    className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Go
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}

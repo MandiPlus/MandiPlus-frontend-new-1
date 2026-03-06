@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react'; // Import useEffect
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import Link from 'next/link';
@@ -35,33 +35,14 @@ export default function LoginPage() {
             return;
         }
 
-        const VALID_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
-        const VALID_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
-
         setIsLoading(true);
-
-        // Simulate network delay
-        setTimeout(async () => {
-            if (email === VALID_EMAIL && password === VALID_PASSWORD) {
-                try {
-                    // Manually set persistence
-                    document.cookie = "adminToken=dummy-token; path=/; max-age=86400";
-                    localStorage.setItem('adminToken', 'dummy-token');
-
-                    await login(email, password);
-
-                    // Force refresh to Dashboard
-                    window.location.href = '/admin/dashboard';
-                } catch (err) {
-                    console.error('Login error:', err);
-                    setError('Login processing failed');
-                    setIsLoading(false);
-                }
-            } else {
-                setError('Invalid email or password');
-                setIsLoading(false);
-            }
-        }, 1000);
+        try {
+            await login(email, password);
+        } catch (err: any) {
+            setError(err?.message || 'Invalid username or password');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -96,7 +77,7 @@ export default function LoginPage() {
 
                     <form className="space-y-6" onSubmit={handleSubmit}>
                         <div>
-                            <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email address</label>
+                            <label htmlFor="email" className="block text-sm font-medium text-gray-700">Username</label>
                             <div className="mt-1">
                                 <input
                                     id="email"
