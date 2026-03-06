@@ -83,7 +83,7 @@ export default function Toolbar({
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `${file.name.replace(/\.pdf$/i, "")}_edited.pdf`;
+        a.download = `${file.name.replace(/\.pdf$/i, "")}(1).pdf`;
         a.click();
         URL.revokeObjectURL(url);
       }
