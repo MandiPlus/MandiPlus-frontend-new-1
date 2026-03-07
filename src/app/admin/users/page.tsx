@@ -456,7 +456,7 @@ export default function UsersPage() {
                                                     )}
                                                     {showWalletColumns && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                                                            <div className="grid min-w-max grid-cols-[7rem_8.5rem_10rem_max-content_max-content_max-content] items-center gap-2">
+                                                            <div className="grid min-w-max grid-cols-[7rem_8.5rem_10rem_max-content_max-content_max-content_max-content] items-center gap-2">
                                                                 <input
                                                                     type="number"
                                                                     step="0.01"
