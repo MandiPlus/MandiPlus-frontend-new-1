@@ -151,6 +151,19 @@ export interface AdminWalletStatementItem {
   createdAt: string;
 }
 
+export interface AdminWalletRebuildResult {
+  userId: string;
+  walletId: string;
+  balance: number;
+  effectiveDate: string;
+  removedTransactionCount: number;
+  invoicesScanned: number;
+  debitRowsInserted: number;
+  invoiceRowsUpdated: number;
+  recomputedTransactionCount: number;
+  message: string;
+}
+
 export interface UpdateInsurancePaymentPayload {
   premiumAmount?: number;
   paymentAmount?: number;
@@ -498,6 +511,33 @@ class AdminApi {
         message:
           error.response?.data?.message ||
           "Failed to fetch wallet statement",
+        error: error.message,
+      };
+    }
+  };
+
+  public rebuildUserWallet = async (
+    userId: string,
+    effectiveDate: string,
+  ): Promise<ApiResponse<AdminWalletRebuildResult>> => {
+    try {
+      const response = await this.client.post<ApiResponse<AdminWalletRebuildResult>>(
+        `/wallet/admin/users/${userId}/rebuild`,
+        { effectiveDate },
+      );
+      const payload = response.data;
+      if (payload && typeof payload === "object" && "success" in payload) {
+        return payload;
+      }
+      return {
+        success: true,
+        data: payload as AdminWalletRebuildResult,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to rebuild wallet",
         error: error.message,
       };
     }
