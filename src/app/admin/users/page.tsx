@@ -300,7 +300,7 @@ export default function UsersPage() {
 
     return (
         <div className="py-6">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="w-full max-w-none px-4 sm:px-6 lg:px-8">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between">
                     <h1 className="text-2xl font-semibold text-gray-900">{sectionTitle}</h1>
                     <div className="mt-4 md:mt-0">
@@ -456,7 +456,7 @@ export default function UsersPage() {
                                                     )}
                                                     {showWalletColumns && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                                                            <div className="flex flex-wrap items-center gap-2">
+                                                            <div className="grid min-w-max grid-cols-[7rem_8.5rem_10rem_max-content_max-content_max-content] items-center gap-2">
                                                                 <input
                                                                     type="number"
                                                                     step="0.01"
