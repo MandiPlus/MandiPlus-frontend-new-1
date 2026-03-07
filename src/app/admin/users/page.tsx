@@ -48,6 +48,7 @@ export default function UsersPage() {
     const [remarks, setRemarks] = useState<Record<string, string>>({});
     const [attachments, setAttachments] = useState<Record<string, File | null>>({});
     const [creditLoadingByUser, setCreditLoadingByUser] = useState<Record<string, boolean>>({});
+    const [rebuildLoadingByUser, setRebuildLoadingByUser] = useState<Record<string, boolean>>({});
     const [convertingByUser, setConvertingByUser] = useState<Record<string, boolean>>({});
     const [walletLogsOpen, setWalletLogsOpen] = useState(false);
     const [walletLogsLoading, setWalletLogsLoading] = useState(false);
@@ -194,6 +195,54 @@ export default function UsersPage() {
             toast.error(err?.message || 'Failed to update wallet');
         } finally {
             setCreditLoadingByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
+    };
+
+    const handleWalletRebuild = async (user: User) => {
+        const effectiveDate = effectiveDates[user.id]?.trim();
+
+        if (!effectiveDate) {
+            toast.error('Please select a rebuild date');
+            return;
+        }
+
+        setError('');
+        setRebuildLoadingByUser((prev) => ({ ...prev, [user.id]: true }));
+        try {
+            const response = await adminApi.rebuildUserWallet(user.id, effectiveDate);
+            if (!response.success || !response.data) {
+                toast.error(response.message || 'Failed to rebuild wallet');
+                return;
+            }
+
+            const backendBalance = Number(response.data.balance);
+            setAllUsers((prev) =>
+                prev.map((u) =>
+                    u.id === user.id
+                        ? {
+                            ...u,
+                            walletBalance: Number.isFinite(backendBalance)
+                                ? Number(backendBalance.toFixed(2))
+                                : Number(u.walletBalance || 0),
+                        }
+                        : u,
+                ),
+            );
+
+            if (walletLogUser?.id === user.id) {
+                const statementResponse = await adminApi.getAdminUserWalletStatement(user.id);
+                if (statementResponse.success) {
+                    setWalletLogs(Array.isArray(statementResponse.data) ? statementResponse.data : []);
+                }
+            }
+
+            toast.success(
+                `Wallet rebuilt. Added ${response.data.debitRowsInserted} debit rows from ${effectiveDate}.`,
+            );
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to rebuild wallet');
+        } finally {
+            setRebuildLoadingByUser((prev) => ({ ...prev, [user.id]: false }));
         }
     };
 
@@ -465,6 +514,14 @@ export default function UsersPage() {
                                                                     className="rounded-md bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-60"
                                                                 >
                                                                     {creditLoadingByUser[user.id] ? 'Updating...' : 'Update'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleWalletRebuild(user)}
+                                                                    disabled={rebuildLoadingByUser[user.id]}
+                                                                    className="rounded-md bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                                                                    title="Rebuild invoice debits from selected date"
+                                                                >
+                                                                    {rebuildLoadingByUser[user.id] ? 'Rebuilding...' : 'Rebuild'}
                                                                 </button>
                                                                 <button
                                                                     onClick={() => handleOpenWalletLogs(user)}
