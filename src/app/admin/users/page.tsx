@@ -44,6 +44,9 @@ export default function UsersPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [activeSection, setActiveSection] = useState<UserSection>('ALL');
     const [creditAmounts, setCreditAmounts] = useState<Record<string, string>>({});
+    const [effectiveDates, setEffectiveDates] = useState<Record<string, string>>({});
+    const [remarks, setRemarks] = useState<Record<string, string>>({});
+    const [attachments, setAttachments] = useState<Record<string, File | null>>({});
     const [creditLoadingByUser, setCreditLoadingByUser] = useState<Record<string, boolean>>({});
     const [convertingByUser, setConvertingByUser] = useState<Record<string, boolean>>({});
     const [walletLogsOpen, setWalletLogsOpen] = useState(false);
@@ -143,6 +146,9 @@ export default function UsersPage() {
 
     const handleWalletAdjust = async (user: User) => {
         const rawAmount = creditAmounts[user.id];
+        const effectiveDate = effectiveDates[user.id]?.trim() || undefined;
+        const remark = remarks[user.id]?.trim() || undefined;
+        const attachment = attachments[user.id] || undefined;
         const amount = Number(rawAmount);
 
         if (!Number.isFinite(amount) || amount === 0) {
@@ -153,7 +159,14 @@ export default function UsersPage() {
         setError('');
         setCreditLoadingByUser((prev) => ({ ...prev, [user.id]: true }));
         try {
-            const response = await adminApi.adjustUserWallet(user.id, amount, 'Admin wallet update');
+            const response = await adminApi.adjustUserWallet(
+                user.id,
+                amount,
+                'Admin wallet update',
+                effectiveDate,
+                remark,
+                attachment,
+            );
             if (!response.success) {
                 toast.error(response.message || 'Failed to update wallet');
                 return;
@@ -173,6 +186,9 @@ export default function UsersPage() {
                 ),
             );
             setCreditAmounts((prev) => ({ ...prev, [user.id]: '' }));
+            setEffectiveDates((prev) => ({ ...prev, [user.id]: '' }));
+            setRemarks((prev) => ({ ...prev, [user.id]: '' }));
+            setAttachments((prev) => ({ ...prev, [user.id]: null }));
             toast.success('Wallet updated successfully');
         } catch (err: any) {
             toast.error(err?.message || 'Failed to update wallet');
@@ -391,7 +407,7 @@ export default function UsersPage() {
                                                     )}
                                                     {showWalletColumns && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                                                            <div className="flex items-center gap-2">
+                                                            <div className="flex flex-wrap items-center gap-2">
                                                                 <input
                                                                     type="number"
                                                                     step="0.01"
@@ -405,6 +421,44 @@ export default function UsersPage() {
                                                                     placeholder="+/- Amount"
                                                                     className="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs"
                                                                 />
+                                                                <input
+                                                                    type="date"
+                                                                    value={effectiveDates[user.id] || ''}
+                                                                    onChange={(e) =>
+                                                                        setEffectiveDates((prev) => ({
+                                                                            ...prev,
+                                                                            [user.id]: e.target.value,
+                                                                        }))
+                                                                    }
+                                                                    className="w-36 rounded-md border border-gray-300 px-2 py-1 text-xs"
+                                                                    title="Optional backdate"
+                                                                />
+                                                                <input
+                                                                    type="text"
+                                                                    value={remarks[user.id] || ''}
+                                                                    onChange={(e) =>
+                                                                        setRemarks((prev) => ({
+                                                                            ...prev,
+                                                                            [user.id]: e.target.value,
+                                                                        }))
+                                                                    }
+                                                                    placeholder="Optional remark"
+                                                                    className="w-40 rounded-md border border-gray-300 px-2 py-1 text-xs"
+                                                                />
+                                                                <label className="cursor-pointer rounded-md border border-dashed border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50">
+                                                                    {attachments[user.id]?.name || 'Upload image'}
+                                                                    <input
+                                                                        type="file"
+                                                                        accept="image/*"
+                                                                        className="hidden"
+                                                                        onChange={(e) =>
+                                                                            setAttachments((prev) => ({
+                                                                                ...prev,
+                                                                                [user.id]: e.target.files?.[0] || null,
+                                                                            }))
+                                                                        }
+                                                                    />
+                                                                </label>
                                                                 <button
                                                                     onClick={() => handleWalletAdjust(user)}
                                                                     disabled={creditLoadingByUser[user.id]}
@@ -527,7 +581,22 @@ export default function UsersPage() {
                                         {walletLogs.map((tx) => (
                                             <tr key={tx.id}>
                                                 <td className="px-4 py-3 text-xs text-gray-600">{formatDate(tx.createdAt)}</td>
-                                                <td className="px-4 py-3 text-sm text-gray-800">{tx.narration || tx.type || '-'}</td>
+                                                <td className="px-4 py-3 text-sm text-gray-800">
+                                                    <p>{tx.narration || tx.type || '-'}</p>
+                                                    {tx.remark ? (
+                                                        <p className="mt-1 text-xs text-gray-500">{tx.remark}</p>
+                                                    ) : null}
+                                                    {tx.attachmentUrl ? (
+                                                        <a
+                                                            href={tx.attachmentUrl}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            className="mt-1 inline-block text-xs font-medium text-blue-600 hover:underline"
+                                                        >
+                                                            View image
+                                                        </a>
+                                                    ) : null}
+                                                </td>
                                                 <td className="px-4 py-3 text-xs">
                                                     <span className={`rounded-full px-2 py-1 font-semibold ${tx.direction === 'CREDIT' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                                                         {tx.direction}

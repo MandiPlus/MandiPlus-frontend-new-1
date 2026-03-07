@@ -1288,6 +1288,19 @@ export default function TransporterDashboardPage() {
                                 </div>
                                 <div>
                                   <p className="text-base font-semibold text-slate-900">{tx.narration || tx.type || "Wallet transaction"}</p>
+                                  {tx.remark ? (
+                                    <p className="mt-1 text-xs text-slate-500">{tx.remark}</p>
+                                  ) : null}
+                                  {tx.attachmentUrl ? (
+                                    <a
+                                      href={tx.attachmentUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="mt-1 inline-block text-xs font-semibold text-blue-600 hover:underline"
+                                    >
+                                      View image
+                                    </a>
+                                  ) : null}
                                   <p className="text-xs text-slate-500">{formatDateTime(tx.createdAt)}</p>
                                 </div>
                               </div>
