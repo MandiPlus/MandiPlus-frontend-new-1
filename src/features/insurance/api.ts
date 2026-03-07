@@ -38,6 +38,8 @@ export interface InsuranceForm {
   pdfURL?: string;
   createdAt?: string;
   invoiceType?: "SUPPLIER_INVOICE" | "BUYER_INVOICE";
+  insuredPersonNameSnapshot?: string;
+  insuredPersonUserId?: string;
 }
 
 // ✅ NEW: Type for regenerating invoice

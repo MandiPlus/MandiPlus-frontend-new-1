@@ -61,6 +61,8 @@ interface Invoice {
     pdfURL?: string;
     createdAt: string;
     terms?: string;
+    insuredPersonNameSnapshot?: string;
+    insuredPersonUserId?: string;
     isVerified?: boolean;
     isRejected?: boolean;
     rejectionReason?: string | null;
@@ -642,6 +644,9 @@ export default function InsuranceFormsPage() {
     };
 
     const getInsuredPersonName = (inv: Invoice) => {
+        if (inv.insuredPersonNameSnapshot?.trim()) {
+            return inv.insuredPersonNameSnapshot.trim();
+        }
         const note = (inv.weighmentSlipNote || '').toLowerCase().trim();
         const isCash = note.includes('cash') || note.includes('nak') || note.includes('nag');
         return isCash ? (inv.billToName || '') : (inv.supplierName || '');
