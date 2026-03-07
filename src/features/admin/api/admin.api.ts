@@ -146,6 +146,8 @@ export interface AdminWalletStatementItem {
   balanceAfter?: number;
   referenceId?: string;
   narration?: string;
+  remark?: string;
+  attachmentUrl?: string;
   createdAt: string;
 }
 
@@ -398,11 +400,25 @@ class AdminApi {
     userId: string,
     amount: number,
     narration?: string,
+    effectiveDate?: string,
+    remark?: string,
+    attachment?: File,
   ): Promise<ApiResponse<any>> => {
     try {
+      const formData = new FormData();
+      formData.append("amount", String(amount));
+      if (narration) formData.append("narration", narration);
+      if (effectiveDate) formData.append("effectiveDate", effectiveDate);
+      if (remark) formData.append("remark", remark);
+      if (attachment) formData.append("attachment", attachment);
       const response = await this.client.post<ApiResponse<any>>(
         `/wallet/admin/customers/${userId}/credit`,
-        { amount, narration },
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        },
       );
       const payload = response.data;
       if (payload && typeof payload === "object" && "success" in payload) {
@@ -425,11 +441,25 @@ class AdminApi {
     userId: string,
     amount: number,
     narration?: string,
+    effectiveDate?: string,
+    remark?: string,
+    attachment?: File,
   ): Promise<ApiResponse<any>> => {
     try {
+      const formData = new FormData();
+      formData.append("amount", String(amount));
+      if (narration) formData.append("narration", narration);
+      if (effectiveDate) formData.append("effectiveDate", effectiveDate);
+      if (remark) formData.append("remark", remark);
+      if (attachment) formData.append("attachment", attachment);
       const response = await this.client.post<ApiResponse<any>>(
         `/wallet/admin/users/${userId}/adjust`,
-        { amount, narration },
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        },
       );
       const payload = response.data;
       if (payload && typeof payload === "object" && "success" in payload) {

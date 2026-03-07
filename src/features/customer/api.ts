@@ -22,6 +22,8 @@ export interface WalletStatementItem {
   balanceAfter?: number;
   referenceId?: string;
   narration?: string;
+  remark?: string;
+  attachmentUrl?: string;
   createdAt: string;
 }
 
