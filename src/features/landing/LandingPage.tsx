@@ -19,7 +19,7 @@ const LandingPage = () => {
     if (user) {
       router.replace("/home"); // Use replace to prevent back-button issues
     }
-    // C. Only if NO user exists, proceed with your existing timeout logic
+    // C. Only if NO user exists, proceed with the splash timeout redirect.
     else {
       const timer = setTimeout(() => {
         router.push("/login");
@@ -75,9 +75,9 @@ const LandingPage = () => {
 
       {/* Floating CTA Button */}
       <button
-        onClick={() => router.push("/register")}
+        onClick={() => router.push("/login")}
         className="fixed bottom-6 right-6 w-10 h-10 rounded-full bg-[#4309ac] text-white shadow-xl flex items-center justify-center"
-        aria-label="Register"
+        aria-label="Login"
       >
         <svg
           className="w-6 h-6"
