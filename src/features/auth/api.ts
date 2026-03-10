@@ -33,6 +33,7 @@ export interface RegisterPayload {
     mobileNumber: string;
     state: string;
     identity: "BUYER" | "AGENT" | "SUPPLIER" | "CUSTOMER" | "TRANSPORTER";
+    billingType?: "BULK" | "PER_POLICY";
 }
 
 export interface AgentRegisterPayload {

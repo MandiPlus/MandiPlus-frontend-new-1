@@ -226,14 +226,19 @@ const Insurance = () => {
     const selectedCustomerUserIdRef = useRef<string>('');
 
     const identity = user?.identity || '';
-    const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM', 'CUSTOMER'].includes(identity);
+    const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
     const shouldAskCustomerPicker = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
 
     const formatCustomerOption = (account: InvoiceCustomerAccount) => {
+        const isPerPolicyTransporter =
+            account.identity === 'TRANSPORTER' && account.billingType === 'PER_POLICY';
         const balance = Number(account.walletBalance || 0).toLocaleString('en-IN', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
         });
+        if (isPerPolicyTransporter) {
+            return `${account.name} (${account.mobileNumber}) - Transporter / Per Policy`;
+        }
         return `${account.name} (${account.mobileNumber}) - Wallet: ₹${balance}`;
     };
 
@@ -436,7 +441,9 @@ const Insurance = () => {
             if (formData.hsn) submitData.append('hsnCode', formData.hsn);
             if (formData.notes) submitData.append('weighmentSlipNote', sanitizeText(formData.notes));
             if (formData.insuredPartyPhone?.trim()) submitData.append('insuredPartyPhone', formData.insuredPartyPhone.trim());
-            if (shouldShowCustomerMappingQuestion && formData.addToCustomerAccount === 'Yes') {
+            if (['CUSTOMER', 'TRANSPORTER'].includes(identity)) {
+                submitData.append('customerUserId', effectiveUserId);
+            } else if (shouldShowCustomerMappingQuestion && formData.addToCustomerAccount === 'Yes') {
                 const customerUserIdForSubmit =
                     formData.customerUserId || selectedCustomerUserIdRef.current;
                 if (customerUserIdForSubmit) {
@@ -640,8 +647,11 @@ const Insurance = () => {
                     const rate = formData.rate ? Number(formData.rate) : 0;
                     const amount = qty * rate;
                     const walletBalance = Number(account.walletBalance || 0);
+                    const requiresWalletCheck =
+                        account.requiresWalletCheck ??
+                        (account.identity !== 'TRANSPORTER' || account.billingType !== 'PER_POLICY');
 
-                    if (amount > walletBalance) {
+                    if (requiresWalletCheck && amount > walletBalance) {
                         setError(
                             language === 'hi'
                                 ? 'Is customer ke wallet me itna balance nahi hai. Koi aur customer select karein'
