@@ -23,6 +23,7 @@ interface User {
   mobileNumber: string;
   category?: string;
   identity?: string;
+  billingType?: "BULK" | "PER_POLICY" | null;
   state?: string;
   createdAt: string;
   totalForms?: number;
@@ -106,6 +107,9 @@ export interface InvoiceFilterParams {
   buyerName?: string;
   userId?: string;
   exportType?: "all" | "payment";
+  paymentStatus?: string;
+  isVerified?: boolean;
+  advancedFilters?: string;
 }
 
 export interface AdminAgentCommissionSummaryRow {
@@ -546,9 +550,13 @@ class AdminApi {
   public convertUserIdentity = async (
     userId: string,
     identity: UserIdentity,
+    billingType?: "BULK" | "PER_POLICY",
   ): Promise<ApiResponse<any>> => {
     try {
-      const response = await this.client.patch(`/users/${userId}`, { identity });
+      const response = await this.client.patch(`/users/${userId}`, {
+        identity,
+        ...(identity === "TRANSPORTER" ? { billingType } : {}),
+      });
       return {
         success: true,
         data: response.data,
@@ -665,6 +673,7 @@ class AdminApi {
     buyerName?: string;
     invoiceIds?: string[];
     exportType?: "all" | "payment";
+    selectedColumns?: string[];
   }): Promise<Blob | null> => {
     try {
       const response = await this.client.post("/invoices/admin/export", body, {

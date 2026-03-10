@@ -14,6 +14,7 @@ interface User {
     name: string; // Added Name
     mobileNumber: string;
     identity?: string;
+    billingType?: 'BULK' | 'PER_POLICY' | null;
     category?: string;
     state?: string;
     walletBalance?: number;
@@ -54,6 +55,8 @@ export default function UsersPage() {
     const [walletLogsLoading, setWalletLogsLoading] = useState(false);
     const [walletLogUser, setWalletLogUser] = useState<User | null>(null);
     const [walletLogs, setWalletLogs] = useState<AdminWalletStatementItem[]>([]);
+    const [billingTypeModalUser, setBillingTypeModalUser] = useState<User | null>(null);
+    const [pendingBillingType, setPendingBillingType] = useState<'BULK' | 'PER_POLICY'>('BULK');
     const ITEMS_PER_PAGE = 10;
     const showWalletColumns = activeSection !== 'ALL';
     const sectionTitle =
@@ -249,19 +252,24 @@ export default function UsersPage() {
     const handleConvertIdentity = async (
         user: User,
         nextIdentity: 'CUSTOMER' | 'TRANSPORTER',
+        billingType?: 'BULK' | 'PER_POLICY',
     ) => {
         if (!user?.id || user.identity === nextIdentity) return;
         setError('');
         setConvertingByUser((prev) => ({ ...prev, [user.id]: true }));
         try {
-            const response = await adminApi.convertUserIdentity(user.id, nextIdentity);
+            const response = await adminApi.convertUserIdentity(user.id, nextIdentity, billingType);
             if (!response.success) {
                 toast.error(response.message || 'Failed to convert user');
                 return;
             }
 
             setAllUsers((prev) => prev.map((u) => (
-                u.id === user.id ? { ...u, identity: nextIdentity } : u
+                u.id === user.id ? {
+                    ...u,
+                    identity: nextIdentity,
+                    billingType: nextIdentity === 'TRANSPORTER' ? (billingType || 'BULK') : null,
+                } : u
             )));
             toast.success('User identity updated');
         } catch (err: any) {
@@ -269,6 +277,18 @@ export default function UsersPage() {
         } finally {
             setConvertingByUser((prev) => ({ ...prev, [user.id]: false }));
         }
+    };
+
+    const openTransporterBillingTypeModal = (user: User) => {
+        setBillingTypeModalUser(user);
+        setPendingBillingType(user.billingType === 'PER_POLICY' ? 'PER_POLICY' : 'BULK');
+    };
+
+    const confirmTransporterConversion = async () => {
+        if (!billingTypeModalUser) return;
+        const user = billingTypeModalUser;
+        setBillingTypeModalUser(null);
+        await handleConvertIdentity(user, 'TRANSPORTER', pendingBillingType);
     };
 
     const handleOpenWalletLogs = async (user: User) => {
@@ -383,6 +403,11 @@ export default function UsersPage() {
                                             )}
                                             {!showWalletColumns && (
                                                 <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                    Billing Type
+                                                </th>
+                                            )}
+                                            {!showWalletColumns && (
+                                                <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                     Convert
                                                 </th>
                                             )}
@@ -401,7 +426,7 @@ export default function UsersPage() {
                                     <tbody className="divide-y divide-gray-200 bg-white">
                                         {paginatedUsers.length === 0 ? (
                                             <tr>
-                                                <td colSpan={showWalletColumns ? 6 : 6} className="px-6 py-4 text-center text-sm text-gray-500">
+                                                <td colSpan={showWalletColumns ? 6 : 7} className="px-6 py-4 text-center text-sm text-gray-500">
                                                     No users found
                                                 </td>
                                             </tr>
@@ -431,6 +456,13 @@ export default function UsersPage() {
                                                     )}
                                                     {!showWalletColumns && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                                            {user.identity === 'TRANSPORTER'
+                                                                ? (user.billingType === 'PER_POLICY' ? 'Per Policy' : 'Bulk')
+                                                                : '-'}
+                                                        </td>
+                                                    )}
+                                                    {!showWalletColumns && (
+                                                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                             <div className="flex items-center gap-2">
                                                                 <button
                                                                     onClick={() => handleConvertIdentity(user, 'CUSTOMER')}
@@ -440,7 +472,7 @@ export default function UsersPage() {
                                                                     To Customer
                                                                 </button>
                                                                 <button
-                                                                    onClick={() => handleConvertIdentity(user, 'TRANSPORTER')}
+                                                                    onClick={() => openTransporterBillingTypeModal(user)}
                                                                     disabled={convertingByUser[user.id] || user.identity === 'TRANSPORTER'}
                                                                     className="rounded-md bg-teal-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
                                                                 >
@@ -451,85 +483,93 @@ export default function UsersPage() {
                                                     )}
                                                     {showWalletColumns && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-gray-700">
-                                                            Rs {Number(user.walletBalance || 0).toFixed(2)}
+                                                            {user.identity === 'TRANSPORTER' && user.billingType === 'PER_POLICY'
+                                                                ? 'Per Policy'
+                                                                : `Rs ${Number(user.walletBalance || 0).toFixed(2)}`}
                                                         </td>
                                                     )}
                                                     {showWalletColumns && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                                                            <div className="grid min-w-max grid-cols-[7rem_8.5rem_10rem_max-content_max-content_max-content_max-content] items-center gap-2">
-                                                                <input
-                                                                    type="number"
-                                                                    step="0.01"
-                                                                    value={creditAmounts[user.id] || ''}
-                                                                    onChange={(e) =>
-                                                                        setCreditAmounts((prev) => ({
-                                                                            ...prev,
-                                                                            [user.id]: e.target.value,
-                                                                        }))
-                                                                    }
-                                                                    placeholder="+/- Amount"
-                                                                    className="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs"
-                                                                />
-                                                                <input
-                                                                    type="date"
-                                                                    value={effectiveDates[user.id] || ''}
-                                                                    onChange={(e) =>
-                                                                        setEffectiveDates((prev) => ({
-                                                                            ...prev,
-                                                                            [user.id]: e.target.value,
-                                                                        }))
-                                                                    }
-                                                                    className="w-36 rounded-md border border-gray-300 px-2 py-1 text-xs"
-                                                                    title="Optional backdate"
-                                                                />
-                                                                <input
-                                                                    type="text"
-                                                                    value={remarks[user.id] || ''}
-                                                                    onChange={(e) =>
-                                                                        setRemarks((prev) => ({
-                                                                            ...prev,
-                                                                            [user.id]: e.target.value,
-                                                                        }))
-                                                                    }
-                                                                    placeholder="Optional remark"
-                                                                    className="w-40 rounded-md border border-gray-300 px-2 py-1 text-xs"
-                                                                />
-                                                                <label className="cursor-pointer rounded-md border border-dashed border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50">
-                                                                    {attachments[user.id]?.name || 'Upload image'}
+                                                            {user.identity === 'TRANSPORTER' && user.billingType === 'PER_POLICY' ? (
+                                                                <span className="text-xs font-medium text-gray-500">
+                                                                    Wallet not applicable for per-policy transporter
+                                                                </span>
+                                                            ) : (
+                                                                <div className="grid min-w-max grid-cols-[7rem_8.5rem_10rem_max-content_max-content_max-content_max-content] items-center gap-2">
                                                                     <input
-                                                                        type="file"
-                                                                        accept="image/*"
-                                                                        className="hidden"
+                                                                        type="number"
+                                                                        step="0.01"
+                                                                        value={creditAmounts[user.id] || ''}
                                                                         onChange={(e) =>
-                                                                            setAttachments((prev) => ({
+                                                                            setCreditAmounts((prev) => ({
                                                                                 ...prev,
-                                                                                [user.id]: e.target.files?.[0] || null,
+                                                                                [user.id]: e.target.value,
                                                                             }))
                                                                         }
+                                                                        placeholder="+/- Amount"
+                                                                        className="w-28 rounded-md border border-gray-300 px-2 py-1 text-xs"
                                                                     />
-                                                                </label>
-                                                                <button
-                                                                    onClick={() => handleWalletAdjust(user)}
-                                                                    disabled={creditLoadingByUser[user.id]}
-                                                                    className="rounded-md bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-60"
-                                                                >
-                                                                    {creditLoadingByUser[user.id] ? 'Updating...' : 'Update'}
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleWalletRebuild(user)}
-                                                                    disabled={rebuildLoadingByUser[user.id]}
-                                                                    className="rounded-md bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
-                                                                    title="Rebuild invoice debits from selected date"
-                                                                >
-                                                                    {rebuildLoadingByUser[user.id] ? 'Rebuilding...' : 'Rebuild'}
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleOpenWalletLogs(user)}
-                                                                    className="rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
-                                                                >
-                                                                    Logs
-                                                                </button>
-                                                            </div>
+                                                                    <input
+                                                                        type="date"
+                                                                        value={effectiveDates[user.id] || ''}
+                                                                        onChange={(e) =>
+                                                                            setEffectiveDates((prev) => ({
+                                                                                ...prev,
+                                                                                [user.id]: e.target.value,
+                                                                            }))
+                                                                        }
+                                                                        className="w-36 rounded-md border border-gray-300 px-2 py-1 text-xs"
+                                                                        title="Optional backdate"
+                                                                    />
+                                                                    <input
+                                                                        type="text"
+                                                                        value={remarks[user.id] || ''}
+                                                                        onChange={(e) =>
+                                                                            setRemarks((prev) => ({
+                                                                                ...prev,
+                                                                                [user.id]: e.target.value,
+                                                                            }))
+                                                                        }
+                                                                        placeholder="Optional remark"
+                                                                        className="w-40 rounded-md border border-gray-300 px-2 py-1 text-xs"
+                                                                    />
+                                                                    <label className="cursor-pointer rounded-md border border-dashed border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50">
+                                                                        {attachments[user.id]?.name || 'Upload image'}
+                                                                        <input
+                                                                            type="file"
+                                                                            accept="image/*"
+                                                                            className="hidden"
+                                                                            onChange={(e) =>
+                                                                                setAttachments((prev) => ({
+                                                                                    ...prev,
+                                                                                    [user.id]: e.target.files?.[0] || null,
+                                                                                }))
+                                                                            }
+                                                                        />
+                                                                    </label>
+                                                                    <button
+                                                                        onClick={() => handleWalletAdjust(user)}
+                                                                        disabled={creditLoadingByUser[user.id]}
+                                                                        className="rounded-md bg-green-600 px-3 py-1 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-60"
+                                                                    >
+                                                                        {creditLoadingByUser[user.id] ? 'Updating...' : 'Update'}
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleWalletRebuild(user)}
+                                                                        disabled={rebuildLoadingByUser[user.id]}
+                                                                        className="rounded-md bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                                                                        title="Rebuild invoice debits from selected date"
+                                                                    >
+                                                                        {rebuildLoadingByUser[user.id] ? 'Rebuilding...' : 'Rebuild'}
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleOpenWalletLogs(user)}
+                                                                        className="rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+                                                                    >
+                                                                        Logs
+                                                                    </button>
+                                                                </div>
+                                                            )}
                                                         </td>
                                                     )}
                                                 </tr>
@@ -668,6 +708,61 @@ export default function UsersPage() {
                                     </tbody>
                                 </table>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {billingTypeModalUser && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <div className="w-full max-w-md rounded-xl bg-white shadow-2xl">
+                        <div className="border-b px-5 py-4">
+                            <h3 className="text-lg font-semibold text-gray-900">Select Billing Type</h3>
+                            <p className="mt-1 text-sm text-gray-500">
+                                {billingTypeModalUser.name || 'User'} ko transporter banane ke liye billing type select karein.
+                            </p>
+                        </div>
+                        <div className="space-y-3 px-5 py-4">
+                            <label className="flex cursor-pointer items-start gap-3 rounded-lg border px-4 py-3">
+                                <input
+                                    type="radio"
+                                    name="billingType"
+                                    checked={pendingBillingType === 'BULK'}
+                                    onChange={() => setPendingBillingType('BULK')}
+                                    className="mt-1"
+                                />
+                                <div>
+                                    <p className="font-semibold text-gray-900">Bulk</p>
+                                    
+                                </div>
+                            </label>
+                            <label className="flex cursor-pointer items-start gap-3 rounded-lg border px-4 py-3">
+                                <input
+                                    type="radio"
+                                    name="billingType"
+                                    checked={pendingBillingType === 'PER_POLICY'}
+                                    onChange={() => setPendingBillingType('PER_POLICY')}
+                                    className="mt-1"
+                                />
+                                <div>
+                                    <p className="font-semibold text-gray-900">Per Policy</p>
+                                    
+                                </div>
+                            </label>
+                        </div>
+                        <div className="flex justify-end gap-3 border-t px-5 py-4">
+                            <button
+                                onClick={() => setBillingTypeModalUser(null)}
+                                className="rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmTransporterConversion}
+                                className="rounded-md bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
+                            >
+                                Convert
+                            </button>
                         </div>
                     </div>
                 </div>

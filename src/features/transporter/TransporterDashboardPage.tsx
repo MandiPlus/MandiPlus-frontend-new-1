@@ -102,6 +102,7 @@ function getEditProduct(invoice: InsuranceForm) {
 
 export default function TransporterDashboardPage() {
   const { user, logout } = useAuth();
+  const hasWalletAccess = user?.billingType !== "PER_POLICY";
   const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
   const [rangeKey, setRangeKey] = useState<RangeKey>("1Y");
   const [botView, setBotView] = useState<BotView>("tracking");
@@ -205,14 +206,19 @@ export default function TransporterDashboardPage() {
 
       setInvoices(mergedInvoices);
       setClaims(mergedClaims);
-      await loadWalletData();
+      if (hasWalletAccess) {
+        await loadWalletData();
+      } else {
+        setWallet(null);
+        setStatement([]);
+      }
     } catch {
       setInvoices([]);
       setClaims([]);
     } finally {
       setDashboardInitialized(true);
     }
-  }, [loadWalletData]);
+  }, [hasWalletAccess, loadWalletData]);
 
   useEffect(() => {
     loadDashboardData();
@@ -234,10 +240,16 @@ export default function TransporterDashboardPage() {
   }, [loadDashboardData]);
 
   useEffect(() => {
-    if (activeTab === "wallet") {
+    if (!hasWalletAccess && activeTab === "wallet") {
+      setActiveTab("overview");
+    }
+  }, [activeTab, hasWalletAccess]);
+
+  useEffect(() => {
+    if (hasWalletAccess && activeTab === "wallet") {
       loadWalletData();
     }
-  }, [activeTab, loadWalletData]);
+  }, [activeTab, hasWalletAccess, loadWalletData]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -763,7 +775,7 @@ export default function TransporterDashboardPage() {
 
   const navItems: Array<{ key: DashboardTab; label: string }> = [
     { key: "overview", label: "Overview" },
-    { key: "wallet", label: "Wallet" },
+    ...(hasWalletAccess ? [{ key: "wallet" as DashboardTab, label: "Wallet" }] : []),
     { key: "claims", label: "My Claims" },
     { key: "policies", label: "My Policies" },
   ];
@@ -913,15 +925,17 @@ export default function TransporterDashboardPage() {
                           </div>
                         )}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab("wallet")}
-                        className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-1.5 text-right shadow-sm transition hover:border-[#1155b8] hover:bg-white"
-                        title="Open wallet"
-                      >
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Wallet</p>
-                        <p className="text-xl font-extrabold text-slate-900">{formatCurrency(wallet?.availableBalance ?? 0)}</p>
-                      </button>
+                      {hasWalletAccess && (
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("wallet")}
+                          className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-1.5 text-right shadow-sm transition hover:border-[#1155b8] hover:bg-white"
+                          title="Open wallet"
+                        >
+                          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Wallet</p>
+                          <p className="text-xl font-extrabold text-slate-900">{formatCurrency(wallet?.availableBalance ?? 0)}</p>
+                        </button>
+                      )}
                       <button
                         onClick={() => setSupportOpen(true)}
                         className="grid h-11 w-11 place-items-center rounded-full bg-[#1155b8] text-white shadow-md transition hover:bg-[#0e4da7]"
@@ -961,15 +975,17 @@ export default function TransporterDashboardPage() {
                 </div>
 
                 <div className="flex items-center justify-between gap-2 lg:hidden">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("wallet")}
-                    className="flex-1 rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 text-left shadow-sm transition hover:border-[#1155b8] hover:bg-white"
-                    title="Open wallet"
-                  >
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Wallet</p>
-                    <p className="text-lg font-extrabold text-slate-900">{formatCurrency(wallet?.availableBalance ?? 0)}</p>
-                  </button>
+                  {hasWalletAccess && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("wallet")}
+                      className="flex-1 rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 text-left shadow-sm transition hover:border-[#1155b8] hover:bg-white"
+                      title="Open wallet"
+                    >
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Wallet</p>
+                      <p className="text-lg font-extrabold text-slate-900">{formatCurrency(wallet?.availableBalance ?? 0)}</p>
+                    </button>
+                  )}
                   <button
                     onClick={() => setSupportOpen(true)}
                     className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#1155b8] text-white shadow-md transition hover:bg-[#0e4da7]"
@@ -1178,7 +1194,7 @@ export default function TransporterDashboardPage() {
                 </section>
               )}
 
-              {activeTab === "wallet" && (
+              {hasWalletAccess && activeTab === "wallet" && (
                 <section className="space-y-4 rounded-3xl bg-[#ede7ff] p-4 lg:p-5">
                   <div className="grid grid-cols-1 gap-3 xl:grid-cols-[2fr_1fr]">
                     <div className="rounded-3xl bg-[#1555b7] p-5 text-white shadow-lg">

@@ -15,18 +15,12 @@ import { FileText, RefreshCw, Upload, Eye, CheckCircle, AlertCircle, Filter, X, 
 import InsuranceUploadModal from '@/features/admin/components/InsuranceUploadModal';
 import { uploadWeighmentSlips } from '@/features/insurance/api';
 
-// --- Debounce Hook ---
 function useDebounce<T>(value: T, delay: number): T {
     const [debouncedValue, setDebouncedValue] = useState<T>(value);
 
     useEffect(() => {
-        const handler = setTimeout(() => {
-            setDebouncedValue(value);
-        }, delay);
-
-        return () => {
-            clearTimeout(handler);
-        };
+        const timer = setTimeout(() => setDebouncedValue(value), delay);
+        return () => clearTimeout(timer);
     }, [value, delay]);
 
     return debouncedValue;
@@ -81,6 +75,101 @@ interface Invoice {
     } | null;
 }
 
+type FilterJoin = 'where' | 'and' | 'or';
+type FilterColumn =
+    | 'invoiceNumber'
+    | 'invoiceDate'
+    | 'terms'
+    | 'supplierName'
+    | 'billToName'
+    | 'placeOfSupply'
+    | 'vehicleNumber'
+    | 'truckNumber'
+    | 'paymentStatus'
+    | 'insuredPersonNameSnapshot';
+type FilterOperator =
+    | 'equals'
+    | 'not_equals'
+    | 'greater'
+    | 'greater_or_equals'
+    | 'less'
+    | 'less_or_equals';
+
+interface FilterRule {
+    id: string;
+    join: FilterJoin;
+    column: FilterColumn;
+    operator: FilterOperator;
+    value: string;
+}
+
+const FILTERABLE_COLUMNS: Array<{ value: FilterColumn; label: string; type: 'text' | 'date' }> = [
+    { value: 'invoiceNumber', label: 'invoiceNumber', type: 'text' },
+    { value: 'invoiceDate', label: 'invoiceDate', type: 'date' },
+    { value: 'terms', label: 'terms', type: 'text' },
+    { value: 'supplierName', label: 'supplierName', type: 'text' },
+    { value: 'billToName', label: 'buyerName', type: 'text' },
+    { value: 'placeOfSupply', label: 'placeOfSupply', type: 'text' },
+    { value: 'vehicleNumber', label: 'vehicleNumber', type: 'text' },
+    { value: 'truckNumber', label: 'truckNumber', type: 'text' },
+    { value: 'paymentStatus', label: 'paymentStatus', type: 'text' },
+    { value: 'insuredPersonNameSnapshot', label: 'insuredPerson', type: 'text' },
+];
+
+const FILTER_OPERATORS: Array<{ value: FilterOperator; label: string }> = [
+    { value: 'equals', label: 'equals' },
+    { value: 'not_equals', label: 'not equals' },
+    { value: 'greater', label: 'greater' },
+    { value: 'greater_or_equals', label: 'greater or equals' },
+    { value: 'less', label: 'less' },
+    { value: 'less_or_equals', label: 'less or equals' },
+];
+
+const createFilterRule = (join: FilterJoin = 'where'): FilterRule => ({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    join,
+    column: 'invoiceNumber',
+    operator: 'equals',
+    value: '',
+});
+
+const EXPORTABLE_INVOICE_COLUMNS = [
+    { key: 'invoiceNumber', label: 'Invoice Number' },
+    { key: 'invoiceDate', label: 'Invoice Date' },
+    { key: 'invoiceType', label: 'Invoice Type' },
+    { key: 'supplierName', label: 'Supplier Name' },
+    { key: 'supplierAddress', label: 'Supplier Address' },
+    { key: 'buyerName', label: 'Buyer Name' },
+    { key: 'buyerAddress', label: 'Buyer Address' },
+    { key: 'shipToName', label: 'Ship To Name' },
+    { key: 'shipToAddress', label: 'Ship To Address' },
+    { key: 'insuredPersonName', label: 'Insured Person Name' },
+    { key: 'insuredPersonAddress', label: 'Insured Person Address' },
+    { key: 'placeOfSupply', label: 'Place Of Supply' },
+    { key: 'productName', label: 'Product Name' },
+    { key: 'hsnCode', label: 'HSN Code' },
+    { key: 'quantity', label: 'Quantity' },
+    { key: 'rate', label: 'Rate' },
+    { key: 'amount', label: 'Amount' },
+    { key: 'premiumAmount', label: 'Premium Amount' },
+    { key: 'paymentAmount', label: 'Payment Amount' },
+    { key: 'paymentStatus', label: 'Payment Status' },
+    { key: 'paymentDate', label: 'Payment Date' },
+    { key: 'vehicleNumber', label: 'Vehicle Number' },
+    { key: 'truckNumber', label: 'Truck Number' },
+    { key: 'weighmentSlipNote', label: 'Weighment Slip Note' },
+    { key: 'ownerName', label: 'Owner Name' },
+    { key: 'userName', label: 'User Name' },
+    { key: 'userMobile', label: 'User Mobile' },
+    { key: 'isClaim', label: 'Is Claim' },
+    { key: 'isVerified', label: 'Is Verified' },
+    { key: 'isRejected', label: 'Is Rejected' },
+    { key: 'rejectionReason', label: 'Rejection Reason' },
+    { key: 'insuranceStatus', label: 'Insurance Status' },
+    { key: 'insuranceUploadedAt', label: 'Insurance Uploaded At' },
+    { key: 'createdAt', label: 'Created At' },
+] as const;
+
 export default function InsuranceFormsPage() {
     const router = useRouter();
     const { isAuthenticated } = useAdmin();
@@ -113,7 +202,10 @@ export default function InsuranceFormsPage() {
     const [verifyingInvoiceId, setVerifyingInvoiceId] = useState<string | null>(null);
     const [rejectingInvoiceId, setRejectingInvoiceId] = useState<string | null>(null);
     const [sendingPaymentInvoiceId, setSendingPaymentInvoiceId] = useState<string | null>(null);
-    const [exportType, setExportType] = useState<'all' | 'payment'>('all');
+    const [showExportModal, setShowExportModal] = useState(false);
+    const [selectedExportColumns, setSelectedExportColumns] = useState<string[]>(
+        EXPORTABLE_INVOICE_COLUMNS.map((column) => column.key),
+    );
     const [showFilters, setShowFilters] = useState(false);
     const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
     const [invoiceMenuPlacement, setInvoiceMenuPlacement] = useState<Record<string, 'up' | 'down'>>({});
@@ -135,67 +227,62 @@ export default function InsuranceFormsPage() {
     const [rotation, setRotation] = useState(0);
     const [weightmentSlip, setWeightmentSlip] = useState<File | null>(null);
     const cropperRef = useRef<ReactCropperElement>(null);
+    const [invoiceDateInputType, setInvoiceDateInputType] = useState<'text' | 'date'>('text');
     const [startDateInputType, setStartDateInputType] = useState<'text' | 'datetime-local'>('text');
     const [endDateInputType, setEndDateInputType] = useState<'text' | 'datetime-local'>('text');
-    const [invoiceDateInputType, setInvoiceDateInputType] = useState<'text' | 'date'>('text');
-
     const [filters, setFilters] = useState<InvoiceFilterParams>({
         invoiceType: '',
         startDate: '',
         endDate: '',
         supplierName: '',
-        buyerName: ''
+        buyerName: '',
     });
-
-    const debouncedFilters = useDebounce(filters, 500);
+    const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+    const [filterRules, setFilterRules] = useState<FilterRule[]>([createFilterRule()]);
+    const [appliedFilterRules, setAppliedFilterRules] = useState<FilterRule[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 10;
+    const debouncedFilters = useDebounce(filters, 500);
 
     const fetchInvoices = useCallback(async () => {
         setLoading(true);
         setError('');
 
         try {
-            const activeFilters = Object.fromEntries(
-                Object.entries(debouncedFilters).filter(([_, v]) => v !== '')
-            );
+            const activeFilters: InvoiceFilterParams = {};
 
-            if (activeFilters.supplierName) {
-                const trimmed = String(activeFilters.supplierName).trim();
-                if (trimmed.length < 3) {
-                    delete (activeFilters as any).supplierName;
-                } else {
-                    activeFilters.supplierName = trimmed;
-                }
+            if (debouncedFilters.invoiceType) {
+                activeFilters.invoiceType = debouncedFilters.invoiceType;
             }
 
-            if (activeFilters.buyerName) {
-                const trimmed = String(activeFilters.buyerName).trim();
-                if (trimmed.length < 3) {
-                    delete (activeFilters as any).buyerName;
-                } else {
-                    activeFilters.buyerName = trimmed;
-                }
-            }
-
-            if (activeFilters.startDate) {
-                const parsed = new Date(activeFilters.startDate as string);
+            if (debouncedFilters.startDate) {
+                const parsed = new Date(debouncedFilters.startDate);
                 if (!Number.isNaN(parsed.getTime())) {
                     activeFilters.startDate = parsed.toISOString();
-                } else {
-                    delete (activeFilters as any).startDate;
-                }
-            }
-            if (activeFilters.endDate) {
-                const parsed = new Date(activeFilters.endDate as string);
-                if (!Number.isNaN(parsed.getTime())) {
-                    activeFilters.endDate = parsed.toISOString();
-                } else {
-                    delete (activeFilters as any).endDate;
                 }
             }
 
-            console.log("Fetching with filters:", activeFilters);
+            if (debouncedFilters.endDate) {
+                const parsed = new Date(debouncedFilters.endDate);
+                if (!Number.isNaN(parsed.getTime())) {
+                    activeFilters.endDate = parsed.toISOString();
+                }
+            }
+
+            if (debouncedFilters.supplierName?.trim()) {
+                const value = debouncedFilters.supplierName.trim();
+                if (value.length >= 3) activeFilters.supplierName = value;
+            }
+
+            if (debouncedFilters.buyerName?.trim()) {
+                const value = debouncedFilters.buyerName.trim();
+                if (value.length >= 3) activeFilters.buyerName = value;
+            }
+
+            if (appliedFilterRules.length > 0) {
+                activeFilters.advancedFilters = JSON.stringify(appliedFilterRules);
+            }
+
             const response = await adminApi.filterInvoices(activeFilters);
 
             let data: Invoice[] = [];
@@ -237,7 +324,7 @@ export default function InsuranceFormsPage() {
         } finally {
             setLoading(false);
         }
-    }, [debouncedFilters, insuranceOverrides]);
+    }, [appliedFilterRules, debouncedFilters, insuranceOverrides]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -259,13 +346,93 @@ export default function InsuranceFormsPage() {
         fetchInvoices();
     }, [isAuthenticated, router, fetchInvoices]);
 
+    const getFilterColumnType = (column: FilterColumn) =>
+        FILTERABLE_COLUMNS.find((item) => item.value === column)?.type ?? 'text';
+
     const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-        setFilters(prev => ({ ...prev, [name]: value }));
+        setFilters((prev) => ({ ...prev, [name]: value }));
         setCurrentPage(1);
     };
 
+    const updateFilterRule = (
+        ruleId: string,
+        field: keyof Omit<FilterRule, 'id'>,
+        value: string,
+    ) => {
+        setFilterRules((prev) =>
+            prev.map((rule) => {
+                if (rule.id !== ruleId) return rule;
+
+                if (field === 'column') {
+                    const nextColumn = value as FilterColumn;
+                    return {
+                        ...rule,
+                        column: nextColumn,
+                        operator: rule.operator,
+                        value: rule.value,
+                    };
+                }
+
+                return {
+                    ...rule,
+                    [field]: value,
+                };
+            }),
+        );
+    };
+
+    const addFilterRule = () => {
+        setFilterRules((prev) => [...prev, createFilterRule('and')]);
+    };
+
+    const removeFilterRule = (ruleId: string) => {
+        setFilterRules((prev) => {
+            const next = prev.filter((rule) => rule.id !== ruleId);
+            if (next.length === 0) return [createFilterRule()];
+            return next.map((rule, index) => ({
+                ...rule,
+                join: index === 0 ? 'where' : rule.join === 'or' ? 'or' : 'and',
+            }));
+        });
+    };
+
+    const clearFilterRules = () => {
+        setFilterRules([createFilterRule()]);
+        setAppliedFilterRules([]);
+        setCurrentPage(1);
+    };
+
+    const applyAdvancedFilters = () => {
+        const activeRules = filterRules.filter((rule) => rule.value.trim().length > 0);
+
+        setAppliedFilterRules(
+            activeRules.map((rule, index) => ({
+                ...rule,
+                join: index === 0 ? 'where' : rule.join,
+            })),
+        );
+        setCurrentPage(1);
+    };
+
+    const openExportModal = () => {
+        setShowExportModal(true);
+    };
+
+    const toggleExportColumn = (columnKey: string) => {
+        setSelectedExportColumns((prev) =>
+            prev.includes(columnKey)
+                ? prev.filter((key) => key !== columnKey)
+                : [...prev, columnKey],
+        );
+    };
+
     const handleExport = async () => {
+        if (selectedExportColumns.length === 0) {
+            toast.error('Select at least one column to export.');
+            return;
+        }
+
         setExporting(true);
         try {
             const invoiceIds = invoices
@@ -273,36 +440,15 @@ export default function InsuranceFormsPage() {
                 .filter((id): id is string => Boolean(id));
 
             const body: any = {
-                exportType: exportType,
+                selectedColumns: selectedExportColumns,
             };
 
             // Prefer exact export of the currently filtered rows shown in the list.
             if (invoiceIds.length > 0) {
                 body.invoiceIds = Array.from(new Set(invoiceIds));
-            } else if (filters.startDate && filters.endDate) {
-                body.startDate = new Date(filters.startDate).toISOString();
-                body.endDate = new Date(filters.endDate).toISOString();
             } else {
                 toast.error('No filtered invoices available to export.');
                 return;
-            }
-
-            if (filters.invoiceType && exportType === 'all') {
-                body.invoiceType = filters.invoiceType;
-            }
-
-            if (filters.supplierName?.trim()) {
-                const supplierName = filters.supplierName.trim();
-                if (supplierName.length >= 3) {
-                    body.supplierName = supplierName;
-                }
-            }
-
-            if (filters.buyerName?.trim()) {
-                const buyerName = filters.buyerName.trim();
-                if (buyerName.length >= 3) {
-                    body.buyerName = buyerName;
-                }
             }
 
             console.log("📤 Export payload:", body);
@@ -315,16 +461,14 @@ export default function InsuranceFormsPage() {
                 a.href = url;
 
                 const timestamp = new Date().toISOString().split('T')[0];
-                const fileName =
-                    exportType === 'payment'
-                        ? `payment_export_${timestamp}.xlsx`
-                        : `invoices_export_${timestamp}.xlsx`;
+                const fileName = `invoices_export_${timestamp}.xlsx`;
 
                 a.download = fileName;
                 document.body.appendChild(a);
                 a.click();
                 window.URL.revokeObjectURL(url);
                 document.body.removeChild(a);
+                setShowExportModal(false);
 
                 toast.success('✅ Export successful!');
             }
@@ -758,11 +902,17 @@ export default function InsuranceFormsPage() {
         setInvoiceMenuPlacement((prev) => (prev[invoiceId] === placement ? prev : { ...prev, [invoiceId]: placement }));
     };
 
-    const totalPages = Math.ceil(invoices.length / ITEMS_PER_PAGE);
+    const totalPages = Math.max(1, Math.ceil(invoices.length / ITEMS_PER_PAGE));
     const paginatedInvoices = invoices.slice(
         (currentPage - 1) * ITEMS_PER_PAGE,
         currentPage * ITEMS_PER_PAGE
     );
+
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, totalPages]);
 
     return (
         <div className="min-h-screen bg-gray-50 py-4 sm:py-6">
@@ -829,6 +979,90 @@ export default function InsuranceFormsPage() {
                 </div>
             )}
 
+            {showExportModal && (
+                <div className="fixed inset-0 z-[2150] flex items-center justify-center p-3 sm:p-4">
+                    <div
+                        className="absolute inset-0 bg-black/40"
+                        onClick={() => setShowExportModal(false)}
+                    />
+                    <div className="relative w-full max-w-3xl rounded-2xl bg-white shadow-xl ring-1 ring-black/10">
+                        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                            <div className="min-w-0">
+                                <h3 className="text-base font-semibold text-slate-900">Select Export Columns</h3>
+                                <p className="mt-1 text-sm text-slate-600">
+                                    Choose the invoice columns you want in the Excel export.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowExportModal(false)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+                                aria-label="Close"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="px-5 py-4">
+                            <div className="mb-4 flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedExportColumns(EXPORTABLE_INVOICE_COLUMNS.map((column) => column.key))}
+                                    className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                                >
+                                    Select all
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedExportColumns([])}
+                                    className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                                >
+                                    Clear all
+                                </button>
+                                <span className="self-center text-sm text-slate-500">
+                                    {selectedExportColumns.length} columns selected
+                                </span>
+                            </div>
+
+                            <div className="grid max-h-[50vh] grid-cols-1 gap-3 overflow-y-auto rounded-xl border border-slate-200 p-4 sm:grid-cols-2 lg:grid-cols-3">
+                                {EXPORTABLE_INVOICE_COLUMNS.map((column) => (
+                                    <label
+                                        key={column.key}
+                                        className="flex items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 hover:bg-slate-50"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedExportColumns.includes(column.key)}
+                                            onChange={() => toggleExportColumn(column.key)}
+                                            className="h-4 w-4 rounded border-slate-300 text-[#4309ac] focus:ring-[#4309ac]"
+                                        />
+                                        <span>{column.label}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-4">
+                            <button
+                                type="button"
+                                onClick={() => setShowExportModal(false)}
+                                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleExport}
+                                disabled={exporting}
+                                className="rounded-xl bg-[#4309ac] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2f0679] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {exporting ? 'Exporting...' : 'Export Selected Columns'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Cropper Overlay */}
             {isCropping && imageSrc && (
                 <div className="fixed inset-0 z-50 bg-black flex flex-col">
@@ -888,27 +1122,29 @@ export default function InsuranceFormsPage() {
                         Invoices / Insurance Forms
                     </h1>
 
-                    <button
-                        onClick={handleExport}
-                        disabled={exporting || loading}
-                        className="bg-green-600 hover:bg-green-700 text-white px-3 sm:px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
-                    >
-                        {exporting ? (
-                            <>
-                                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                Exporting...
-                            </>
-                        ) : (
-                            <>
-                                <FileText className="w-4 h-4" />
-                                <span className="hidden sm:inline">Export to Excel</span>
-                                <span className="sm:hidden">Export</span>
-                            </>
-                        )}
-                    </button>
+                    <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                        <button
+                            onClick={openExportModal}
+                            disabled={exporting || loading}
+                            className="bg-green-600 hover:bg-green-700 text-white px-3 sm:px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
+                        >
+                            {exporting ? (
+                                <>
+                                    <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Exporting...
+                                </>
+                            ) : (
+                                <>
+                                    <FileText className="w-4 h-4" />
+                                    <span className="hidden sm:inline">Export to Excel</span>
+                                    <span className="sm:hidden">Export</span>
+                                </>
+                            )}
+                        </button>
+                    </div>
                 </div>
 
                 {/* Mobile Filter Toggle */}
@@ -923,31 +1159,16 @@ export default function InsuranceFormsPage() {
                 </div>
 
                 <div className={`bg-white text-black p-3 sm:p-4 rounded-lg shadow mb-4 sm:mb-6 ${showFilters ? 'block' : 'hidden sm:block'}`}>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 sm:gap-4">
                         <select
                             name="invoiceType"
-                            value={
-                                exportType === 'payment'
-                                    ? 'PAYMENT_EXPORT'
-                                    : (filters.invoiceType || '')
-                            }
-                            onChange={(e) => {
-                                const value = e.target.value;
-
-                                if (value === 'PAYMENT_EXPORT') {
-                                    setExportType('payment');
-                                    setFilters(prev => ({ ...prev, invoiceType: '' }));
-                                } else {
-                                    setExportType('all');
-                                    setFilters(prev => ({ ...prev, invoiceType: value }));
-                                }
-                            }}
+                            value={filters.invoiceType || ''}
+                            onChange={handleFilterChange}
                             className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
                         >
                             <option value="">All Invoices</option>
                             <option value="SUPPLIER_INVOICE">Supplier Invoice</option>
                             <option value="BUYER_INVOICE">Buyer Invoice</option>
-                            <option value="PAYMENT_EXPORT">Payment Export</option>
                         </select>
 
                         <input
@@ -993,7 +1214,124 @@ export default function InsuranceFormsPage() {
                             onChange={handleFilterChange}
                             className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
                         />
+
+                        <button
+                            type="button"
+                            onClick={() => setShowAdvancedFilters((prev) => !prev)}
+                            className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-gray-50"
+                        >
+                            <Filter className="w-4 h-4" />
+                            {showAdvancedFilters ? 'Hide Filters' : 'Filters'}
+                            {appliedFilterRules.length > 0 && (
+                                <span className="rounded-full bg-[#4309ac] px-2 py-0.5 text-xs text-white">
+                                    {appliedFilterRules.length}
+                                </span>
+                            )}
+                        </button>
                     </div>
+
+                    <div className="mt-3 flex items-center justify-between gap-3 text-xs sm:text-sm text-slate-500">
+                        <span>Showing {invoices.length} invoices</span>
+                        {appliedFilterRules.length > 0 && (
+                            <span>{appliedFilterRules.length} advanced filter(s) applied</span>
+                        )}
+                    </div>
+
+                    {showAdvancedFilters && (
+                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
+                            <div className="space-y-3">
+                                {filterRules.map((rule, index) => {
+                                    const columnType = getFilterColumnType(rule.column);
+
+                                    return (
+                                        <div key={rule.id} className="grid grid-cols-1 gap-3 xl:grid-cols-[36px_96px_minmax(180px,1fr)_minmax(180px,1fr)_minmax(220px,1.2fr)]">
+                                            <button
+                                                type="button"
+                                                onClick={() => removeFilterRule(rule.id)}
+                                                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-white"
+                                                aria-label="Remove filter"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+
+                                            <select
+                                                value={index === 0 ? 'where' : rule.join}
+                                                onChange={(e) => updateFilterRule(rule.id, 'join', e.target.value)}
+                                                disabled={index === 0}
+                                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
+                                            >
+                                                <option value="where">where</option>
+                                                <option value="and">and</option>
+                                                <option value="or">or</option>
+                                            </select>
+
+                                            <select
+                                                value={rule.column}
+                                                onChange={(e) => updateFilterRule(rule.id, 'column', e.target.value)}
+                                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#4309ac] focus:outline-none focus:ring-2 focus:ring-[#4309ac]/20"
+                                            >
+                                                {FILTERABLE_COLUMNS.map((column) => (
+                                                    <option key={column.value} value={column.value}>
+                                                        {column.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+
+                                            <select
+                                                value={rule.operator}
+                                                onChange={(e) => updateFilterRule(rule.id, 'operator', e.target.value)}
+                                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#4309ac] focus:outline-none focus:ring-2 focus:ring-[#4309ac]/20"
+                                            >
+                                                {FILTER_OPERATORS.map((operator) => (
+                                                    <option key={operator.value} value={operator.value}>
+                                                        {operator.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+
+                                            <input
+                                                type={columnType === 'date' ? 'date' : 'text'}
+                                                value={rule.value}
+                                                onChange={(e) => updateFilterRule(rule.id, 'value', e.target.value)}
+                                                placeholder={columnType === 'date' ? 'Select date' : 'Enter value'}
+                                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#4309ac] focus:outline-none focus:ring-2 focus:ring-[#4309ac]/20"
+                                            />
+                                        </div>
+                                    );
+                                })}
+
+                                <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="flex flex-col gap-2 sm:flex-row">
+                                        <button
+                                            type="button"
+                                            onClick={addFilterRule}
+                                            className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-gray-50"
+                                        >
+                                            + Add filter
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={applyAdvancedFilters}
+                                            className="inline-flex items-center justify-center rounded-md bg-[#4309ac] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2f0679]"
+                                        >
+                                            Apply filters
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={clearFilterRules}
+                                            className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
+                                        >
+                                            Clear filters
+                                        </button>
+                                    </div>
+
+                                    <div className="text-xs text-slate-500">
+                                        Multiple rows can be joined using AND or OR.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Error Banner */}

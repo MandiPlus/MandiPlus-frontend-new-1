@@ -109,8 +109,11 @@ export interface InvoiceCustomerAccount {
   id: string;
   name: string;
   mobileNumber: string;
+  identity?: string;
+  billingType?: "BULK" | "PER_POLICY" | null;
   walletId?: string;
   walletBalance?: number;
+  requiresWalletCheck?: boolean;
 }
 
 export interface ApiError {
