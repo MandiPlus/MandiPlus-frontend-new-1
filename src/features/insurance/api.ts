@@ -122,6 +122,14 @@ export interface ApiError {
   error: string;
 }
 
+export interface TruckFlagStatus {
+  truckNumber: string;
+  exists: boolean;
+  isFlagged: boolean;
+  flagReason: string | null;
+  message: string | null;
+}
+
 /* -------------------------------------------------------------------------- */
 /* APIs                                                                       */
 /* -------------------------------------------------------------------------- */
@@ -167,6 +175,29 @@ export const getInvoiceCustomerAccounts = async (): Promise<
   } catch (error) {
     const err = error as AxiosError<ApiError>;
     throw err.response?.data || { message: "Failed to fetch customer accounts" };
+  }
+};
+
+export const getTruckFlagStatus = async (
+  truckNumber: string,
+): Promise<TruckFlagStatus> => {
+  try {
+    const token =
+      localStorage.getItem("accessToken") || localStorage.getItem("token");
+
+    const response = await axios.get(
+      `${API_BASE_URL}/trucks/flag-status/${encodeURIComponent(truckNumber)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to check truck flag status" };
   }
 };
 

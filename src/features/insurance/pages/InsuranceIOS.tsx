@@ -17,6 +17,7 @@ import "cropperjs/dist/cropper.css";
 import {
     createInsuranceForm,
     getInvoiceCustomerAccounts,
+    getTruckFlagStatus,
     type InvoiceCustomerAccount,
 } from '../api';
 import { useAuth } from "@/features/auth/context/AuthContext";
@@ -504,6 +505,7 @@ const InsuranceIOS = () => {
             console.error(err);
             let errorMsg = 'Submission failed.';
             if (err.message) errorMsg = Array.isArray(err.message) ? err.message.join(', ') : err.message;
+            setError(errorMsg);
             setMessages(prev => [...prev, { text: errorMsg, sender: 'bot' }]);
             setIsSubmitting(false);
         }
@@ -538,6 +540,25 @@ const InsuranceIOS = () => {
     // --- Flow Logic ---
     const getQuestionText = (question: Question) => {
         return language ? question.text[language] : question.text.en;
+    };
+
+    const validateVehicleNumber = async (vehicleNumber: string): Promise<string | null> => {
+        try {
+            const truckFlagStatus = await getTruckFlagStatus(vehicleNumber);
+            if (!truckFlagStatus.isFlagged) {
+                return null;
+            }
+
+            return (
+                truckFlagStatus.message ||
+                'This vehicle has been flagged in system. Can not create invoice for this vehicle.'
+            );
+        } catch (error: unknown) {
+            const apiError = error as { message?: string | string[] };
+            return Array.isArray(apiError?.message)
+                ? apiError.message.join(', ')
+                : apiError?.message || 'Unable to verify vehicle number right now.';
+        }
     };
 
     const goToNextQuestion = (answerForCurrentQuestion?: string) => {
@@ -592,7 +613,7 @@ const InsuranceIOS = () => {
     };
 
     // Unified helper to process Input (Text or Button Click)
-    const processInput = (value: string) => {
+    const processInput = async (value: string) => {
         setAddressSuggestions([]); // Clear suggestions
         const q = questions[currentQuestionIndex];
         const currentInput = value.trim();
@@ -684,6 +705,16 @@ const InsuranceIOS = () => {
             }
         }
 
+        if (q.field === 'vehicleNumber') {
+            const vehicleValidationMessage = await validateVehicleNumber(currentInput);
+            if (vehicleValidationMessage) {
+                setError(vehicleValidationMessage);
+                setMessages(prev => [...prev, { text: vehicleValidationMessage, sender: 'bot' }]);
+                setInputValue('');
+                return;
+            }
+        }
+
         // Handle Editing vs Normal
         if (editingMessageIndex !== null) {
             setMessages(prev => {
@@ -706,19 +737,19 @@ const InsuranceIOS = () => {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        processInput(inputValue);
+        void processInput(inputValue);
     };
 
     // Handler for Chips/Buttons
     const handleOptionSelect = (opt: string) => {
-        processInput(opt);
+        void processInput(opt);
     };
 
     // Click handler for Address Suggestions
     const handleAddressSelect = (address: OSMAddress) => {
         const standardizedAddress = formatOSMAddress(address.address);
         setInputValue(standardizedAddress);
-        processInput(standardizedAddress);
+        void processInput(standardizedAddress);
     };
 
     // --- Image Handling ---
