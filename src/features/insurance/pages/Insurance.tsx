@@ -182,6 +182,45 @@ function useDebounce<T>(value: T, delay: number): T {
     return debouncedValue;
 }
 
+function getResolvedUserId(user: any): string {
+    const runtimeUserId = user?.id || user?._id || user?.userId;
+    if (runtimeUserId) {
+        return String(runtimeUserId);
+    }
+
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+        try {
+            const parsed = JSON.parse(storedUser);
+            const storedUserId = parsed?.id || parsed?._id || parsed?.userId;
+            if (storedUserId) {
+                return String(storedUserId);
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+    if (token) {
+        try {
+            const payloadBase64 = token.split('.')[1];
+            if (!payloadBase64) {
+                return '';
+            }
+
+            const payload = JSON.parse(
+                atob(payloadBase64.replace(/-/g, '+').replace(/_/g, '/')),
+            );
+            return String(payload?.sub || payload?.userId || payload?.id || '');
+        } catch (error) {
+            console.error(error);
+        }
+    }
+
+    return '';
+}
+
 const Insurance = () => {
     const router = useRouter();
     const { user } = useAuth();
@@ -383,15 +422,7 @@ const Insurance = () => {
 
         try {
             const submitData = new FormData();
-            const userData = localStorage.getItem('user');
-            let fallbackUserId = '';
-            if (userData) {
-                try {
-                    const parsed = JSON.parse(userData);
-                    fallbackUserId = parsed?.id || '';
-                } catch (e) { console.error(e); }
-            }
-            const effectiveUserId = user?.id || fallbackUserId;
+            const effectiveUserId = getResolvedUserId(user);
             if (!effectiveUserId) {
                 throw new Error('Authentication required. Please login again.');
             }

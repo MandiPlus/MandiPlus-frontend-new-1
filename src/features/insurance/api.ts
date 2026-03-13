@@ -142,7 +142,8 @@ export const createInsuranceForm = async (
   formData: FormData,
 ): Promise<CreateInsuranceResponse> => {
   try {
-    const token = localStorage.getItem("token");
+    const token =
+      localStorage.getItem("accessToken") || localStorage.getItem("token");
 
     const response = await axios.post(`${API_BASE_URL}/invoices`, formData, {
       headers: {
