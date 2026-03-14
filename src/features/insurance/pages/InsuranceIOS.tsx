@@ -628,7 +628,12 @@ const InsuranceIOS = () => {
         } else {
             const submitOverrides: Partial<FormData> = {};
             if (currentQuestion?.field && currentQuestion.field !== 'language' && currentQuestion.field !== 'weightmentSlip') {
-                submitOverrides[currentQuestion.field] = (answerForCurrentQuestion ?? formData[currentQuestion.field]) as never;
+                if (currentQuestion.field === 'customerUserId') {
+                    submitOverrides.customerUserId =
+                        selectedCustomerUserIdRef.current || formData.customerUserId || '';
+                } else {
+                    submitOverrides[currentQuestion.field] = (answerForCurrentQuestion ?? formData[currentQuestion.field]) as never;
+                }
             }
             if (currentQuestion?.field === 'addToCustomerAccount' && (answerForCurrentQuestion ?? formData.addToCustomerAccount) !== 'Yes') {
                 submitOverrides.customerUserId = '';
@@ -700,6 +705,16 @@ const InsuranceIOS = () => {
                 const account = customerAccounts.find(
                     (c) => formatCustomerOption(c) === currentInput,
                 );
+                const typedUuid = isUuid(currentInput) ? currentInput : '';
+
+                if (!account && !typedUuid) {
+                    setError(
+                        language === 'hi'
+                            ? 'Kripya list se valid account select karein.'
+                            : 'Please select a valid account from the list.'
+                    );
+                    return;
+                }
 
                 if (account) {
                     const qty = formData.quantity ? Number(formData.quantity) : 0;
@@ -723,8 +738,8 @@ const InsuranceIOS = () => {
                     setError('');
                 }
 
-                const resolvedCustomerUserId = resolveCustomerUserId(account);
-                if (account && !resolvedCustomerUserId) {
+                const resolvedCustomerUserId = resolveCustomerUserId(account) || typedUuid;
+                if (!resolvedCustomerUserId) {
                     setError(
                         language === 'hi'
                             ? 'Chuna gaya customer account invalid hai. Kripya phir se account select karein.'
