@@ -158,16 +158,7 @@ export const getCurrentUser = async (): Promise<any | null> => {
         const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
         if (!token) return null;
 
-        // 1. Try to get user from local storage first (fastest)
-        const storedUser = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
-        if (storedUser) {
-            const user = JSON.parse(storedUser);
-            // Verify if the stored user is valid by making a quick check or just return it
-            // For better security, we usually prefer fetching from API, but this is okay for now.
-            // Let's try to fetch fresh data using the token:
-        }
-
-        // 2. Decode token to get User ID
+        // Decode the token only to determine which profile to fetch.
         const base64Url = token.split('.')[1];
         if (!base64Url) return null;
 
@@ -177,7 +168,7 @@ export const getCurrentUser = async (): Promise<any | null> => {
 
         if (!userId) return null;
 
-        // 3. Fetch fresh user data from API
+        // Always fetch the current user from API instead of trusting cached profile data.
         const response = await axios.get(`${API_BASE_URL}/users/${userId}`, {
             headers: { Authorization: `Bearer ${token}` }
         });

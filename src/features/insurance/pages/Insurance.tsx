@@ -184,41 +184,7 @@ function useDebounce<T>(value: T, delay: number): T {
 
 function getResolvedUserId(user: any): string {
     const runtimeUserId = user?.id || user?._id || user?.userId;
-    if (runtimeUserId) {
-        return String(runtimeUserId);
-    }
-
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-        try {
-            const parsed = JSON.parse(storedUser);
-            const storedUserId = parsed?.id || parsed?._id || parsed?.userId;
-            if (storedUserId) {
-                return String(storedUserId);
-            }
-        } catch (error) {
-            console.error(error);
-        }
-    }
-
-    const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
-    if (token) {
-        try {
-            const payloadBase64 = token.split('.')[1];
-            if (!payloadBase64) {
-                return '';
-            }
-
-            const payload = JSON.parse(
-                atob(payloadBase64.replace(/-/g, '+').replace(/_/g, '/')),
-            );
-            return String(payload?.sub || payload?.userId || payload?.id || '');
-        } catch (error) {
-            console.error(error);
-        }
-    }
-
-    return '';
+    return runtimeUserId ? String(runtimeUserId) : '';
 }
 
 const Insurance = () => {
@@ -415,12 +381,19 @@ const Insurance = () => {
         return formatted;
     };
 
-    const submitInsuranceForm = async (fileArgument: File | null = null) => {
+    const submitInsuranceForm = async (
+        fileArgument: File | null = null,
+        formOverrides: Partial<FormData> = {},
+    ) => {
         if (isSubmitting) return;
         setIsSubmitting(true);
         setMessages(prev => [...prev, { text: 'Submitting details...', sender: 'bot' }]);
 
         try {
+            const resolvedFormData: FormData = {
+                ...formData,
+                ...formOverrides,
+            };
             const submitData = new FormData();
             const effectiveUserId = getResolvedUserId(user);
             if (!effectiveUserId) {
@@ -431,53 +404,53 @@ const Insurance = () => {
             submitData.append('invoiceDate', new Date().toISOString());
 
             // Clean addresses before sending
-            const supAddr = sanitizeText(formData.supplierAddress || 'Unknown Address');
-            const buyAddr = sanitizeText(formData.buyerAddress || 'Unknown Address');
-            const placeSupply = sanitizeText(formData.placeOfSupply || 'State');
+            const supAddr = sanitizeText(resolvedFormData.supplierAddress || 'Unknown Address');
+            const buyAddr = sanitizeText(resolvedFormData.buyerAddress || 'Unknown Address');
+            const placeSupply = sanitizeText(resolvedFormData.placeOfSupply || 'State');
 
             submitData.append('placeOfSupply', placeSupply);
             submitData.append('supplierAddress', JSON.stringify([supAddr]));
             submitData.append('billToAddress', JSON.stringify([buyAddr]));
             submitData.append('shipToAddress', JSON.stringify([buyAddr]));
 
-            const prodName = sanitizeText(formData.itemName || 'Item');
+            const prodName = sanitizeText(resolvedFormData.itemName || 'Item');
             submitData.append('productName', prodName);
 
-            const supName = sanitizeText(formData.supplierName || 'Unknown Supplier');
+            const supName = sanitizeText(resolvedFormData.supplierName || 'Unknown Supplier');
             submitData.append('supplierName', supName);
 
-            const buyName = sanitizeText(formData.buyerName || 'Unknown Buyer');
+            const buyName = sanitizeText(resolvedFormData.buyerName || 'Unknown Buyer');
             submitData.append('billToName', buyName);
             submitData.append('shipToName', buyName);
 
-            const qty = formData.quantity ? Number(formData.quantity) : 0;
-            const rate = formData.rate ? Number(formData.rate) : 0;
+            const qty = resolvedFormData.quantity ? Number(resolvedFormData.quantity) : 0;
+            const rate = resolvedFormData.rate ? Number(resolvedFormData.rate) : 0;
             const amount = qty * rate;
 
             submitData.append('quantity', String(qty));
             submitData.append('rate', String(rate));
             submitData.append('amount', String(amount));
 
-            if (formData.vehicleNumber) {
-                const vehicle = sanitizeText(formData.vehicleNumber);
+            if (resolvedFormData.vehicleNumber) {
+                const vehicle = sanitizeText(resolvedFormData.vehicleNumber);
                 submitData.append('vehicleNumber', vehicle);
                 submitData.append('truckNumber', vehicle);
             }
 
-            const owner = sanitizeText(formData.ownerName || 'Unknown Owner');
+            const owner = sanitizeText(resolvedFormData.ownerName || 'Unknown Owner');
             submitData.append('ownerName', owner);
             // Auto-derive invoiceType: Cash = BUYER_INVOICE (buyer pays), Commission = SUPPLIER_INVOICE
-            const isCash = (formData.notes || '').toLowerCase() === 'cash';
+            const isCash = (resolvedFormData.notes || '').toLowerCase() === 'cash';
             submitData.append('invoiceType', isCash ? 'BUYER_INVOICE' : 'SUPPLIER_INVOICE');
 
-            if (formData.hsn) submitData.append('hsnCode', formData.hsn);
-            if (formData.notes) submitData.append('weighmentSlipNote', sanitizeText(formData.notes));
-            if (formData.insuredPartyPhone?.trim()) submitData.append('insuredPartyPhone', formData.insuredPartyPhone.trim());
+            if (resolvedFormData.hsn) submitData.append('hsnCode', resolvedFormData.hsn);
+            if (resolvedFormData.notes) submitData.append('weighmentSlipNote', sanitizeText(resolvedFormData.notes));
+            if (resolvedFormData.insuredPartyPhone?.trim()) submitData.append('insuredPartyPhone', resolvedFormData.insuredPartyPhone.trim());
             if (['CUSTOMER', 'TRANSPORTER'].includes(identity)) {
                 submitData.append('customerUserId', effectiveUserId);
-            } else if (shouldShowCustomerMappingQuestion && formData.addToCustomerAccount === 'Yes') {
+            } else if (shouldShowCustomerMappingQuestion && resolvedFormData.addToCustomerAccount === 'Yes') {
                 const customerUserIdForSubmit =
-                    formData.customerUserId || selectedCustomerUserIdRef.current;
+                    resolvedFormData.customerUserId || selectedCustomerUserIdRef.current;
                 if (customerUserIdForSubmit) {
                     submitData.append('customerUserId', customerUserIdForSubmit);
                 }
@@ -632,7 +605,14 @@ const Insurance = () => {
                 setTimeout(() => fileInputRef.current?.click(), 300);
             }
         } else {
-            submitInsuranceForm();
+            const submitOverrides: Partial<FormData> = {};
+            if (currentQuestion?.field && currentQuestion.field !== 'language' && currentQuestion.field !== 'weightmentSlip') {
+                submitOverrides[currentQuestion.field] = (answerForCurrentQuestion ?? formData[currentQuestion.field]) as never;
+            }
+            if (currentQuestion?.field === 'addToCustomerAccount' && (answerForCurrentQuestion ?? formData.addToCustomerAccount) !== 'Yes') {
+                submitOverrides.customerUserId = '';
+            }
+            submitInsuranceForm(null, submitOverrides);
         }
     };
 
