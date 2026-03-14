@@ -208,7 +208,8 @@ export const getTruckFlagStatus = async (
  */
 export const getMyInsuranceForms = async (): Promise<InsuranceForm[]> => {
   try {
-    const token = localStorage.getItem("token");
+    const token =
+      localStorage.getItem("accessToken") || localStorage.getItem("token");
     const userData = localStorage.getItem("user");
 
     if (!userData) {

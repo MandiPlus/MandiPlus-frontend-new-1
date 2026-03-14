@@ -27,9 +27,12 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 const INSURANCE_OVERRIDES_KEY = 'admin_invoice_insurance_overrides';
+const INDIAN_PHONE_REGEX = /^(?:\+91|91)?[6-9]\d{9}$/;
 const getInvoiceKey = (inv: { id?: string; _id?: string; invoiceNumber?: string }) =>
     inv?.id || inv?._id || inv?.invoiceNumber || '';
 const getInvoiceId = (inv: { id?: string; _id?: string }) => inv?.id || inv?._id || '';
+const normalizePhoneInput = (value: string) => value.replace(/[^\d+]/g, '').trim();
+const isValidIndianPhone = (value: string) => INDIAN_PHONE_REGEX.test(value.trim());
 
 interface Invoice {
     id: string;
@@ -68,6 +71,7 @@ interface Invoice {
     paymentLinkUrl?: string | null;
     paymentLinkSentAt?: string | null;
     paymentLinkSentCount?: number | null;
+    insuredPartyPhone?: string | null;
     insurance?: {
         fileUrl: string;
         fileType: string;
@@ -218,6 +222,9 @@ export default function InsuranceFormsPage() {
     const [modalPrimaryLabel, setModalPrimaryLabel] = useState('');
     const [modalSecondaryLabel, setModalSecondaryLabel] = useState('Cancel');
     const [rejectReasonDraft, setRejectReasonDraft] = useState('');
+    const [sendPhoneModalOpen, setSendPhoneModalOpen] = useState(false);
+    const [sendPhoneInvoice, setSendPhoneInvoice] = useState<Invoice | null>(null);
+    const [sendPhoneDraft, setSendPhoneDraft] = useState('');
 
     // --- Cropper & File State ---
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -490,6 +497,12 @@ export default function InsuranceFormsPage() {
         setModalPrimaryLabel('');
         setModalSecondaryLabel('Cancel');
         setRejectReasonDraft('');
+    };
+
+    const closeSendPhoneModal = () => {
+        setSendPhoneModalOpen(false);
+        setSendPhoneInvoice(null);
+        setSendPhoneDraft('');
     };
 
     const requestVerify = (inv: Invoice) => {
@@ -829,9 +842,7 @@ export default function InsuranceFormsPage() {
         return { label: raw || 'PENDING', classes: 'border-red-200 bg-red-50 text-red-700' };
     };
 
-    const handleSendPaymentLink = async (inv: Invoice) => {
-        if (sendingPaymentInvoiceId) return;
-
+    const handleSendPaymentLink = (inv: Invoice) => {
         if (inv.isRejected) {
             toast.error('Rejected invoice cannot send payment link');
             return;
@@ -848,14 +859,41 @@ export default function InsuranceFormsPage() {
             return;
         }
 
+        setSendPhoneInvoice(inv);
+        setSendPhoneDraft(inv.insuredPartyPhone || '');
+        setSendPhoneModalOpen(true);
+    };
+
+    const submitSendPaymentLink = async () => {
+        if (sendingPaymentInvoiceId || !sendPhoneInvoice) return;
+
+        const invoiceId = getInvoiceId(sendPhoneInvoice);
+        if (!invoiceId) {
+            toast.error('Invoice ID missing. Please refresh and try again.');
+            return;
+        }
+
+        const phoneNumber = normalizePhoneInput(sendPhoneDraft);
+        if (!phoneNumber) {
+            toast.error('Enter a phone number to send the invoice.');
+            return;
+        }
+
+        if (!isValidIndianPhone(phoneNumber)) {
+            toast.error('Enter a valid Indian mobile number.');
+            return;
+        }
+
         try {
-            setSendingPaymentInvoiceId(inv.id);
+            setSendingPaymentInvoiceId(invoiceId);
             toast.loading(
                 'Sending payment link...',
                 { toastId: 'payment-link' },
             );
 
-            const res = await adminApi.verifyAndSendPaymentForInvoice(inv.id);
+            const res = await adminApi.verifyAndSendPaymentForInvoice(invoiceId, {
+                phoneNumber,
+            });
             if (!res.success) {
                 throw new Error(res.message || 'Failed to send payment link');
             }
@@ -867,6 +905,7 @@ export default function InsuranceFormsPage() {
                 autoClose: 2000,
             });
 
+            closeSendPhoneModal();
             await fetchInvoices();
         } catch (error: any) {
             toast.update('payment-link', {
@@ -973,6 +1012,67 @@ export default function InsuranceFormsPage() {
                                 }`}
                             >
                                 {modalPrimaryLabel || 'Continue'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {sendPhoneModalOpen && sendPhoneInvoice && (
+                <div className="fixed inset-0 z-[2125] flex items-center justify-center p-3 sm:p-4">
+                    <div
+                        className="absolute inset-0 bg-black/40"
+                        onClick={closeSendPhoneModal}
+                    />
+                    <div className="relative w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-black/10">
+                        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                            <div className="min-w-0">
+                                <h3 className="text-base font-semibold text-slate-900">Send Payment Link</h3>
+                                <p className="mt-1 text-sm text-slate-600">
+                                    Enter the WhatsApp number for invoice {sendPhoneInvoice.invoiceNumber}.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={closeSendPhoneModal}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+                                aria-label="Close"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="px-5 py-4 space-y-3">
+                            <div>
+                                <label className="mb-1 block text-sm font-medium text-slate-800">Phone number</label>
+                                <input
+                                    type="tel"
+                                    value={sendPhoneDraft}
+                                    onChange={(e) => setSendPhoneDraft(normalizePhoneInput(e.target.value))}
+                                    placeholder="9876543210 or 919876543210"
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-[#4309ac] focus:ring-2 focus:ring-[#4309ac]/20"
+                                />
+                            </div>
+                            <p className="text-xs text-slate-500">
+                                This sends the existing Meta template message and payment link to the number you enter.
+                            </p>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-4">
+                            <button
+                                type="button"
+                                onClick={closeSendPhoneModal}
+                                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={submitSendPaymentLink}
+                                disabled={sendingPaymentInvoiceId === getInvoiceId(sendPhoneInvoice)}
+                                className="rounded-xl bg-[#25D366] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1fa955] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {sendingPaymentInvoiceId === getInvoiceId(sendPhoneInvoice) ? 'Sending...' : 'Send'}
                             </button>
                         </div>
                     </div>
