@@ -86,6 +86,15 @@ interface OSMAddress {
     address: OSMAddressDetails;
 }
 
+const isUuid = (value?: string | null) =>
+    Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
+
+const resolveCustomerUserId = (account?: InvoiceCustomerAccount | null): string => {
+    if (!account) return '';
+    const candidates = [account.customerUserId, account.userId, account.id];
+    return candidates.find((candidate) => isUuid(candidate)) || '';
+};
+
 // --- Data ---
 const itemsData = [
     { name: "Tender Coconut", hsn: "08011910" },
@@ -451,6 +460,11 @@ const Insurance = () => {
             } else if (shouldShowCustomerMappingQuestion && resolvedFormData.addToCustomerAccount === 'Yes') {
                 const customerUserIdForSubmit =
                     resolvedFormData.customerUserId || selectedCustomerUserIdRef.current;
+                if (customerUserIdForSubmit && !isUuid(customerUserIdForSubmit)) {
+                    setError('Selected customer account is invalid. Please re-select the account.');
+                    setIsSubmitting(false);
+                    return;
+                }
                 if (customerUserIdForSubmit) {
                     submitData.append('customerUserId', customerUserIdForSubmit);
                 }
@@ -696,8 +710,17 @@ const Insurance = () => {
                     setError('');
                 }
 
-                selectedCustomerUserIdRef.current = account?.id || '';
-                setFormData(prev => ({ ...prev, customerUserId: account?.id || '' }));
+                const resolvedCustomerUserId = resolveCustomerUserId(account);
+                if (account && !resolvedCustomerUserId) {
+                    setError(
+                        language === 'hi'
+                            ? 'Chuna gaya customer account invalid hai. Kripya phir se account select karein.'
+                            : 'Selected customer account is invalid. Please choose another account.',
+                    );
+                    return;
+                }
+                selectedCustomerUserIdRef.current = resolvedCustomerUserId;
+                setFormData(prev => ({ ...prev, customerUserId: resolvedCustomerUserId }));
             } else {
                 setFormData(prev => ({ ...prev, [q.field]: valueToStore }));
             }
