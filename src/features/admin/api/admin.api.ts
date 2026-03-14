@@ -906,10 +906,12 @@ class AdminApi {
 
   public verifyAndSendPaymentForInvoice = async (
     invoiceId: string,
+    payload?: { phoneNumber?: string },
   ): Promise<ApiResponse<any>> => {
     try {
       const response = await this.client.post<ApiResponse<any>>(
         `/invoices/${invoiceId}/verify-and-send-payment`,
+        payload,
       );
       return response.data;
     } catch (error: any) {
