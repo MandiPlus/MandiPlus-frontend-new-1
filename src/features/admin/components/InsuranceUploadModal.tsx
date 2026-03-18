@@ -78,7 +78,7 @@ export default function InsuranceUploadModal({
       
       // Pass updated invoice data (handles both ApiResponse-wrapped and direct invoice payloads)
       const updatedInvoice = (response as any)?.data ?? response;
-      onSuccess(updatedInvoice);
+      onSuccess(updatedInvoice, file);
       onClose();
     } catch (err: any) {
       console.error('Upload error:', err);

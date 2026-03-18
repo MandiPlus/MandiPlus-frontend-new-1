@@ -533,6 +533,11 @@ export default function InsuranceFormsPage() {
             return;
         }
 
+        if (!sendPdfFile) {
+            toast.error('Please select a PDF file to send.');
+            return;
+        }
+
         const phoneNumber = normalizePhoneInput(sendPdfPhone);
         if (!phoneNumber || !isValidIndianPhone(phoneNumber)) {
             toast.error('Enter a valid Indian mobile number.');
@@ -543,7 +548,7 @@ export default function InsuranceFormsPage() {
             setSendingPdfInvoiceId(invoiceId);
             toast.loading('Sending insurance PDF...', { toastId: 'send-pdf' });
 
-            const res = await adminApi.sendInsurancePdfViaBot(invoiceId, phoneNumber);
+            const res = await adminApi.sendInsurancePdfViaBot(sendPdfFile, phoneNumber);
             if (!res.success) throw new Error(res.message || 'Failed to send insurance PDF');
 
             toast.update('send-pdf', {
@@ -2667,6 +2672,18 @@ export default function InsuranceFormsPage() {
 
                         <div className="px-5 py-4 space-y-4">
                             <div>
+                                <label className="mb-1 block text-sm font-medium text-slate-800">Insurance PDF</label>
+                                <input
+                                    type="file"
+                                    accept="application/pdf"
+                                    onChange={(e) => setSendPdfFile(e.target.files?.[0] ?? null)}
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#4309ac] focus:ring-2 focus:ring-[#4309ac]/20 file:mr-3 file:rounded-lg file:border-0 file:bg-[#4309ac]/10 file:px-3 file:py-1 file:text-sm file:font-medium file:text-[#4309ac]"
+                                />
+                                {sendPdfFile && (
+                                    <p className="mt-1 text-xs text-slate-500">{sendPdfFile.name}</p>
+                                )}
+                            </div>
+                            <div>
                                 <label className="mb-1 block text-sm font-medium text-slate-800">Phone number</label>
                                 <input
                                     type="tel"
@@ -2710,7 +2727,7 @@ export default function InsuranceFormsPage() {
                         setShowInsuranceModal(false);
                         setSelectedInvoiceForInsurance(null);
                     }}
-                    onSuccess={async (updatedInvoice?: any) => {
+                    onSuccess={async (updatedInvoice?: any, uploadedFile?: File) => {
                         const fileUrl =
                             updatedInvoice?.fileUrl ??
                             updatedInvoice?.data?.fileUrl ??
@@ -2757,6 +2774,7 @@ export default function InsuranceFormsPage() {
                         if (selectedInvoiceForInsurance) {
                             setSendPdfInvoice(selectedInvoiceForInsurance);
                             setSendPdfPhone(selectedInvoiceForInsurance.insuredPartyPhone || '');
+                            if (uploadedFile) setSendPdfFile(uploadedFile);
                             setSendPdfModalOpen(true);
                         }
 
