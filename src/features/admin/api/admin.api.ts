@@ -1317,7 +1317,7 @@ class AdminApi {
     try {
       const botBaseUrl =
         (typeof process !== "undefined" &&
-          process.env.NEXT_PUBLIC_BOT_BASE_URL) ||
+          process.env.NEXT_PUBLIC_BOT_API_BASE_URL) ||
         "http://localhost:8000";
       const adminToken =
         this.authToken ||
