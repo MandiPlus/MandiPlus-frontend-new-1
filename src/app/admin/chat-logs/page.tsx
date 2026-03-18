@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -581,7 +581,7 @@ export default function AdminChatLogsPage() {
                         >
                           <p className="truncate text-sm font-medium text-slate-900">{tpl.name}</p>
                           <p className="mt-1 text-xs text-slate-500">
-                            {(tpl.status || 'UNKNOWN').toUpperCase()} � {(tpl.language || 'en').toLowerCase()}
+                            {(tpl.status || 'UNKNOWN').toUpperCase()} • {(tpl.language || 'en').toLowerCase()}
                           </p>
                         </button>
                       );
@@ -657,3 +657,4 @@ export default function AdminChatLogsPage() {
     </div>
   );
 }
+
