@@ -521,7 +521,6 @@ export default function InsuranceFormsPage() {
     const openSendPdfModal = (inv: Invoice) => {
         setSendPdfInvoice(inv);
         setSendPdfPhone(inv.insuredPartyPhone || '');
-        setSendPdfFile(null);
         setSendPdfModalOpen(true);
     };
 
@@ -540,25 +539,11 @@ export default function InsuranceFormsPage() {
             return;
         }
 
-        const insuranceUrl = getInsuranceFileUrl(sendPdfInvoice);
-        if (!sendPdfFile && !insuranceUrl) {
-            toast.error('No insurance PDF available. Please upload one first.');
-            return;
-        }
-
         try {
             setSendingPdfInvoiceId(invoiceId);
             toast.loading('Sending insurance PDF...', { toastId: 'send-pdf' });
 
-            let fileToSend = sendPdfFile;
-            if (!fileToSend && insuranceUrl) {
-                // Fetch the existing insurance PDF from URL
-                const fullUrl = toFullFileUrl(insuranceUrl);
-                const blob = await fetch(fullUrl).then((r) => r.blob());
-                fileToSend = new File([blob], `insurance-${sendPdfInvoice.invoiceNumber}.pdf`, { type: 'application/pdf' });
-            }
-
-            const res = await adminApi.sendInsurancePdfViaBot(invoiceId, fileToSend!, phoneNumber);
+            const res = await adminApi.sendInsurancePdfViaBot(invoiceId, phoneNumber);
             if (!res.success) throw new Error(res.message || 'Failed to send insurance PDF');
 
             toast.update('send-pdf', {
@@ -2725,7 +2710,7 @@ export default function InsuranceFormsPage() {
                         setShowInsuranceModal(false);
                         setSelectedInvoiceForInsurance(null);
                     }}
-                    onSuccess={async (updatedInvoice?: any, uploadedFile?: File) => {
+                    onSuccess={async (updatedInvoice?: any) => {
                         const fileUrl =
                             updatedInvoice?.fileUrl ??
                             updatedInvoice?.data?.fileUrl ??
@@ -2768,11 +2753,10 @@ export default function InsuranceFormsPage() {
 
                         setShowInsuranceModal(false);
 
-                        // After upload, open the send PDF modal pre-filled with the uploaded file
+                        // After upload, open the send PDF modal pre-filled
                         if (selectedInvoiceForInsurance) {
                             setSendPdfInvoice(selectedInvoiceForInsurance);
                             setSendPdfPhone(selectedInvoiceForInsurance.insuredPartyPhone || '');
-                            setSendPdfFile(uploadedFile || null);
                             setSendPdfModalOpen(true);
                         }
 
