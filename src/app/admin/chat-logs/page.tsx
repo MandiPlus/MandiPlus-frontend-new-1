@@ -40,6 +40,24 @@ type MessageResponse = {
   items: ChatMessage[];
 };
 
+type TemplateComponent = {
+  type?: string;
+  text?: string;
+};
+
+type TemplateItem = {
+  name: string;
+  status?: string;
+  language?: string;
+  category?: string;
+  components?: TemplateComponent[];
+};
+
+type TemplateListResponse = {
+  count: number;
+  items: TemplateItem[];
+};
+
 function formatPhone(value: string) {
   if (!value) return 'Unknown';
   if (value.length < 4) return value;
@@ -73,6 +91,24 @@ function statusBadgeClass(status: string) {
   return 'bg-slate-200 text-slate-700';
 }
 
+function extractBodyPlaceholders(template: TemplateItem): number {
+  const bodyComponent = (template.components || []).find(
+    (comp) => (comp.type || '').toUpperCase() === 'BODY'
+  );
+  const text = bodyComponent?.text || '';
+  const matches = [...text.matchAll(/\{\{(\d+)\}\}/g)];
+  if (matches.length === 0) return 0;
+  const maxIndex = Math.max(...matches.map((m) => Number(m[1] || 0)));
+  return Number.isFinite(maxIndex) ? maxIndex : 0;
+}
+
+function templateBodyPreview(template: TemplateItem): string {
+  const bodyComponent = (template.components || []).find(
+    (comp) => (comp.type || '').toUpperCase() === 'BODY'
+  );
+  return bodyComponent?.text || '';
+}
+
 export default function AdminChatLogsPage() {
   const router = useRouter();
   const { isAuthenticated } = useAdmin();
@@ -87,6 +123,16 @@ export default function AdminChatLogsPage() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [draftMessage, setDraftMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
+
+  const [showActionMenu, setShowActionMenu] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templateSearch, setTemplateSearch] = useState('');
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
+  const [templateError, setTemplateError] = useState('');
+  const [templates, setTemplates] = useState<TemplateItem[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<TemplateItem | null>(null);
+  const [templateVars, setTemplateVars] = useState<string[]>([]);
+  const [sendingTemplate, setSendingTemplate] = useState(false);
 
   const botBaseUrl =
     process.env.NEXT_PUBLIC_BOT_API_BASE_URL || 'http://localhost:8000';
@@ -105,6 +151,11 @@ export default function AdminChatLogsPage() {
           }
         : {},
     [botAdminToken]
+  );
+
+  const bodyVarCount = useMemo(
+    () => (selectedTemplate ? extractBodyPlaceholders(selectedTemplate) : 0),
+    [selectedTemplate]
   );
 
   useEffect(() => {
@@ -174,6 +225,43 @@ export default function AdminChatLogsPage() {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (!showTemplateModal || !isAuthenticated) return;
+
+    const fetchTemplates = async () => {
+      try {
+        setLoadingTemplates(true);
+        setTemplateError('');
+        const res = await axios.get<TemplateListResponse>(
+          `${botBaseUrl}/admin/chat/templates`,
+          {
+            ...axiosConfig,
+            params: { search: templateSearch, limit: 300 },
+          }
+        );
+        setTemplates(Array.isArray(res.data?.items) ? res.data.items : []);
+      } catch {
+        setTemplateError('Could not load templates from Meta.');
+      } finally {
+        setLoadingTemplates(false);
+      }
+    };
+
+    fetchTemplates();
+  }, [showTemplateModal, templateSearch, isAuthenticated, botBaseUrl, axiosConfig]);
+
+  useEffect(() => {
+    if (!selectedTemplate) {
+      setTemplateVars([]);
+      return;
+    }
+    setTemplateVars((prev) => {
+      const next = [...prev];
+      while (next.length < bodyVarCount) next.push('');
+      return next.slice(0, bodyVarCount);
+    });
+  }, [selectedTemplate, bodyVarCount]);
+
   const filteredConversations = useMemo(() => {
     if (!search.trim()) return conversations;
     const key = search.trim().toLowerCase();
@@ -205,6 +293,57 @@ export default function AdminChatLogsPage() {
       setError('Failed to send message. Check bot token/template window rules.');
     } finally {
       setSendingMessage(false);
+    }
+  };
+
+  const openTemplateModal = () => {
+    if (!selectedPhone) {
+      setError('Select a conversation first.');
+      return;
+    }
+    setShowActionMenu(false);
+    setShowTemplateModal(true);
+    setSelectedTemplate(null);
+    setTemplateVars([]);
+    setTemplateSearch('');
+  };
+
+  const handleTemplateVarChange = (index: number, value: string) => {
+    setTemplateVars((prev) => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+  };
+
+  const handleSendTemplate = async () => {
+    if (!selectedPhone || !selectedTemplate || sendingTemplate) return;
+    if (templateVars.some((v) => !v.trim())) {
+      setTemplateError('Please fill all template variables.');
+      return;
+    }
+
+    try {
+      setSendingTemplate(true);
+      setTemplateError('');
+      await axios.post(
+        `${botBaseUrl}/admin/chat/send-template`,
+        {
+          phone: selectedPhone,
+          template_name: selectedTemplate.name,
+          language_code: selectedTemplate.language || 'en',
+          body_parameters: templateVars.map((v) => v.trim()),
+        },
+        axiosConfig
+      );
+      setShowTemplateModal(false);
+      setSelectedTemplate(null);
+      setTemplateVars([]);
+      setRefreshTick((x) => x + 1);
+    } catch {
+      setTemplateError('Template send failed. Check template params and WhatsApp policy window.');
+    } finally {
+      setSendingTemplate(false);
     }
   };
 
@@ -356,10 +495,7 @@ export default function AdminChatLogsPage() {
             )}
           </div>
 
-          <form
-            onSubmit={handleSendMessage}
-            className="border-t border-slate-200 bg-white p-3"
-          >
+          <form onSubmit={handleSendMessage} className="border-t border-slate-200 bg-white p-3">
             <div className="flex items-center gap-2">
               <input
                 value={draftMessage}
@@ -375,10 +511,149 @@ export default function AdminChatLogsPage() {
               >
                 {sendingMessage ? 'Sending...' : 'Send'}
               </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowActionMenu((v) => !v)}
+                  disabled={!selectedPhone}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-lg leading-none text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+                >
+                  &#9776;
+                </button>
+                {showActionMenu ? (
+                  <div className="absolute bottom-12 right-0 z-20 w-48 rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={openTemplateModal}
+                      className="w-full rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+                    >
+                      Template Message
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowActionMenu(false)}
+                      className="w-full cursor-not-allowed rounded-md px-3 py-2 text-left text-sm text-slate-400"
+                    >
+                      Send Flow (Coming Soon)
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </form>
         </section>
       </div>
+
+      {showTemplateModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-2xl">
+            <div className="border-b border-slate-200 px-4 py-3">
+              <p className="text-sm font-semibold text-slate-900">Template Message</p>
+              <p className="text-xs text-slate-500">Send to {formatPhone(selectedPhone)}</p>
+            </div>
+
+            <div className="grid max-h-[72vh] grid-cols-1 gap-0 overflow-hidden md:grid-cols-[320px_1fr]">
+              <div className="border-r border-slate-200">
+                <div className="p-3">
+                  <input
+                    value={templateSearch}
+                    onChange={(e) => setTemplateSearch(e.target.value)}
+                    placeholder="Search templates..."
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="max-h-[60vh] overflow-y-auto border-t border-slate-100">
+                  {loadingTemplates ? (
+                    <p className="p-3 text-sm text-slate-500">Loading templates...</p>
+                  ) : templates.length === 0 ? (
+                    <p className="p-3 text-sm text-slate-500">No templates found.</p>
+                  ) : (
+                    templates.map((tpl) => {
+                      const active = selectedTemplate?.name === tpl.name;
+                      return (
+                        <button
+                          key={`${tpl.name}_${tpl.language || 'en'}`}
+                          type="button"
+                          onClick={() => setSelectedTemplate(tpl)}
+                          className={`w-full border-b border-slate-100 px-3 py-3 text-left ${
+                            active ? 'bg-emerald-100/70' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <p className="truncate text-sm font-medium text-slate-900">{tpl.name}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {(tpl.status || 'UNKNOWN').toUpperCase()} • {(tpl.language || 'en').toLowerCase()}
+                          </p>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div className="max-h-[72vh] overflow-y-auto p-4">
+                {!selectedTemplate ? (
+                  <p className="text-sm text-slate-500">Select a template from the left list.</p>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{selectedTemplate.name}</p>
+                      <p className="mt-1 whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                        {templateBodyPreview(selectedTemplate) || 'No body preview available.'}
+                      </p>
+                    </div>
+
+                    {bodyVarCount > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Template Variables
+                        </p>
+                        {Array.from({ length: bodyVarCount }).map((_, idx) => (
+                          <input
+                            key={`var_${idx + 1}`}
+                            value={templateVars[idx] || ''}
+                            onChange={(e) => handleTemplateVarChange(idx, e.target.value)}
+                            placeholder={`Variable {{${idx + 1}}}`}
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-500">This template has no body variables.</p>
+                    )}
+                  </div>
+                )}
+
+                {templateError ? (
+                  <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                    {templateError}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTemplateModal(false);
+                  setTemplateError('');
+                }}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSendTemplate}
+                disabled={!selectedTemplate || sendingTemplate}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
+              >
+                {sendingTemplate ? 'Sending...' : 'Send Template'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
