@@ -1310,6 +1310,48 @@ class AdminApi {
   // END CLAIM REQUESTS
   // ============================================================
 
+  public sendInsurancePdfViaBot = async (
+    invoiceId: string,
+    file: File,
+    phoneNumber: string,
+    caption?: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const botBaseUrl =
+        process.env.NEXT_PUBLIC_BOT_BASE_URL || "http://localhost:8000";
+      const adminToken =
+        this.authToken ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("adminToken")
+          : null);
+
+      const formData = new FormData();
+      formData.append("phone", phoneNumber);
+      formData.append("file", file, file.name);
+      if (caption) formData.append("caption", caption);
+
+      const response = await axios.post(
+        `${botBaseUrl}/admin/send-insurance-pdf`,
+        formData,
+        {
+          headers: {
+            "x-admin-token": adminToken || "",
+          },
+        },
+      );
+      return { success: true, data: response.data, message: "Insurance PDF sent successfully" };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.detail ||
+          error.response?.data?.message ||
+          "Failed to send insurance PDF",
+        error: error.message,
+      };
+    }
+  };
+
   public getDashboardStats = async (): Promise<
     ApiResponse<{
       totalUsers: number;

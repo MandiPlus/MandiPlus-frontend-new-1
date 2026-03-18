@@ -225,6 +225,12 @@ export default function InsuranceFormsPage() {
     const [sendPhoneModalOpen, setSendPhoneModalOpen] = useState(false);
     const [sendPhoneInvoice, setSendPhoneInvoice] = useState<Invoice | null>(null);
     const [sendPhoneDraft, setSendPhoneDraft] = useState('');
+    // Send Insurance PDF modal state
+    const [sendPdfModalOpen, setSendPdfModalOpen] = useState(false);
+    const [sendPdfInvoice, setSendPdfInvoice] = useState<Invoice | null>(null);
+    const [sendPdfPhone, setSendPdfPhone] = useState('');
+    const [sendPdfFile, setSendPdfFile] = useState<File | null>(null);
+    const [sendingPdfInvoiceId, setSendingPdfInvoiceId] = useState<string | null>(null);
 
     // --- Cropper & File State ---
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -503,6 +509,75 @@ export default function InsuranceFormsPage() {
         setSendPhoneModalOpen(false);
         setSendPhoneInvoice(null);
         setSendPhoneDraft('');
+    };
+
+    const closeSendPdfModal = () => {
+        setSendPdfModalOpen(false);
+        setSendPdfInvoice(null);
+        setSendPdfPhone('');
+        setSendPdfFile(null);
+    };
+
+    const openSendPdfModal = (inv: Invoice) => {
+        setSendPdfInvoice(inv);
+        setSendPdfPhone(inv.insuredPartyPhone || '');
+        setSendPdfFile(null);
+        setSendPdfModalOpen(true);
+    };
+
+    const submitSendInsurancePdf = async () => {
+        if (sendingPdfInvoiceId || !sendPdfInvoice) return;
+
+        const invoiceId = getInvoiceId(sendPdfInvoice);
+        if (!invoiceId) {
+            toast.error('Invoice ID missing. Please refresh and try again.');
+            return;
+        }
+
+        const phoneNumber = normalizePhoneInput(sendPdfPhone);
+        if (!phoneNumber || !isValidIndianPhone(phoneNumber)) {
+            toast.error('Enter a valid Indian mobile number.');
+            return;
+        }
+
+        const insuranceUrl = getInsuranceFileUrl(sendPdfInvoice);
+        if (!sendPdfFile && !insuranceUrl) {
+            toast.error('No insurance PDF available. Please upload one first.');
+            return;
+        }
+
+        try {
+            setSendingPdfInvoiceId(invoiceId);
+            toast.loading('Sending insurance PDF...', { toastId: 'send-pdf' });
+
+            let fileToSend = sendPdfFile;
+            if (!fileToSend && insuranceUrl) {
+                // Fetch the existing insurance PDF from URL
+                const fullUrl = toFullFileUrl(insuranceUrl);
+                const blob = await fetch(fullUrl).then((r) => r.blob());
+                fileToSend = new File([blob], `insurance-${sendPdfInvoice.invoiceNumber}.pdf`, { type: 'application/pdf' });
+            }
+
+            const res = await adminApi.sendInsurancePdfViaBot(invoiceId, fileToSend!, phoneNumber);
+            if (!res.success) throw new Error(res.message || 'Failed to send insurance PDF');
+
+            toast.update('send-pdf', {
+                render: 'Insurance PDF sent successfully',
+                type: 'success',
+                isLoading: false,
+                autoClose: 2000,
+            });
+            closeSendPdfModal();
+        } catch (error: any) {
+            toast.update('send-pdf', {
+                render: error?.message || 'Failed to send insurance PDF',
+                type: 'error',
+                isLoading: false,
+                autoClose: 3000,
+            });
+        } finally {
+            setSendingPdfInvoiceId(null);
+        }
     };
 
     const requestVerify = (inv: Invoice) => {
@@ -1803,6 +1878,34 @@ export default function InsuranceFormsPage() {
                                                                                 )}
                                                                             </Menu.Item>
                                                                         )}
+                                                                        {getInsuranceFileUrl(inv) && (
+                                                                            <Menu.Item>
+                                                                                {({ active }) => (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => openSendPdfModal(inv)}
+                                                                                        className={`${active ? 'bg-gray-100' : ''} flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700`}
+                                                                                    >
+                                                                                        <FileText className="w-4 h-4 text-blue-600" />
+                                                                                        Send insurance PDF
+                                                                                    </button>
+                                                                                )}
+                                                                            </Menu.Item>
+                                                                        )}
+                                                                        {getInsuranceFileUrl(inv) && (
+                                                                            <Menu.Item>
+                                                                                {({ active }) => (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => openSendPdfModal(inv)}
+                                                                                        className={`${active ? 'bg-gray-100' : ''} flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700`}
+                                                                                    >
+                                                                                        <FileText className="w-4 h-4 text-blue-600" />
+                                                                                        Send insurance PDF
+                                                                                    </button>
+                                                                                )}
+                                                                            </Menu.Item>
+                                                                        )}
                                                                     </Menu.Items>
                                                                 </Transition>
                                                             </Menu>
@@ -2555,6 +2658,65 @@ export default function InsuranceFormsPage() {
                 </div>
             )}
 
+            {/* Send Insurance PDF Modal */}
+            {sendPdfModalOpen && sendPdfInvoice && (
+                <div className="fixed inset-0 z-[2125] flex items-center justify-center p-3 sm:p-4">
+                    <div className="absolute inset-0 bg-black/40" onClick={closeSendPdfModal} />
+                    <div className="relative w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-black/10">
+                        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+                            <div className="min-w-0">
+                                <h3 className="text-base font-semibold text-slate-900">Send Insurance PDF</h3>
+                                <p className="mt-1 text-sm text-slate-600">
+                                    Send insurance PDF for {sendPdfInvoice.invoiceNumber} via WhatsApp bot.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={closeSendPdfModal}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+                                aria-label="Close"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="px-5 py-4 space-y-4">
+                            <div>
+                                <label className="mb-1 block text-sm font-medium text-slate-800">Phone number</label>
+                                <input
+                                    type="tel"
+                                    value={sendPdfPhone}
+                                    onChange={(e) => setSendPdfPhone(normalizePhoneInput(e.target.value))}
+                                    placeholder="9876543210 or 919876543210"
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-[#4309ac] focus:ring-2 focus:ring-[#4309ac]/20"
+                                />
+                            </div>
+                            <p className="text-xs text-slate-500">
+                                The insurance PDF will be sent to this WhatsApp number via the bot.
+                            </p>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-4">
+                            <button
+                                type="button"
+                                onClick={closeSendPdfModal}
+                                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={submitSendInsurancePdf}
+                                disabled={sendingPdfInvoiceId === getInvoiceId(sendPdfInvoice)}
+                                className="rounded-xl bg-[#25D366] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1fa955] disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {sendingPdfInvoiceId === getInvoiceId(sendPdfInvoice) ? 'Sending...' : 'Send'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Insurance Upload Modal */}
             {showInsuranceModal && selectedInvoiceForInsurance && (
                 <InsuranceUploadModal
@@ -2563,7 +2725,7 @@ export default function InsuranceFormsPage() {
                         setShowInsuranceModal(false);
                         setSelectedInvoiceForInsurance(null);
                     }}
-                    onSuccess={async (updatedInvoice?: any) => {
+                    onSuccess={async (updatedInvoice?: any, uploadedFile?: File) => {
                         const fileUrl =
                             updatedInvoice?.fileUrl ??
                             updatedInvoice?.data?.fileUrl ??
@@ -2605,6 +2767,15 @@ export default function InsuranceFormsPage() {
                         }
 
                         setShowInsuranceModal(false);
+
+                        // After upload, open the send PDF modal pre-filled with the uploaded file
+                        if (selectedInvoiceForInsurance) {
+                            setSendPdfInvoice(selectedInvoiceForInsurance);
+                            setSendPdfPhone(selectedInvoiceForInsurance.insuredPartyPhone || '');
+                            setSendPdfFile(uploadedFile || null);
+                            setSendPdfModalOpen(true);
+                        }
+
                         setSelectedInvoiceForInsurance(null);
                         await fetchInvoices();
                     }}
