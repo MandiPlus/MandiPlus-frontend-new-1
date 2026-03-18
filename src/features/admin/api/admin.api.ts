@@ -1311,7 +1311,7 @@ class AdminApi {
   // ============================================================
 
   public sendInsurancePdfViaBot = async (
-    file: File,
+    fileUrl: string,
     phoneNumber: string,
   ): Promise<ApiResponse<any>> => {
     try {
@@ -1327,7 +1327,7 @@ class AdminApi {
 
       const formData = new FormData();
       formData.append("phone", phoneNumber);
-      formData.append("file", file, file.name);
+      formData.append("file_url", fileUrl);
 
       const response = await axios.post(
         `${botBaseUrl}/admin/send-insurance-pdf`,
