@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import Button from "@/shared/components/Button";
 import Input from "@/shared/components/Input";
 import Select from "@/shared/components/Select";
@@ -51,7 +52,6 @@ const roleOptions = [
 ];
 
 const RegisterPage = () => {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useAuth(); // Get login function
   const [isLoading, setIsLoading] = useState(false);
@@ -201,6 +201,13 @@ const RegisterPage = () => {
             </Button>
           </div>
         </form>
+
+        <p className="pt-6 text-center text-sm text-gray-700">
+          Already registered?{" "}
+          <Link href="/login" className="font-semibold text-[#4309ac]">
+            Login
+          </Link>
+        </p>
       </div>
     </div>
   );

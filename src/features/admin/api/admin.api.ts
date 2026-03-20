@@ -23,6 +23,7 @@ interface User {
   mobileNumber: string;
   category?: string;
   identity?: string;
+  billingType?: "BULK" | "PER_POLICY" | null;
   state?: string;
   createdAt: string;
   totalForms?: number;
@@ -100,12 +101,16 @@ export interface RegenerateInvoicePayload {
 
 export interface InvoiceFilterParams {
   invoiceType?: string;
+  invoiceNumber?: string;
   startDate?: string;
   endDate?: string;
   supplierName?: string;
   buyerName?: string;
   userId?: string;
   exportType?: "all" | "payment";
+  paymentStatus?: string;
+  isVerified?: boolean;
+  advancedFilters?: string;
 }
 
 export interface AdminAgentCommissionSummaryRow {
@@ -146,7 +151,22 @@ export interface AdminWalletStatementItem {
   balanceAfter?: number;
   referenceId?: string;
   narration?: string;
+  remark?: string;
+  attachmentUrl?: string;
   createdAt: string;
+}
+
+export interface AdminWalletRebuildResult {
+  userId: string;
+  walletId: string;
+  balance: number;
+  effectiveDate: string;
+  removedTransactionCount: number;
+  invoicesScanned: number;
+  debitRowsInserted: number;
+  invoiceRowsUpdated: number;
+  recomputedTransactionCount: number;
+  message: string;
 }
 
 export interface UpdateInsurancePaymentPayload {
@@ -398,11 +418,25 @@ class AdminApi {
     userId: string,
     amount: number,
     narration?: string,
+    effectiveDate?: string,
+    remark?: string,
+    attachment?: File,
   ): Promise<ApiResponse<any>> => {
     try {
+      const formData = new FormData();
+      formData.append("amount", String(amount));
+      if (narration) formData.append("narration", narration);
+      if (effectiveDate) formData.append("effectiveDate", effectiveDate);
+      if (remark) formData.append("remark", remark);
+      if (attachment) formData.append("attachment", attachment);
       const response = await this.client.post<ApiResponse<any>>(
         `/wallet/admin/customers/${userId}/credit`,
-        { amount, narration },
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        },
       );
       const payload = response.data;
       if (payload && typeof payload === "object" && "success" in payload) {
@@ -425,11 +459,25 @@ class AdminApi {
     userId: string,
     amount: number,
     narration?: string,
+    effectiveDate?: string,
+    remark?: string,
+    attachment?: File,
   ): Promise<ApiResponse<any>> => {
     try {
+      const formData = new FormData();
+      formData.append("amount", String(amount));
+      if (narration) formData.append("narration", narration);
+      if (effectiveDate) formData.append("effectiveDate", effectiveDate);
+      if (remark) formData.append("remark", remark);
+      if (attachment) formData.append("attachment", attachment);
       const response = await this.client.post<ApiResponse<any>>(
         `/wallet/admin/users/${userId}/adjust`,
-        { amount, narration },
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        },
       );
       const payload = response.data;
       if (payload && typeof payload === "object" && "success" in payload) {
@@ -473,12 +521,43 @@ class AdminApi {
     }
   };
 
+  public rebuildUserWallet = async (
+    userId: string,
+    effectiveDate: string,
+  ): Promise<ApiResponse<AdminWalletRebuildResult>> => {
+    try {
+      const response = await this.client.post<ApiResponse<AdminWalletRebuildResult>>(
+        `/wallet/admin/users/${userId}/rebuild`,
+        { effectiveDate },
+      );
+      const payload = response.data;
+      if (payload && typeof payload === "object" && "success" in payload) {
+        return payload;
+      }
+      return {
+        success: true,
+        data: payload as AdminWalletRebuildResult,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to rebuild wallet",
+        error: error.message,
+      };
+    }
+  };
+
   public convertUserIdentity = async (
     userId: string,
     identity: UserIdentity,
+    billingType?: "BULK" | "PER_POLICY",
   ): Promise<ApiResponse<any>> => {
     try {
-      const response = await this.client.patch(`/users/${userId}`, { identity });
+      const response = await this.client.patch(`/users/${userId}`, {
+        identity,
+        ...(identity === "TRANSPORTER" ? { billingType } : {}),
+      });
       return {
         success: true,
         data: response.data,
@@ -595,6 +674,7 @@ class AdminApi {
     buyerName?: string;
     invoiceIds?: string[];
     exportType?: "all" | "payment";
+    selectedColumns?: string[];
   }): Promise<Blob | null> => {
     try {
       const response = await this.client.post("/invoices/admin/export", body, {
@@ -827,10 +907,12 @@ class AdminApi {
 
   public verifyAndSendPaymentForInvoice = async (
     invoiceId: string,
+    payload?: { phoneNumber?: string },
   ): Promise<ApiResponse<any>> => {
     try {
       const response = await this.client.post<ApiResponse<any>>(
         `/invoices/${invoiceId}/verify-and-send-payment`,
+        payload,
       );
       return response.data;
     } catch (error: any) {
@@ -1228,6 +1310,43 @@ class AdminApi {
   // ============================================================
   // END CLAIM REQUESTS
   // ============================================================
+
+  public sendInsurancePdfViaBot = async (
+    fileUrl: string,
+    phoneNumber: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const botBaseUrl =
+        (typeof process !== "undefined" &&
+          process.env.NEXT_PUBLIC_BOT_API_BASE_URL) ||
+        "http://localhost:8000";
+      const adminToken =
+        this.authToken ||
+        (typeof window !== "undefined"
+          ? localStorage.getItem("adminToken")
+          : null);
+
+      const formData = new FormData();
+      formData.append("phone", phoneNumber);
+      formData.append("file_url", fileUrl);
+
+      const response = await axios.post(
+        `${botBaseUrl}/admin/send-insurance-pdf`,
+        formData,
+        { headers: { "x-admin-token": adminToken || "" } },
+      );
+      return { success: true, data: response.data, message: "Insurance PDF sent successfully" };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.detail ||
+          error.response?.data?.message ||
+          "Failed to send insurance PDF",
+        error: error.message,
+      };
+    }
+  };
 
   public getDashboardStats = async (): Promise<
     ApiResponse<{

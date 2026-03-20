@@ -11,7 +11,8 @@ import {
     PencilSquareIcon,
     BanknotesIcon,
     CreditCardIcon,
-    MapPinIcon
+    MapPinIcon,
+    ChatBubbleLeftRightIcon
 } from '@heroicons/react/24/outline';
 import { Bars3Icon } from '@heroicons/react/16/solid';
 import Link from 'next/link';
@@ -28,6 +29,7 @@ const navigation = [
     { name: 'Created Trips', href: '/admin/trips', icon: MapPinIcon },
     { name: 'Agent Commissions', href: '/admin/agent-commissions', icon: BanknotesIcon },
     { name: 'Insurance Payments', href: '/admin/insurance-payments', icon: CreditCardIcon },
+    { name: 'WhatsApp Chats', href: '/admin/chat-logs', icon: ChatBubbleLeftRightIcon },
     {
     name: 'Edit Insurance PDF',
     href: '/admin/pdf-editor',

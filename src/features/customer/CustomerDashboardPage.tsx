@@ -194,6 +194,19 @@ export default function CustomerDashboardPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-slate-900">{item.narration || item.type}</p>
+                          {item.remark ? (
+                            <p className="mt-1 text-xs text-slate-500">{item.remark}</p>
+                          ) : null}
+                          {item.attachmentUrl ? (
+                            <a
+                              href={item.attachmentUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-1 inline-block text-xs font-semibold text-blue-600 hover:underline"
+                            >
+                              View image
+                            </a>
+                          ) : null}
                           <p className="mt-0.5 text-xs text-slate-500">{formatDate(item.createdAt)}</p>
                         </div>
                         <div className="text-right">

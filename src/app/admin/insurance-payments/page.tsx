@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   InsurancePaymentRow,
@@ -16,6 +16,7 @@ const PAYMENT_STATUS_OPTIONS = [
   'REFUNDED',
 ];
 const ITEMS_PER_PAGE = 20;
+const FETCH_LIMIT = 500;
 
 function getPaymentStatusBadgeClasses(status?: string | null) {
   const normalized = String(status || '').toUpperCase();
@@ -66,6 +67,11 @@ function toInputDateTimeLocal(value?: string | null): string {
   return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
 export default function AdminInsurancePaymentsPage() {
   const router = useRouter();
   const { isAuthenticated } = useAdmin();
@@ -78,10 +84,8 @@ export default function AdminInsurancePaymentsPage() {
   const [fromDateInputType, setFromDateInputType] = useState<'text' | 'date'>('text');
   const [toDateInputType, setToDateInputType] = useState<'text' | 'date'>('text');
   const [paymentStatus, setPaymentStatus] = useState('');
+  const [nameQuery, setNameQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalRows, setTotalRows] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-  const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
   const [jumpPageInput, setJumpPageInput] = useState('1');
 
   const [editing, setEditing] = useState<InsurancePaymentRow | null>(null);
@@ -89,47 +93,46 @@ export default function AdminInsurancePaymentsPage() {
   const [paymentCompletedInputType, setPaymentCompletedInputType] = useState<'text' | 'datetime-local'>('text');
   const [form, setForm] = useState<UpdateInsurancePaymentPayload>({});
 
-  const fetchRows = async () => {
-    try {
-      setLoading(true);
-      setError('');
+  const fetchAllRowsForFilters = useCallback(async () => {
+    const collected: InsurancePaymentRow[] = [];
+    let page = 1;
+    let pages = 1;
+
+    do {
       const response = await adminApi.getInsurancePayments({
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
-        page: currentPage,
-        limit: ITEMS_PER_PAGE,
+        page,
+        limit: FETCH_LIMIT,
       });
 
       if (!response.success) {
         throw new Error(response.message || 'Failed to load insurance payments');
       }
-      setRows(response.data || []);
-      const resolvedTotalRows = Number(
-        response.total ?? response.count ?? (response.data?.length || 0),
-      );
-      const resolvedLimit = Number(response.limit ?? ITEMS_PER_PAGE);
-      const fallbackTotalPages =
-        resolvedTotalRows === 0
-          ? 1
-          : Math.max(1, Math.ceil(resolvedTotalRows / Math.max(resolvedLimit, 1)));
 
-      setTotalRows(resolvedTotalRows);
-      setTotalPages(Number(response.totalPages ?? fallbackTotalPages));
-      setPageSize(resolvedLimit > 0 ? resolvedLimit : ITEMS_PER_PAGE);
-      if (response.page && response.page !== currentPage) {
-        setCurrentPage(response.page);
-      }
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load insurance payments');
+      const chunk = Array.isArray(response.data) ? response.data : [];
+      collected.push(...chunk);
+      pages = Math.max(1, Number(response.totalPages || 1));
+      page += 1;
+    } while (page <= pages);
+
+    return collected;
+  }, [fromDate, toDate, paymentStatus]);
+
+  const fetchRows = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const allRows = await fetchAllRowsForFilters();
+      setRows(allRows);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to load insurance payments'));
       setRows([]);
-      setTotalRows(0);
-      setTotalPages(1);
-      setPageSize(ITEMS_PER_PAGE);
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchAllRowsForFilters]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -137,23 +140,87 @@ export default function AdminInsurancePaymentsPage() {
       return;
     }
     fetchRows();
-  }, [isAuthenticated, router, fromDate, toDate, paymentStatus, currentPage]);
+  }, [isAuthenticated, router, fetchRows]);
+
+  const filteredRows = useMemo(() => {
+    const query = nameQuery.trim().toLowerCase();
+    if (!query) return rows;
+    return rows.filter((row) => {
+      const haystack = `${row.buyer || ''} ${row.insuredPerson || ''} ${row.supplier || ''} ${row.invoiceNumber || ''}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [rows, nameQuery]);
+
+  const totalRows = filteredRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / ITEMS_PER_PAGE));
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredRows.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredRows, currentPage]);
 
   const totalPremium = useMemo(
-    () => rows.reduce((sum, row) => sum + Number(row.premiumAmount || 0), 0),
-    [rows],
+    () => filteredRows.reduce((sum, row) => sum + Number(row.premiumAmount || 0), 0),
+    [filteredRows],
   );
 
   const totalPayment = useMemo(
-    () => rows.reduce((sum, row) => sum + getEffectivePaidAmount(row), 0),
-    [rows],
+    () => filteredRows.reduce((sum, row) => sum + Number(row.paymentAmount || 0), 0),
+    [filteredRows],
   );
-  const pageStart = totalRows === 0 ? 0 : (currentPage - 1) * pageSize + 1;
-  const pageEnd = Math.min(currentPage * pageSize, totalRows);
+  const pageStart = totalRows === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
+  const pageEnd = Math.min(currentPage * ITEMS_PER_PAGE, totalRows);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   useEffect(() => {
     setJumpPageInput(String(currentPage));
   }, [currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [nameQuery]);
+
+  const exportToExcel = () => {
+    const headers = [
+      'Invoice Number',
+      'Buyer / Insured',
+      'Premium Amount',
+      'Payment Amount',
+      'Balance',
+      'Status',
+      'Updated At',
+    ];
+    const lines = filteredRows.map((row) => [
+      row.invoiceNumber || '',
+      row.buyer || row.insuredPerson || '',
+      Number(row.premiumAmount || 0),
+      Number(row.paymentAmount || 0),
+      getEffectiveBalance(row),
+      row.paymentStatus || 'PENDING',
+      formatDate(row.updatedAt),
+    ]);
+    const csv = [headers, ...lines]
+      .map((cols) =>
+        cols
+          .map((col) => `"${String(col ?? '').replace(/"/g, '""')}"`)
+          .join(','),
+      )
+      .join('\n');
+
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `insurance-payments-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const openEditModal = (row: InsurancePaymentRow) => {
     const paymentCompletedValue = toInputDateTimeLocal(row.paymentCompletedAt);
@@ -200,8 +267,8 @@ export default function AdminInsurancePaymentsPage() {
 
       closeEditModal();
       await fetchRows();
-    } catch (err: any) {
-      alert(err?.message || 'Failed to update insurance payment');
+    } catch (err: unknown) {
+      alert(getErrorMessage(err, 'Failed to update insurance payment'));
     } finally {
       setSaving(false);
     }
@@ -209,7 +276,7 @@ export default function AdminInsurancePaymentsPage() {
 
   return (
     <div className="py-6">
-      <div className="mx-auto max-w-7xl">
+      <div className="w-full px-2 sm:px-3 lg:px-4 xl:px-6">
         <div className="mb-5">
           <h1 className="text-2xl font-semibold text-gray-900">
             Insurance Payments
@@ -218,7 +285,7 @@ export default function AdminInsurancePaymentsPage() {
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
             <input
               type={fromDateInputType}
               placeholder="DD-MM-YYYY"
@@ -262,6 +329,20 @@ export default function AdminInsurancePaymentsPage() {
                 </option>
               ))}
             </select>
+            <input
+              type="text"
+              placeholder="Search by name / invoice"
+              value={nameQuery}
+              onChange={(e) => setNameQuery(e.target.value)}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+            />
+            <button
+              type="button"
+              onClick={exportToExcel}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Export to Excel
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -270,6 +351,7 @@ export default function AdminInsurancePaymentsPage() {
                 setFromDateInputType('text');
                 setToDateInputType('text');
                 setPaymentStatus('');
+                setNameQuery('');
                 setCurrentPage(1);
               }}
               className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
@@ -349,7 +431,7 @@ export default function AdminInsurancePaymentsPage() {
                       Loading insurance payments...
                     </td>
                   </tr>
-                ) : rows.length === 0 ? (
+                ) : paginatedRows.length === 0 ? (
                   <tr>
                     <td
                       colSpan={8}
@@ -359,7 +441,7 @@ export default function AdminInsurancePaymentsPage() {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((row) => (
+                  paginatedRows.map((row) => (
                     <tr key={row.id}>
                       <td className="px-4 py-3 text-gray-900">{row.invoiceNumber}</td>
                       <td className="px-4 py-3 text-gray-700">

@@ -17,6 +17,7 @@ import "cropperjs/dist/cropper.css";
 import {
     createInsuranceForm,
     getInvoiceCustomerAccounts,
+    getTruckFlagStatus,
     type InvoiceCustomerAccount,
 } from '../api';
 import { useAuth } from "@/features/auth/context/AuthContext";
@@ -85,6 +86,15 @@ interface OSMAddress {
     lon: string;
     address: OSMAddressDetails;
 }
+
+const isUuid = (value?: string | null) =>
+    Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
+
+const resolveCustomerUserId = (account?: InvoiceCustomerAccount | null): string => {
+    if (!account) return '';
+    const candidates = [account.customerUserId, account.userId, account.id];
+    return candidates.find((candidate) => isUuid(candidate)) || '';
+};
 
 // --- Data: Items and HSN Codes ---
 const itemsData = [
@@ -184,6 +194,11 @@ function useDebounce<T>(value: T, delay: number): T {
     return debouncedValue;
 }
 
+function getResolvedUserId(user: any): string {
+    const runtimeUserId = user?.id || user?._id || user?.userId;
+    return runtimeUserId ? String(runtimeUserId) : '';
+}
+
 /* ---------------- COMPONENT ---------------- */
 
 const InsuranceIOS = () => {
@@ -237,14 +252,19 @@ const InsuranceIOS = () => {
     // React state updates can lag behind the last chat answer; keep the selected customerUserId
     // in a ref so submit always includes it when needed.
     const selectedCustomerUserIdRef = useRef<string>('');
-    const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM', 'CUSTOMER'].includes(identity);
+    const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
     const shouldAskCustomerPicker = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
 
     const formatCustomerOption = (account: InvoiceCustomerAccount) => {
+        const isPerPolicyTransporter =
+            account.identity === 'TRANSPORTER' && account.billingType === 'PER_POLICY';
         const balance = Number(account.walletBalance || 0).toLocaleString('en-IN', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
         });
+        if (isPerPolicyTransporter) {
+            return `${account.name} (${account.mobileNumber}) - Transporter / Per Policy`;
+        }
         return `${account.name} (${account.mobileNumber}) - Wallet: ₹${balance}`;
     };
 
@@ -400,61 +420,67 @@ const InsuranceIOS = () => {
     };
 
     // --- API Submission ---
-    const submitInsuranceForm = async (fileArgument: File | null = null) => {
+    const submitInsuranceForm = async (
+        fileArgument: File | null = null,
+        formOverrides: Partial<FormData> = {},
+    ) => {
         if (isSubmitting) return;
         setIsSubmitting(true);
         setMessages(prev => [...prev, { text: 'Submitting details...', sender: 'bot' }]);
 
         try {
+            const resolvedFormData: FormData = {
+                ...formData,
+                ...formOverrides,
+            };
             const submitData = new FormData();
-            const userData = localStorage.getItem('user');
-            let fallbackUserId = '';
-            if (userData) {
-                try {
-                    const parsed = JSON.parse(userData);
-                    fallbackUserId = parsed?.id || '';
-                } catch (e) { console.error(e); }
-            }
-            const effectiveUserId = user?.id || fallbackUserId;
+            const effectiveUserId = getResolvedUserId(user);
             if (!effectiveUserId) {
                 throw new Error('Authentication required. Please login again.');
             }
             submitData.append('userId', effectiveUserId);
 
             submitData.append('invoiceDate', new Date().toISOString());
-            submitData.append('placeOfSupply', formData.placeOfSupply || 'State');
-            const supAddr = formData.supplierAddress || 'Unknown Address';
+            submitData.append('placeOfSupply', resolvedFormData.placeOfSupply || 'State');
+            const supAddr = resolvedFormData.supplierAddress || 'Unknown Address';
             submitData.append('supplierAddress', JSON.stringify([supAddr]));
-            const buyAddr = formData.buyerAddress || 'Unknown Address';
+            const buyAddr = resolvedFormData.buyerAddress || 'Unknown Address';
             submitData.append('billToAddress', JSON.stringify([buyAddr]));
             submitData.append('shipToAddress', JSON.stringify([buyAddr]));
 
-            const prodName = formData.itemName || 'Item';
+            const prodName = resolvedFormData.itemName || 'Item';
             submitData.append('productName', prodName);
-            submitData.append('supplierName', formData.supplierName || 'Unknown Supplier');
-            submitData.append('billToName', formData.buyerName || 'Unknown Buyer');
-            submitData.append('shipToName', formData.buyerName || 'Unknown Buyer');
+            submitData.append('supplierName', resolvedFormData.supplierName || 'Unknown Supplier');
+            submitData.append('billToName', resolvedFormData.buyerName || 'Unknown Buyer');
+            submitData.append('shipToName', resolvedFormData.buyerName || 'Unknown Buyer');
 
-            const qty = formData.quantity ? Number(formData.quantity) : 0;
-            const rate = formData.rate ? Number(formData.rate) : 0;
+            const qty = resolvedFormData.quantity ? Number(resolvedFormData.quantity) : 0;
+            const rate = resolvedFormData.rate ? Number(resolvedFormData.rate) : 0;
             const amount = qty * rate;
 
             submitData.append('quantity', String(qty));
             submitData.append('rate', String(rate));
             submitData.append('amount', String(amount));
 
-            if (formData.vehicleNumber) {
-                submitData.append('vehicleNumber', formData.vehicleNumber);
-                submitData.append('truckNumber', formData.vehicleNumber);
+            if (resolvedFormData.vehicleNumber) {
+                submitData.append('vehicleNumber', resolvedFormData.vehicleNumber);
+                submitData.append('truckNumber', resolvedFormData.vehicleNumber);
             }
-            submitData.append('ownerName', formData.ownerName || 'Unknown Owner');
-            submitData.append('invoiceType', formData.invoiceType || 'BUYER_INVOICE'); // Added Field
+            submitData.append('ownerName', resolvedFormData.ownerName || 'Unknown Owner');
+            submitData.append('invoiceType', resolvedFormData.invoiceType || 'BUYER_INVOICE'); // Added Field
 
-            if (formData.hsn) submitData.append('hsnCode', formData.hsn);
-            if (formData.notes) submitData.append('weighmentSlipNote', formData.notes);
-            if (shouldShowCustomerMappingQuestion && formData.addToCustomerAccount === 'Yes') {
+            if (resolvedFormData.hsn) submitData.append('hsnCode', resolvedFormData.hsn);
+            if (resolvedFormData.notes) submitData.append('weighmentSlipNote', resolvedFormData.notes);
+            if (['CUSTOMER', 'TRANSPORTER'].includes(identity)) {
+                submitData.append('customerUserId', effectiveUserId);
+            } else if (shouldShowCustomerMappingQuestion && resolvedFormData.addToCustomerAccount === 'Yes') {
                 const customerUserIdForSubmit =
-                    formData.customerUserId || selectedCustomerUserIdRef.current;
+                    resolvedFormData.customerUserId || selectedCustomerUserIdRef.current;
+                if (customerUserIdForSubmit && !isUuid(customerUserIdForSubmit)) {
+                    setError('Selected customer account is invalid. Please re-select the account.');
+                    setIsSubmitting(false);
+                    return;
+                }
                 if (customerUserIdForSubmit) {
                     submitData.append('customerUserId', customerUserIdForSubmit);
                 }
@@ -497,6 +523,7 @@ const InsuranceIOS = () => {
             console.error(err);
             let errorMsg = 'Submission failed.';
             if (err.message) errorMsg = Array.isArray(err.message) ? err.message.join(', ') : err.message;
+            setError(errorMsg);
             setMessages(prev => [...prev, { text: errorMsg, sender: 'bot' }]);
             setIsSubmitting(false);
         }
@@ -531,6 +558,25 @@ const InsuranceIOS = () => {
     // --- Flow Logic ---
     const getQuestionText = (question: Question) => {
         return language ? question.text[language] : question.text.en;
+    };
+
+    const validateVehicleNumber = async (vehicleNumber: string): Promise<string | null> => {
+        try {
+            const truckFlagStatus = await getTruckFlagStatus(vehicleNumber);
+            if (!truckFlagStatus.isFlagged) {
+                return null;
+            }
+
+            return (
+                truckFlagStatus.message ||
+                'This vehicle has been flagged in system. Can not create invoice for this vehicle.'
+            );
+        } catch (error: unknown) {
+            const apiError = error as { message?: string | string[] };
+            return Array.isArray(apiError?.message)
+                ? apiError.message.join(', ')
+                : apiError?.message || 'Unable to verify vehicle number right now.';
+        }
     };
 
     const goToNextQuestion = (answerForCurrentQuestion?: string) => {
@@ -580,12 +626,24 @@ const InsuranceIOS = () => {
                 setTimeout(() => fileInputRef.current?.click(), 300);
             }
         } else {
-            submitInsuranceForm();
+            const submitOverrides: Partial<FormData> = {};
+            if (currentQuestion?.field && currentQuestion.field !== 'language' && currentQuestion.field !== 'weightmentSlip') {
+                if (currentQuestion.field === 'customerUserId') {
+                    submitOverrides.customerUserId =
+                        selectedCustomerUserIdRef.current || formData.customerUserId || '';
+                } else {
+                    submitOverrides[currentQuestion.field] = (answerForCurrentQuestion ?? formData[currentQuestion.field]) as never;
+                }
+            }
+            if (currentQuestion?.field === 'addToCustomerAccount' && (answerForCurrentQuestion ?? formData.addToCustomerAccount) !== 'Yes') {
+                submitOverrides.customerUserId = '';
+            }
+            submitInsuranceForm(null, submitOverrides);
         }
     };
 
     // Unified helper to process Input (Text or Button Click)
-    const processInput = (value: string) => {
+    const processInput = async (value: string) => {
         setAddressSuggestions([]); // Clear suggestions
         const q = questions[currentQuestionIndex];
         const currentInput = value.trim();
@@ -647,14 +705,27 @@ const InsuranceIOS = () => {
                 const account = customerAccounts.find(
                     (c) => formatCustomerOption(c) === currentInput,
                 );
+                const typedUuid = isUuid(currentInput) ? currentInput : '';
+
+                if (!account && !typedUuid) {
+                    setError(
+                        language === 'hi'
+                            ? 'Kripya list se valid account select karein.'
+                            : 'Please select a valid account from the list.'
+                    );
+                    return;
+                }
 
                 if (account) {
                     const qty = formData.quantity ? Number(formData.quantity) : 0;
                     const rate = formData.rate ? Number(formData.rate) : 0;
                     const amount = qty * rate;
                     const walletBalance = Number(account.walletBalance || 0);
+                    const requiresWalletCheck =
+                        account.requiresWalletCheck ??
+                        (account.identity !== 'TRANSPORTER' || account.billingType !== 'PER_POLICY');
 
-                    if (amount > walletBalance) {
+                    if (requiresWalletCheck && amount > walletBalance) {
                         setError(
                             language === 'hi'
                                 ? 'Is customer ke wallet me itna balance nahi hai. Koi aur customer select karein'
@@ -667,10 +738,29 @@ const InsuranceIOS = () => {
                     setError('');
                 }
 
-                selectedCustomerUserIdRef.current = account?.id || '';
-                setFormData(prev => ({ ...prev, customerUserId: account?.id || '' }));
+                const resolvedCustomerUserId = resolveCustomerUserId(account) || typedUuid;
+                if (!resolvedCustomerUserId) {
+                    setError(
+                        language === 'hi'
+                            ? 'Chuna gaya customer account invalid hai. Kripya phir se account select karein.'
+                            : 'Selected customer account is invalid. Please choose another account.'
+                    );
+                    return;
+                }
+                selectedCustomerUserIdRef.current = resolvedCustomerUserId;
+                setFormData(prev => ({ ...prev, customerUserId: resolvedCustomerUserId }));
             } else {
                 setFormData(prev => ({ ...prev, [q.field]: valueToStore }));
+            }
+        }
+
+        if (q.field === 'vehicleNumber') {
+            const vehicleValidationMessage = await validateVehicleNumber(currentInput);
+            if (vehicleValidationMessage) {
+                setError(vehicleValidationMessage);
+                setMessages(prev => [...prev, { text: vehicleValidationMessage, sender: 'bot' }]);
+                setInputValue('');
+                return;
             }
         }
 
@@ -696,19 +786,19 @@ const InsuranceIOS = () => {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        processInput(inputValue);
+        void processInput(inputValue);
     };
 
     // Handler for Chips/Buttons
     const handleOptionSelect = (opt: string) => {
-        processInput(opt);
+        void processInput(opt);
     };
 
     // Click handler for Address Suggestions
     const handleAddressSelect = (address: OSMAddress) => {
         const standardizedAddress = formatOSMAddress(address.address);
         setInputValue(standardizedAddress);
-        processInput(standardizedAddress);
+        void processInput(standardizedAddress);
     };
 
     // --- Image Handling ---

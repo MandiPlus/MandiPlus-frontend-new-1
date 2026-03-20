@@ -39,7 +39,7 @@ const LoginPage = () => {
                     return;
                 }
 
-                const res = await sendOtp({ mobileNumber });
+                await sendOtp({ mobileNumber });
                 setStep('OTP');
                 toast.success(`OTP sent to ${mobileNumber}`);
 
@@ -138,6 +138,13 @@ const LoginPage = () => {
                         </>
                     )}
                 </form>
+
+                <p className="pt-6 text-center text-sm text-gray-700">
+                    Not registered yet?{" "}
+                    <Link href="/register" className="font-semibold text-[#4309ac]">
+                        Sign up
+                    </Link>
+                </p>
             </div>
         </div>
     );

@@ -85,27 +85,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         const initAuth = async () => {
             try {
                 const storedToken = localStorage.getItem("accessToken");
-                const storedUser = localStorage.getItem("user");
 
                 if (storedToken) {
-                    // Do NOT auto-logout based on token expiry anymore.
-                    // As long as a token exists, keep the user logged in.
                     setAuthToken(storedToken);
-
-                    if (storedUser) {
-                        const parsed = JSON.parse(storedUser);
-                        const normalized = normalizeUserPayload(parsed);
-                        setUser(normalized);
-                        localStorage.setItem("user", JSON.stringify(normalized));
-                    } else {
-                        try {
-                            const fetchedUser = await getCurrentUser();
-                            const normalized = normalizeUserPayload(fetchedUser);
+                    try {
+                        const fetchedUser = await getCurrentUser();
+                        const normalized = normalizeUserPayload(fetchedUser);
+                        if (normalized) {
                             setUser(normalized);
                             localStorage.setItem("user", JSON.stringify(normalized));
-                        } catch {
-                            // no-op: keep app usable even if profile fetch fails
+                        } else {
+                            localStorage.removeItem("user");
+                            setUser(null);
                         }
+                    } catch {
+                        localStorage.removeItem("user");
+                        setUser(null);
                     }
                 }
             } catch {
@@ -124,13 +119,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             if (event.key === "accessToken") {
                 if (event.newValue) {
                     setAuthToken(event.newValue);
-                    const newUser = localStorage.getItem("user");
-                    if (newUser) {
-                        const parsed = JSON.parse(newUser);
-                        const normalized = normalizeUserPayload(parsed);
-                        setUser(normalized);
-                        localStorage.setItem("user", JSON.stringify(normalized));
-                    }
+                    void getCurrentUser()
+                        .then((fetchedUser) => {
+                            const normalized = normalizeUserPayload(fetchedUser);
+                            if (normalized) {
+                                setUser(normalized);
+                                localStorage.setItem("user", JSON.stringify(normalized));
+                            } else {
+                                localStorage.removeItem("user");
+                                setUser(null);
+                            }
+                        })
+                        .catch(() => {
+                            localStorage.removeItem("user");
+                            setUser(null);
+                        });
                     setWarningShownForToken(null);
                     setShowSessionWarning(false);
                 } else {

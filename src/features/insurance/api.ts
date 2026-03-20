@@ -38,6 +38,8 @@ export interface InsuranceForm {
   pdfURL?: string;
   createdAt?: string;
   invoiceType?: "SUPPLIER_INVOICE" | "BUYER_INVOICE";
+  insuredPersonNameSnapshot?: string;
+  insuredPersonUserId?: string;
 }
 
 // ✅ NEW: Type for regenerating invoice
@@ -105,16 +107,29 @@ export type CreateInsuranceResponse = InsuranceForm;
 
 export interface InvoiceCustomerAccount {
   id: string;
+  userId?: string;
+  customerUserId?: string;
   name: string;
   mobileNumber: string;
+  identity?: string;
+  billingType?: "BULK" | "PER_POLICY" | null;
   walletId?: string;
   walletBalance?: number;
+  requiresWalletCheck?: boolean;
 }
 
 export interface ApiError {
   statusCode: number;
   message: string | string[];
   error: string;
+}
+
+export interface TruckFlagStatus {
+  truckNumber: string;
+  exists: boolean;
+  isFlagged: boolean;
+  flagReason: string | null;
+  message: string | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -129,7 +144,8 @@ export const createInsuranceForm = async (
   formData: FormData,
 ): Promise<CreateInsuranceResponse> => {
   try {
-    const token = localStorage.getItem("token");
+    const token =
+      localStorage.getItem("accessToken") || localStorage.getItem("token");
 
     const response = await axios.post(`${API_BASE_URL}/invoices`, formData, {
       headers: {
@@ -165,13 +181,37 @@ export const getInvoiceCustomerAccounts = async (): Promise<
   }
 };
 
+export const getTruckFlagStatus = async (
+  truckNumber: string,
+): Promise<TruckFlagStatus> => {
+  try {
+    const token =
+      localStorage.getItem("accessToken") || localStorage.getItem("token");
+
+    const response = await axios.get(
+      `${API_BASE_URL}/trucks/flag-status/${encodeURIComponent(truckNumber)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to check truck flag status" };
+  }
+};
+
 /**
  * Get all insurance forms for the logged-in user
  * GET /invoices/user/:userId
  */
 export const getMyInsuranceForms = async (): Promise<InsuranceForm[]> => {
   try {
-    const token = localStorage.getItem("token");
+    const token =
+      localStorage.getItem("accessToken") || localStorage.getItem("token");
     const userData = localStorage.getItem("user");
 
     if (!userData) {

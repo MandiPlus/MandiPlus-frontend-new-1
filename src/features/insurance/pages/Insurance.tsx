@@ -18,6 +18,7 @@ import Cropper, { ReactCropperElement } from 'react-cropper';
 import {
     createInsuranceForm,
     getInvoiceCustomerAccounts,
+    getTruckFlagStatus,
     type InvoiceCustomerAccount,
 } from '../api';
 import { useAuth } from "@/features/auth/context/AuthContext";
@@ -84,6 +85,15 @@ interface OSMAddress {
     lon: string;
     address: OSMAddressDetails;
 }
+
+const isUuid = (value?: string | null) =>
+    Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
+
+const resolveCustomerUserId = (account?: InvoiceCustomerAccount | null): string => {
+    if (!account) return '';
+    const candidates = [account.customerUserId, account.userId, account.id];
+    return candidates.find((candidate) => isUuid(candidate)) || '';
+};
 
 // --- Data ---
 const itemsData = [
@@ -181,6 +191,11 @@ function useDebounce<T>(value: T, delay: number): T {
     return debouncedValue;
 }
 
+function getResolvedUserId(user: any): string {
+    const runtimeUserId = user?.id || user?._id || user?.userId;
+    return runtimeUserId ? String(runtimeUserId) : '';
+}
+
 const Insurance = () => {
     const router = useRouter();
     const { user } = useAuth();
@@ -226,14 +241,19 @@ const Insurance = () => {
     const selectedCustomerUserIdRef = useRef<string>('');
 
     const identity = user?.identity || '';
-    const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM', 'CUSTOMER'].includes(identity);
+    const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
     const shouldAskCustomerPicker = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
 
     const formatCustomerOption = (account: InvoiceCustomerAccount) => {
+        const isPerPolicyTransporter =
+            account.identity === 'TRANSPORTER' && account.billingType === 'PER_POLICY';
         const balance = Number(account.walletBalance || 0).toLocaleString('en-IN', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
         });
+        if (isPerPolicyTransporter) {
+            return `${account.name} (${account.mobileNumber}) - Transporter / Per Policy`;
+        }
         return `${account.name} (${account.mobileNumber}) - Wallet: ₹${balance}`;
     };
 
@@ -370,22 +390,21 @@ const Insurance = () => {
         return formatted;
     };
 
-    const submitInsuranceForm = async (fileArgument: File | null = null) => {
+    const submitInsuranceForm = async (
+        fileArgument: File | null = null,
+        formOverrides: Partial<FormData> = {},
+    ) => {
         if (isSubmitting) return;
         setIsSubmitting(true);
         setMessages(prev => [...prev, { text: 'Submitting details...', sender: 'bot' }]);
 
         try {
+            const resolvedFormData: FormData = {
+                ...formData,
+                ...formOverrides,
+            };
             const submitData = new FormData();
-            const userData = localStorage.getItem('user');
-            let fallbackUserId = '';
-            if (userData) {
-                try {
-                    const parsed = JSON.parse(userData);
-                    fallbackUserId = parsed?.id || '';
-                } catch (e) { console.error(e); }
-            }
-            const effectiveUserId = user?.id || fallbackUserId;
+            const effectiveUserId = getResolvedUserId(user);
             if (!effectiveUserId) {
                 throw new Error('Authentication required. Please login again.');
             }
@@ -394,51 +413,58 @@ const Insurance = () => {
             submitData.append('invoiceDate', new Date().toISOString());
 
             // Clean addresses before sending
-            const supAddr = sanitizeText(formData.supplierAddress || 'Unknown Address');
-            const buyAddr = sanitizeText(formData.buyerAddress || 'Unknown Address');
-            const placeSupply = sanitizeText(formData.placeOfSupply || 'State');
+            const supAddr = sanitizeText(resolvedFormData.supplierAddress || 'Unknown Address');
+            const buyAddr = sanitizeText(resolvedFormData.buyerAddress || 'Unknown Address');
+            const placeSupply = sanitizeText(resolvedFormData.placeOfSupply || 'State');
 
             submitData.append('placeOfSupply', placeSupply);
             submitData.append('supplierAddress', JSON.stringify([supAddr]));
             submitData.append('billToAddress', JSON.stringify([buyAddr]));
             submitData.append('shipToAddress', JSON.stringify([buyAddr]));
 
-            const prodName = sanitizeText(formData.itemName || 'Item');
+            const prodName = sanitizeText(resolvedFormData.itemName || 'Item');
             submitData.append('productName', prodName);
 
-            const supName = sanitizeText(formData.supplierName || 'Unknown Supplier');
+            const supName = sanitizeText(resolvedFormData.supplierName || 'Unknown Supplier');
             submitData.append('supplierName', supName);
 
-            const buyName = sanitizeText(formData.buyerName || 'Unknown Buyer');
+            const buyName = sanitizeText(resolvedFormData.buyerName || 'Unknown Buyer');
             submitData.append('billToName', buyName);
             submitData.append('shipToName', buyName);
 
-            const qty = formData.quantity ? Number(formData.quantity) : 0;
-            const rate = formData.rate ? Number(formData.rate) : 0;
+            const qty = resolvedFormData.quantity ? Number(resolvedFormData.quantity) : 0;
+            const rate = resolvedFormData.rate ? Number(resolvedFormData.rate) : 0;
             const amount = qty * rate;
 
             submitData.append('quantity', String(qty));
             submitData.append('rate', String(rate));
             submitData.append('amount', String(amount));
 
-            if (formData.vehicleNumber) {
-                const vehicle = sanitizeText(formData.vehicleNumber);
+            if (resolvedFormData.vehicleNumber) {
+                const vehicle = sanitizeText(resolvedFormData.vehicleNumber);
                 submitData.append('vehicleNumber', vehicle);
                 submitData.append('truckNumber', vehicle);
             }
 
-            const owner = sanitizeText(formData.ownerName || 'Unknown Owner');
+            const owner = sanitizeText(resolvedFormData.ownerName || 'Unknown Owner');
             submitData.append('ownerName', owner);
             // Auto-derive invoiceType: Cash = BUYER_INVOICE (buyer pays), Commission = SUPPLIER_INVOICE
-            const isCash = (formData.notes || '').toLowerCase() === 'cash';
+            const isCash = (resolvedFormData.notes || '').toLowerCase() === 'cash';
             submitData.append('invoiceType', isCash ? 'BUYER_INVOICE' : 'SUPPLIER_INVOICE');
 
-            if (formData.hsn) submitData.append('hsnCode', formData.hsn);
-            if (formData.notes) submitData.append('weighmentSlipNote', sanitizeText(formData.notes));
-            if (formData.insuredPartyPhone?.trim()) submitData.append('insuredPartyPhone', formData.insuredPartyPhone.trim());
-            if (shouldShowCustomerMappingQuestion && formData.addToCustomerAccount === 'Yes') {
+            if (resolvedFormData.hsn) submitData.append('hsnCode', resolvedFormData.hsn);
+            if (resolvedFormData.notes) submitData.append('weighmentSlipNote', sanitizeText(resolvedFormData.notes));
+            if (resolvedFormData.insuredPartyPhone?.trim()) submitData.append('insuredPartyPhone', resolvedFormData.insuredPartyPhone.trim());
+            if (['CUSTOMER', 'TRANSPORTER'].includes(identity)) {
+                submitData.append('customerUserId', effectiveUserId);
+            } else if (shouldShowCustomerMappingQuestion && resolvedFormData.addToCustomerAccount === 'Yes') {
                 const customerUserIdForSubmit =
-                    formData.customerUserId || selectedCustomerUserIdRef.current;
+                    resolvedFormData.customerUserId || selectedCustomerUserIdRef.current;
+                if (customerUserIdForSubmit && !isUuid(customerUserIdForSubmit)) {
+                    setError('Selected customer account is invalid. Please re-select the account.');
+                    setIsSubmitting(false);
+                    return;
+                }
                 if (customerUserIdForSubmit) {
                     submitData.append('customerUserId', customerUserIdForSubmit);
                 }
@@ -482,6 +508,7 @@ const Insurance = () => {
             console.error(err);
             let errorMsg = 'Submission failed.';
             if (err.message) errorMsg = Array.isArray(err.message) ? err.message.join(', ') : err.message;
+            setError(errorMsg);
             setMessages(prev => [...prev, { text: errorMsg, sender: 'bot' }]);
             setIsSubmitting(false);
         }
@@ -524,6 +551,25 @@ const Insurance = () => {
             return isCash ? 'Buyer Ka WhatsApp Number' : 'Supplier Ka WhatsApp Number';
         }
         return language ? question.text[language] : question.text.en;
+    };
+
+    const validateVehicleNumber = async (vehicleNumber: string): Promise<string | null> => {
+        try {
+            const truckFlagStatus = await getTruckFlagStatus(vehicleNumber);
+            if (!truckFlagStatus.isFlagged) {
+                return null;
+            }
+
+            return (
+                truckFlagStatus.message ||
+                'This vehicle has been flagged in system. Can not create invoice for this vehicle.'
+            );
+        } catch (error: unknown) {
+            const apiError = error as { message?: string | string[] };
+            return Array.isArray(apiError?.message)
+                ? apiError.message.join(', ')
+                : apiError?.message || 'Unable to verify vehicle number right now.';
+        }
     };
 
     const goToNextQuestion = (answerForCurrentQuestion?: string, latestNotes?: string) => {
@@ -573,11 +619,23 @@ const Insurance = () => {
                 setTimeout(() => fileInputRef.current?.click(), 300);
             }
         } else {
-            submitInsuranceForm();
+            const submitOverrides: Partial<FormData> = {};
+            if (currentQuestion?.field && currentQuestion.field !== 'language' && currentQuestion.field !== 'weightmentSlip') {
+                if (currentQuestion.field === 'customerUserId') {
+                    submitOverrides.customerUserId =
+                        selectedCustomerUserIdRef.current || formData.customerUserId || '';
+                } else {
+                    submitOverrides[currentQuestion.field] = (answerForCurrentQuestion ?? formData[currentQuestion.field]) as never;
+                }
+            }
+            if (currentQuestion?.field === 'addToCustomerAccount' && (answerForCurrentQuestion ?? formData.addToCustomerAccount) !== 'Yes') {
+                submitOverrides.customerUserId = '';
+            }
+            submitInsuranceForm(null, submitOverrides);
         }
     };
 
-    const processInput = (value: string) => {
+    const processInput = async (value: string) => {
         setAddressSuggestions([]);
         const q = questions[currentQuestionIndex];
         const currentInput = value.trim();
@@ -634,14 +692,27 @@ const Insurance = () => {
                 const account = customerAccounts.find(
                     (c) => formatCustomerOption(c) === currentInput,
                 );
+                const typedUuid = isUuid(currentInput) ? currentInput : '';
+
+                if (!account && !typedUuid) {
+                    setError(
+                        language === 'hi'
+                            ? 'Kripya list se valid account select karein.'
+                            : 'Please select a valid account from the list.',
+                    );
+                    return;
+                }
 
                 if (account) {
                     const qty = formData.quantity ? Number(formData.quantity) : 0;
                     const rate = formData.rate ? Number(formData.rate) : 0;
                     const amount = qty * rate;
                     const walletBalance = Number(account.walletBalance || 0);
+                    const requiresWalletCheck =
+                        account.requiresWalletCheck ??
+                        (account.identity !== 'TRANSPORTER' || account.billingType !== 'PER_POLICY');
 
-                    if (amount > walletBalance) {
+                    if (requiresWalletCheck && amount > walletBalance) {
                         setError(
                             language === 'hi'
                                 ? 'Is customer ke wallet me itna balance nahi hai. Koi aur customer select karein'
@@ -654,10 +725,29 @@ const Insurance = () => {
                     setError('');
                 }
 
-                selectedCustomerUserIdRef.current = account?.id || '';
-                setFormData(prev => ({ ...prev, customerUserId: account?.id || '' }));
+                const resolvedCustomerUserId = resolveCustomerUserId(account) || typedUuid;
+                if (!resolvedCustomerUserId) {
+                    setError(
+                        language === 'hi'
+                            ? 'Chuna gaya customer account invalid hai. Kripya phir se account select karein.'
+                            : 'Selected customer account is invalid. Please choose another account.',
+                    );
+                    return;
+                }
+                selectedCustomerUserIdRef.current = resolvedCustomerUserId;
+                setFormData(prev => ({ ...prev, customerUserId: resolvedCustomerUserId }));
             } else {
                 setFormData(prev => ({ ...prev, [q.field]: valueToStore }));
+            }
+        }
+
+        if (q.field === 'vehicleNumber') {
+            const vehicleValidationMessage = await validateVehicleNumber(currentInput);
+            if (vehicleValidationMessage) {
+                setError(vehicleValidationMessage);
+                setMessages(prev => [...prev, { text: vehicleValidationMessage, sender: 'bot' }]);
+                setInputValue('');
+                return;
             }
         }
 
@@ -683,17 +773,17 @@ const Insurance = () => {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        processInput(inputValue);
+        void processInput(inputValue);
     };
 
     const handleOptionSelect = (opt: string) => {
-        processInput(opt);
+        void processInput(opt);
     };
 
     const handleAddressSelect = (address: OSMAddress) => {
         const standardizedAddress = formatOSMAddress(address.address);
         setInputValue(standardizedAddress);
-        processInput(standardizedAddress);
+        void processInput(standardizedAddress);
     };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
