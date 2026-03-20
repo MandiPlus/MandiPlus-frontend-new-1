@@ -23,6 +23,7 @@ import { FileText, Filter, HandCoins, IndianRupee, Timer, Users, UserSquare2 } f
 type InvoiceStatus = 'Verified' | 'Pending' | 'Rejected';
 type ClaimStatus = 'Pending' | 'Surveyor Assigned' | 'Completed';
 type PaymentStatus = 'Paid' | 'Not Required' | 'Pending';
+type TopProductsMetric = 'premium' | 'invoices';
 
 interface InvoiceRecord {
     id: string;
@@ -156,7 +157,17 @@ function ChartCard({ title, subtitle, children }: { title: string; subtitle?: st
     );
 }
 
-function DonutChartCard({ title, data, valueFormatter }: { title: string; data: DonutDatum[]; valueFormatter: (v: number) => string }) {
+function DonutChartCard({
+    title,
+    data,
+    valueFormatter,
+    scrollLegend = false
+}: {
+    title: string;
+    data: DonutDatum[];
+    valueFormatter: (v: number) => string;
+    scrollLegend?: boolean;
+}) {
     const total = data.reduce((sum, item) => sum + item.value, 0);
     const chartData = data.filter((item) => item.value > 0);
 
@@ -200,7 +211,7 @@ function DonutChartCard({ title, data, valueFormatter }: { title: string; data: 
                         </ResponsiveContainer>
                     )}
                 </div>
-                <div className="space-y-2">
+                <div className={`space-y-2 ${scrollLegend ? 'max-h-56 overflow-y-auto pr-1' : ''}`}>
                     {data.map((item) => {
                         const pct = total ? (item.value / total) * 100 : 0;
                         return (
@@ -247,6 +258,7 @@ export default function AnalyticsDashboardPage() {
     const [buyer, setBuyer] = useState('');
     const [product, setProduct] = useState('');
     const [state, setState] = useState('');
+    const [topProductsMetric, setTopProductsMetric] = useState<TopProductsMetric>('premium');
 
     useEffect(() => {
         if (!isAuthenticated) {
@@ -373,16 +385,37 @@ export default function AnalyticsDashboardPage() {
     const previousMonthRecords = premiumEligibleRecords.filter((r) => monthKey(new Date(r.createdAt)) === previousMonthKey);
 
     const kpis = useMemo(() => {
+        const now = new Date();
+        const todayStart = new Date(now);
+        todayStart.setHours(0, 0, 0, 0);
+        const yesterdayStart = new Date(todayStart);
+        yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+
         const totalInvoices = filteredRecords.length;
+        const todayInvoices = filteredRecords.filter((r) => {
+            const created = new Date(r.createdAt);
+            return created >= todayStart && created <= now;
+        }).length;
+        const yesterdayInvoices = filteredRecords.filter((r) => {
+            const created = new Date(r.createdAt);
+            return created >= yesterdayStart && created < todayStart;
+        }).length;
         const totalSalesAmount = premiumEligibleRecords.reduce((sum, r) => sum + r.salesAmount, 0);
+        const averagePremiumValue = premiumEligibleRecords.length ? totalSalesAmount / premiumEligibleRecords.length : 0;
         const uniqueSuppliers = new Set(filteredRecords.map((r) => r.supplier)).size;
         const uniqueBuyers = new Set(filteredRecords.map((r) => r.buyer)).size;
         const pendingClaims = filteredClaimRecords.filter((r) => r.status === 'Pending').length;
         const totalAgentCommission = premiumEligibleRecords.reduce((sum, r) => sum + r.commissionAmount, 0);
+        const currentMonthAveragePremium = currentMonthRecords.length
+            ? currentMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0) / currentMonthRecords.length
+            : 0;
 
         const prev = {
             totalInvoices: previousMonthRecords.length,
             totalSalesAmount: previousMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0),
+            averagePremiumValue: previousMonthRecords.length
+                ? previousMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0) / previousMonthRecords.length
+                : 0,
             uniqueSuppliers: new Set(previousMonthRecords.map((r) => r.supplier)).size,
             uniqueBuyers: new Set(previousMonthRecords.map((r) => r.buyer)).size,
             pendingClaims: 0,
@@ -391,9 +424,14 @@ export default function AnalyticsDashboardPage() {
 
         return {
             totalInvoices: { value: totalInvoices, trend: safePct(currentMonthRecords.length, prev.totalInvoices) },
+            todayInvoices: { value: todayInvoices, trend: safePct(todayInvoices, yesterdayInvoices) },
             totalSalesAmount: {
                 value: totalSalesAmount,
                 trend: safePct(currentMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0), prev.totalSalesAmount)
+            },
+            averagePremiumValue: {
+                value: averagePremiumValue,
+                trend: safePct(currentMonthAveragePremium, prev.averagePremiumValue)
             },
             uniqueSuppliers: {
                 value: uniqueSuppliers,
@@ -445,6 +483,23 @@ export default function AnalyticsDashboardPage() {
             .slice(0, 6);
     }, [premiumEligibleRecords]);
 
+    const topProductsByInvoices = useMemo(() => {
+        const bucket = new Map<string, number>();
+        filteredRecords.forEach((r) => bucket.set(r.product, (bucket.get(r.product) || 0) + 1));
+        return [...bucket.entries()]
+            .map(([name, invoices]) => ({ name, invoices }))
+            .sort((a, b) => b.invoices - a.invoices)
+            .slice(0, 6);
+    }, [filteredRecords]);
+
+    const topProductsChartData = useMemo(
+        () =>
+            topProductsMetric === 'premium'
+                ? topProductsBySales.map((item) => ({ name: item.name, value: item.sales }))
+                : topProductsByInvoices.map((item) => ({ name: item.name, value: item.invoices })),
+        [topProductsBySales, topProductsByInvoices, topProductsMetric]
+    );
+
     const topSuppliersByRevenue = useMemo(() => {
         const bucket = new Map<string, number>();
         premiumEligibleRecords.forEach((r) => bucket.set(r.supplier, (bucket.get(r.supplier) || 0) + r.salesAmount));
@@ -460,10 +515,13 @@ export default function AnalyticsDashboardPage() {
         return [...bucket.entries()].map(([name, value], i) => ({ name, value, color: PALETTE[i % PALETTE.length] }));
     }, [premiumEligibleRecords]);
 
-    const categoryDistribution = useMemo<DonutDatum[]>(() => {
+    const productPremiumDistribution = useMemo<DonutDatum[]>(() => {
         const bucket = new Map<string, number>();
-        premiumEligibleRecords.forEach((r) => bucket.set(r.category, (bucket.get(r.category) || 0) + r.salesAmount));
-        return [...bucket.entries()].map(([name, value], i) => ({ name, value, color: PALETTE[i % PALETTE.length] }));
+        premiumEligibleRecords.forEach((r) => bucket.set(r.product, (bucket.get(r.product) || 0) + r.salesAmount));
+        return [...bucket.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8)
+            .map(([name, value], i) => ({ name, value, color: PALETTE[i % PALETTE.length] }));
     }, [premiumEligibleRecords]);
 
     const invoiceStatusDistribution = useMemo<DonutDatum[]>(() => {
@@ -488,6 +546,8 @@ export default function AnalyticsDashboardPage() {
         const now = new Date();
         const dayStart = new Date(now);
         dayStart.setHours(0, 0, 0, 0);
+        const yesterdayStart = new Date(dayStart);
+        yesterdayStart.setDate(yesterdayStart.getDate() - 1);
 
         const weekStart = new Date(dayStart);
         const day = weekStart.getDay();
@@ -497,13 +557,18 @@ export default function AnalyticsDashboardPage() {
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
         const daily = filteredRecords.filter((r) => new Date(r.createdAt) >= dayStart).length;
+        const yesterday = filteredRecords.filter((r) => {
+            const created = new Date(r.createdAt);
+            return created >= yesterdayStart && created < dayStart;
+        }).length;
         const weekly = filteredRecords.filter((r) => new Date(r.createdAt) >= weekStart).length;
         const monthly = filteredRecords.filter((r) => new Date(r.createdAt) >= monthStart).length;
 
         return [
             { name: 'Daily', value: daily, color: PALETTE[0] },
-            { name: 'Weekly', value: weekly, color: PALETTE[1] },
-            { name: 'Monthly', value: monthly, color: PALETTE[2] }
+            { name: 'Yesterday', value: yesterday, color: PALETTE[1] },
+            { name: 'Weekly', value: weekly, color: PALETTE[2] },
+            { name: 'Monthly', value: monthly, color: PALETTE[3] }
         ];
     }, [filteredRecords]);
 
@@ -639,18 +704,20 @@ export default function AnalyticsDashboardPage() {
                 <div className="mt-6">
                     <h2 className="mb-3 text-xl font-semibold text-slate-900">Overall Summary</h2>
                     {loading ? (
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                            <SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard />
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                            <SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard />
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                             {[
-                                { label: 'Total Invoices', data: kpis.totalInvoices, icon: FileText, value: kpis.totalInvoices.value.toLocaleString('en-IN') },
-                                { label: 'Total Premium Amount', data: kpis.totalSalesAmount, icon: IndianRupee, value: formatCurrency(kpis.totalSalesAmount.value) },
-                                { label: 'Unique Suppliers', data: kpis.uniqueSuppliers, icon: Users, value: kpis.uniqueSuppliers.value.toLocaleString('en-IN') },
-                                { label: 'Unique Buyers', data: kpis.uniqueBuyers, icon: UserSquare2, value: kpis.uniqueBuyers.value.toLocaleString('en-IN') },
-                                { label: 'Pending Claims', data: kpis.pendingClaims, icon: Timer, value: kpis.pendingClaims.value.toLocaleString('en-IN') },
-                                { label: 'Total Agent Commission', data: kpis.totalAgentCommission, icon: HandCoins, value: formatCurrency(kpis.totalAgentCommission.value) }
+                                { label: 'Total Invoices', data: kpis.totalInvoices, icon: FileText, value: kpis.totalInvoices.value.toLocaleString('en-IN'), compareLabel: 'vs last month' },
+                                { label: 'Today Invoices', data: kpis.todayInvoices, icon: FileText, value: kpis.todayInvoices.value.toLocaleString('en-IN'), compareLabel: 'vs yesterday' },
+                                { label: 'Total Premium Amount', data: kpis.totalSalesAmount, icon: IndianRupee, value: formatCurrency(kpis.totalSalesAmount.value), compareLabel: 'vs last month' },
+                                { label: 'Average Premium Value', data: kpis.averagePremiumValue, icon: IndianRupee, value: formatCurrency(kpis.averagePremiumValue.value), compareLabel: 'vs last month' },
+                                { label: 'Unique Suppliers', data: kpis.uniqueSuppliers, icon: Users, value: kpis.uniqueSuppliers.value.toLocaleString('en-IN'), compareLabel: 'vs last month' },
+                                { label: 'Unique Buyers', data: kpis.uniqueBuyers, icon: UserSquare2, value: kpis.uniqueBuyers.value.toLocaleString('en-IN'), compareLabel: 'vs last month' },
+                                { label: 'Pending Claims', data: kpis.pendingClaims, icon: Timer, value: kpis.pendingClaims.value.toLocaleString('en-IN'), compareLabel: 'vs last month' },
+                                { label: 'Total Agent Commission', data: kpis.totalAgentCommission, icon: HandCoins, value: formatCurrency(kpis.totalAgentCommission.value), compareLabel: 'vs last month' }
                             ].map((item) => (
                                 <div key={item.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                                     <div className="mb-3 flex items-center justify-between">
@@ -658,7 +725,7 @@ export default function AnalyticsDashboardPage() {
                                         <item.icon className="h-4 w-4 text-slate-500" />
                                     </div>
                                     <div className="text-2xl font-bold text-slate-900">{item.value}</div>
-                                    <div className={`mt-2 text-xs font-semibold ${trendClass(item.data.trend)}`}>{formatPercent(item.data.trend)} vs last month</div>
+                                    <div className={`mt-2 text-xs font-semibold ${trendClass(item.data.trend)}`}>{formatPercent(item.data.trend)} {item.compareLabel}</div>
                                 </div>
                             ))}
                         </div>
@@ -687,24 +754,59 @@ export default function AnalyticsDashboardPage() {
                             </div>
                         </ChartCard>
 
-                        <ChartCard title="Top Products by Premium" subtitle="Premium contribution">
+                        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                            <div className="mb-3 flex items-start justify-between gap-3">
+                                <div>
+                                    <h3 className="text-sm font-semibold text-slate-900">Top Products</h3>
+                                    <p className="mt-0.5 text-xs text-slate-500">Switch between premium contribution and invoice count</p>
+                                </div>
+                                <div className="inline-flex rounded-xl border border-slate-300 bg-slate-50 p-1 text-xs font-semibold">
+                                    <button
+                                        type="button"
+                                        onClick={() => setTopProductsMetric('premium')}
+                                        className={`rounded-lg px-3 py-1.5 transition ${
+                                            topProductsMetric === 'premium' ? 'bg-[#1155b8] text-white' : 'text-slate-700'
+                                        }`}
+                                    >
+                                        By Premium
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTopProductsMetric('invoices')}
+                                        className={`rounded-lg px-3 py-1.5 transition ${
+                                            topProductsMetric === 'invoices' ? 'bg-[#1155b8] text-white' : 'text-slate-700'
+                                        }`}
+                                    >
+                                        By Invoices
+                                    </button>
+                                </div>
+                            </div>
                             <div className="h-64">
                                 <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={topProductsBySales}>
+                                    <BarChart data={topProductsChartData}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                                         <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={52} />
-                                        <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
+                                        <YAxis
+                                            tick={{ fontSize: 11 }}
+                                            tickFormatter={(v) =>
+                                                topProductsMetric === 'premium' ? `${Math.round(Number(v) / 1000)}k` : String(Math.round(Number(v)))
+                                            }
+                                        />
                                         <Tooltip
                                             contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 10 }}
                                             labelStyle={{ color: '#0f172a', fontWeight: 600 }}
                                             itemStyle={{ color: '#0f172a' }}
-                                            formatter={(v: number | string | undefined) => formatCurrency(Number(v) || 0)}
+                                            formatter={(v: number | string | undefined) =>
+                                                topProductsMetric === 'premium'
+                                                    ? formatCurrency(Number(v) || 0)
+                                                    : `${Math.round(Number(v) || 0).toLocaleString('en-IN')} invoices`
+                                            }
                                         />
-                                        <Bar dataKey="sales" radius={[8, 8, 0, 0]} fill="#0f766e" />
+                                        <Bar dataKey="value" radius={[8, 8, 0, 0]} fill="#0f766e" />
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
-                        </ChartCard>
+                        </div>
 
                         <ChartCard title="Top Suppliers by Premium" subtitle="Highest suppliers by total premium">
                             <div className="h-64">
@@ -730,9 +832,9 @@ export default function AnalyticsDashboardPage() {
                 <div className="mt-8">
                     <h2 className="mb-3 text-xl font-semibold text-slate-900">Pie Chart Analytics</h2>
                     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                        <DonutChartCard title="Invoice Created (Daily/Weekly/Monthly)" data={invoiceCreatedPeriodDistribution} valueFormatter={(v) => v.toLocaleString('en-IN')} />
+                        <DonutChartCard title="Invoice Created (Daily/Yesterday/Weekly/Monthly)" data={invoiceCreatedPeriodDistribution} valueFormatter={(v) => v.toLocaleString('en-IN')} />
                         <DonutChartCard title="Invoice Premium (Daily/Weekly/Monthly)" data={invoicePremiumPeriodDistribution} valueFormatter={formatCurrency} />
-                        <DonutChartCard title="Product Category Premium Distribution" data={categoryDistribution} valueFormatter={formatCurrency} />
+                        <DonutChartCard title="Product Wise Premium Distribution" data={productPremiumDistribution} valueFormatter={formatCurrency} scrollLegend />
                         <DonutChartCard title="Invoice Status Breakdown" data={invoiceStatusDistribution} valueFormatter={(v) => v.toLocaleString('en-IN')} />
                         <DonutChartCard title="Claims Status Distribution" data={claimsStatusDistribution} valueFormatter={(v) => v.toLocaleString('en-IN')} />
                     </div>
