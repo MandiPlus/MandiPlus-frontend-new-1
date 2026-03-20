@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { useAdmin } from '@/features/admin/context/AdminContext';
@@ -342,6 +342,12 @@ export default function AdminChatLogsPage() {
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateItem | null>(null);
   const [templateVars, setTemplateVars] = useState<string[]>([]);
   const [sendingTemplate, setSendingTemplate] = useState(false);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const scrollSnapshotRef = useRef<{
+    scrollTop: number;
+    scrollHeight: number;
+    clientHeight: number;
+  } | null>(null);
 
   const botBaseUrl =
     process.env.NEXT_PUBLIC_BOT_API_BASE_URL || 'http://localhost:8000';
@@ -413,6 +419,14 @@ export default function AdminChatLogsPage() {
       try {
         setLoadingMessages(true);
         setError('');
+        const container = messagesContainerRef.current;
+        if (container) {
+          scrollSnapshotRef.current = {
+            scrollTop: container.scrollTop,
+            scrollHeight: container.scrollHeight,
+            clientHeight: container.clientHeight,
+          };
+        }
         const res = await axios.get<MessageResponse>(
           `${botBaseUrl}/admin/chat/conversations/${selectedPhone}/messages?limit=700`,
           axiosConfig
@@ -428,6 +442,24 @@ export default function AdminChatLogsPage() {
 
     fetchMessages();
   }, [isAuthenticated, selectedPhone, botBaseUrl, axiosConfig, refreshTick]);
+
+  useLayoutEffect(() => {
+    const snapshot = scrollSnapshotRef.current;
+    const container = messagesContainerRef.current;
+    if (!snapshot || !container) return;
+
+    const distanceFromBottom =
+      snapshot.scrollHeight - (snapshot.scrollTop + snapshot.clientHeight);
+    const wasNearBottom = distanceFromBottom <= 40;
+
+    if (wasNearBottom) {
+      container.scrollTop = container.scrollHeight;
+    } else {
+      container.scrollTop = snapshot.scrollTop;
+    }
+
+    scrollSnapshotRef.current = null;
+  }, [messages]);
 
   useEffect(() => {
     setMediaUrls((prev) => {
@@ -710,10 +742,10 @@ export default function AdminChatLogsPage() {
             <div className="text-xs text-slate-500">Auto-refresh: 15s</div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-3 py-4">
+          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 py-4">
             {!selectedPhone ? (
               <p className="text-sm text-slate-500">Choose a chat from the left panel.</p>
-            ) : loadingMessages ? (
+            ) : loadingMessages && messages.length === 0 ? (
               <p className="text-sm text-slate-500">Loading messages...</p>
             ) : messages.length === 0 ? (
               <p className="text-sm text-slate-500">No messages available for this number.</p>
