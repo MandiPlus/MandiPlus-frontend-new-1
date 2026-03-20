@@ -716,7 +716,7 @@ export default function AnalyticsDashboardPage() {
                                 { label: 'Unique Suppliers', data: kpis.uniqueSuppliers, icon: Users, value: kpis.uniqueSuppliers.value.toLocaleString('en-IN'), compareLabel: 'vs last month' },
                                 { label: 'Unique Buyers', data: kpis.uniqueBuyers, icon: UserSquare2, value: kpis.uniqueBuyers.value.toLocaleString('en-IN'), compareLabel: 'vs last month' },
                                 { label: 'Pending Claims', data: kpis.pendingClaims, icon: Timer, value: kpis.pendingClaims.value.toLocaleString('en-IN'), compareLabel: 'vs last month' },
-                                { label: 'Average Daily Invoices', data: kpis.averageDailyInvoices, icon: FileText, value: kpis.averageDailyInvoices.value.toFixed(1), compareLabel: 'vs last month' }
+                                { label: 'Average Daily Invoices', data: kpis.averageDailyInvoices, icon: FileText, value: Math.round(kpis.averageDailyInvoices.value).toLocaleString('en-IN'), compareLabel: 'vs last month' }
                             ].map((item) => (
                                 <div key={item.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                                     <div className="mb-3 flex items-center justify-between">
