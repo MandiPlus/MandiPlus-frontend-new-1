@@ -29,6 +29,23 @@ type ChatMessage = {
   created_at: string;
 };
 
+type MediaKind = 'image' | 'video' | 'audio' | 'document' | 'sticker';
+
+type MediaInfo = {
+  kind: MediaKind;
+  mediaId: string;
+  filename?: string;
+  caption?: string;
+  isVoice?: boolean;
+};
+
+type LocationInfo = {
+  latitude?: number;
+  longitude?: number;
+  name?: string;
+  address?: string;
+};
+
 type ConversationResponse = {
   count: number;
   items: Conversation[];
@@ -75,9 +92,200 @@ function formatTime(value: string) {
   });
 }
 
-function previewText(text: string | null, fallbackType: string) {
+function payloadPreview(payload: unknown): string | null {
+  if (!payload) return null;
+
+  const asObject =
+    typeof payload === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(payload);
+          } catch {
+            return null;
+          }
+        })()
+      : payload;
+
+  const sources: any[] = [];
+  if (asObject && typeof asObject === 'object') {
+    sources.push(asObject);
+    const req = (asObject as any).request;
+    if (req && typeof req === 'object') sources.push(req);
+  }
+
+  for (const src of sources) {
+    const textBody = src?.text?.body;
+    if (typeof textBody === 'string' && textBody.trim()) return textBody.trim();
+
+    const buttonText = src?.button?.text;
+    if (typeof buttonText === 'string' && buttonText.trim()) return buttonText.trim();
+
+    const buttonTitle = src?.interactive?.button_reply?.title;
+    if (typeof buttonTitle === 'string' && buttonTitle.trim()) return buttonTitle.trim();
+
+    const listTitle = src?.interactive?.list_reply?.title;
+    if (typeof listTitle === 'string' && listTitle.trim()) return listTitle.trim();
+
+    const imageCaption = src?.image?.caption;
+    if (typeof imageCaption === 'string' && imageCaption.trim()) return `[image] ${imageCaption.trim()}`;
+    if (src?.image) return '[image]';
+
+    const videoCaption = src?.video?.caption;
+    if (typeof videoCaption === 'string' && videoCaption.trim()) return `[video] ${videoCaption.trim()}`;
+    if (src?.video) return '[video]';
+
+    if (src?.audio) {
+      const isVoice = src?.audio?.voice;
+      return isVoice ? '[voice]' : '[audio]';
+    }
+
+    if (src?.sticker) return '[sticker]';
+
+    const fileName = src?.document?.filename;
+    const docCaption = src?.document?.caption;
+    if (typeof fileName === 'string' && fileName.trim()) {
+      if (typeof docCaption === 'string' && docCaption.trim()) {
+        return `[document] ${fileName.trim()} - ${docCaption.trim()}`;
+      }
+      return `[document] ${fileName.trim()}`;
+    }
+    if (src?.document) return '[document]';
+
+    if (src?.location) {
+      const lat = src?.location?.latitude;
+      const lng = src?.location?.longitude;
+      return `[location] ${lat ?? ''},${lng ?? ''}`.trim();
+    }
+
+    if (Array.isArray(src?.contacts) && src.contacts.length > 0) {
+      const names = src.contacts
+        .map((c: any) => c?.name?.formatted_name)
+        .filter((v: unknown) => typeof v === 'string' && v.trim())
+        .slice(0, 3);
+      if (names.length > 0) return `[contacts] ${names.join(', ')}`;
+      return '[contacts]';
+    }
+
+    if (src?.reaction) {
+      const emoji = src?.reaction?.emoji;
+      if (typeof emoji === 'string' && emoji.trim()) return `[reaction] ${emoji}`;
+      return '[reaction]';
+    }
+
+    const errors = src?.errors;
+    if (Array.isArray(errors) && errors.length > 0) {
+      const first = errors[0] || {};
+      const title = first?.title || first?.message || first?.details;
+      const code = first?.code;
+      if (title && code !== undefined) return `[error] ${title} (code ${code})`;
+      if (title) return `[error] ${title}`;
+    }
+  }
+
+  if (typeof payload === 'string' && payload.trim()) {
+    return payload.trim().slice(0, 160);
+  }
+
+  try {
+    return JSON.stringify(payload).slice(0, 160);
+  } catch {
+    return null;
+  }
+}
+
+function previewText(text: string | null, fallbackType: string, payload?: unknown) {
   if (text && text.trim()) return text.trim();
+  const fromPayload = payloadPreview(payload);
+  if (fromPayload && fromPayload.trim()) return fromPayload.trim();
   return `[${fallbackType}]`;
+}
+
+function payloadAsObject(payload: unknown): any | null {
+  if (!payload) return null;
+  if (typeof payload === 'string') {
+    try {
+      return JSON.parse(payload);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof payload === 'object') return payload;
+  return null;
+}
+
+function payloadSources(payload: unknown): any[] {
+  const obj = payloadAsObject(payload);
+  if (!obj || typeof obj !== 'object') return [];
+  const sources = [obj];
+  if (obj.request && typeof obj.request === 'object') sources.push(obj.request);
+  return sources;
+}
+
+function extractInboundMedia(message: ChatMessage): MediaInfo | null {
+  if (message.direction !== 'inbound') return null;
+  for (const src of payloadSources(message.payload)) {
+    const image = src?.image;
+    if (image?.id) {
+      return {
+        kind: 'image',
+        mediaId: String(image.id),
+        caption: typeof image.caption === 'string' ? image.caption : undefined,
+      };
+    }
+
+    const video = src?.video;
+    if (video?.id) {
+      return {
+        kind: 'video',
+        mediaId: String(video.id),
+        caption: typeof video.caption === 'string' ? video.caption : undefined,
+      };
+    }
+
+    const audio = src?.audio;
+    if (audio?.id) {
+      return {
+        kind: 'audio',
+        mediaId: String(audio.id),
+        isVoice: Boolean(audio.voice),
+      };
+    }
+
+    const document = src?.document;
+    if (document?.id) {
+      return {
+        kind: 'document',
+        mediaId: String(document.id),
+        filename: typeof document.filename === 'string' ? document.filename : undefined,
+        caption: typeof document.caption === 'string' ? document.caption : undefined,
+      };
+    }
+
+    const sticker = src?.sticker;
+    if (sticker?.id) {
+      return {
+        kind: 'sticker',
+        mediaId: String(sticker.id),
+      };
+    }
+  }
+  return null;
+}
+
+function extractInboundLocation(message: ChatMessage): LocationInfo | null {
+  if (message.direction !== 'inbound') return null;
+  for (const src of payloadSources(message.payload)) {
+    const location = src?.location;
+    if (location) {
+      return {
+        latitude: typeof location.latitude === 'number' ? location.latitude : undefined,
+        longitude: typeof location.longitude === 'number' ? location.longitude : undefined,
+        name: typeof location.name === 'string' ? location.name : undefined,
+        address: typeof location.address === 'string' ? location.address : undefined,
+      };
+    }
+  }
+  return null;
 }
 
 function statusBadgeClass(status: string) {
@@ -119,6 +327,7 @@ export default function AdminChatLogsPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedPhone, setSelectedPhone] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [refreshTick, setRefreshTick] = useState(0);
   const [draftMessage, setDraftMessage] = useState('');
@@ -219,6 +428,63 @@ export default function AdminChatLogsPage() {
 
     fetchMessages();
   }, [isAuthenticated, selectedPhone, botBaseUrl, axiosConfig, refreshTick]);
+
+  useEffect(() => {
+    setMediaUrls((prev) => {
+      Object.values(prev).forEach((url) => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {}
+      });
+      return {};
+    });
+  }, [selectedPhone]);
+
+  useEffect(() => {
+    if (!selectedPhone || messages.length === 0) return;
+
+    let cancelled = false;
+
+    const resolveMedia = async () => {
+      const targets = messages
+        .map((message) => ({ message, media: extractInboundMedia(message) }))
+        .filter((item) => item.media && !mediaUrls[item.message.id]);
+
+      await Promise.all(
+        targets.map(async (item) => {
+          const media = item.media as MediaInfo;
+          try {
+            const response = await axios.get(
+              `${botBaseUrl}/admin/chat/media/${media.mediaId}`,
+              {
+                ...axiosConfig,
+                responseType: 'blob',
+              }
+            );
+            if (cancelled) return;
+            const objectUrl = URL.createObjectURL(response.data);
+            setMediaUrls((prev) => {
+              const oldUrl = prev[item.message.id];
+              if (oldUrl) {
+                try {
+                  URL.revokeObjectURL(oldUrl);
+                } catch {}
+              }
+              return { ...prev, [item.message.id]: objectUrl };
+            });
+          } catch {
+            // keep text fallback for failed media fetch
+          }
+        })
+      );
+    };
+
+    resolveMedia();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [messages, selectedPhone, botBaseUrl, axiosConfig, mediaUrls]);
 
   useEffect(() => {
     const id = setInterval(() => setRefreshTick((x) => x + 1), 15000);
@@ -455,6 +721,19 @@ export default function AdminChatLogsPage() {
               messages.map((message) => {
                 const incoming = message.direction === 'inbound';
                 const system = message.direction === 'system';
+                const media = extractInboundMedia(message);
+                const mediaUrl = media ? mediaUrls[message.id] : null;
+                const location = extractInboundLocation(message);
+                const messageText = previewText(
+                  message.text_content,
+                  message.message_type,
+                  message.payload
+                );
+                const hideMediaPlaceholder =
+                  !!media && /^\[(image|video|audio|voice|document|sticker)\]/i.test(messageText.trim());
+                const hideLocationPlaceholder =
+                  !!location && /^\[location\]/i.test(messageText.trim());
+                const shouldRenderText = !(hideMediaPlaceholder || hideLocationPlaceholder);
                 const bubbleClass = system
                   ? 'bg-amber-100 border-amber-300 text-amber-900'
                   : incoming
@@ -467,9 +746,82 @@ export default function AdminChatLogsPage() {
                     className={`mb-3 flex ${incoming || system ? 'justify-start' : 'justify-end'}`}
                   >
                     <div className={`max-w-[85%] rounded-xl border px-3 py-2 shadow-sm ${bubbleClass}`}>
-                      <p className="whitespace-pre-wrap break-words text-sm">
-                        {previewText(message.text_content, message.message_type)}
-                      </p>
+                      {media ? (
+                        <div className="mb-2">
+                          {media.kind === 'image' || media.kind === 'sticker' ? (
+                            mediaUrl ? (
+                              <img
+                                src={mediaUrl}
+                                alt={media.kind}
+                                className="max-h-80 max-w-full rounded-lg border border-slate-200 object-contain"
+                              />
+                            ) : (
+                              <p className="text-xs text-slate-500">Loading {media.kind}...</p>
+                            )
+                          ) : null}
+
+                          {media.kind === 'video' ? (
+                            mediaUrl ? (
+                              <video
+                                src={mediaUrl}
+                                controls
+                                className="max-h-80 max-w-full rounded-lg border border-slate-200"
+                              />
+                            ) : (
+                              <p className="text-xs text-slate-500">Loading video...</p>
+                            )
+                          ) : null}
+
+                          {media.kind === 'audio' ? (
+                            mediaUrl ? (
+                              <audio src={mediaUrl} controls className="w-full min-w-[240px]" />
+                            ) : (
+                              <p className="text-xs text-slate-500">
+                                Loading {media.isVoice ? 'voice note' : 'audio'}...
+                              </p>
+                            )
+                          ) : null}
+
+                          {media.kind === 'document' ? (
+                            mediaUrl ? (
+                              <a
+                                href={mediaUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                              >
+                                Open {media.filename || 'document'}
+                              </a>
+                            ) : (
+                              <p className="text-xs text-slate-500">
+                                Loading {media.filename || 'document'}...
+                              </p>
+                            )
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {location ? (
+                        <div className="mb-2 rounded-lg border border-slate-200 bg-white/80 p-2 text-xs">
+                          <p className="font-medium text-slate-700">Location</p>
+                          {location.name ? <p className="text-slate-600">{location.name}</p> : null}
+                          {location.address ? <p className="text-slate-600">{location.address}</p> : null}
+                          {location.latitude !== undefined && location.longitude !== undefined ? (
+                            <a
+                              href={`https://maps.google.com/?q=${location.latitude},${location.longitude}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-emerald-700 underline"
+                            >
+                              Open in Maps ({location.latitude}, {location.longitude})
+                            </a>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {shouldRenderText ? (
+                        <p className="whitespace-pre-wrap break-words text-sm">{messageText}</p>
+                      ) : null}
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
                         <span className="rounded bg-black/5 px-1.5 py-0.5 uppercase tracking-wide">
                           {message.direction}
