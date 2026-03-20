@@ -18,7 +18,7 @@ import {
     XAxis,
     YAxis
 } from 'recharts';
-import { FileText, Filter, HandCoins, IndianRupee, Timer, Users, UserSquare2 } from 'lucide-react';
+import { FileText, Filter, IndianRupee, Timer, Users, UserSquare2 } from 'lucide-react';
 
 type InvoiceStatus = 'Verified' | 'Pending' | 'Rejected';
 type ClaimStatus = 'Pending' | 'Surveyor Assigned' | 'Completed';
@@ -380,6 +380,7 @@ export default function AnalyticsDashboardPage() {
     const previousMonthDate = new Date();
     previousMonthDate.setMonth(previousMonthDate.getMonth() - 1);
     const previousMonthKey = monthKey(previousMonthDate);
+    const previousMonthDays = new Date(previousMonthDate.getFullYear(), previousMonthDate.getMonth() + 1, 0).getDate();
 
     const currentMonthRecords = premiumEligibleRecords.filter((r) => monthKey(new Date(r.createdAt)) === currentMonthKey);
     const previousMonthRecords = premiumEligibleRecords.filter((r) => monthKey(new Date(r.createdAt)) === previousMonthKey);
@@ -390,6 +391,7 @@ export default function AnalyticsDashboardPage() {
         todayStart.setHours(0, 0, 0, 0);
         const yesterdayStart = new Date(todayStart);
         yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+        const currentMonthDaysElapsed = Math.max(1, now.getDate());
 
         const totalInvoices = filteredRecords.length;
         const todayInvoices = filteredRecords.filter((r) => {
@@ -405,7 +407,7 @@ export default function AnalyticsDashboardPage() {
         const uniqueSuppliers = new Set(filteredRecords.map((r) => r.supplier)).size;
         const uniqueBuyers = new Set(filteredRecords.map((r) => r.buyer)).size;
         const pendingClaims = filteredClaimRecords.filter((r) => r.status === 'Pending').length;
-        const totalAgentCommission = premiumEligibleRecords.reduce((sum, r) => sum + r.commissionAmount, 0);
+        const averageDailyInvoices = currentMonthRecords.length / currentMonthDaysElapsed;
         const currentMonthAveragePremium = currentMonthRecords.length
             ? currentMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0) / currentMonthRecords.length
             : 0;
@@ -419,7 +421,7 @@ export default function AnalyticsDashboardPage() {
             uniqueSuppliers: new Set(previousMonthRecords.map((r) => r.supplier)).size,
             uniqueBuyers: new Set(previousMonthRecords.map((r) => r.buyer)).size,
             pendingClaims: 0,
-            totalAgentCommission: previousMonthRecords.reduce((sum, r) => sum + r.commissionAmount, 0)
+            averageDailyInvoices: previousMonthRecords.length / Math.max(1, previousMonthDays)
         };
 
         return {
@@ -445,15 +447,12 @@ export default function AnalyticsDashboardPage() {
                 value: pendingClaims,
                 trend: safePct(pendingClaims, prev.pendingClaims)
             },
-            totalAgentCommission: {
-                value: totalAgentCommission,
-                trend: safePct(
-                    currentMonthRecords.reduce((sum, r) => sum + r.commissionAmount, 0),
-                    prev.totalAgentCommission
-                )
+            averageDailyInvoices: {
+                value: averageDailyInvoices,
+                trend: safePct(averageDailyInvoices, prev.averageDailyInvoices)
             }
         };
-    }, [filteredRecords, premiumEligibleRecords, currentMonthRecords, previousMonthRecords, filteredClaimRecords]);
+    }, [filteredRecords, premiumEligibleRecords, currentMonthRecords, previousMonthRecords, filteredClaimRecords, previousMonthDays]);
 
     const monthlySalesTrend = useMemo(() => {
         const buckets = new Map<string, number>();
@@ -717,7 +716,7 @@ export default function AnalyticsDashboardPage() {
                                 { label: 'Unique Suppliers', data: kpis.uniqueSuppliers, icon: Users, value: kpis.uniqueSuppliers.value.toLocaleString('en-IN'), compareLabel: 'vs last month' },
                                 { label: 'Unique Buyers', data: kpis.uniqueBuyers, icon: UserSquare2, value: kpis.uniqueBuyers.value.toLocaleString('en-IN'), compareLabel: 'vs last month' },
                                 { label: 'Pending Claims', data: kpis.pendingClaims, icon: Timer, value: kpis.pendingClaims.value.toLocaleString('en-IN'), compareLabel: 'vs last month' },
-                                { label: 'Total Agent Commission', data: kpis.totalAgentCommission, icon: HandCoins, value: formatCurrency(kpis.totalAgentCommission.value), compareLabel: 'vs last month' }
+                                { label: 'Average Daily Invoices', data: kpis.averageDailyInvoices, icon: FileText, value: kpis.averageDailyInvoices.value.toFixed(1), compareLabel: 'vs last month' }
                             ].map((item) => (
                                 <div key={item.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                                     <div className="mb-3 flex items-center justify-between">
