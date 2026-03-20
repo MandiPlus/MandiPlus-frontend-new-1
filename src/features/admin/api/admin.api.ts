@@ -101,6 +101,7 @@ export interface RegenerateInvoicePayload {
 
 export interface InvoiceFilterParams {
   invoiceType?: string;
+  invoiceNumber?: string;
   startDate?: string;
   endDate?: string;
   supplierName?: string;

@@ -245,6 +245,7 @@ export default function InsuranceFormsPage() {
     const [endDateInputType, setEndDateInputType] = useState<'text' | 'datetime-local'>('text');
     const [filters, setFilters] = useState<InvoiceFilterParams>({
         invoiceType: '',
+        invoiceNumber: '',
         startDate: '',
         endDate: '',
         supplierName: '',
@@ -266,6 +267,11 @@ export default function InsuranceFormsPage() {
 
             if (debouncedFilters.invoiceType) {
                 activeFilters.invoiceType = debouncedFilters.invoiceType;
+            }
+
+            if (debouncedFilters.invoiceNumber?.trim()) {
+                const value = debouncedFilters.invoiceNumber.trim();
+                if (value.length >= 2) activeFilters.invoiceNumber = value;
             }
 
             if (debouncedFilters.startDate) {
@@ -329,7 +335,14 @@ export default function InsuranceFormsPage() {
                 };
             });
 
-            setInvoices(merged);
+            const invoiceNumberQuery = debouncedFilters.invoiceNumber?.trim().toLowerCase() || '';
+            const result = invoiceNumberQuery
+                ? merged.filter((inv) =>
+                    String(inv.invoiceNumber || '').toLowerCase().includes(invoiceNumberQuery),
+                )
+                : merged;
+
+            setInvoices(result);
 
         } catch (err: any) {
             console.error("Fetch error:", err);
@@ -1325,7 +1338,7 @@ export default function InsuranceFormsPage() {
                 </div>
 
                 <div className={`bg-white text-black p-3 sm:p-4 rounded-lg shadow mb-4 sm:mb-6 ${showFilters ? 'block' : 'hidden sm:block'}`}>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 sm:gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-7 gap-3 sm:gap-4">
                         <select
                             name="invoiceType"
                             value={filters.invoiceType || ''}
@@ -1336,6 +1349,15 @@ export default function InsuranceFormsPage() {
                             <option value="SUPPLIER_INVOICE">Supplier Invoice</option>
                             <option value="BUYER_INVOICE">Buyer Invoice</option>
                         </select>
+
+                        <input
+                            type="text"
+                            name="invoiceNumber"
+                            placeholder="Search Invoice #..."
+                            value={filters.invoiceNumber || ''}
+                            onChange={handleFilterChange}
+                            className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
+                        />
 
                         <input
                             type={startDateInputType}
