@@ -185,8 +185,9 @@ export const getCurrentUser = async (): Promise<any | null> => {
         const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
         const payload = JSON.parse(window.atob(base64));
         const userId = payload.sub || payload.userId || payload.id;
+        const isAdminToken = payload.role === "admin" || userId === "admin";
 
-        if (!userId) return null;
+        if (!userId || isAdminToken) return null;
 
         // Always fetch the current user from API instead of trusting cached profile data.
         const response = await axios.get(`${API_BASE_URL}/users/${userId}`, {

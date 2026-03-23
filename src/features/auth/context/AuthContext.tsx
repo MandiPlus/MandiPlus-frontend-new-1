@@ -227,9 +227,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             return;
         }
 
-        localStorage.setItem("accessToken", adminToken);
+        localStorage.removeItem("accessToken");
         localStorage.removeItem("user");
-        setAuthToken(adminToken);
+        setAuthToken(null);
         setUser(null);
         router.push("/admin/dashboard");
     };
