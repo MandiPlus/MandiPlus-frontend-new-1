@@ -157,6 +157,20 @@ export interface InsurancePaymentRow {
   updatedAt: string;
 }
 
+export interface ArrivalReportRow {
+  id: string;
+  reportDate: string;
+  invoiceCount: number;
+  excelUrl?: string | null;
+  pdfUrl?: string | null;
+  whatsappNumber?: string | null;
+  whatsappSent: boolean;
+  whatsappSentAt?: string | null;
+  generationError?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AdminWalletStatementItem {
   id: string;
   type: string;
@@ -716,6 +730,54 @@ class AdminApi {
     } catch (error) {
       console.error("Export failed", error);
       return null;
+    }
+  };
+
+  public getArrivalReports = async (): Promise<ApiResponse<ArrivalReportRow[]>> => {
+    try {
+      const response = await this.client.get<ArrivalReportRow[] | ApiResponse<ArrivalReportRow[]>>(
+        "/invoices/admin/arrival-reports",
+      );
+      if (Array.isArray(response.data)) {
+        return {
+          success: true,
+          data: response.data,
+        };
+      }
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to fetch arrival reports",
+        error: error.message,
+      };
+    }
+  };
+
+  public runLatestArrivalReport = async (): Promise<ApiResponse<ArrivalReportRow | null>> => {
+    try {
+      const response = await this.client.post<
+        ArrivalReportRow | ApiResponse<ArrivalReportRow | null>
+      >("/invoices/admin/arrival-reports/run-latest");
+      if (
+        response.data &&
+        typeof response.data === "object" &&
+        "success" in response.data
+      ) {
+        return response.data as ApiResponse<ArrivalReportRow | null>;
+      }
+      return {
+        success: true,
+        data: (response.data as ArrivalReportRow) || null,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to run latest arrival report",
+        error: error.message,
+      };
     }
   };
 
