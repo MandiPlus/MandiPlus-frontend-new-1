@@ -114,6 +114,7 @@ export interface RegenerateInvoicePayload {
 export interface InvoiceFilterParams {
   invoiceType?: string;
   invoiceNumber?: string;
+  vehicleNumber?: string;
   startDate?: string;
   endDate?: string;
   supplierName?: string;

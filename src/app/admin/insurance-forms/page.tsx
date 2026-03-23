@@ -241,11 +241,10 @@ export default function InsuranceFormsPage() {
     const [weightmentSlip, setWeightmentSlip] = useState<File | null>(null);
     const cropperRef = useRef<ReactCropperElement>(null);
     const [invoiceDateInputType, setInvoiceDateInputType] = useState<'text' | 'date'>('text');
-    const [startDateInputType, setStartDateInputType] = useState<'text' | 'datetime-local'>('text');
-    const [endDateInputType, setEndDateInputType] = useState<'text' | 'datetime-local'>('text');
     const [filters, setFilters] = useState<InvoiceFilterParams>({
         invoiceType: '',
         invoiceNumber: '',
+        vehicleNumber: '',
         startDate: '',
         endDate: '',
         supplierName: '',
@@ -274,18 +273,17 @@ export default function InsuranceFormsPage() {
                 if (value.length >= 2) activeFilters.invoiceNumber = value;
             }
 
+            if (debouncedFilters.vehicleNumber?.trim()) {
+                const value = debouncedFilters.vehicleNumber.trim();
+                if (value.length >= 2) activeFilters.vehicleNumber = value;
+            }
+
             if (debouncedFilters.startDate) {
-                const parsed = new Date(debouncedFilters.startDate);
-                if (!Number.isNaN(parsed.getTime())) {
-                    activeFilters.startDate = parsed.toISOString();
-                }
+                activeFilters.startDate = debouncedFilters.startDate;
             }
 
             if (debouncedFilters.endDate) {
-                const parsed = new Date(debouncedFilters.endDate);
-                if (!Number.isNaN(parsed.getTime())) {
-                    activeFilters.endDate = parsed.toISOString();
-                }
+                activeFilters.endDate = debouncedFilters.endDate;
             }
 
             if (debouncedFilters.supplierName?.trim()) {
@@ -336,11 +334,15 @@ export default function InsuranceFormsPage() {
             });
 
             const invoiceNumberQuery = debouncedFilters.invoiceNumber?.trim().toLowerCase() || '';
-            const result = invoiceNumberQuery
-                ? merged.filter((inv) =>
-                    String(inv.invoiceNumber || '').toLowerCase().includes(invoiceNumberQuery),
-                )
-                : merged;
+            const vehicleNumberQuery = debouncedFilters.vehicleNumber?.trim().toLowerCase() || '';
+            const result = merged.filter((inv) => {
+                const matchesInvoice = !invoiceNumberQuery
+                    || String(inv.invoiceNumber || '').toLowerCase().includes(invoiceNumberQuery);
+                const matchesVehicle = !vehicleNumberQuery
+                    || String(inv.vehicleNumber || '').toLowerCase().includes(vehicleNumberQuery);
+
+                return matchesInvoice && matchesVehicle;
+            });
 
             setInvoices(result);
 
@@ -1360,27 +1362,26 @@ export default function InsuranceFormsPage() {
                         />
 
                         <input
-                            type={startDateInputType}
-                            name="startDate"
-                            placeholder="DD-MM-YYYY --:--"
-                            value={filters.startDate}
-                            onFocus={() => setStartDateInputType('datetime-local')}
-                            onBlur={() => {
-                                if (!filters.startDate) setStartDateInputType('text');
-                            }}
+                            type="text"
+                            name="vehicleNumber"
+                            placeholder="Search Vehicle No..."
+                            value={filters.vehicleNumber || ''}
                             onChange={handleFilterChange}
                             className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
                         />
 
                         <input
-                            type={endDateInputType}
+                            type="date"
+                            name="startDate"
+                            value={filters.startDate}
+                            onChange={handleFilterChange}
+                            className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
+                        />
+
+                        <input
+                            type="date"
                             name="endDate"
-                            placeholder="DD-MM-YYYY --:--"
                             value={filters.endDate}
-                            onFocus={() => setEndDateInputType('datetime-local')}
-                            onBlur={() => {
-                                if (!filters.endDate) setEndDateInputType('text');
-                            }}
                             onChange={handleFilterChange}
                             className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
                         />
