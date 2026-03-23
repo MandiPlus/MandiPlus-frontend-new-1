@@ -1,4 +1,5 @@
 import axios, { AxiosError } from "axios";
+import { getStoredAuthToken } from "@/features/auth/api";
 
 /**
  * Backend base URL
@@ -43,7 +44,7 @@ export interface ApiError {
  */
 export const getVehicleDetails = async (vehicleNumber: string): Promise<VehicleDetails> => {
     try {
-        const token = localStorage.getItem("token");
+        const token = getStoredAuthToken();
 
         // Example endpoint: POST /api/vehicle/details
         // Note: If your backend uses GET, change .post to .get and pass vehicleNumber as query param

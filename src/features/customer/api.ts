@@ -1,6 +1,6 @@
 import axios, { AxiosError } from "axios";
 import type { ClaimRequest, InsuranceForm } from "@/features/insurance/api";
-import { refreshAccessToken } from "@/features/auth/api";
+import { getStoredAuthToken, refreshAccessToken } from "@/features/auth/api";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
@@ -28,8 +28,7 @@ export interface WalletStatementItem {
 }
 
 function getAuthHeader() {
-  const token =
-    localStorage.getItem("accessToken") || localStorage.getItem("token");
+  const token = getStoredAuthToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 

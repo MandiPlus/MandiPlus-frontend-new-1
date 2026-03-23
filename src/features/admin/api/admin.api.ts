@@ -77,6 +77,18 @@ interface LoginResponse {
   token: string;
 }
 
+export interface AdminImpersonationResponse {
+  token: string;
+  user: {
+    id: string;
+    name?: string;
+    mobileNumber?: string;
+    identity?: string | null;
+    tenantId?: string;
+    impersonation?: boolean;
+  };
+}
+
 export interface RegenerateInvoicePayload {
   invoiceId: string;
   invoiceType?: string;
@@ -130,6 +142,7 @@ export interface InsurancePaymentRow {
   id: string;
   invoiceId: string;
   invoiceNumber: string;
+  productName?: string;
   buyer: string;
   insuredPerson: string;
   supplier?: string;
@@ -343,6 +356,24 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || "Login failed",
+        error: error.message,
+      };
+    }
+  };
+
+  public impersonateUser = async (
+    userId: string,
+  ): Promise<ApiResponse<AdminImpersonationResponse>> => {
+    try {
+      const response = await this.client.post<
+        ApiResponse<AdminImpersonationResponse>
+      >(`/auth/admin/impersonate/${userId}`);
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to impersonate user",
         error: error.message,
       };
     }
@@ -930,6 +961,7 @@ class AdminApi {
     fromDate?: string;
     toDate?: string;
     paymentStatus?: string;
+    productName?: string;
     page?: number;
     limit?: number;
   }): Promise<ApiResponse<InsurancePaymentRow[]>> => {

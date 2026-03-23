@@ -84,6 +84,7 @@ export default function AdminInsurancePaymentsPage() {
   const [fromDateInputType, setFromDateInputType] = useState<'text' | 'date'>('text');
   const [toDateInputType, setToDateInputType] = useState<'text' | 'date'>('text');
   const [paymentStatus, setPaymentStatus] = useState('');
+  const [productName, setProductName] = useState('');
   const [nameQuery, setNameQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [jumpPageInput, setJumpPageInput] = useState('1');
@@ -103,6 +104,7 @@ export default function AdminInsurancePaymentsPage() {
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
+        productName: productName || undefined,
         page,
         limit: FETCH_LIMIT,
       });
@@ -118,7 +120,7 @@ export default function AdminInsurancePaymentsPage() {
     } while (page <= pages);
 
     return collected;
-  }, [fromDate, toDate, paymentStatus]);
+  }, [fromDate, toDate, paymentStatus, productName]);
 
   const fetchRows = useCallback(async () => {
     try {
@@ -150,6 +152,11 @@ export default function AdminInsurancePaymentsPage() {
       return haystack.includes(query);
     });
   }, [rows, nameQuery]);
+
+  const productOptions = useMemo(() => {
+    return [...new Set(rows.map((row) => String(row.productName || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
+  }, [rows]);
 
   const totalRows = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / ITEMS_PER_PAGE));
@@ -285,7 +292,7 @@ export default function AdminInsurancePaymentsPage() {
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-7">
             <input
               type={fromDateInputType}
               placeholder="DD-MM-YYYY"
@@ -329,6 +336,21 @@ export default function AdminInsurancePaymentsPage() {
                 </option>
               ))}
             </select>
+            <select
+              value={productName}
+              onChange={(e) => {
+                setProductName(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">All Products</option>
+              {productOptions.map((product) => (
+                <option key={product} value={product}>
+                  {product}
+                </option>
+              ))}
+            </select>
             <input
               type="text"
               placeholder="Search by name / invoice"
@@ -351,6 +373,7 @@ export default function AdminInsurancePaymentsPage() {
                 setFromDateInputType('text');
                 setToDateInputType('text');
                 setPaymentStatus('');
+                setProductName('');
                 setNameQuery('');
                 setCurrentPage(1);
               }}

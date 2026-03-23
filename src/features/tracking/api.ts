@@ -1,4 +1,5 @@
 import axios, { AxiosError } from "axios";
+import { getStoredAuthToken } from "@/features/auth/api";
 
 /**
  * Backend base URL
@@ -107,7 +108,7 @@ export const trackVehicle = async (
 ): Promise<TrackingResponse> => {
   try {
     const token =
-      typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      typeof window !== "undefined" ? getStoredAuthToken() : null;
 
     const response = await axios.get<TrackingResponse>(
       `${API_BASE_URL}/trucks/track/${encodeURIComponent(vehicleNumber)}`,
