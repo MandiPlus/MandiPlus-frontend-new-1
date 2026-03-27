@@ -548,7 +548,7 @@ export default function InsuranceFormsPage() {
             return;
         }
 
-        const fileUrl = sendPdfInvoice.insurance?.fileUrl;
+        const fileUrl = getInsuranceFileUrl(sendPdfInvoice);
         if (!fileUrl) {
             toast.error('No insurance PDF uploaded for this invoice yet.');
             return;
@@ -1906,20 +1906,6 @@ export default function InsuranceFormsPage() {
                                                                                 )}
                                                                             </Menu.Item>
                                                                         )}
-                                                                        {getInsuranceFileUrl(inv) && (
-                                                                            <Menu.Item>
-                                                                                {({ active }) => (
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        onClick={() => openSendPdfModal(inv)}
-                                                                                        className={`${active ? 'bg-gray-100' : ''} flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700`}
-                                                                                    >
-                                                                                        <FileText className="w-4 h-4 text-blue-600" />
-                                                                                        Send insurance PDF
-                                                                                    </button>
-                                                                                )}
-                                                                            </Menu.Item>
-                                                                        )}
                                                                     </Menu.Items>
                                                                 </Transition>
                                                             </Menu>
@@ -2740,14 +2726,15 @@ export default function InsuranceFormsPage() {
                         setSelectedInvoiceForInsurance(null);
                     }}
                     onSuccess={async (updatedInvoice?: any, uploadedFile?: File) => {
+                        const baseInvoice = selectedInvoiceForInsurance;
                         const fileUrl =
                             updatedInvoice?.fileUrl ??
                             updatedInvoice?.data?.fileUrl ??
                             updatedInvoice?.insurance?.fileUrl ??
                             undefined;
-                        const invoiceId = selectedInvoiceForInsurance?.id;
-                        const invoiceKey = selectedInvoiceForInsurance
-                            ? getInvoiceKey(selectedInvoiceForInsurance)
+                        const invoiceId = baseInvoice?.id;
+                        const invoiceKey = baseInvoice
+                            ? getInvoiceKey(baseInvoice)
                             : invoiceId;
 
                         if (invoiceKey && fileUrl) {
@@ -2783,9 +2770,21 @@ export default function InsuranceFormsPage() {
                         setShowInsuranceModal(false);
 
                         // After upload, open the send PDF modal pre-filled
-                        if (selectedInvoiceForInsurance) {
-                            setSendPdfInvoice(selectedInvoiceForInsurance);
-                            setSendPdfPhone(selectedInvoiceForInsurance.insuredPartyPhone || '');
+                        if (baseInvoice) {
+                            const mergedInvoiceForSend: Invoice = {
+                                ...baseInvoice,
+                                ...(updatedInvoice || {}),
+                                insurance: fileUrl
+                                    ? {
+                                        fileUrl,
+                                        uploadedAt: updatedInvoice?.insurance?.uploadedAt || new Date().toISOString(),
+                                        fileType: updatedInvoice?.insurance?.fileType || 'application/pdf',
+                                    }
+                                    : (updatedInvoice?.insurance ?? baseInvoice.insurance ?? null),
+                            };
+
+                            setSendPdfInvoice(mergedInvoiceForSend);
+                            setSendPdfPhone(mergedInvoiceForSend.insuredPartyPhone || '');
                             if (uploadedFile) setSendPdfFile(uploadedFile);
                             setSendPdfModalOpen(true);
                         }

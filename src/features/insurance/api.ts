@@ -1,5 +1,4 @@
 import axios, { AxiosError } from "axios";
-import { getStoredAuthToken } from "@/features/auth/api";
 
 // 1. BACKEND BASE URL
 export const API_BASE_URL =
@@ -108,8 +107,6 @@ export type CreateInsuranceResponse = InsuranceForm;
 
 export interface InvoiceCustomerAccount {
   id: string;
-  userId?: string;
-  customerUserId?: string;
   name: string;
   mobileNumber: string;
   identity?: string;
@@ -146,7 +143,7 @@ export const createInsuranceForm = async (
 ): Promise<CreateInsuranceResponse> => {
   try {
     const token =
-      getStoredAuthToken();
+      localStorage.getItem("accessToken") || localStorage.getItem("token");
 
     const response = await axios.post(`${API_BASE_URL}/invoices`, formData, {
       headers: {
@@ -166,7 +163,7 @@ export const getInvoiceCustomerAccounts = async (): Promise<
 > => {
   try {
     const token =
-      getStoredAuthToken();
+      localStorage.getItem("accessToken") || localStorage.getItem("token");
 
     const response = await axios.get(`${API_BASE_URL}/invoices/customer-accounts`, {
       headers: {
@@ -187,7 +184,7 @@ export const getTruckFlagStatus = async (
 ): Promise<TruckFlagStatus> => {
   try {
     const token =
-      getStoredAuthToken();
+      localStorage.getItem("accessToken") || localStorage.getItem("token");
 
     const response = await axios.get(
       `${API_BASE_URL}/trucks/flag-status/${encodeURIComponent(truckNumber)}`,
@@ -212,7 +209,7 @@ export const getTruckFlagStatus = async (
 export const getMyInsuranceForms = async (): Promise<InsuranceForm[]> => {
   try {
     const token =
-      getStoredAuthToken();
+      localStorage.getItem("accessToken") || localStorage.getItem("token");
     const userData = localStorage.getItem("user");
 
     if (!userData) {
@@ -244,7 +241,7 @@ export const getMyInsuranceForms = async (): Promise<InsuranceForm[]> => {
  */
 export const getMyClaimsForms = async (): Promise<ClaimRequest[]> => {
   try {
-    const token = getStoredAuthToken();
+    const token = localStorage.getItem("accessToken");
     const userData = localStorage.getItem("user");
 
     if (!userData) throw new Error("User not found");
@@ -270,7 +267,7 @@ export const getMyClaimsForms = async (): Promise<ClaimRequest[]> => {
 export const getAdminClaimsForms = async (): Promise<ClaimRequest[]> => {
   try {
     const token =
-      getStoredAuthToken();
+      localStorage.getItem("accessToken") || localStorage.getItem("token");
 
     const response = await axios.get(`${API_BASE_URL}/claim-requests/admin`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -291,7 +288,7 @@ export const createClaimByTruck = async (
   truckNumber: string,
 ): Promise<ClaimRequest> => {
   try {
-    const token = getStoredAuthToken();
+    const token = localStorage.getItem("accessToken");
     const response = await axios.post(
       `${API_BASE_URL}/claim-requests/by-truck`,
       { truckNumber },
@@ -322,7 +319,7 @@ export const uploadClaimMedia = async (
   file: File,
 ): Promise<ClaimRequest> => {
   try {
-    const token = getStoredAuthToken();
+    const token = localStorage.getItem("accessToken");
     const formData = new FormData();
     formData.append("file", file);
 
@@ -352,7 +349,7 @@ export const submitDamageForm = async (
   data: CreateDamageFormDto,
 ): Promise<any> => {
   try {
-    const token = getStoredAuthToken();
+    const token = localStorage.getItem("accessToken");
     const response = await axios.post(
       `${API_BASE_URL}/claim-requests/${claimId}/damage-form`,
       data,
@@ -374,7 +371,7 @@ export const regenerateInvoice = async (
   payload: RegenerateInvoicePayload,
 ): Promise<InsuranceForm> => {
   try {
-    const token = getStoredAuthToken();
+    const token = localStorage.getItem("accessToken");
 
     if (!token) {
       throw new Error("Authentication required. Please log in.");
@@ -417,7 +414,7 @@ export const uploadWeighmentSlips = async (
   files: File[],
 ): Promise<InsuranceForm> => {
   try {
-    const token = getStoredAuthToken();
+    const token = localStorage.getItem("accessToken");
     if (!token) {
       throw new Error("Authentication required");
     }
@@ -456,7 +453,7 @@ export const getInvoiceById = async (
   invoiceId: string,
 ): Promise<InsuranceForm> => {
   try {
-    const token = getStoredAuthToken();
+    const token = localStorage.getItem("token");
 
     const response = await axios.get(`${API_BASE_URL}/invoices/${invoiceId}`, {
       headers: {
@@ -479,7 +476,7 @@ export const updateInvoice = async (
   formData: FormData,
 ): Promise<InsuranceForm> => {
   try {
-    const token = getStoredAuthToken();
+    const token = localStorage.getItem("accessToken");
     if (!token) {
       throw new Error("Authentication required");
     }
@@ -504,4 +501,3 @@ export const updateInvoice = async (
     throw new Error(errorMessage);
   }
 };
-
