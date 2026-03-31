@@ -306,6 +306,44 @@ export default function AdminTripsPage() {
     };
   }, [isMapLoaded]);
 
+  const sourceFlagIcon = useMemo(() => {
+    if (!isMapLoaded || typeof window === 'undefined' || !window.google?.maps) {
+      return undefined;
+    }
+
+    const svg = encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34">
+        <path d="M9 4v25" stroke="#166534" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M10 5h13l-3 6 3 6H10z" fill="#22c55e" stroke="#166534" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    `);
+
+    return {
+      url: `data:image/svg+xml;charset=UTF-8,${svg}`,
+      scaledSize: new window.google.maps.Size(30, 30),
+      anchor: new window.google.maps.Point(10, 26),
+    };
+  }, [isMapLoaded]);
+
+  const destinationFlagIcon = useMemo(() => {
+    if (!isMapLoaded || typeof window === 'undefined' || !window.google?.maps) {
+      return undefined;
+    }
+
+    const svg = encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34">
+        <path d="M9 4v25" stroke="#991b1b" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M10 5h13l-3 6 3 6H10z" fill="#ef4444" stroke="#991b1b" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    `);
+
+    return {
+      url: `data:image/svg+xml;charset=UTF-8,${svg}`,
+      scaledSize: new window.google.maps.Size(30, 30),
+      anchor: new window.google.maps.Point(10, 26),
+    };
+  }, [isMapLoaded]);
+
   if (loading || !isAuthenticated) {
     return (
       <div className="py-8">
@@ -564,7 +602,7 @@ export default function AdminTripsPage() {
             <button
               type="button"
               onClick={() => setTrackModal(null)}
-              className="absolute right-4 top-4 z-10 rounded-full bg-white px-3 py-1 text-lg font-semibold text-slate-500 shadow-sm"
+              className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white text-lg font-semibold text-slate-500 shadow-md"
             >
               ×
             </button>
@@ -594,7 +632,20 @@ export default function AdminTripsPage() {
                       <MarkerF position={trackCurrent} title="Current location" icon={truckIcon} />
                     ) : null}
                     {trackDestination ? (
-                      <MarkerF position={trackDestination} title="Destination" />
+                      <MarkerF
+                        position={trackDestination}
+                        title="Destination"
+                        icon={destinationFlagIcon}
+                      />
+                    ) : null}
+                    {trackModal.tracking.origin &&
+                    typeof trackModal.tracking.origin.lat === 'number' &&
+                    typeof trackModal.tracking.origin.lng === 'number' ? (
+                      <MarkerF
+                        position={trackModal.tracking.origin}
+                        title="Source"
+                        icon={sourceFlagIcon}
+                      />
                     ) : null}
                   </GoogleMap>
                 )}
@@ -610,10 +661,6 @@ export default function AdminTripsPage() {
                   <p className="mt-1 text-sm text-slate-500">
                     Vehicle: {trackModal.tracking.vehicleNumber}
                   </p>
-                </div>
-                <div className="text-right text-sm text-slate-600">
-                  <div className="font-semibold text-slate-800">{trackModal.trip.truck?.truckNumber}</div>
-                  <div>Driver: {trackModal.trip.tel || '-'}</div>
                 </div>
               </div>
 

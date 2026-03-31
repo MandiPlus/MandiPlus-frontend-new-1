@@ -1020,6 +1020,26 @@ class AdminApi {
     }
   };
 
+  public updateInvoicePhone = async (
+    invoiceId: string,
+    insuredPartyPhone: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.patch<ApiResponse<any>>(
+        `/invoices/${invoiceId}`,
+        { insuredPartyPhone },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to update invoice phone",
+        error: error.message,
+      };
+    }
+  };
+
   public getInsurancePayments = async (filters?: {
     fromDate?: string;
     toDate?: string;

@@ -567,6 +567,19 @@ export default function InsuranceFormsPage() {
             const res = await adminApi.sendInsurancePdfViaBot(fileUrl, phoneNumber);
             if (!res.success) throw new Error(res.message || 'Failed to send insurance PDF');
 
+            const updateRes = await adminApi.updateInvoicePhone(invoiceId, phoneNumber);
+            if (!updateRes.success) {
+                throw new Error(updateRes.message || 'Insurance PDF sent, but failed to save phone number');
+            }
+
+            setInvoices((prev) =>
+                prev.map((invoice) =>
+                    getInvoiceId(invoice) === invoiceId
+                        ? { ...invoice, insuredPartyPhone: phoneNumber }
+                        : invoice
+                )
+            );
+
             toast.update('send-pdf', {
                 render: 'Insurance PDF sent successfully',
                 type: 'success',
