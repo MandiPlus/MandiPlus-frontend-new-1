@@ -13,6 +13,45 @@ import {
   sendManualTripAlert,
 } from '@/features/admin/api/tracking.api';
 
+function normalizeCoordValue(value?: string | null): string | null {
+  if (!value) return null;
+  const normalized = value
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(',');
+  return normalized || null;
+}
+
+async function reverseGeocodeWithGoogle(
+  coords: string
+): Promise<string | null> {
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const normalized = normalizeCoordValue(coords);
+  if (!apiKey || !normalized) return null;
+
+  const [lat, lng] = normalized.split(',');
+  if (!lat || !lng) return null;
+
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(
+      `${lat},${lng}`
+    )}&key=${apiKey}`;
+    const response = await fetch(url, { cache: 'force-cache' });
+    if (!response.ok) return null;
+
+    const data = (await response.json()) as {
+      status?: string;
+      results?: Array<{ formatted_address?: string }>;
+    };
+    if (data.status !== 'OK' || !data.results?.length) return null;
+
+    return data.results[0]?.formatted_address || null;
+  } catch {
+    return null;
+  }
+}
+
 export default function AdminTripsPage() {
   const router = useRouter();
   const { isAuthenticated, loading } = useAdmin();
@@ -22,6 +61,7 @@ export default function AdminTripsPage() {
     null
   );
   const [phoneOverrides, setPhoneOverrides] = useState<Record<string, string>>({});
+  const [routeLabels, setRouteLabels] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState({
     fetchTrips: false,
     closeTrip: false,
@@ -57,6 +97,45 @@ export default function AdminTripsPage() {
     }, 0);
     return () => clearTimeout(timer);
   }, [isAuthenticated, fetchTrips]);
+
+  useEffect(() => {
+    const uniqueCoords = Array.from(
+      new Set(
+        trips
+          .flatMap((trip) => [normalizeCoordValue(trip.src), normalizeCoordValue(trip.dest)])
+          .filter((value): value is string => Boolean(value))
+      )
+    ).filter((coords) => !routeLabels[coords]);
+
+    if (!uniqueCoords.length) return;
+
+    let isCancelled = false;
+
+    const hydrateRouteLabels = async () => {
+      const resolvedEntries = await Promise.all(
+        uniqueCoords.map(async (coords) => {
+          const label = await reverseGeocodeWithGoogle(coords);
+          return [coords, label || coords] as const;
+        })
+      );
+
+      if (isCancelled) return;
+
+      setRouteLabels((prev) => {
+        const next = { ...prev };
+        for (const [coords, label] of resolvedEntries) {
+          next[coords] = label;
+        }
+        return next;
+      });
+    };
+
+    void hydrateRouteLabels();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [trips, routeLabels]);
 
   const handleTrack = async (trip: AdminTripRow) => {
     const truckNumber = trip.truck?.truckNumber;
@@ -212,7 +291,9 @@ export default function AdminTripsPage() {
                       <div className="flex flex-col gap-1">
                         <span>{trip.truck?.truckNumber || '-'}</span>
                         <span className="text-[11px] text-gray-500">
-                          Trip: {trip.traqoTripId || '-'}
+                          {trip.invoice?.invoiceNumber
+                            ? `Invoice: ${trip.invoice.invoiceNumber}`
+                            : 'Tracking linked'}
                         </span>
                       </div>
                     </td>
@@ -309,11 +390,15 @@ export default function AdminTripsPage() {
                       <div className="max-w-[230px] space-y-1 text-xs">
                         <div>
                           <span className="font-semibold text-slate-700">Src:</span>{' '}
-                          <span className="break-all">{trip.src || '-'}</span>
+                          <span className="break-words">
+                            {routeLabels[normalizeCoordValue(trip.src) || ''] || trip.src || '-'}
+                          </span>
                         </div>
                         <div>
                           <span className="font-semibold text-slate-700">Dest:</span>{' '}
-                          <span className="break-all">{trip.dest || '-'}</span>
+                          <span className="break-words">
+                            {routeLabels[normalizeCoordValue(trip.dest) || ''] || trip.dest || '-'}
+                          </span>
                         </div>
                       </div>
                     </td>
