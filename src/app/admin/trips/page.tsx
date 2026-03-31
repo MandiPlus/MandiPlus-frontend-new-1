@@ -231,10 +231,23 @@ export default function AdminTripsPage() {
     if (!response.success) {
       toast.error(response.message || `Failed to send ${alertKind} alert.`);
     } else {
+      if (phoneOverride) {
+        setTrips((prev) =>
+          prev.map((item) =>
+            item.id === trip.id ? { ...item, recipientPhone: phoneOverride } : item
+          )
+        );
+      }
       toast.success(
         `${alertKind === 'reached' ? 'Reached' : 'Delayed'} alert sent successfully.`
       );
       await fetchTrips();
+      if (phoneOverride) {
+        setPhoneOverrides((prev) => ({
+          ...prev,
+          [trip.id]: '',
+        }));
+      }
     }
     setBusyFlag('manualAlert', false);
   };
@@ -408,7 +421,9 @@ export default function AdminTripsPage() {
                         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
                           <div className="font-semibold text-slate-700">Default recipient</div>
                           <div className="mt-1 break-all text-slate-900">
-                            {trip.recipientPhone || 'No linked number'}
+                            {phoneOverrides[trip.id]?.trim() ||
+                              trip.recipientPhone ||
+                              'No linked number'}
                           </div>
                         </div>
                         <div className="flex flex-col gap-1">
