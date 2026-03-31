@@ -107,6 +107,8 @@ export type CreateInsuranceResponse = InsuranceForm;
 
 export interface InvoiceCustomerAccount {
   id: string;
+  userId?: string;
+  customerUserId?: string;
   name: string;
   mobileNumber: string;
   identity?: string;

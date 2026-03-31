@@ -78,6 +78,19 @@ export interface AdminTripRow {
     id: string;
     invoiceNumber?: string;
   } | null;
+  recipientPhone?: string | null;
+  alerts?: {
+    reachedSentAt?: string | null;
+    delayedSentAt?: string | null;
+    delayedReason?: string | null;
+    lastEvaluatedAt?: string | null;
+    lastEta?: string | null;
+  } | null;
+}
+
+export interface ManualTripAlertPayload {
+  alertKind: "reached" | "delayed";
+  phoneOverride?: string;
 }
 
 function getAuthHeaders() {
@@ -216,6 +229,25 @@ export async function closeTrip(
     return {
       success: false,
       message: getErrorMessage(error, "Failed to close trip"),
+    };
+  }
+}
+
+export async function sendManualTripAlert(
+  tripId: string,
+  payload: ManualTripAlertPayload
+): Promise<AdminTrackingApiResponse<GenericPayload>> {
+  try {
+    const res = await axios.post(
+      `${API_BASE_URL}/trucks/track/alerts/trip/${encodeURIComponent(tripId)}/send`,
+      payload,
+      { headers: getAuthHeaders() }
+    );
+    return { success: true, data: res.data };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to send manual trip alert"),
     };
   }
 }
