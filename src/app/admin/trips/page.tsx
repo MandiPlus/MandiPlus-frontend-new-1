@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { GoogleMap, MarkerF, useLoadScript } from '@react-google-maps/api';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import {
   AdminTripRow,
@@ -12,6 +13,15 @@ import {
   listTrips,
   sendManualTripAlert,
 } from '@/features/admin/api/tracking.api';
+
+type Coord = { lat: number; lng: number };
+
+type TrackModalState = {
+  trip: AdminTripRow;
+  tracking: TruckTrackingResponse;
+  sourceName: string;
+  destinationName: string;
+};
 
 function normalizeCoordValue(value?: string | null): string | null {
   if (!value) return null;
@@ -55,13 +65,15 @@ async function reverseGeocodeWithGoogle(
 export default function AdminTripsPage() {
   const router = useRouter();
   const { isAuthenticated, loading } = useAdmin();
+  const mapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+  const { isLoaded: isMapLoaded } = useLoadScript({
+    googleMapsApiKey: mapsApiKey,
+  });
 
   const [trips, setTrips] = useState<AdminTripRow[]>([]);
-  const [trackingData, setTrackingData] = useState<TruckTrackingResponse | null>(
-    null
-  );
   const [phoneOverrides, setPhoneOverrides] = useState<Record<string, string>>({});
   const [routeLabels, setRouteLabels] = useState<Record<string, string>>({});
+  const [trackModal, setTrackModal] = useState<TrackModalState | null>(null);
   const [busy, setBusy] = useState({
     fetchTrips: false,
     closeTrip: false,
@@ -147,10 +159,45 @@ export default function AdminTripsPage() {
     const response = await getTruckTracking(truckNumber);
     if (!response.success) {
       toast.error(response.message || 'Failed to fetch tracking data.');
-      setTrackingData(null);
     } else {
-      setTrackingData(response.data || null);
-      toast.success(`Tracking loaded for ${truckNumber}`);
+      const data = response.data;
+      if (!data) {
+        toast.error('Tracking data is unavailable for this trip.');
+        setBusyFlag('track', false);
+        return;
+      }
+
+      const sourceCoords =
+        data.origin && typeof data.origin.lat === 'number' && typeof data.origin.lng === 'number'
+          ? normalizeCoordValue(`${data.origin.lat},${data.origin.lng}`)
+          : null;
+      const destinationCoords =
+        data.destination &&
+        typeof data.destination.lat === 'number' &&
+        typeof data.destination.lng === 'number'
+          ? normalizeCoordValue(`${data.destination.lat},${data.destination.lng}`)
+          : null;
+
+      const currentName = data.location?.address || '';
+      const sourceName = sourceCoords ? routeLabels[sourceCoords] || sourceCoords : '';
+      const destinationName = destinationCoords
+        ? routeLabels[destinationCoords] || destinationCoords
+        : '';
+
+      setTrackModal({
+        trip,
+        tracking: {
+          ...data,
+          location: data.location
+            ? {
+                ...data.location,
+                address: currentName || data.location.address,
+              }
+            : data.location,
+        },
+        sourceName,
+        destinationName,
+      });
     }
     setBusyFlag('track', false);
   };
@@ -200,6 +247,51 @@ export default function AdminTripsPage() {
   const delayedAlertsSent = trips.filter(
     (trip) => Boolean(trip.alerts?.delayedSentAt)
   ).length;
+
+  const trackCurrent = useMemo<Coord | null>(() => {
+    if (
+      trackModal?.tracking.location &&
+      typeof trackModal.tracking.location.lat === 'number' &&
+      typeof trackModal.tracking.location.lng === 'number'
+    ) {
+      return {
+        lat: trackModal.tracking.location.lat,
+        lng: trackModal.tracking.location.lng,
+      };
+    }
+    return null;
+  }, [trackModal]);
+
+  const trackDestination = useMemo<Coord | null>(() => {
+    if (
+      trackModal?.tracking.destination &&
+      typeof trackModal.tracking.destination.lat === 'number' &&
+      typeof trackModal.tracking.destination.lng === 'number'
+    ) {
+      return {
+        lat: trackModal.tracking.destination.lat,
+        lng: trackModal.tracking.destination.lng,
+      };
+    }
+    return null;
+  }, [trackModal]);
+
+  const trackCenter = useMemo<Coord>(
+    () => trackCurrent || trackDestination || { lat: 22.9734, lng: 78.6569 },
+    [trackCurrent, trackDestination]
+  );
+
+  const truckIcon = useMemo(() => {
+    if (!isMapLoaded || typeof window === 'undefined' || !window.google?.maps) {
+      return undefined;
+    }
+
+    return {
+      url: '/images/truck-marker.svg',
+      scaledSize: new window.google.maps.Size(52, 52),
+      anchor: new window.google.maps.Point(26, 26),
+    };
+  }, [isMapLoaded]);
 
   if (loading || !isAuthenticated) {
     return (
@@ -290,11 +382,11 @@ export default function AdminTripsPage() {
                     <td className="px-3 py-3 align-top font-medium text-gray-900">
                       <div className="flex flex-col gap-1">
                         <span>{trip.truck?.truckNumber || '-'}</span>
-                        <span className="text-[11px] text-gray-500">
-                          {trip.invoice?.invoiceNumber
-                            ? `Invoice: ${trip.invoice.invoiceNumber}`
-                            : 'Tracking linked'}
-                        </span>
+                        {trip.invoice?.invoiceNumber ? (
+                          <span className="text-[11px] text-gray-500">
+                            Invoice: {trip.invoice.invoiceNumber}
+                          </span>
+                        ) : null}
                       </div>
                     </td>
                     <td className="px-3 py-3 align-top text-gray-700">{trip.tel}</td>
@@ -451,47 +543,167 @@ export default function AdminTripsPage() {
         </div>
       </div>
 
-      {trackingData ? (
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">Live Tracking Snapshot</h2>
-          <div className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4 md:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <div className="text-xs text-gray-500">Vehicle</div>
-              <div className="text-sm font-semibold text-gray-900">{trackingData.vehicleNumber}</div>
+      {trackModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className="relative flex max-h-[92vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-[#f8fafc] shadow-2xl xl:flex-row">
+            <button
+              type="button"
+              onClick={() => setTrackModal(null)}
+              className="absolute right-4 top-4 z-10 rounded-full bg-white px-3 py-1 text-lg font-semibold text-slate-500 shadow-sm"
+            >
+              ×
+            </button>
+
+            <div className="min-h-[420px] flex-1 bg-white p-4">
+              <div className="h-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+                {!mapsApiKey ? (
+                  <div className="flex h-full items-center justify-center p-6 text-sm text-red-600">
+                    Google Maps key is missing. Set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
+                  </div>
+                ) : !isMapLoaded ? (
+                  <div className="flex h-full items-center justify-center p-6 text-sm text-slate-600">
+                    Loading map...
+                  </div>
+                ) : (
+                  <GoogleMap
+                    zoom={6}
+                    center={trackCenter}
+                    mapContainerStyle={{ width: '100%', height: '100%' }}
+                    options={{
+                      streetViewControl: false,
+                      mapTypeControl: true,
+                      fullscreenControl: true,
+                    }}
+                  >
+                    {trackCurrent ? (
+                      <MarkerF position={trackCurrent} title="Current location" icon={truckIcon} />
+                    ) : null}
+                    {trackDestination ? (
+                      <MarkerF position={trackDestination} title="Destination" />
+                    ) : null}
+                  </GoogleMap>
+                )}
+              </div>
             </div>
-            <div>
-              <div className="text-xs text-gray-500">Status</div>
-              <div className="text-sm font-semibold text-gray-900">{trackingData.status}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Trip ID</div>
-              <div className="text-sm font-semibold text-gray-900">{trackingData.tripId || '-'}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Trip Status</div>
-              <div className="text-sm font-semibold text-gray-900">{trackingData.tripStatus || '-'}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Latitude</div>
-              <div className="text-sm font-semibold text-gray-900">{trackingData.location?.lat ?? '-'}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">Longitude</div>
-              <div className="text-sm font-semibold text-gray-900">{trackingData.location?.lng ?? '-'}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500">ETA</div>
-              <div className="text-sm font-semibold text-gray-900">{trackingData.eta || '-'}</div>
-            </div>
-            <div className="md:col-span-2 lg:col-span-3">
-              <div className="text-xs text-gray-500">Address</div>
-              <div className="text-sm font-semibold text-gray-900">
-                {trackingData.location?.address || '-'}
+
+            <div className="w-full overflow-y-auto border-t border-slate-200 bg-white p-5 xl:w-[520px] xl:border-l xl:border-t-0">
+              <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900">
+                    {trackModal.trip.invoice?.invoiceNumber || trackModal.tracking.vehicleNumber}
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Vehicle: {trackModal.tracking.vehicleNumber}
+                  </p>
+                </div>
+                <div className="text-right text-sm text-slate-600">
+                  <div className="font-semibold text-slate-800">{trackModal.trip.truck?.truckNumber}</div>
+                  <div>Driver: {trackModal.trip.tel || '-'}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 border-b border-slate-200 py-4 text-sm text-slate-700 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Created At
+                  </div>
+                  <div className="mt-1">{new Date(trackModal.trip.createdAt).toLocaleString('en-IN')}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    ETA
+                  </div>
+                  <div className="mt-1">{trackModal.tracking.eta || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Status
+                  </div>
+                  <div className="mt-1">{trackModal.tracking.tripStatus || trackModal.trip.status}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Recipient
+                  </div>
+                  <div className="mt-1 break-all">{trackModal.trip.recipientPhone || '-'}</div>
+                </div>
+              </div>
+
+              <div className="border-b border-slate-200 py-4">
+                <div className="text-sm font-semibold text-slate-900">
+                  {trackModal.sourceName || '-'} To {trackModal.destinationName || '-'}
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-3 text-sm text-slate-700">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Last Location
+                    </div>
+                    <div className="mt-1">{trackModal.tracking.location?.address || 'Not available'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Last Location At
+                    </div>
+                    <div className="mt-1">{trackModal.tracking.location?.timeRecorded || '-'}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 py-4 text-sm sm:grid-cols-2">
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                    Status
+                  </div>
+                  <div className="mt-2 text-base font-semibold text-emerald-900">
+                    {trackModal.tracking.status === 'tracking'
+                      ? 'Enroute To Destination'
+                      : 'Not Tracking'}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-sky-100 bg-sky-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">
+                    Remaining
+                  </div>
+                  <div className="mt-2 text-base font-semibold text-sky-900">
+                    {trackModal.tracking.location?.distanceRemained || '-'}
+                  </div>
+                  <div className="mt-1 text-xs text-sky-700">
+                    {trackModal.tracking.location?.timeRemained || 'Time not available'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4">
+                <button
+                  type="button"
+                  onClick={() => void handleManualAlert(trackModal.trip, 'reached')}
+                  disabled={busy.manualAlert}
+                  className="rounded-md bg-emerald-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                >
+                  Send Reached
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleManualAlert(trackModal.trip, 'delayed')}
+                  disabled={busy.manualAlert}
+                  className="rounded-md bg-amber-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                >
+                  Send Delayed
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleClose(trackModal.trip)}
+                  disabled={trackModal.trip.status === 'ENDED' || busy.closeTrip}
+                  className="rounded-md bg-slate-700 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                >
+                  End Trip
+                </button>
               </div>
             </div>
           </div>
         </div>
       ) : null}
+
     </div>
   );
 }
