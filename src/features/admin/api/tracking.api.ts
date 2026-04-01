@@ -89,7 +89,7 @@ export interface AdminTripRow {
 }
 
 export interface ManualTripAlertPayload {
-  alertKind: "reached" | "delayed";
+  alertKind: "reached" | "delayed" | "current_position";
   phoneOverride?: string;
 }
 
@@ -248,6 +248,27 @@ export async function sendManualTripAlert(
     return {
       success: false,
       message: getErrorMessage(error, "Failed to send manual trip alert"),
+    };
+  }
+}
+
+export async function sendCurrentPositionAlertsForActiveTrips(): Promise<
+  AdminTrackingApiResponse<{ processed?: number; sent?: number }>
+> {
+  try {
+    const res = await axios.post<{ processed?: number; sent?: number }>(
+      `${API_BASE_URL}/trucks/track/alerts/current-position/send-active`,
+      {},
+      { headers: getAuthHeaders() }
+    );
+    return { success: true, data: res.data };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(
+        error,
+        "Failed to send current-position alerts for active trips"
+      ),
     };
   }
 }

@@ -11,6 +11,7 @@ import {
   closeTrip,
   getTruckTracking,
   listTrips,
+  sendCurrentPositionAlertsForActiveTrips,
   sendManualTripAlert,
 } from '@/features/admin/api/tracking.api';
 
@@ -79,6 +80,7 @@ export default function AdminTripsPage() {
     closeTrip: false,
     track: false,
     manualAlert: false,
+    sendAllPositions: false,
   });
 
   useEffect(() => {
@@ -220,7 +222,7 @@ export default function AdminTripsPage() {
 
   const handleManualAlert = async (
     trip: AdminTripRow,
-    alertKind: 'reached' | 'delayed'
+    alertKind: 'reached' | 'delayed' | 'current_position'
   ) => {
     const phoneOverride = phoneOverrides[trip.id]?.trim();
     setBusyFlag('manualAlert', true);
@@ -239,7 +241,13 @@ export default function AdminTripsPage() {
         );
       }
       toast.success(
-        `${alertKind === 'reached' ? 'Reached' : 'Delayed'} alert sent successfully.`
+        `${
+          alertKind === 'reached'
+            ? 'Reached'
+            : alertKind === 'delayed'
+            ? 'Delayed'
+            : 'Current position'
+        } alert sent successfully.`
       );
       await fetchTrips();
       if (phoneOverride) {
@@ -250,6 +258,22 @@ export default function AdminTripsPage() {
       }
     }
     setBusyFlag('manualAlert', false);
+  };
+
+  const handleSendAllCurrentPositionAlerts = async () => {
+    setBusyFlag('sendAllPositions', true);
+    const response = await sendCurrentPositionAlertsForActiveTrips();
+    if (!response.success) {
+      toast.error(
+        response.message || 'Failed to send current-position alerts for active trips.'
+      );
+    } else {
+      const processed = response.data?.processed ?? 0;
+      const sent = response.data?.sent ?? 0;
+      toast.success(`Current position alerts sent for ${sent} of ${processed} active trips.`);
+      await fetchTrips();
+    }
+    setBusyFlag('sendAllPositions', false);
   };
 
   const totalTrips = trips.length;
@@ -361,14 +385,24 @@ export default function AdminTripsPage() {
             Track trips, review alert status, and send WhatsApp updates from one place.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void fetchTrips()}
-          disabled={busy.fetchTrips}
-          className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 disabled:opacity-60"
-        >
-          {busy.fetchTrips ? 'Refreshing...' : 'Refresh Trips'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void handleSendAllCurrentPositionAlerts()}
+            disabled={busy.sendAllPositions}
+            className="rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {busy.sendAllPositions ? 'Sending Positions...' : 'Send Position To All Active'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void fetchTrips()}
+            disabled={busy.fetchTrips}
+            className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 disabled:opacity-60"
+          >
+            {busy.fetchTrips ? 'Refreshing...' : 'Refresh Trips'}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -580,6 +614,14 @@ export default function AdminTripsPage() {
                         </button>
                         <button
                           type="button"
+                          onClick={() => void handleManualAlert(trip, 'current_position')}
+                          disabled={busy.manualAlert}
+                          className="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                        >
+                          Send Position
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => void handleClose(trip)}
                           disabled={trip.status === 'ENDED' || busy.closeTrip}
                           className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-50"
@@ -751,6 +793,14 @@ export default function AdminTripsPage() {
                   className="rounded-md bg-amber-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
                 >
                   Send Delayed
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleManualAlert(trackModal.trip, 'current_position')}
+                  disabled={busy.manualAlert}
+                  className="rounded-md bg-sky-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                >
+                  Send Position
                 </button>
                 <button
                   type="button"
