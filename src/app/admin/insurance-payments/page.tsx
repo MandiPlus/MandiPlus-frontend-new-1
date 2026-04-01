@@ -194,6 +194,7 @@ export default function AdminInsurancePaymentsPage() {
   const exportToExcel = () => {
     const headers = [
       'Invoice Number',
+      'Invoice Date',
       'Buyer / Insured',
       'Premium Amount',
       'Payment Amount',
@@ -203,6 +204,7 @@ export default function AdminInsurancePaymentsPage() {
     ];
     const lines = filteredRows.map((row) => [
       row.invoiceNumber || '',
+      formatDate(row.createdAt),
       row.buyer || row.insuredPerson || '',
       Number(row.premiumAmount || 0),
       Number(row.paymentAmount || 0),
@@ -422,6 +424,9 @@ export default function AdminInsurancePaymentsPage() {
                     Invoice Number
                   </th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                    Invoice Date
+                  </th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700">
                     Buyer / Insured
                   </th>
                   <th className="px-4 py-3 text-right font-semibold text-gray-700">
@@ -448,7 +453,7 @@ export default function AdminInsurancePaymentsPage() {
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="px-4 py-6 text-center text-sm text-gray-500"
                     >
                       Loading insurance payments...
@@ -457,7 +462,7 @@ export default function AdminInsurancePaymentsPage() {
                 ) : paginatedRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="px-4 py-6 text-center text-sm text-gray-500"
                     >
                       No records found.
@@ -467,6 +472,9 @@ export default function AdminInsurancePaymentsPage() {
                   paginatedRows.map((row) => (
                     <tr key={row.id}>
                       <td className="px-4 py-3 text-gray-900">{row.invoiceNumber}</td>
+                      <td className="px-4 py-3 text-gray-700">
+                        {formatDate(row.createdAt)}
+                      </td>
                       <td className="px-4 py-3 text-gray-700">
                         {row.buyer || row.insuredPerson || '-'}
                       </td>

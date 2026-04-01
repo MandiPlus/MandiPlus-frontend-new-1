@@ -143,6 +143,7 @@ export interface InsurancePaymentRow {
   id: string;
   invoiceId: string;
   invoiceNumber: string;
+  createdAt: string;
   productName?: string;
   buyer: string;
   insuredPerson: string;
