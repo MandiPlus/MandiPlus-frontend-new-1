@@ -171,7 +171,7 @@ export default function AdminInsurancePaymentsPage() {
   );
 
   const totalPayment = useMemo(
-    () => filteredRows.reduce((sum, row) => sum + Number(row.paymentAmount || 0), 0),
+    () => filteredRows.reduce((sum, row) => sum + getEffectivePaidAmount(row), 0),
     [filteredRows],
   );
   const pageStart = totalRows === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
@@ -195,7 +195,7 @@ export default function AdminInsurancePaymentsPage() {
     const headers = [
       'Invoice Number',
       'Invoice Date',
-      'Buyer / Insured',
+      'Insured Person',
       'Premium Amount',
       'Payment Amount',
       'Balance',
@@ -205,7 +205,7 @@ export default function AdminInsurancePaymentsPage() {
     const lines = filteredRows.map((row) => [
       row.invoiceNumber || '',
       formatDate(row.createdAt),
-      row.buyer || row.insuredPerson || '',
+      row.insuredPerson || row.buyer || '',
       Number(row.premiumAmount || 0),
       Number(row.paymentAmount || 0),
       getEffectiveBalance(row),
@@ -427,7 +427,7 @@ export default function AdminInsurancePaymentsPage() {
                     Invoice Date
                   </th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">
-                    Buyer / Insured
+                    Insured Person
                   </th>
                   <th className="px-4 py-3 text-right font-semibold text-gray-700">
                     Premium
@@ -476,7 +476,7 @@ export default function AdminInsurancePaymentsPage() {
                         {formatDate(row.createdAt)}
                       </td>
                       <td className="px-4 py-3 text-gray-700">
-                        {row.buyer || row.insuredPerson || '-'}
+                        {row.insuredPerson || row.buyer || '-'}
                       </td>
                       <td className="px-4 py-3 text-right text-gray-900">
                         {formatCurrency(Number(row.premiumAmount || 0))}
