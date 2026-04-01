@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { trackVehicle, TrackingData } from '@/features/tracking/api';
 
 // --- Types ---
@@ -15,6 +16,7 @@ interface Message {
 }
 
 const TrackingPage = () => {
+  const searchParams = useSearchParams();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -28,6 +30,7 @@ const TrackingPage = () => {
   ]);
   const [inputValue, setInputValue] = useState<string>('');
   const [locationNames, setLocationNames] = useState<{[key: string]: string}>({});
+  const [prefilledVehicleHandled, setPrefilledVehicleHandled] = useState(false);
 
   // --- Effects ---
   useEffect(() => {
@@ -35,13 +38,16 @@ const TrackingPage = () => {
   }, [messages]);
 
   // --- Handlers ---
-  const handleSendMessage = async (e?: React.FormEvent | React.KeyboardEvent) => {
-    if (e) e.preventDefault();
-    if (!inputValue.trim() || isLoading) return;
+  const submitTrackingLookup = async (
+    vehicleNumRaw: string,
+    options?: { preserveInput?: boolean },
+  ) => {
+    const vehicleNum = vehicleNumRaw.trim().toLowerCase();
+    if (!vehicleNum || isLoading) return;
 
-    // always lowercase vehicle number
-    const vehicleNum = inputValue.trim().toLowerCase();
-    setInputValue('');
+    if (!options?.preserveInput) {
+      setInputValue('');
+    }
     setIsLoading(true);
 
     setMessages(prev => [
@@ -183,6 +189,24 @@ const TrackingPage = () => {
       setIsLoading(false);
     }
   };
+
+  const handleSendMessage = async (e?: React.FormEvent | React.KeyboardEvent) => {
+    if (e) e.preventDefault();
+    if (!inputValue.trim() || isLoading) return;
+    await submitTrackingLookup(inputValue);
+  };
+
+  useEffect(() => {
+    const vehicle =
+      searchParams.get('vehicle') ||
+      searchParams.get('v') ||
+      searchParams.get('truck') ||
+      '';
+    if (!vehicle || prefilledVehicleHandled || isLoading) return;
+    setInputValue(vehicle.toUpperCase());
+    setPrefilledVehicleHandled(true);
+    void submitTrackingLookup(vehicle, { preserveInput: true });
+  }, [searchParams, prefilledVehicleHandled, isLoading]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
