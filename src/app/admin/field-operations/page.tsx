@@ -43,37 +43,31 @@ const tabs = [
 const statMeta = [
   {
     label: 'Total leads',
-    badge: 'Lead pipeline',
     accent: 'from-[#fff7ed] via-white to-white',
     valueClass: 'text-[#c2410c]',
   },
   {
     label: 'Pending contacts',
-    badge: 'Action needed',
     accent: 'from-[#fef3c7] via-white to-white',
     valueClass: 'text-[#a16207]',
   },
   {
     label: 'Scheduled appointments',
-    badge: 'Calendar flow',
     accent: 'from-[#eff6ff] via-white to-white',
     valueClass: 'text-[#1d4ed8]',
   },
   {
     label: 'Completed meetings',
-    badge: 'Done',
     accent: 'from-[#ecfdf5] via-white to-white',
     valueClass: 'text-[#047857]',
   },
   {
     label: "Today's meetings",
-    badge: 'Today',
     accent: 'from-[#eef2ff] via-white to-white',
     valueClass: 'text-[#5b21b6]',
   },
   {
     label: "Today's leads",
-    badge: 'Fresh entries',
     accent: 'from-[#fff1f2] via-white to-white',
     valueClass: 'text-[#be123c]',
   },
@@ -89,6 +83,14 @@ function isToday(value: string) {
     date.getMonth() === now.getMonth() &&
     date.getFullYear() === now.getFullYear()
   );
+}
+
+function formatStatusLabel(status: string) {
+  return status.replaceAll('_', ' ').toUpperCase();
+}
+
+function normalizeStatusValue(status: string) {
+  return status.trim().toLowerCase().replaceAll(' ', '_');
 }
 
 function sectionShell(children: React.ReactNode) {
@@ -272,10 +274,7 @@ export default function AdminFieldOperationsPage() {
           >
             <div className="absolute inset-y-0 right-0 w-24 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.95),transparent_70%)] opacity-70" />
             <div className="relative">
-              <div className="inline-flex rounded-full border border-white/80 bg-white/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                {statMeta[index].badge}
-              </div>
-              <p className="mt-4 text-sm font-medium text-slate-500">
+              <p className="text-sm font-medium text-slate-500">
                 {statMeta[index].label}
               </p>
               <p
@@ -289,22 +288,6 @@ export default function AdminFieldOperationsPage() {
       </section>
 
       <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-[linear-gradient(180deg,#ffffff_0%,#fcfcfd_100%)] p-4 shadow-[0_26px_65px_-34px_rgba(15,23,42,0.2)] ring-1 ring-slate-200/70 sm:p-5">
-        <div className="mb-5 rounded-[1.6rem] border border-slate-200/80 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_58%,#fff7ed_100%)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#b45309]">
-                Field workflow
-              </p>
-              <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
-                Operations control
-              </h2>
-            </div>
-            <div className="rounded-full border border-amber-200 bg-white/90 px-3 py-1.5 text-xs font-medium text-slate-600">
-              Live admin workspace
-            </div>
-          </div>
-        </div>
-
         <div className="flex gap-2 overflow-x-auto pb-1">
           {tabs.map((tab) => {
             const active = activeTab === tab.key;
@@ -335,11 +318,11 @@ export default function AdminFieldOperationsPage() {
                   </p>
                   <div className="mt-5 space-y-4">
                     {leads.map((lead) => (
-                      <div
-                        key={lead.id}
-                        className="rounded-[1.5rem] border border-slate-200/90 bg-white p-4 shadow-[0_14px_36px_-28px_rgba(15,23,42,0.18)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_40px_-28px_rgba(15,23,42,0.24)]"
-                      >
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div
+                      key={lead.id}
+                      className="rounded-[1.5rem] border border-slate-200/90 bg-white p-4 shadow-[0_14px_36px_-28px_rgba(15,23,42,0.18)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_40px_-28px_rgba(15,23,42,0.24)]"
+                    >
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div>
                             <p className="text-base font-semibold text-slate-900">
                               {lead.businessName}
@@ -355,19 +338,27 @@ export default function AdminFieldOperationsPage() {
                             </p>
                           </div>
                           <div className="w-full lg:w-56">
-                            <select
-                              value={lead.currentStatus}
-                              onChange={(e) =>
-                                handleStatusChange(lead.id, e.target.value)
-                              }
-                              className="w-full rounded-2xl border border-slate-300 bg-slate-50/70 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
-                            >
-                              {leadStatuses.map((status) => (
-                                <option key={status} value={status}>
-                                  {status.replaceAll('_', ' ')}
-                                </option>
-                              ))}
-                            </select>
+                            <div className="rounded-[1.25rem] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+                              <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                                Status
+                              </p>
+                              <select
+                                value={lead.currentStatus}
+                                onChange={(e) =>
+                                  handleStatusChange(
+                                    lead.id,
+                                    normalizeStatusValue(e.target.value),
+                                  )
+                                }
+                                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-slate-800 outline-none transition focus:border-slate-900"
+                              >
+                                {leadStatuses.map((status) => (
+                                  <option key={status} value={status}>
+                                    {formatStatusLabel(status)}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                           </div>
                         </div>
                       </div>
