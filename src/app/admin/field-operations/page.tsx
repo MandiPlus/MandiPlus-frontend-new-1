@@ -16,6 +16,7 @@ import {
   getFieldAdminOverview,
   getFieldAdminTeamMembers,
   getUsersForFieldOperations,
+  sendFieldAppointmentAlert,
   upsertFieldAdminTeamMember,
   updateFieldLeadStatus,
 } from '@/features/field/admin-api';
@@ -112,6 +113,7 @@ export default function AdminFieldOperationsPage() {
   const [teamMembers, setTeamMembers] = useState<AdminFieldTeamMember[]>([]);
   const [users, setUsers] = useState<AdminFieldUser[]>([]);
   const [activeTab, setActiveTab] = useState<TabKey>('leads');
+  const [sendingAlertId, setSendingAlertId] = useState('');
   const [teamForm, setTeamForm] = useState({
     userId: '',
     role: 'MEETING_TEAM',
@@ -171,10 +173,10 @@ export default function AdminFieldOperationsPage() {
       setAppointments(appointmentsRes);
       setTeamMembers(teamRes);
       setUsers(usersRes);
-    } catch (error: unknown) {
+    } catch (loadError: unknown) {
       setError(
-        axios.isAxiosError(error)
-          ? error.response?.data?.message ||
+        axios.isAxiosError(loadError)
+          ? loadError.response?.data?.message ||
               'Failed to load field operations module'
           : 'Failed to load field operations module',
       );
@@ -196,10 +198,10 @@ export default function AdminFieldOperationsPage() {
     try {
       await updateFieldLeadStatus(leadId, status);
       await loadAll();
-    } catch (error: unknown) {
+    } catch (updateError: unknown) {
       setError(
-        axios.isAxiosError(error)
-          ? error.response?.data?.message || 'Failed to update lead status'
+        axios.isAxiosError(updateError)
+          ? updateError.response?.data?.message || 'Failed to update lead status'
           : 'Failed to update lead status',
       );
     }
@@ -215,10 +217,10 @@ export default function AdminFieldOperationsPage() {
       });
       setTeamForm({ userId: '', role: 'MEETING_TEAM', isActive: true });
       await loadAll();
-    } catch (error: unknown) {
+    } catch (teamError: unknown) {
       setError(
-        axios.isAxiosError(error)
-          ? error.response?.data?.message || 'Failed to save team member'
+        axios.isAxiosError(teamError)
+          ? teamError.response?.data?.message || 'Failed to save team member'
           : 'Failed to save team member',
       );
     }
@@ -241,12 +243,30 @@ export default function AdminFieldOperationsPage() {
         notes: '',
       });
       await loadAll();
-    } catch (error: unknown) {
+    } catch (appointmentError: unknown) {
       setError(
-        axios.isAxiosError(error)
-          ? error.response?.data?.message || 'Failed to create appointment'
+        axios.isAxiosError(appointmentError)
+          ? appointmentError.response?.data?.message ||
+              'Failed to create appointment'
           : 'Failed to create appointment',
       );
+    }
+  };
+
+  const handleSendAppointmentAlert = async (appointmentId: string) => {
+    try {
+      setSendingAlertId(appointmentId);
+      setError('');
+      await sendFieldAppointmentAlert(appointmentId);
+      await loadAll();
+    } catch (alertError: unknown) {
+      setError(
+        axios.isAxiosError(alertError)
+          ? alertError.response?.data?.message || 'Failed to send WhatsApp alert'
+          : 'Failed to send WhatsApp alert',
+      );
+    } finally {
+      setSendingAlertId('');
     }
   };
 
@@ -318,11 +338,11 @@ export default function AdminFieldOperationsPage() {
                   </p>
                   <div className="mt-5 space-y-4">
                     {leads.map((lead) => (
-                    <div
-                      key={lead.id}
-                      className="rounded-[1.5rem] border border-slate-200/90 bg-white p-4 shadow-[0_14px_36px_-28px_rgba(15,23,42,0.18)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_40px_-28px_rgba(15,23,42,0.24)]"
-                    >
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div
+                        key={lead.id}
+                        className="rounded-[1.5rem] border border-slate-200/90 bg-white p-4 shadow-[0_14px_36px_-28px_rgba(15,23,42,0.18)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_40px_-28px_rgba(15,23,42,0.24)]"
+                      >
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div>
                             <p className="text-base font-semibold text-slate-900">
                               {lead.businessName}
@@ -344,10 +364,10 @@ export default function AdminFieldOperationsPage() {
                               </p>
                               <select
                                 value={lead.currentStatus}
-                                onChange={(e) =>
+                                onChange={(event) =>
                                   handleStatusChange(
                                     lead.id,
-                                    normalizeStatusValue(e.target.value),
+                                    normalizeStatusValue(event.target.value),
                                   )
                                 }
                                 className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold uppercase tracking-[0.08em] text-slate-800 outline-none transition focus:border-slate-900"
@@ -371,34 +391,106 @@ export default function AdminFieldOperationsPage() {
           {activeTab === 'appointments'
             ? sectionShell(
                 <>
-                  <h2 className="text-xl font-semibold text-slate-900">
-                    Appointments
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    View scheduled meetings and assignment status.
-                  </p>
-                  <div className="mt-4 space-y-3">
-                    {appointments.map((appointment) => (
-                      <div
-                        key={appointment.id}
-                        className="rounded-[1.5rem] border border-slate-200/90 bg-white px-4 py-4 shadow-[0_14px_36px_-28px_rgba(15,23,42,0.18)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_40px_-28px_rgba(15,23,42,0.24)]"
-                      >
-                        <p className="font-semibold text-slate-900">
-                          {appointment.lead?.businessName}
-                        </p>
-                        <p className="mt-1 text-sm text-slate-600">
-                          {appointment.assignedMeetingUser?.name || 'Unassigned'} •{' '}
-                          {new Date(appointment.scheduledAt).toLocaleString(
-                            'en-IN',
-                          )}
-                        </p>
-                        {appointment.notes ? (
-                          <p className="mt-2 text-sm text-slate-500">
-                            {appointment.notes}
-                          </p>
-                        ) : null}
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <h2 className="text-xl font-semibold text-slate-900">
+                        Appointments
+                      </h2>
+                      <p className="mt-1 text-sm text-slate-500">
+                        View scheduled meetings and manually send WhatsApp alerts.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 overflow-hidden rounded-[1.6rem] border border-slate-200/90 bg-white shadow-[0_18px_38px_-28px_rgba(15,23,42,0.18)]">
+                    {appointments.length ? (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full border-separate border-spacing-0">
+                          <thead>
+                            <tr className="bg-[linear-gradient(180deg,#fffaf0_0%,#ffffff_100%)] text-left">
+                              <th className="px-4 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                Lead
+                              </th>
+                              <th className="px-4 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                Meeting team
+                              </th>
+                              <th className="px-4 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                Schedule
+                              </th>
+                              <th className="px-4 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                Status
+                              </th>
+                              <th className="px-4 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                Notes
+                              </th>
+                              <th className="px-4 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                                Alert
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {appointments.map((appointment) => (
+                              <tr
+                                key={appointment.id}
+                                className="align-top transition hover:bg-slate-50/60"
+                              >
+                                <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
+                                  <p className="font-semibold text-slate-900">
+                                    {appointment.lead?.businessName || '-'}
+                                  </p>
+                                  <p className="mt-1 text-slate-500">
+                                    {appointment.lead?.customerName || '-'}
+                                  </p>
+                                  <p className="mt-1 text-slate-500">
+                                    {appointment.lead?.mobileNumber || '-'}
+                                  </p>
+                                </td>
+                                <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
+                                  <p className="font-medium text-slate-900">
+                                    {appointment.assignedMeetingUser?.name || 'Unassigned'}
+                                  </p>
+                                  <p className="mt-1 text-slate-500">
+                                    {appointment.assignedMeetingUser?.mobileNumber || '-'}
+                                  </p>
+                                </td>
+                                <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
+                                  {new Date(appointment.scheduledAt).toLocaleString('en-IN')}
+                                </td>
+                                <td className="border-t border-slate-200/80 px-4 py-4 text-sm">
+                                  <span className="inline-flex rounded-full bg-[#eef2ff] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4338ca]">
+                                    {formatStatusLabel(appointment.status || 'scheduled')}
+                                  </span>
+                                </td>
+                                <td className="max-w-[260px] border-t border-slate-200/80 px-4 py-4 text-sm text-slate-600">
+                                  {appointment.notes || '-'}
+                                </td>
+                                <td className="border-t border-slate-200/80 px-4 py-4">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleSendAppointmentAlert(appointment.id)
+                                    }
+                                    disabled={
+                                      !appointment.assignedMeetingUserId ||
+                                      sendingAlertId === appointment.id
+                                    }
+                                    className="inline-flex min-w-[120px] justify-center rounded-xl border border-[#f59e0b]/30 bg-[linear-gradient(135deg,#fff7ed_0%,#ffffff_100%)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#b45309] transition hover:border-[#f59e0b] hover:bg-[#fff7ed] disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {sendingAlertId === appointment.id
+                                      ? 'Sending...'
+                                      : 'Send alert'}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
-                    ))}
+                    ) : (
+                      <div className="px-4 py-10 text-center text-sm text-slate-500">
+                        No meetings scheduled yet.
+                      </div>
+                    )}
                   </div>
                 </>,
               )
@@ -421,10 +513,10 @@ export default function AdminFieldOperationsPage() {
                       <select
                         required
                         value={appointmentForm.leadId}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           setAppointmentForm((prev) => ({
                             ...prev,
-                            leadId: e.target.value,
+                            leadId: event.target.value,
                           }))
                         }
                         className="w-full rounded-2xl border border-slate-300 bg-slate-50/70 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
@@ -445,10 +537,10 @@ export default function AdminFieldOperationsPage() {
                       <select
                         required
                         value={appointmentForm.assignedMeetingUserId}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           setAppointmentForm((prev) => ({
                             ...prev,
-                            assignedMeetingUserId: e.target.value,
+                            assignedMeetingUserId: event.target.value,
                           }))
                         }
                         className="w-full rounded-2xl border border-slate-300 bg-slate-50/70 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
@@ -470,10 +562,10 @@ export default function AdminFieldOperationsPage() {
                         type="datetime-local"
                         required
                         value={appointmentForm.scheduledAt}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           setAppointmentForm((prev) => ({
                             ...prev,
-                            scheduledAt: e.target.value,
+                            scheduledAt: event.target.value,
                           }))
                         }
                         className="w-full rounded-2xl border border-slate-300 bg-slate-50/70 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
@@ -484,10 +576,10 @@ export default function AdminFieldOperationsPage() {
                       rows={3}
                       placeholder="Notes for the meeting team"
                       value={appointmentForm.notes}
-                      onChange={(e) =>
+                      onChange={(event) =>
                         setAppointmentForm((prev) => ({
                           ...prev,
-                          notes: e.target.value,
+                          notes: event.target.value,
                         }))
                       }
                       className="rounded-2xl border border-slate-300 bg-slate-50/70 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
@@ -519,10 +611,10 @@ export default function AdminFieldOperationsPage() {
                       <select
                         required
                         value={teamForm.userId}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           setTeamForm((prev) => ({
                             ...prev,
-                            userId: e.target.value,
+                            userId: event.target.value,
                           }))
                         }
                         className="rounded-2xl border border-slate-300 bg-slate-50/70 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
@@ -537,10 +629,10 @@ export default function AdminFieldOperationsPage() {
 
                       <select
                         value={teamForm.role}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           setTeamForm((prev) => ({
                             ...prev,
-                            role: e.target.value,
+                            role: event.target.value,
                           }))
                         }
                         className="rounded-2xl border border-slate-300 bg-slate-50/70 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
@@ -553,10 +645,10 @@ export default function AdminFieldOperationsPage() {
                         <input
                           type="checkbox"
                           checked={teamForm.isActive}
-                          onChange={(e) =>
+                          onChange={(event) =>
                             setTeamForm((prev) => ({
                               ...prev,
-                              isActive: e.target.checked,
+                              isActive: event.target.checked,
                             }))
                           }
                         />

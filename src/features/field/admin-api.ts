@@ -37,13 +37,18 @@ export interface AdminFieldLead {
 export interface AdminFieldAppointment {
   id: string;
   scheduledAt: string;
+  status?: string;
   notes?: string | null;
   assignedMeetingUserId?: string | null;
   lead?: {
+    customerName?: string;
+    businessAddress?: string;
+    mobileNumber?: string;
     businessName?: string;
   };
   assignedMeetingUser?: {
     name?: string;
+    mobileNumber?: string;
   } | null;
 }
 
@@ -111,6 +116,20 @@ export async function createFieldAppointment(payload: {
   const response = await axios.post(
     `${API_BASE_URL}/field-operations/admin/appointments`,
     payload,
+    {
+      headers: {
+        ...getAdminHeaders(),
+        'Content-Type': 'application/json',
+      },
+    },
+  );
+  return response.data;
+}
+
+export async function sendFieldAppointmentAlert(id: string) {
+  const response = await axios.post(
+    `${API_BASE_URL}/field-operations/admin/appointments/${id}/send-alert`,
+    {},
     {
       headers: {
         ...getAdminHeaders(),
