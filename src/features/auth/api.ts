@@ -3,6 +3,8 @@ import { setCookie, deleteCookie } from 'cookies-next';
 
 // Ensure this matches your backend port
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
+const ACCESS_TOKEN_KEY = "accessToken";
+const TAB_ACCESS_TOKEN_KEY = "tabAccessToken";
 
 // --- TYPES ---
 
@@ -47,16 +49,34 @@ export interface AgentRegisterPayload {
 
 // --- HELPER ---
 
-export const setAuthToken = (token: string | null): void => {
+export const getStoredAuthToken = (): string | null => {
+    if (typeof window === "undefined") return null;
+    return (
+        sessionStorage.getItem(TAB_ACCESS_TOKEN_KEY) ||
+        localStorage.getItem(ACCESS_TOKEN_KEY) ||
+        localStorage.getItem("token")
+    );
+};
+
+export const setAuthToken = (
+    token: string | null,
+    options?: { tabOnly?: boolean },
+): void => {
     if (token) {
         axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
         if (typeof window !== 'undefined') {
-            localStorage.setItem('accessToken', token);
+            if (options?.tabOnly) {
+                sessionStorage.setItem(TAB_ACCESS_TOKEN_KEY, token);
+            } else {
+                localStorage.setItem(ACCESS_TOKEN_KEY, token);
+                sessionStorage.removeItem(TAB_ACCESS_TOKEN_KEY);
+            }
         }
     } else {
         delete axios.defaults.headers.common["Authorization"];
         if (typeof window !== 'undefined') {
-            localStorage.removeItem('accessToken');
+            localStorage.removeItem(ACCESS_TOKEN_KEY);
+            sessionStorage.removeItem(TAB_ACCESS_TOKEN_KEY);
         }
     }
 };
@@ -155,7 +175,7 @@ export const agentRegister = async (data: AgentRegisterPayload): Promise<{ acces
 
 export const getCurrentUser = async (): Promise<any | null> => {
     try {
-        const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+        const token = getStoredAuthToken();
         if (!token) return null;
 
         // Decode the token only to determine which profile to fetch.
@@ -165,8 +185,9 @@ export const getCurrentUser = async (): Promise<any | null> => {
         const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
         const payload = JSON.parse(window.atob(base64));
         const userId = payload.sub || payload.userId || payload.id;
+        const isAdminToken = payload.role === "admin" || userId === "admin";
 
-        if (!userId) return null;
+        if (!userId || isAdminToken) return null;
 
         // Always fetch the current user from API instead of trusting cached profile data.
         const response = await axios.get(`${API_BASE_URL}/users/${userId}`, {
@@ -221,7 +242,10 @@ export const refreshAccessToken = async (): Promise<string | null> => {
 
         const token = response.data?.accessToken || null;
         if (token) {
-            setAuthToken(token);
+            const isTabScoped =
+                typeof window !== "undefined" &&
+                Boolean(sessionStorage.getItem(TAB_ACCESS_TOKEN_KEY));
+            setAuthToken(token, isTabScoped ? { tabOnly: true } : undefined);
             return token;
         }
         return null;

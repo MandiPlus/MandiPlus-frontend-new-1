@@ -78,6 +78,19 @@ export interface AdminTripRow {
     id: string;
     invoiceNumber?: string;
   } | null;
+  recipientPhone?: string | null;
+  alerts?: {
+    reachedSentAt?: string | null;
+    delayedSentAt?: string | null;
+    delayedReason?: string | null;
+    lastEvaluatedAt?: string | null;
+    lastEta?: string | null;
+  } | null;
+}
+
+export interface ManualTripAlertPayload {
+  alertKind: "reached" | "delayed" | "current_position";
+  phoneOverride?: string;
 }
 
 function getAuthHeaders() {
@@ -216,6 +229,46 @@ export async function closeTrip(
     return {
       success: false,
       message: getErrorMessage(error, "Failed to close trip"),
+    };
+  }
+}
+
+export async function sendManualTripAlert(
+  tripId: string,
+  payload: ManualTripAlertPayload
+): Promise<AdminTrackingApiResponse<GenericPayload>> {
+  try {
+    const res = await axios.post(
+      `${API_BASE_URL}/trucks/track/alerts/trip/${encodeURIComponent(tripId)}/send`,
+      payload,
+      { headers: getAuthHeaders() }
+    );
+    return { success: true, data: res.data };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to send manual trip alert"),
+    };
+  }
+}
+
+export async function sendCurrentPositionAlertsForActiveTrips(): Promise<
+  AdminTrackingApiResponse<{ processed?: number; sent?: number }>
+> {
+  try {
+    const res = await axios.post<{ processed?: number; sent?: number }>(
+      `${API_BASE_URL}/trucks/track/alerts/current-position/send-active`,
+      {},
+      { headers: getAuthHeaders() }
+    );
+    return { success: true, data: res.data };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(
+        error,
+        "Failed to send current-position alerts for active trips"
+      ),
     };
   }
 }

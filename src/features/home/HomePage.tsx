@@ -23,6 +23,7 @@ import {
 import {
   getMyWalletSummary,
   WalletSummary,
+  getCustomerDashboardInvoices,
 } from "../customer/api";
 import 'cropperjs/dist/cropper.css';
 import Cropper, { ReactCropperElement } from "react-cropper";
@@ -158,7 +159,10 @@ const HomePage = () => {
   const fetchInvoices = async () => {
     setLoadingInvoices(true);
     try {
-      const data = await getMyInsuranceForms();
+      const data =
+        user?.identity === "CUSTOMER"
+          ? await getCustomerDashboardInvoices()
+          : await getMyInsuranceForms();
       setInvoices(data);
     } catch (err: any) {
       console.error('Failed to fetch invoices:', err);
@@ -445,7 +449,10 @@ const HomePage = () => {
       await updateInvoice(selectedInvoice.id, payload);
 
       // 4. Final Wait & Refresh
-      const fresh = await getMyInsuranceForms();
+      const fresh =
+        user?.identity === "CUSTOMER"
+          ? await getCustomerDashboardInvoices()
+          : await getMyInsuranceForms();
       setInvoices(fresh);
 
       alert('Invoice updated successfully!');
@@ -476,7 +483,7 @@ const HomePage = () => {
   }
 
   return (
-    <ProtectedRoute allowedIdentities={["BUYER", "SUPPLIER", "CUSTOMER", "INTERNAL_TEAM"]}>
+    <ProtectedRoute allowedIdentities={["BUYER", "SUPPLIER", "CUSTOMER", "INTERNAL_TEAM", "FIELD_AGENT"]}>
       <div className="min-h-screen bg-[#e0d7fc] pb-28">
 
         {/* --- NEW: Cropper Overlay --- */}

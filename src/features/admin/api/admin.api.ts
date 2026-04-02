@@ -77,6 +77,18 @@ interface LoginResponse {
   token: string;
 }
 
+export interface AdminImpersonationResponse {
+  token: string;
+  user: {
+    id: string;
+    name?: string;
+    mobileNumber?: string;
+    identity?: string | null;
+    tenantId?: string;
+    impersonation?: boolean;
+  };
+}
+
 export interface RegenerateInvoicePayload {
   invoiceId: string;
   invoiceType?: string;
@@ -102,6 +114,7 @@ export interface RegenerateInvoicePayload {
 export interface InvoiceFilterParams {
   invoiceType?: string;
   invoiceNumber?: string;
+  vehicleNumber?: string;
   startDate?: string;
   endDate?: string;
   supplierName?: string;
@@ -130,6 +143,8 @@ export interface InsurancePaymentRow {
   id: string;
   invoiceId: string;
   invoiceNumber: string;
+  createdAt: string;
+  productName?: string;
   buyer: string;
   insuredPerson: string;
   supplier?: string;
@@ -140,6 +155,20 @@ export interface InsurancePaymentRow {
   isPaymentRequired: boolean;
   paymentCompletedAt?: string | null;
   remarks?: string | null;
+  updatedAt: string;
+}
+
+export interface ArrivalReportRow {
+  id: string;
+  reportDate: string;
+  invoiceCount: number;
+  excelUrl?: string | null;
+  pdfUrl?: string | null;
+  whatsappNumber?: string | null;
+  whatsappSent: boolean;
+  whatsappSentAt?: string | null;
+  generationError?: string | null;
+  createdAt: string;
   updatedAt: string;
 }
 
@@ -343,6 +372,24 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || "Login failed",
+        error: error.message,
+      };
+    }
+  };
+
+  public impersonateUser = async (
+    userId: string,
+  ): Promise<ApiResponse<AdminImpersonationResponse>> => {
+    try {
+      const response = await this.client.post<
+        ApiResponse<AdminImpersonationResponse>
+      >(`/auth/admin/impersonate/${userId}`);
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to impersonate user",
         error: error.message,
       };
     }
@@ -687,6 +734,54 @@ class AdminApi {
     }
   };
 
+  public getArrivalReports = async (): Promise<ApiResponse<ArrivalReportRow[]>> => {
+    try {
+      const response = await this.client.get<ArrivalReportRow[] | ApiResponse<ArrivalReportRow[]>>(
+        "/invoices/admin/arrival-reports",
+      );
+      if (Array.isArray(response.data)) {
+        return {
+          success: true,
+          data: response.data,
+        };
+      }
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to fetch arrival reports",
+        error: error.message,
+      };
+    }
+  };
+
+  public runLatestArrivalReport = async (): Promise<ApiResponse<ArrivalReportRow | null>> => {
+    try {
+      const response = await this.client.post<
+        ArrivalReportRow | ApiResponse<ArrivalReportRow | null>
+      >("/invoices/admin/arrival-reports/run-latest");
+      if (
+        response.data &&
+        typeof response.data === "object" &&
+        "success" in response.data
+      ) {
+        return response.data as ApiResponse<ArrivalReportRow | null>;
+      }
+      return {
+        success: true,
+        data: (response.data as ArrivalReportRow) || null,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to run latest arrival report",
+        error: error.message,
+      };
+    }
+  };
+
   uploadWeighmentSlips = async (
     invoiceId: string,
     files: File[],
@@ -926,10 +1021,31 @@ class AdminApi {
     }
   };
 
+  public updateInvoicePhone = async (
+    invoiceId: string,
+    insuredPartyPhone: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.patch<ApiResponse<any>>(
+        `/invoices/${invoiceId}`,
+        { insuredPartyPhone },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to update invoice phone",
+        error: error.message,
+      };
+    }
+  };
+
   public getInsurancePayments = async (filters?: {
     fromDate?: string;
     toDate?: string;
     paymentStatus?: string;
+    productName?: string;
     page?: number;
     limit?: number;
   }): Promise<ApiResponse<InsurancePaymentRow[]>> => {

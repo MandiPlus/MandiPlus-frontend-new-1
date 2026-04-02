@@ -84,6 +84,7 @@ export default function AdminInsurancePaymentsPage() {
   const [fromDateInputType, setFromDateInputType] = useState<'text' | 'date'>('text');
   const [toDateInputType, setToDateInputType] = useState<'text' | 'date'>('text');
   const [paymentStatus, setPaymentStatus] = useState('');
+  const [productName, setProductName] = useState('');
   const [nameQuery, setNameQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [jumpPageInput, setJumpPageInput] = useState('1');
@@ -103,6 +104,7 @@ export default function AdminInsurancePaymentsPage() {
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
+        productName: productName || undefined,
         page,
         limit: FETCH_LIMIT,
       });
@@ -118,7 +120,7 @@ export default function AdminInsurancePaymentsPage() {
     } while (page <= pages);
 
     return collected;
-  }, [fromDate, toDate, paymentStatus]);
+  }, [fromDate, toDate, paymentStatus, productName]);
 
   const fetchRows = useCallback(async () => {
     try {
@@ -151,6 +153,11 @@ export default function AdminInsurancePaymentsPage() {
     });
   }, [rows, nameQuery]);
 
+  const productOptions = useMemo(() => {
+    return [...new Set(rows.map((row) => String(row.productName || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
   const totalRows = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / ITEMS_PER_PAGE));
   const paginatedRows = useMemo(() => {
@@ -164,7 +171,7 @@ export default function AdminInsurancePaymentsPage() {
   );
 
   const totalPayment = useMemo(
-    () => filteredRows.reduce((sum, row) => sum + Number(row.paymentAmount || 0), 0),
+    () => filteredRows.reduce((sum, row) => sum + getEffectivePaidAmount(row), 0),
     [filteredRows],
   );
   const pageStart = totalRows === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
@@ -187,7 +194,8 @@ export default function AdminInsurancePaymentsPage() {
   const exportToExcel = () => {
     const headers = [
       'Invoice Number',
-      'Buyer / Insured',
+      'Invoice Date',
+      'Insured Person',
       'Premium Amount',
       'Payment Amount',
       'Balance',
@@ -196,7 +204,8 @@ export default function AdminInsurancePaymentsPage() {
     ];
     const lines = filteredRows.map((row) => [
       row.invoiceNumber || '',
-      row.buyer || row.insuredPerson || '',
+      formatDate(row.createdAt),
+      row.insuredPerson || row.buyer || '',
       Number(row.premiumAmount || 0),
       Number(row.paymentAmount || 0),
       getEffectiveBalance(row),
@@ -285,7 +294,7 @@ export default function AdminInsurancePaymentsPage() {
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-7">
             <input
               type={fromDateInputType}
               placeholder="DD-MM-YYYY"
@@ -329,6 +338,21 @@ export default function AdminInsurancePaymentsPage() {
                 </option>
               ))}
             </select>
+            <select
+              value={productName}
+              onChange={(e) => {
+                setProductName(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">All Products</option>
+              {productOptions.map((product) => (
+                <option key={product} value={product}>
+                  {product}
+                </option>
+              ))}
+            </select>
             <input
               type="text"
               placeholder="Search by name / invoice"
@@ -351,6 +375,7 @@ export default function AdminInsurancePaymentsPage() {
                 setFromDateInputType('text');
                 setToDateInputType('text');
                 setPaymentStatus('');
+                setProductName('');
                 setNameQuery('');
                 setCurrentPage(1);
               }}
@@ -399,7 +424,10 @@ export default function AdminInsurancePaymentsPage() {
                     Invoice Number
                   </th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">
-                    Buyer / Insured
+                    Invoice Date
+                  </th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                    Insured Person
                   </th>
                   <th className="px-4 py-3 text-right font-semibold text-gray-700">
                     Premium
@@ -425,7 +453,7 @@ export default function AdminInsurancePaymentsPage() {
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="px-4 py-6 text-center text-sm text-gray-500"
                     >
                       Loading insurance payments...
@@ -434,7 +462,7 @@ export default function AdminInsurancePaymentsPage() {
                 ) : paginatedRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="px-4 py-6 text-center text-sm text-gray-500"
                     >
                       No records found.
@@ -445,7 +473,10 @@ export default function AdminInsurancePaymentsPage() {
                     <tr key={row.id}>
                       <td className="px-4 py-3 text-gray-900">{row.invoiceNumber}</td>
                       <td className="px-4 py-3 text-gray-700">
-                        {row.buyer || row.insuredPerson || '-'}
+                        {formatDate(row.createdAt)}
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">
+                        {row.insuredPerson || row.buyer || '-'}
                       </td>
                       <td className="px-4 py-3 text-right text-gray-900">
                         {formatCurrency(Number(row.premiumAmount || 0))}

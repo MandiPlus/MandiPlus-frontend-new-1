@@ -1,5 +1,6 @@
 // Updated version of api.vehicle-condition.ts
 import axios, { AxiosResponse } from "axios";
+import { getStoredAuthToken } from "@/features/auth/api";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 
@@ -35,7 +36,7 @@ export interface VehicleVerificationResponse {
 export const upsertVehicleCondition = async (
   payload: VehicleConditionPayload
 ): Promise<VehicleConditionPayload> => {
-  const token = localStorage.getItem("token");
+  const token = getStoredAuthToken();
   if (!token) {
     throw new Error("Authentication token not found");
   }
@@ -56,7 +57,7 @@ export const upsertVehicleCondition = async (
 export const verifyVehicleCondition = async (
   vehicleNumber: string
 ): Promise<VehicleVerificationResponse> => {
-  const token = localStorage.getItem("token");
+  const token = getStoredAuthToken();
   if (!token) {
     throw new Error("Authentication token not found");
   }

@@ -51,6 +51,7 @@ export default function UsersPage() {
     const [creditLoadingByUser, setCreditLoadingByUser] = useState<Record<string, boolean>>({});
     const [rebuildLoadingByUser, setRebuildLoadingByUser] = useState<Record<string, boolean>>({});
     const [convertingByUser, setConvertingByUser] = useState<Record<string, boolean>>({});
+    const [impersonatingByUser, setImpersonatingByUser] = useState<Record<string, boolean>>({});
     const [walletLogsOpen, setWalletLogsOpen] = useState(false);
     const [walletLogsLoading, setWalletLogsLoading] = useState(false);
     const [walletLogUser, setWalletLogUser] = useState<User | null>(null);
@@ -310,6 +311,52 @@ export default function UsersPage() {
         }
     };
 
+    const handleImpersonateUser = async (user: User) => {
+        if (!user?.id) return;
+        setImpersonatingByUser((prev) => ({ ...prev, [user.id]: true }));
+        let popup: Window | null = null;
+        try {
+            if (typeof window !== 'undefined') {
+                popup = window.open('', '_blank');
+                if (!popup) {
+                    throw new Error('Popup blocked. Please allow popups and try again.');
+                }
+                popup.document.write('<p style="font-family: sans-serif; padding: 16px;">Opening account...</p>');
+                popup.document.close();
+            }
+
+            const adminToken = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
+            const response = await adminApi.impersonateUser(user.id);
+            if (!response.success || !response.data?.token) {
+                throw new Error(response.message || 'Failed to access this account');
+            }
+
+            if (typeof window !== 'undefined') {
+                if (adminToken) {
+                    localStorage.setItem('impersonationAdminToken', adminToken);
+                }
+                const url =
+                    `/admin/impersonate?token=${encodeURIComponent(response.data.token)}` +
+                    `&userId=${encodeURIComponent(user.id)}` +
+                    `&userName=${encodeURIComponent(user.name || '')}`;
+                if (popup && !popup.closed) {
+                    popup.location.replace(url);
+                } else {
+                    throw new Error('Popup blocked. Please allow popups and try again.');
+                }
+            }
+
+            toast.success(`Opened ${user.name || 'user'} account in new tab`);
+        } catch (err: any) {
+            if (popup && !popup.closed) {
+                popup.close();
+            }
+            toast.error(err?.message || 'Failed to access this account');
+        } finally {
+            setImpersonatingByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex justify-center items-center h-64">
@@ -421,12 +468,15 @@ export default function UsersPage() {
                                                     Update Wallet
                                                 </th>
                                             )}
+                                            <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                Access
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-200 bg-white">
                                         {paginatedUsers.length === 0 ? (
                                             <tr>
-                                                <td colSpan={showWalletColumns ? 6 : 7} className="px-6 py-4 text-center text-sm text-gray-500">
+                                                <td colSpan={showWalletColumns ? 7 : 8} className="px-6 py-4 text-center text-sm text-gray-500">
                                                     No users found
                                                 </td>
                                             </tr>
@@ -572,6 +622,15 @@ export default function UsersPage() {
                                                             )}
                                                         </td>
                                                     )}
+                                                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                                        <button
+                                                            onClick={() => handleImpersonateUser(user)}
+                                                            disabled={impersonatingByUser[user.id]}
+                                                            className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                                                        >
+                                                            {impersonatingByUser[user.id] ? 'Opening...' : 'Access Account'}
+                                                        </button>
+                                                    </td>
                                                 </tr>
                                             ))
                                         )}

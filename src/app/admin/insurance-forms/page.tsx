@@ -241,11 +241,10 @@ export default function InsuranceFormsPage() {
     const [weightmentSlip, setWeightmentSlip] = useState<File | null>(null);
     const cropperRef = useRef<ReactCropperElement>(null);
     const [invoiceDateInputType, setInvoiceDateInputType] = useState<'text' | 'date'>('text');
-    const [startDateInputType, setStartDateInputType] = useState<'text' | 'datetime-local'>('text');
-    const [endDateInputType, setEndDateInputType] = useState<'text' | 'datetime-local'>('text');
     const [filters, setFilters] = useState<InvoiceFilterParams>({
         invoiceType: '',
         invoiceNumber: '',
+        vehicleNumber: '',
         startDate: '',
         endDate: '',
         supplierName: '',
@@ -274,18 +273,17 @@ export default function InsuranceFormsPage() {
                 if (value.length >= 2) activeFilters.invoiceNumber = value;
             }
 
+            if (debouncedFilters.vehicleNumber?.trim()) {
+                const value = debouncedFilters.vehicleNumber.trim();
+                if (value.length >= 2) activeFilters.vehicleNumber = value;
+            }
+
             if (debouncedFilters.startDate) {
-                const parsed = new Date(debouncedFilters.startDate);
-                if (!Number.isNaN(parsed.getTime())) {
-                    activeFilters.startDate = parsed.toISOString();
-                }
+                activeFilters.startDate = debouncedFilters.startDate;
             }
 
             if (debouncedFilters.endDate) {
-                const parsed = new Date(debouncedFilters.endDate);
-                if (!Number.isNaN(parsed.getTime())) {
-                    activeFilters.endDate = parsed.toISOString();
-                }
+                activeFilters.endDate = debouncedFilters.endDate;
             }
 
             if (debouncedFilters.supplierName?.trim()) {
@@ -336,11 +334,15 @@ export default function InsuranceFormsPage() {
             });
 
             const invoiceNumberQuery = debouncedFilters.invoiceNumber?.trim().toLowerCase() || '';
-            const result = invoiceNumberQuery
-                ? merged.filter((inv) =>
-                    String(inv.invoiceNumber || '').toLowerCase().includes(invoiceNumberQuery),
-                )
-                : merged;
+            const vehicleNumberQuery = debouncedFilters.vehicleNumber?.trim().toLowerCase() || '';
+            const result = merged.filter((inv) => {
+                const matchesInvoice = !invoiceNumberQuery
+                    || String(inv.invoiceNumber || '').toLowerCase().includes(invoiceNumberQuery);
+                const matchesVehicle = !vehicleNumberQuery
+                    || String(inv.vehicleNumber || '').toLowerCase().includes(vehicleNumberQuery);
+
+                return matchesInvoice && matchesVehicle;
+            });
 
             setInvoices(result);
 
@@ -546,7 +548,7 @@ export default function InsuranceFormsPage() {
             return;
         }
 
-        const fileUrl = sendPdfInvoice.insurance?.fileUrl;
+        const fileUrl = getInsuranceFileUrl(sendPdfInvoice);
         if (!fileUrl) {
             toast.error('No insurance PDF uploaded for this invoice yet.');
             return;
@@ -564,6 +566,19 @@ export default function InsuranceFormsPage() {
 
             const res = await adminApi.sendInsurancePdfViaBot(fileUrl, phoneNumber);
             if (!res.success) throw new Error(res.message || 'Failed to send insurance PDF');
+
+            const updateRes = await adminApi.updateInvoicePhone(invoiceId, phoneNumber);
+            if (!updateRes.success) {
+                throw new Error(updateRes.message || 'Insurance PDF sent, but failed to save phone number');
+            }
+
+            setInvoices((prev) =>
+                prev.map((invoice) =>
+                    getInvoiceId(invoice) === invoiceId
+                        ? { ...invoice, insuredPartyPhone: phoneNumber }
+                        : invoice
+                )
+            );
 
             toast.update('send-pdf', {
                 render: 'Insurance PDF sent successfully',
@@ -1360,27 +1375,26 @@ export default function InsuranceFormsPage() {
                         />
 
                         <input
-                            type={startDateInputType}
-                            name="startDate"
-                            placeholder="DD-MM-YYYY --:--"
-                            value={filters.startDate}
-                            onFocus={() => setStartDateInputType('datetime-local')}
-                            onBlur={() => {
-                                if (!filters.startDate) setStartDateInputType('text');
-                            }}
+                            type="text"
+                            name="vehicleNumber"
+                            placeholder="Search Vehicle No..."
+                            value={filters.vehicleNumber || ''}
                             onChange={handleFilterChange}
                             className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
                         />
 
                         <input
-                            type={endDateInputType}
+                            type="date"
+                            name="startDate"
+                            value={filters.startDate}
+                            onChange={handleFilterChange}
+                            className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
+                        />
+
+                        <input
+                            type="date"
                             name="endDate"
-                            placeholder="DD-MM-YYYY --:--"
                             value={filters.endDate}
-                            onFocus={() => setEndDateInputType('datetime-local')}
-                            onBlur={() => {
-                                if (!filters.endDate) setEndDateInputType('text');
-                            }}
                             onChange={handleFilterChange}
                             className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
                         />
@@ -1887,20 +1901,6 @@ export default function InsuranceFormsPage() {
                                                                                             <LinkIcon className="w-4 h-4 text-[#25D366]" />
                                                                                         )}
                                                                                         {getPaymentLinkSentLabel(inv) ? 'Resend payment link' : 'Send payment link'}
-                                                                                    </button>
-                                                                                )}
-                                                                            </Menu.Item>
-                                                                        )}
-                                                                        {getInsuranceFileUrl(inv) && (
-                                                                            <Menu.Item>
-                                                                                {({ active }) => (
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        onClick={() => openSendPdfModal(inv)}
-                                                                                        className={`${active ? 'bg-gray-100' : ''} flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700`}
-                                                                                    >
-                                                                                        <FileText className="w-4 h-4 text-blue-600" />
-                                                                                        Send insurance PDF
                                                                                     </button>
                                                                                 )}
                                                                             </Menu.Item>
@@ -2739,14 +2739,15 @@ export default function InsuranceFormsPage() {
                         setSelectedInvoiceForInsurance(null);
                     }}
                     onSuccess={async (updatedInvoice?: any, uploadedFile?: File) => {
+                        const baseInvoice = selectedInvoiceForInsurance;
                         const fileUrl =
                             updatedInvoice?.fileUrl ??
                             updatedInvoice?.data?.fileUrl ??
                             updatedInvoice?.insurance?.fileUrl ??
                             undefined;
-                        const invoiceId = selectedInvoiceForInsurance?.id;
-                        const invoiceKey = selectedInvoiceForInsurance
-                            ? getInvoiceKey(selectedInvoiceForInsurance)
+                        const invoiceId = baseInvoice?.id;
+                        const invoiceKey = baseInvoice
+                            ? getInvoiceKey(baseInvoice)
                             : invoiceId;
 
                         if (invoiceKey && fileUrl) {
@@ -2782,9 +2783,21 @@ export default function InsuranceFormsPage() {
                         setShowInsuranceModal(false);
 
                         // After upload, open the send PDF modal pre-filled
-                        if (selectedInvoiceForInsurance) {
-                            setSendPdfInvoice(selectedInvoiceForInsurance);
-                            setSendPdfPhone(selectedInvoiceForInsurance.insuredPartyPhone || '');
+                        if (baseInvoice) {
+                            const mergedInvoiceForSend: Invoice = {
+                                ...baseInvoice,
+                                ...(updatedInvoice || {}),
+                                insurance: fileUrl
+                                    ? {
+                                        fileUrl,
+                                        uploadedAt: updatedInvoice?.insurance?.uploadedAt || new Date().toISOString(),
+                                        fileType: updatedInvoice?.insurance?.fileType || 'application/pdf',
+                                    }
+                                    : (updatedInvoice?.insurance ?? baseInvoice.insurance ?? null),
+                            };
+
+                            setSendPdfInvoice(mergedInvoiceForSend);
+                            setSendPdfPhone(mergedInvoiceForSend.insuredPartyPhone || '');
                             if (uploadedFile) setSendPdfFile(uploadedFile);
                             setSendPdfModalOpen(true);
                         }
