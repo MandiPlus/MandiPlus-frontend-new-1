@@ -50,6 +50,7 @@ function getPostLoginRedirect(identity?: string | null): string {
     if (identity === "AGENT") return "/agent/dashboard";
     if (identity === "CUSTOMER") return "/customer/dashboard";
     if (identity === "TRANSPORTER") return "/transporter/dashboard";
+    if (identity === "FIELD_AGENT") return "/home";
     if (identity === "INTERNAL_TEAM") return "/home";
     return "/home";
 }

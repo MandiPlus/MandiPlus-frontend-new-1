@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Menu, Transition } from '@headlessui/react';
+import { usePathname } from 'next/navigation';
 import { BellIcon } from '@heroicons/react/24/outline';
 import {
     ArrowPathIcon,
@@ -36,6 +37,22 @@ interface UserNotificationSource {
 
 const MAX_NOTIFICATIONS = 12;
 const LAST_SEEN_STORAGE_KEY = 'adminNotificationsLastSeenAt';
+
+const adminTitles: Record<string, string> = {
+    '/admin/dashboard': 'Admin Panel',
+    '/admin/users': 'Users',
+    '/admin/insurance-forms': 'Invoice / Insurance Forms',
+    '/admin/claims': 'Claim Requests',
+    '/admin/tracking': 'Tracking',
+    '/admin/trips': 'Created Trips',
+    '/admin/agent-commissions': 'Agent Commissions',
+    '/admin/insurance-payments': 'Insurance Payments',
+    '/admin/arrival-reports': 'Arrival Reports',
+    '/admin/field-operations': 'Field Operations',
+    '/admin/chat-logs': 'WhatsApp Chats',
+    '/admin/pdf-editor': 'Edit Insurance PDF',
+    '/admin/impersonate': 'Impersonate',
+};
 
 function getTimestampValue(timestamp: string): number {
     const value = new Date(timestamp).getTime();
@@ -161,6 +178,7 @@ function buildNotifications(users: UserNotificationSource[], invoices: Insurance
 
 export default function AdminHeader() {
     const { logout, isAuthenticated } = useAdmin();
+    const pathname = usePathname();
     const [notifications, setNotifications] = useState<NotificationItem[]>([]);
     const [lastSeenAt, setLastSeenAt] = useState<string>(() => {
         if (typeof window === 'undefined') return '';
@@ -259,12 +277,20 @@ export default function AdminHeader() {
         return { todayNotifications, earlierNotifications };
     }, [notifications]);
 
+    const headerTitle = adminTitles[pathname] || 'Admin Panel';
+
     return (
         <header className="bg-white shadow">
             <div className="flex items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
                 <h1 className="text-2xl font-extrabold tracking-tight">
-                    <span className="text-slate-900">Admin</span>{' '}
-                    <span className="text-[#4309ac]">Panel</span>
+                    {headerTitle === 'Admin Panel' ? (
+                        <>
+                            <span className="text-slate-900">Admin</span>{' '}
+                            <span className="text-[#4309ac]">Panel</span>
+                        </>
+                    ) : (
+                        <span className="text-slate-900">{headerTitle}</span>
+                    )}
                 </h1>
                 <div className="flex items-center">
                     <Menu as="div" className="relative">
