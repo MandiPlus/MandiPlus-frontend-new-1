@@ -2,14 +2,17 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeftCircleIcon } from '@heroicons/react/24/outline';
+import { useAuth } from '../../auth/context/AuthContext';
 import {
     getMyInsuranceForms,
     InsuranceForm,
     getBackendURL
 } from '../api';
+import { getCustomerDashboardInvoices } from '../../customer/api';
 
 const MyInsuranceForms = () => {
     const router = useRouter();
+    const { user } = useAuth();
     const [forms, setForms] = useState<InsuranceForm[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -20,7 +23,9 @@ const MyInsuranceForms = () => {
 
     const fetchForms = async () => {
         try {
-            const data = await getMyInsuranceForms();
+            const data = user?.identity === 'CUSTOMER'
+                ? await getCustomerDashboardInvoices()
+                : await getMyInsuranceForms();
             setForms(data);
         } catch (err: any) {
             setError(err.message || 'Failed to load forms');
