@@ -19,7 +19,6 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Mandi Plus",
   description: "Mandi Plus - Risk Humara, Munafa Aapka. Protect perishable goods with MandiPlus insurance, helping mandi traders reduce losses, manage risk, and secure their produce across India.",
-  manifest: "/manifest.webmanifest",
 };
 
 export const viewport = {
