@@ -100,8 +100,12 @@ export default function ClaimsPage() {
             setShowCreateModal(false);
             setNewClaimTruck('');
             fetchClaims();
-        } catch (error) {
-            alert('Failed to create claim. Ensure invoice exists for this truck.');
+        } catch (error: any) {
+            const errorMessage =
+                error?.message ||
+                error?.response?.data?.message ||
+                'Failed to create claim. Ensure invoice exists for this truck.';
+            alert(errorMessage);
         }
     };
 
