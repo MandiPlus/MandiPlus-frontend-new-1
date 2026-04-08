@@ -148,7 +148,7 @@ function diffDaysInclusive(start: Date, end: Date) {
     return Math.max(1, Math.floor((end.getTime() - start.getTime()) / msPerDay) + 1);
 }
 
-function buildInvoiceRecords(invoiceRows: RawInvoice[], claimByInvoiceId: Map<string, ClaimStatus>) {
+function buildInvoiceRecords(invoiceRows: RawInvoice[], claimByInvoiceId: Map<string, ClaimStatus>): InvoiceRecord[] {
     return invoiceRows.map((row) => {
         const product = Array.isArray(row.productName)
             ? String(row.productName[0] || 'Unknown')
@@ -159,6 +159,7 @@ function buildInvoiceRecords(invoiceRows: RawInvoice[], claimByInvoiceId: Map<st
         const commissionAmount = String(row.user?.identity || '').toUpperCase() === 'AGENT'
             ? (premiumBase * commissionRate) / 100
             : 0;
+        const invoiceStatus: InvoiceStatus = row.isRejected ? 'Rejected' : row.isVerified ? 'Verified' : 'Pending';
 
         return {
             id: String(row.id || ''),
@@ -172,7 +173,7 @@ function buildInvoiceRecords(invoiceRows: RawInvoice[], claimByInvoiceId: Map<st
             agent: String(row.user?.name || 'Unassigned'),
             salesAmount: premiumBase,
             commissionAmount,
-            invoiceStatus: row.isRejected ? 'Rejected' : row.isVerified ? 'Verified' : 'Pending',
+            invoiceStatus,
             claimStatus: claimByInvoiceId.get(String(row.id || '')) || 'Pending',
             paymentStatus: normalizePaymentStatus(row.paymentStatus)
         };
