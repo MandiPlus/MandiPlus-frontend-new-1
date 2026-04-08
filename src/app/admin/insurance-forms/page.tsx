@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
+import { useEffect, useState, useCallback, useRef, Fragment, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import { formatCurrency, formatDateOnly, formatTimeOnly } from '@/features/admin/utils/format';
@@ -77,6 +77,10 @@ interface Invoice {
         fileType: string;
         uploadedAt: string;
     } | null;
+}
+
+interface InsuranceFormFilters extends InvoiceFilterParams {
+    verificationStatus?: '' | 'verified' | 'rejected';
 }
 
 type FilterJoin = 'where' | 'and' | 'or';
@@ -241,7 +245,7 @@ export default function InsuranceFormsPage() {
     const [weightmentSlip, setWeightmentSlip] = useState<File | null>(null);
     const cropperRef = useRef<ReactCropperElement>(null);
     const [invoiceDateInputType, setInvoiceDateInputType] = useState<'text' | 'date'>('text');
-    const [filters, setFilters] = useState<InvoiceFilterParams>({
+    const [filters, setFilters] = useState<InsuranceFormFilters>({
         invoiceType: '',
         invoiceNumber: '',
         vehicleNumber: '',
@@ -249,6 +253,8 @@ export default function InsuranceFormsPage() {
         endDate: '',
         supplierName: '',
         buyerName: '',
+        productName: '',
+        verificationStatus: '',
     });
     const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
     const [filterRules, setFilterRules] = useState<FilterRule[]>([createFilterRule()]);
@@ -294,6 +300,17 @@ export default function InsuranceFormsPage() {
             if (debouncedFilters.buyerName?.trim()) {
                 const value = debouncedFilters.buyerName.trim();
                 if (value.length >= 3) activeFilters.buyerName = value;
+            }
+
+            if (debouncedFilters.productName?.trim()) {
+                activeFilters.productName = debouncedFilters.productName.trim();
+            }
+
+            if (debouncedFilters.verificationStatus === 'verified') {
+                activeFilters.isVerified = true;
+                activeFilters.isRejected = false;
+            } else if (debouncedFilters.verificationStatus === 'rejected') {
+                activeFilters.isRejected = true;
             }
 
             if (appliedFilterRules.length > 0) {
@@ -373,6 +390,19 @@ export default function InsuranceFormsPage() {
         }
         fetchInvoices();
     }, [isAuthenticated, router, fetchInvoices]);
+
+    const productOptions = useMemo(() => {
+        const options = invoices
+            .flatMap((invoice) => Array.isArray(invoice.productName) ? invoice.productName : [invoice.productName])
+            .map((product) => String(product || '').trim())
+            .filter(Boolean);
+
+        if (filters.productName?.trim()) {
+            options.push(filters.productName.trim());
+        }
+
+        return Array.from(new Set(options)).sort((a, b) => a.localeCompare(b));
+    }, [filters.productName, invoices]);
 
     const getFilterColumnType = (column: FilterColumn) =>
         FILTERABLE_COLUMNS.find((item) => item.value === column)?.type ?? 'text';
@@ -1353,7 +1383,7 @@ export default function InsuranceFormsPage() {
                 </div>
 
                 <div className={`bg-white text-black p-3 sm:p-4 rounded-lg shadow mb-4 sm:mb-6 ${showFilters ? 'block' : 'hidden sm:block'}`}>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-7 gap-3 sm:gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-9 gap-3 sm:gap-4">
                         <select
                             name="invoiceType"
                             value={filters.invoiceType || ''}
@@ -1416,6 +1446,31 @@ export default function InsuranceFormsPage() {
                             onChange={handleFilterChange}
                             className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
                         />
+
+                        <select
+                            name="productName"
+                            value={filters.productName || ''}
+                            onChange={handleFilterChange}
+                            className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
+                        >
+                            <option value="">All Products</option>
+                            {productOptions.map((product) => (
+                                <option key={product} value={product}>
+                                    {product}
+                                </option>
+                            ))}
+                        </select>
+
+                        <select
+                            name="verificationStatus"
+                            value={filters.verificationStatus || ''}
+                            onChange={handleFilterChange}
+                            className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
+                        >
+                            <option value="">Status</option>
+                            <option value="verified">Verified</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
 
                         <button
                             type="button"

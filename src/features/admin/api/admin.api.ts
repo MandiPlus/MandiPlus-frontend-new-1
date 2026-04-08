@@ -119,10 +119,12 @@ export interface InvoiceFilterParams {
   endDate?: string;
   supplierName?: string;
   buyerName?: string;
+  productName?: string;
   userId?: string;
   exportType?: "all" | "payment";
   paymentStatus?: string;
   isVerified?: boolean;
+  isRejected?: boolean;
   advancedFilters?: string;
 }
 
@@ -719,6 +721,9 @@ class AdminApi {
     endDate?: string;
     supplierName?: string;
     buyerName?: string;
+    productName?: string;
+    isVerified?: boolean;
+    isRejected?: boolean;
     invoiceIds?: string[];
     exportType?: "all" | "payment";
     selectedColumns?: string[];
