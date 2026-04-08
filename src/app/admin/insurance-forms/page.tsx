@@ -214,7 +214,6 @@ export default function InsuranceFormsPage() {
     const [selectedExportColumns, setSelectedExportColumns] = useState<string[]>(
         EXPORTABLE_INVOICE_COLUMNS.map((column) => column.key),
     );
-    const [showFilters, setShowFilters] = useState(false);
     const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
     const [invoiceMenuPlacement, setInvoiceMenuPlacement] = useState<Record<string, 'up' | 'down'>>({});
 
@@ -1371,18 +1370,7 @@ export default function InsuranceFormsPage() {
                     </div>
                 </div>
 
-                {/* Mobile Filter Toggle */}
-                <div className="sm:hidden mb-4">
-                    <button
-                        onClick={() => setShowFilters(!showFilters)}
-                        className="w-full flex items-center justify-center gap-2 bg-white text-gray-700 px-4 py-2.5 rounded-lg shadow-sm border border-gray-200"
-                    >
-                        <Filter className="w-4 h-4" />
-                        {showFilters ? 'Hide Filters' : 'Show Filters'}
-                    </button>
-                </div>
-
-                <div className={`bg-white text-black p-3 sm:p-4 rounded-lg shadow mb-4 sm:mb-6 ${showFilters ? 'block' : 'hidden sm:block'}`}>
+                <div className="bg-white text-black p-3 sm:p-4 rounded-lg shadow mb-4 sm:mb-6">
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-9 gap-3 sm:gap-4">
                         <select
                             name="invoiceType"
