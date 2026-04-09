@@ -10,7 +10,7 @@ import 'cropperjs/dist/cropper.css';
 import Cropper, { ReactCropperElement } from "react-cropper";
 import { ArrowPathIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { Menu, Transition } from '@headlessui/react';
-import { FileText, RefreshCw, Upload, Eye, CheckCircle, AlertCircle, Filter, X, XCircle, Pencil, ChevronDown, ChevronRight, MoreVertical, Link as LinkIcon, RotateCcw } from 'lucide-react';
+import { FileText, RefreshCw, Upload, Eye, CheckCircle, AlertCircle, X, XCircle, Pencil, ChevronDown, ChevronRight, MoreVertical, Link as LinkIcon, RotateCcw } from 'lucide-react';
 
 import InsuranceUploadModal from '@/features/admin/components/InsuranceUploadModal';
 import { uploadWeighmentSlips } from '@/features/insurance/api';
@@ -82,64 +82,6 @@ interface Invoice {
 interface InsuranceFormFilters extends InvoiceFilterParams {
     verificationStatus?: '' | 'verified' | 'rejected';
 }
-
-type FilterJoin = 'where' | 'and' | 'or';
-type FilterColumn =
-    | 'invoiceNumber'
-    | 'invoiceDate'
-    | 'terms'
-    | 'supplierName'
-    | 'billToName'
-    | 'placeOfSupply'
-    | 'vehicleNumber'
-    | 'truckNumber'
-    | 'paymentStatus'
-    | 'insuredPersonNameSnapshot';
-type FilterOperator =
-    | 'equals'
-    | 'not_equals'
-    | 'greater'
-    | 'greater_or_equals'
-    | 'less'
-    | 'less_or_equals';
-
-interface FilterRule {
-    id: string;
-    join: FilterJoin;
-    column: FilterColumn;
-    operator: FilterOperator;
-    value: string;
-}
-
-const FILTERABLE_COLUMNS: Array<{ value: FilterColumn; label: string; type: 'text' | 'date' }> = [
-    { value: 'invoiceNumber', label: 'invoiceNumber', type: 'text' },
-    { value: 'invoiceDate', label: 'invoiceDate', type: 'date' },
-    { value: 'terms', label: 'terms', type: 'text' },
-    { value: 'supplierName', label: 'supplierName', type: 'text' },
-    { value: 'billToName', label: 'buyerName', type: 'text' },
-    { value: 'placeOfSupply', label: 'placeOfSupply', type: 'text' },
-    { value: 'vehicleNumber', label: 'vehicleNumber', type: 'text' },
-    { value: 'truckNumber', label: 'truckNumber', type: 'text' },
-    { value: 'paymentStatus', label: 'paymentStatus', type: 'text' },
-    { value: 'insuredPersonNameSnapshot', label: 'insuredPerson', type: 'text' },
-];
-
-const FILTER_OPERATORS: Array<{ value: FilterOperator; label: string }> = [
-    { value: 'equals', label: 'equals' },
-    { value: 'not_equals', label: 'not equals' },
-    { value: 'greater', label: 'greater' },
-    { value: 'greater_or_equals', label: 'greater or equals' },
-    { value: 'less', label: 'less' },
-    { value: 'less_or_equals', label: 'less or equals' },
-];
-
-const createFilterRule = (join: FilterJoin = 'where'): FilterRule => ({
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    join,
-    column: 'invoiceNumber',
-    operator: 'equals',
-    value: '',
-});
 
 const EXPORTABLE_INVOICE_COLUMNS = [
     { key: 'invoiceNumber', label: 'Invoice Number' },
@@ -255,9 +197,6 @@ export default function InsuranceFormsPage() {
         productName: '',
         verificationStatus: '',
     });
-    const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-    const [filterRules, setFilterRules] = useState<FilterRule[]>([createFilterRule()]);
-    const [appliedFilterRules, setAppliedFilterRules] = useState<FilterRule[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 10;
     const debouncedFilters = useDebounce(filters, 500);
@@ -312,10 +251,6 @@ export default function InsuranceFormsPage() {
                 activeFilters.isRejected = true;
             }
 
-            if (appliedFilterRules.length > 0) {
-                activeFilters.advancedFilters = JSON.stringify(appliedFilterRules);
-            }
-
             const response = await adminApi.filterInvoices(activeFilters);
 
             let data: Invoice[] = [];
@@ -368,7 +303,7 @@ export default function InsuranceFormsPage() {
         } finally {
             setLoading(false);
         }
-    }, [appliedFilterRules, debouncedFilters, insuranceOverrides]);
+    }, [debouncedFilters, insuranceOverrides]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -403,72 +338,9 @@ export default function InsuranceFormsPage() {
         return Array.from(new Set(options)).sort((a, b) => a.localeCompare(b));
     }, [filters.productName, invoices]);
 
-    const getFilterColumnType = (column: FilterColumn) =>
-        FILTERABLE_COLUMNS.find((item) => item.value === column)?.type ?? 'text';
-
     const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFilters((prev) => ({ ...prev, [name]: value }));
-        setCurrentPage(1);
-    };
-
-    const updateFilterRule = (
-        ruleId: string,
-        field: keyof Omit<FilterRule, 'id'>,
-        value: string,
-    ) => {
-        setFilterRules((prev) =>
-            prev.map((rule) => {
-                if (rule.id !== ruleId) return rule;
-
-                if (field === 'column') {
-                    const nextColumn = value as FilterColumn;
-                    return {
-                        ...rule,
-                        column: nextColumn,
-                        operator: rule.operator,
-                        value: rule.value,
-                    };
-                }
-
-                return {
-                    ...rule,
-                    [field]: value,
-                };
-            }),
-        );
-    };
-
-    const addFilterRule = () => {
-        setFilterRules((prev) => [...prev, createFilterRule('and')]);
-    };
-
-    const removeFilterRule = (ruleId: string) => {
-        setFilterRules((prev) => {
-            const next = prev.filter((rule) => rule.id !== ruleId);
-            if (next.length === 0) return [createFilterRule()];
-            return next.map((rule, index) => ({
-                ...rule,
-                join: index === 0 ? 'where' : rule.join === 'or' ? 'or' : 'and',
-            }));
-        });
-    };
-
-    const clearFilterRules = () => {
-        setFilterRules([createFilterRule()]);
-        setAppliedFilterRules([]);
-        setCurrentPage(1);
-    };
-
-    const applyAdvancedFilters = () => {
-        const activeRules = filterRules.filter((rule) => rule.value.trim().length > 0);
-
-        setAppliedFilterRules(
-            activeRules.map((rule, index) => ({
-                ...rule,
-                join: index === 0 ? 'where' : rule.join,
-            })),
-        );
         setCurrentPage(1);
     };
 
@@ -1459,124 +1331,11 @@ export default function InsuranceFormsPage() {
                             <option value="verified">Verified</option>
                             <option value="rejected">Rejected</option>
                         </select>
-
-                        <button
-                            type="button"
-                            onClick={() => setShowAdvancedFilters((prev) => !prev)}
-                            className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-gray-50"
-                        >
-                            <Filter className="w-4 h-4" />
-                            {showAdvancedFilters ? 'Hide Filters' : 'Filters'}
-                            {appliedFilterRules.length > 0 && (
-                                <span className="rounded-full bg-[#4309ac] px-2 py-0.5 text-xs text-white">
-                                    {appliedFilterRules.length}
-                                </span>
-                            )}
-                        </button>
                     </div>
 
                     <div className="mt-3 flex items-center justify-between gap-3 text-xs sm:text-sm text-slate-500">
                         <span>Showing {invoices.length} invoices</span>
-                        {appliedFilterRules.length > 0 && (
-                            <span>{appliedFilterRules.length} advanced filter(s) applied</span>
-                        )}
                     </div>
-
-                    {showAdvancedFilters && (
-                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
-                            <div className="space-y-3">
-                                {filterRules.map((rule, index) => {
-                                    const columnType = getFilterColumnType(rule.column);
-
-                                    return (
-                                        <div key={rule.id} className="grid grid-cols-1 gap-3 xl:grid-cols-[36px_96px_minmax(180px,1fr)_minmax(180px,1fr)_minmax(220px,1.2fr)]">
-                                            <button
-                                                type="button"
-                                                onClick={() => removeFilterRule(rule.id)}
-                                                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-white"
-                                                aria-label="Remove filter"
-                                            >
-                                                <X className="w-4 h-4" />
-                                            </button>
-
-                                            <select
-                                                value={index === 0 ? 'where' : rule.join}
-                                                onChange={(e) => updateFilterRule(rule.id, 'join', e.target.value)}
-                                                disabled={index === 0}
-                                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
-                                            >
-                                                <option value="where">where</option>
-                                                <option value="and">and</option>
-                                                <option value="or">or</option>
-                                            </select>
-
-                                            <select
-                                                value={rule.column}
-                                                onChange={(e) => updateFilterRule(rule.id, 'column', e.target.value)}
-                                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#4309ac] focus:outline-none focus:ring-2 focus:ring-[#4309ac]/20"
-                                            >
-                                                {FILTERABLE_COLUMNS.map((column) => (
-                                                    <option key={column.value} value={column.value}>
-                                                        {column.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-
-                                            <select
-                                                value={rule.operator}
-                                                onChange={(e) => updateFilterRule(rule.id, 'operator', e.target.value)}
-                                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#4309ac] focus:outline-none focus:ring-2 focus:ring-[#4309ac]/20"
-                                            >
-                                                {FILTER_OPERATORS.map((operator) => (
-                                                    <option key={operator.value} value={operator.value}>
-                                                        {operator.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-
-                                            <input
-                                                type={columnType === 'date' ? 'date' : 'text'}
-                                                value={rule.value}
-                                                onChange={(e) => updateFilterRule(rule.id, 'value', e.target.value)}
-                                                placeholder={columnType === 'date' ? 'Select date' : 'Enter value'}
-                                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#4309ac] focus:outline-none focus:ring-2 focus:ring-[#4309ac]/20"
-                                            />
-                                        </div>
-                                    );
-                                })}
-
-                                <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between">
-                                    <div className="flex flex-col gap-2 sm:flex-row">
-                                        <button
-                                            type="button"
-                                            onClick={addFilterRule}
-                                            className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-gray-50"
-                                        >
-                                            + Add filter
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={applyAdvancedFilters}
-                                            className="inline-flex items-center justify-center rounded-md bg-[#4309ac] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2f0679]"
-                                        >
-                                            Apply filters
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={clearFilterRules}
-                                            className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
-                                        >
-                                            Clear filters
-                                        </button>
-                                    </div>
-
-                                    <div className="text-xs text-slate-500">
-                                        Multiple rows can be joined using AND or OR.
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
                 </div>
 
                 {/* Error Banner */}
