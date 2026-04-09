@@ -1061,6 +1061,27 @@ class AdminApi {
     }
   };
 
+  public sendInvoiceCreatedTemplate = async (
+    invoiceId: string,
+    payload?: { phoneNumber?: string },
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/invoices/${invoiceId}/send-created-template`,
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          'Failed to send invoice created message',
+        error: error.message,
+      };
+    }
+  };
+
   public getInsurancePayments = async (filters?: {
     fromDate?: string;
     toDate?: string;

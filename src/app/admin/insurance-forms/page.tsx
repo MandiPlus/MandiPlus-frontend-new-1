@@ -83,6 +83,8 @@ interface InsuranceFormFilters extends InvoiceFilterParams {
     verificationStatus?: '' | 'verified' | 'rejected';
 }
 
+type SendPhoneMode = 'payment_link' | 'invoice_created_template';
+
 const EXPORTABLE_INVOICE_COLUMNS = [
     { key: 'invoiceNumber', label: 'Invoice Number' },
     { key: 'invoiceDate', label: 'Invoice Date' },
@@ -170,6 +172,7 @@ export default function InsuranceFormsPage() {
     const [sendPhoneModalOpen, setSendPhoneModalOpen] = useState(false);
     const [sendPhoneInvoice, setSendPhoneInvoice] = useState<Invoice | null>(null);
     const [sendPhoneDraft, setSendPhoneDraft] = useState('');
+    const [sendPhoneMode, setSendPhoneMode] = useState<SendPhoneMode>('payment_link');
     // Send Insurance PDF modal state
     const [sendPdfModalOpen, setSendPdfModalOpen] = useState(false);
     const [sendPdfInvoice, setSendPdfInvoice] = useState<Invoice | null>(null);
@@ -425,6 +428,14 @@ export default function InsuranceFormsPage() {
         setSendPhoneModalOpen(false);
         setSendPhoneInvoice(null);
         setSendPhoneDraft('');
+        setSendPhoneMode('payment_link');
+    };
+
+    const openSendPhoneModal = (inv: Invoice, mode: SendPhoneMode) => {
+        setSendPhoneInvoice(inv);
+        setSendPhoneDraft(inv.insuredPartyPhone || '');
+        setSendPhoneMode(mode);
+        setSendPhoneModalOpen(true);
     };
 
     const closeSendPdfModal = () => {
@@ -854,9 +865,16 @@ export default function InsuranceFormsPage() {
             return;
         }
 
-        setSendPhoneInvoice(inv);
-        setSendPhoneDraft(inv.insuredPartyPhone || '');
-        setSendPhoneModalOpen(true);
+        openSendPhoneModal(inv, 'payment_link');
+    };
+
+    const handleSendInvoiceCreatedMessage = (inv: Invoice) => {
+        if (inv.isRejected) {
+            toast.error('Rejected invoice cannot send this message');
+            return;
+        }
+
+        openSendPhoneModal(inv, 'invoice_created_template');
     };
 
     const submitSendPaymentLink = async () => {
@@ -882,19 +900,41 @@ export default function InsuranceFormsPage() {
         try {
             setSendingPaymentInvoiceId(invoiceId);
             toast.loading(
-                'Sending payment link...',
-                { toastId: 'payment-link' },
+                sendPhoneMode === 'payment_link'
+                    ? 'Sending payment link...'
+                    : 'Sending invoice message...',
+                { toastId: 'send-phone-action' },
             );
 
-            const res = await adminApi.verifyAndSendPaymentForInvoice(invoiceId, {
-                phoneNumber,
-            });
+            const res = sendPhoneMode === 'payment_link'
+                ? await adminApi.verifyAndSendPaymentForInvoice(invoiceId, {
+                    phoneNumber,
+                })
+                : await adminApi.sendInvoiceCreatedTemplate(invoiceId, {
+                    phoneNumber,
+                });
             if (!res.success) {
-                throw new Error(res.message || 'Failed to send payment link');
+                throw new Error(
+                    res.message ||
+                    (sendPhoneMode === 'payment_link'
+                        ? 'Failed to send payment link'
+                        : 'Failed to send invoice message'),
+                );
             }
 
-            toast.update('payment-link', {
-                render: 'Payment link sent successfully',
+            setInvoices((prev) =>
+                prev.map((invoice) =>
+                    getInvoiceId(invoice) === invoiceId
+                        ? { ...invoice, insuredPartyPhone: phoneNumber }
+                        : invoice,
+                ),
+            );
+
+            toast.update('send-phone-action', {
+                render:
+                    sendPhoneMode === 'payment_link'
+                        ? 'Payment link sent successfully'
+                        : 'Invoice message sent successfully',
                 type: 'success',
                 isLoading: false,
                 autoClose: 2000,
@@ -903,8 +943,12 @@ export default function InsuranceFormsPage() {
             closeSendPhoneModal();
             await fetchInvoices();
         } catch (error: any) {
-            toast.update('payment-link', {
-                render: error?.message || 'Failed to send payment link',
+            toast.update('send-phone-action', {
+                render:
+                    error?.message ||
+                    (sendPhoneMode === 'payment_link'
+                        ? 'Failed to send payment link'
+                        : 'Failed to send invoice message'),
                 type: 'error',
                 isLoading: false,
                 autoClose: 3000,
@@ -1022,9 +1066,15 @@ export default function InsuranceFormsPage() {
                     <div className="relative w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-black/10">
                         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
                             <div className="min-w-0">
-                                <h3 className="text-base font-semibold text-slate-900">Send Payment Link</h3>
+                                <h3 className="text-base font-semibold text-slate-900">
+                                    {sendPhoneMode === 'payment_link'
+                                        ? 'Send Payment Link'
+                                        : 'Send Invoice Message'}
+                                </h3>
                                 <p className="mt-1 text-sm text-slate-600">
-                                    Enter the WhatsApp number for invoice {sendPhoneInvoice.invoiceNumber}.
+                                    {sendPhoneMode === 'payment_link'
+                                        ? `Enter the WhatsApp number for invoice ${sendPhoneInvoice.invoiceNumber}.`
+                                        : `Enter the WhatsApp number to send the invoice-created template for ${sendPhoneInvoice.invoiceNumber}.`}
                                 </p>
                             </div>
                             <button
@@ -1049,7 +1099,9 @@ export default function InsuranceFormsPage() {
                                 />
                             </div>
                             <p className="text-xs text-slate-500">
-                                This sends the existing Meta template message and payment link to the number you enter.
+                                {sendPhoneMode === 'payment_link'
+                                    ? 'This sends the existing Meta template message and payment link to the number you enter.'
+                                    : 'This sends the invoice-created tracking template using the latest invoice details and the number you enter.'}
                             </p>
                         </div>
 
@@ -1067,7 +1119,11 @@ export default function InsuranceFormsPage() {
                                 disabled={sendingPaymentInvoiceId === getInvoiceId(sendPhoneInvoice)}
                                 className="rounded-xl bg-[#25D366] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1fa955] disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                                {sendingPaymentInvoiceId === getInvoiceId(sendPhoneInvoice) ? 'Sending...' : 'Send'}
+                                {sendingPaymentInvoiceId === getInvoiceId(sendPhoneInvoice)
+                                    ? 'Sending...'
+                                    : sendPhoneMode === 'payment_link'
+                                        ? 'Send'
+                                        : 'Resend'}
                             </button>
                         </div>
                     </div>
@@ -1707,6 +1763,20 @@ export default function InsuranceFormsPage() {
                                                                                 )}
                                                                             </Menu.Item>
                                                                         )}
+                                                                        {!inv.isRejected && (
+                                                                            <Menu.Item>
+                                                                                {({ active }) => (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleSendInvoiceCreatedMessage(inv)}
+                                                                                        className={`${active ? 'bg-gray-100' : ''} flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700`}
+                                                                                    >
+                                                                                        <RotateCcw className="w-4 h-4 text-[#25D366]" />
+                                                                                        Resend invoice message
+                                                                                    </button>
+                                                                                )}
+                                                                            </Menu.Item>
+                                                                        )}
                                                                         {getInsuranceFileUrl(inv) && (
                                                                             <Menu.Item>
                                                                                 {({ active }) => (
@@ -2044,6 +2114,20 @@ export default function InsuranceFormsPage() {
                                                                                 <LinkIcon className="w-4 h-4 text-[#25D366]" />
                                                                             )}
                                                                             {getPaymentLinkSentLabel(inv) ? 'Resend payment link' : 'Send payment link'}
+                                                                        </button>
+                                                                    )}
+                                                                </Menu.Item>
+                                                            )}
+                                                            {!inv.isRejected && (
+                                                                <Menu.Item>
+                                                                    {({ active }) => (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleSendInvoiceCreatedMessage(inv)}
+                                                                            className={`${active ? 'bg-gray-100' : ''} flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700`}
+                                                                        >
+                                                                            <RotateCcw className="w-4 h-4 text-[#25D366]" />
+                                                                            Resend invoice message
                                                                         </button>
                                                                     )}
                                                                 </Menu.Item>
