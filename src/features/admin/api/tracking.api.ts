@@ -93,6 +93,22 @@ export interface ManualTripAlertPayload {
   phoneOverride?: string;
 }
 
+export interface TraqoConsentRow {
+  phone_number: string;
+  latitude: number | null;
+  longitude: number | null;
+  location: string | null;
+  update_at: string | null;
+  status: string | null;
+  operator: string | null;
+  last_24h: string | null;
+  name: string | null;
+  gender: string | null;
+  total_distance: number | null;
+  total_requests: number | null;
+  avg_speed: number | null;
+}
+
 function getAuthHeaders() {
   const token =
     typeof window !== "undefined" ? localStorage.getItem("adminToken") : null;
@@ -160,6 +176,22 @@ export async function resendDriverConsentSms(
     return {
       success: false,
       message: getErrorMessage(error, "Failed to resend consent SMS"),
+    };
+  }
+}
+
+export async function listCreatedConsents(): Promise<
+  AdminTrackingApiResponse<TraqoConsentRow[]>
+> {
+  try {
+    const res = await axios.get<TraqoConsentRow[]>(`${API_BASE_URL}/traqo/consents`, {
+      headers: getAuthHeaders(),
+    });
+    return { success: true, data: Array.isArray(res.data) ? res.data : [] };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to fetch created consents"),
     };
   }
 }
