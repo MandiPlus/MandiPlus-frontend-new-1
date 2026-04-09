@@ -17,6 +17,14 @@ import {
 } from '@heroicons/react/24/outline';
 import { adminButtonClasses, adminChipClasses } from '@/features/admin/utils/adminUi';
 
+type ClaimMediaType =
+    'fir'
+    | 'accidentPic'
+    | 'inspectionReport'
+    | 'lorryReceipt'
+    | 'insurancePolicy'
+    | 'damageForm';
+
 export default function ClaimsPage() {
     const [claims, setClaims] = useState<ClaimRequest[]>([]);
     const [loading, setLoading] = useState(true);
@@ -125,10 +133,26 @@ export default function ClaimsPage() {
         setShowDetailModal(true);
     };
 
-    const handleMediaUpload = async (claimId: string, mediaType: 'fir' | 'accidentPic' | 'inspectionReport' | 'lorryReceipt' | 'insurancePolicy', file: File) => {
+    const syncClaimInState = (updatedClaim: ClaimRequest) => {
+        setClaims((prev) => prev.map((claim) => (claim.id === updatedClaim.id ? updatedClaim : claim)));
+        setSelectedClaim((prev) => (prev?.id === updatedClaim.id ? updatedClaim : prev));
+    };
+
+    const refreshClaim = async (claimId: string) => {
+        const updatedResponse = await adminApi.getClaimById(claimId);
+        if (updatedResponse.success && updatedResponse.data) {
+            syncClaimInState(updatedResponse.data);
+        }
+    };
+
+    const handleMediaUpload = async (claimId: string, mediaType: ClaimMediaType, file: File) => {
         // Validate inspectionReport is PDF only
         if (mediaType === 'inspectionReport' && !file.type.includes('pdf')) {
             alert('Inspection report must be a PDF file');
+            return;
+        }
+        if (mediaType === 'damageForm' && !(/^(image\/|application\/pdf$)/i.test(file.type))) {
+            alert('Damage certificate only supports PDF and image files');
             return;
         }
         if (mediaType === 'accidentPic' && file.type.toLowerCase().startsWith('video/')) {
@@ -140,13 +164,10 @@ export default function ClaimsPage() {
             const response = await adminApi.uploadClaimMedia(claimId, mediaType, file);
             if (response.success) {
                 alert('Media uploaded successfully');
-                fetchClaims();
-                // Refresh selected claim if detail modal is open
-                if (selectedClaim && selectedClaim.id === claimId) {
-                    const updatedResponse = await adminApi.getClaimById(claimId);
-                    if (updatedResponse.success && updatedResponse.data) {
-                        setSelectedClaim(updatedResponse.data);
-                    }
+                if (response.data) {
+                    syncClaimInState(response.data);
+                } else {
+                    await refreshClaim(claimId);
                 }
             } else {
                 alert(response.message || 'Failed to upload media');
@@ -158,7 +179,7 @@ export default function ClaimsPage() {
         }
     };
 
-    const handleMediaRemove = async (claimId: string, mediaType: 'fir' | 'accidentPic' | 'inspectionReport' | 'lorryReceipt' | 'insurancePolicy') => {
+    const handleMediaRemove = async (claimId: string, mediaType: ClaimMediaType) => {
         setRemovingMedia(mediaType);
         try {
             const response = await adminApi.removeClaimMedia(claimId, mediaType);
@@ -168,12 +189,10 @@ export default function ClaimsPage() {
             }
 
             alert('Media removed successfully');
-            fetchClaims();
-            if (selectedClaim && selectedClaim.id === claimId) {
-                const updatedResponse = await adminApi.getClaimById(claimId);
-                if (updatedResponse.success && updatedResponse.data) {
-                    setSelectedClaim(updatedResponse.data);
-                }
+            if (response.data) {
+                syncClaimInState(response.data);
+            } else {
+                await refreshClaim(claimId);
             }
         } catch (error) {
             alert('Failed to remove media');
@@ -471,45 +490,17 @@ export default function ClaimsPage() {
                                         />
 
                                         {/* 2. Damage Certificate */}
-                                        <div className="border border-gray-200 rounded-lg p-4">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="font-medium text-gray-700">Damage Certificate</span>
-                                                    {selectedClaim.damageFormUrl ? (
-                                                        <CheckIcon className="w-5 h-5 text-green-600" />
-                                                    ) : null}
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    {selectedClaim.damageFormUrl ? (
-                                                        <>
-                                                            <a
-                                                                href={selectedClaim.damageFormUrl}
-                                                                target="_blank"
-                                                                className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
-                                                            >
-                                                                <DocumentIcon className="w-4 h-4" />
-                                                                View PDF
-                                                            </a>
-                                                            <button
-                                                                onClick={() => openDamageFormModal(selectedClaim)}
-                                                                className="text-green-600 hover:text-green-800 text-sm flex items-center gap-1"
-                                                            >
-                                                                <PencilSquareIcon className="w-4 h-4" />
-                                                                Update
-                                                            </button>
-                                                        </>
-                                                    ) : (
-                                                        <button
-                                                            onClick={() => openDamageFormModal(selectedClaim)}
-                                                            className="text-green-600 hover:text-green-800 text-sm flex items-center gap-1 px-3 py-1 border border-green-600 rounded"
-                                                        >
-                                                            <PlusIcon className="w-4 h-4" />
-                                                            Create Damage Form
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
+                                        <MediaUploadSection
+                                            label="Damage Certificate"
+                                            mediaType="damageForm"
+                                            existingUrl={selectedClaim.damageFormUrl || selectedClaim.claimFormUrl}
+                                            claimId={selectedClaim.id}
+                                            onUpload={handleMediaUpload}
+                                            onRemove={handleMediaRemove}
+                                            uploading={uploadingMedia === 'damageForm'}
+                                            removing={removingMedia === 'damageForm'}
+                                            accept=".pdf,.jpg,.jpeg,.png,.webp,.gif"
+                                        />
 
                                         {/* 3. FIR Document */}
                                         <MediaUploadSection
@@ -657,11 +648,11 @@ function MediaUploadSection({
     accept
 }: {
     label: string;
-    mediaType: 'fir' | 'accidentPic' | 'inspectionReport' | 'lorryReceipt' | 'insurancePolicy';
+    mediaType: ClaimMediaType;
     existingUrl?: string | null;
     claimId: string;
-    onUpload: (claimId: string, mediaType: 'fir' | 'accidentPic' | 'inspectionReport' | 'lorryReceipt' | 'insurancePolicy', file: File) => void;
-    onRemove: (claimId: string, mediaType: 'fir' | 'accidentPic' | 'inspectionReport' | 'lorryReceipt' | 'insurancePolicy') => void;
+    onUpload: (claimId: string, mediaType: ClaimMediaType, file: File) => void;
+    onRemove: (claimId: string, mediaType: ClaimMediaType) => void;
     uploading: boolean;
     removing: boolean;
     accept: string;

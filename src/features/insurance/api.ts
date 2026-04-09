@@ -74,6 +74,7 @@ export interface ClaimRequest {
   surveyorName?: string;
   surveyorContact?: string;
   claimFormUrl?: string; // URL for the generated PDF
+  rawClaimFormUrl?: string | null;
   // New individual media fields
   fir?: string | null; // FIR document URL
   accidentPic?: string | null; // Accident picture URL
@@ -104,6 +105,20 @@ export interface CreateDamageFormDto {
 }
 
 export type CreateInsuranceResponse = InsuranceForm;
+
+function normalizeClaimRequest(claim: ClaimRequest): ClaimRequest {
+  const claimFormUrl =
+    claim?.claimFormUrl ||
+    (claim as ClaimRequest & { damageFormUrl?: string | null })?.damageFormUrl ||
+    null;
+
+  return {
+    ...claim,
+    claimFormUrl: claimFormUrl ?? undefined,
+    rawClaimFormUrl: claimFormUrl,
+    damageFormUrl: claimFormUrl ?? undefined,
+  };
+}
 
 export interface InvoiceCustomerAccount {
   id: string;
@@ -275,7 +290,9 @@ export const getAdminClaimsForms = async (): Promise<ClaimRequest[]> => {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    return Array.isArray(response.data) ? response.data : [];
+    return Array.isArray(response.data)
+      ? response.data.map(normalizeClaimRequest)
+      : [];
   } catch (error) {
     const err = error as AxiosError<any>;
     throw err.response?.data || { message: "Failed to fetch admin claims" };
@@ -317,7 +334,8 @@ export const uploadClaimMedia = async (
     | "accidentPic"
     | "inspectionReport"
     | "lorryReceipt"
-    | "insurancePolicy",
+    | "insurancePolicy"
+    | "damageForm",
   file: File,
 ): Promise<ClaimRequest> => {
   try {
@@ -335,7 +353,7 @@ export const uploadClaimMedia = async (
         },
       },
     );
-    return response.data;
+    return normalizeClaimRequest(response.data);
   } catch (error) {
     const err = error as AxiosError<any>;
     throw err.response?.data || { message: "Failed to upload media" };
@@ -357,7 +375,7 @@ export const submitDamageForm = async (
       data,
       { headers: { Authorization: `Bearer ${token}` } },
     );
-    return response.data;
+    return normalizeClaimRequest(response.data);
   } catch (error) {
     const err = error as AxiosError<any>;
     throw err.response?.data || { message: "Failed to submit damage form" };

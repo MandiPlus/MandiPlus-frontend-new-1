@@ -230,6 +230,7 @@ export interface ClaimRequest {
   surveyorContact?: string;
   notes?: string;
   claimFormUrl?: string;
+  rawClaimFormUrl?: string | null;
   // New individual media fields
   fir?: string | null; // FIR document URL
   accidentPic?: string | null; // Accident picture URL
@@ -893,6 +894,20 @@ class AdminApi {
     return fallback;
   }
 
+  private normalizeClaim(claim: ClaimRequest): ClaimRequest {
+    const claimFormUrl =
+      claim?.claimFormUrl ||
+      (claim as ClaimRequest & { damageFormUrl?: string | null })?.damageFormUrl ||
+      null;
+
+    return {
+      ...claim,
+      claimFormUrl: claimFormUrl ?? undefined,
+      rawClaimFormUrl: claimFormUrl,
+      damageFormUrl: claimFormUrl ?? undefined,
+    };
+  }
+
   public rejectInvoice = async (
     invoiceId: string,
     rejectionReason?: string,
@@ -1212,11 +1227,13 @@ class AdminApi {
       }
 
       // Normalize status field (backend uses lowercase status values)
-      claims = claims.map((claim) => ({
-        ...claim,
-        status:
-          (claim.status?.toLowerCase() as ClaimStatus) || ClaimStatus.PENDING,
-      }));
+      claims = claims.map((claim) =>
+        this.normalizeClaim({
+          ...claim,
+          status:
+            (claim.status?.toLowerCase() as ClaimStatus) || ClaimStatus.PENDING,
+        }),
+      );
 
       return {
         success: true,
@@ -1241,10 +1258,11 @@ class AdminApi {
       const response = await this.client.get<ApiResponse<ClaimRequest>>(
         `/claim-requests/${id}`,
       );
+      const payload = (response.data as any)?.data ?? response.data;
 
       return {
         success: true,
-        data: response.data.data,
+        data: payload ? this.normalizeClaim(payload as ClaimRequest) : undefined,
       };
     } catch (error: any) {
       return {
@@ -1325,7 +1343,8 @@ class AdminApi {
       | "inspectionReport"
       | "weighmentSlip"
       | "lorryReceipt"
-      | "insurancePolicy",
+      | "insurancePolicy"
+      | "damageForm",
     file: File,
   ): Promise<ApiResponse<ClaimRequest>> => {
     try {
@@ -1344,7 +1363,7 @@ class AdminApi {
 
       return {
         success: true,
-        data: response.data,
+        data: this.normalizeClaim(response.data),
         message: "Media uploaded successfully",
       };
     } catch (error: any) {
@@ -1365,7 +1384,8 @@ class AdminApi {
       | "inspectionReport"
       | "weighmentSlip"
       | "lorryReceipt"
-      | "insurancePolicy",
+      | "insurancePolicy"
+      | "damageForm",
   ): Promise<ApiResponse<ClaimRequest>> => {
     try {
       const response = await this.client.patch<ClaimRequest>(
@@ -1374,7 +1394,7 @@ class AdminApi {
 
       return {
         success: true,
-        data: response.data,
+        data: this.normalizeClaim(response.data),
         message: "Media removed successfully",
       };
     } catch (error: any) {
@@ -1415,7 +1435,7 @@ class AdminApi {
       );
       return {
         success: true,
-        data: response.data,
+        data: this.normalizeClaim(response.data),
         message: "Damage form submitted successfully",
       };
     } catch (error: any) {

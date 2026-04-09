@@ -81,7 +81,7 @@ const HomePage = () => {
   // --- Cropper & File State ---
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeClaimIdForUpload, setActiveClaimIdForUpload] = useState<string | null>(null); // ✅ NEW
-  const [activeMediaType, setActiveMediaType] = useState<'fir' | 'accidentPic' | 'lorryReceipt' | 'insurancePolicy' | null>(null); // ✅ NEW
+  const [activeMediaType, setActiveMediaType] = useState<'fir' | 'accidentPic' | 'lorryReceipt' | 'insurancePolicy' | 'damageForm' | null>(null); // ✅ NEW
   const [showClaimDetailModal, setShowClaimDetailModal] = useState(false); // ✅ NEW
   const [selectedClaimForDetail, setSelectedClaimForDetail] = useState<ClaimRequest | null>(null); // ✅ NEW
 
@@ -180,6 +180,18 @@ const HomePage = () => {
     return await getMyClaimsForms();
   };
 
+  const syncClaimInState = (updatedClaim: ClaimRequest) => {
+    setClaims((prev) => prev.map((claim) => (claim.id === updatedClaim.id ? updatedClaim : claim)));
+    setSelectedClaimForDetail((prev) => (prev?.id === updatedClaim.id ? updatedClaim : prev));
+    setSelectedClaimForDamage((prev) => (prev?.id === updatedClaim.id ? updatedClaim : prev));
+    setStatusLookupResult((prev) => (prev?.id === updatedClaim.id ? updatedClaim : prev));
+  };
+
+  const getClaimMediaAccept = (mediaType: typeof activeMediaType) => {
+    if (mediaType === 'damageForm') return '.pdf,.jpg,.jpeg,.png,.webp,.gif';
+    return 'image/*,application/pdf,.doc,.docx';
+  };
+
   // --- NEW: Fetch Claims ---
   const fetchClaims = async () => {
     setLoadingClaims(true);
@@ -264,17 +276,13 @@ const HomePage = () => {
     if (e.target.files && e.target.files.length > 0 && activeClaimIdForUpload && activeMediaType) {
       try {
         const file = e.target.files[0];
-        await uploadClaimMedia(activeClaimIdForUpload, activeMediaType, file);
-        alert("File uploaded successfully!");
-        fetchClaims();
-        // Refresh selected claim if detail modal is open
-        if (selectedClaimForDetail && selectedClaimForDetail.id === activeClaimIdForUpload) {
-          const updatedClaims = await fetchClaimsByRole();
-          const updatedClaim = updatedClaims.find(c => c.id === activeClaimIdForUpload);
-          if (updatedClaim) {
-            setSelectedClaimForDetail(updatedClaim);
-          }
+        if (activeMediaType === 'damageForm' && !(/^(image\/|application\/pdf$)/i.test(file.type))) {
+          alert("Damage certificate only supports PDF and image files.");
+          return;
         }
+        const updatedClaim = await uploadClaimMedia(activeClaimIdForUpload, activeMediaType, file);
+        alert("File uploaded successfully!");
+        syncClaimInState(updatedClaim);
       } catch (err: any) {
         console.error("Upload failed:", err);
         const msg = err.response?.data?.message || err.message || "Failed to upload file.";
@@ -300,8 +308,8 @@ const HomePage = () => {
   // --- NEW: Damage Form Logic ---
   const openDamageForm = (claim: ClaimRequest) => {
     // If damage form already exists, just show a message
-    if (claim.damageFormUrl) {
-      window.open(claim.damageFormUrl, '_blank');
+    if (claim.damageFormUrl || claim.claimFormUrl) {
+      window.open(claim.damageFormUrl || claim.claimFormUrl, '_blank');
       return;
     }
     setSelectedClaimForDamage(claim);
@@ -951,7 +959,7 @@ const HomePage = () => {
               id="claim-media-upload"
               className="hidden"
               onChange={handleClaimMediaUpload}
-              accept="image/*,application/pdf,.doc,.docx"
+              accept={getClaimMediaAccept(activeMediaType)}
             />
           </div>
         )}
@@ -1154,8 +1162,19 @@ const HomePage = () => {
                     }}
                   />
 
-                  {/* 2. Damage Certificate (Billed by transporter) */}
-                  <div className="border border-gray-200 rounded-xl p-4 flex items-center justify-between">
+                  {/* 2. Damage Certificate */}
+                  <UserMediaUploadSection
+                    label="Damage Certificate"
+                    mediaType="damageForm"
+                    existingUrl={selectedClaimForDetail.damageFormUrl || selectedClaimForDetail.claimFormUrl}
+                    claimId={selectedClaimForDetail.id}
+                    onUploadClick={(mediaType) => {
+                      setActiveClaimIdForUpload(selectedClaimForDetail.id);
+                      setActiveMediaType(mediaType);
+                      document.getElementById('claim-media-upload')?.click();
+                    }}
+                  />
+                  {false && <div className="border border-gray-200 rounded-xl p-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-slate-700">Damage Certificate</span>
                       <span className="text-xs text-gray-500">(Filled by your transporter)</span>
@@ -1169,7 +1188,7 @@ const HomePage = () => {
                         📥 Download
                       </a>
                     </div>
-                  </div>
+                  </div>}
 
                   {/* 3. FIR Document */}
                   <UserMediaUploadSection
@@ -1527,10 +1546,10 @@ function UserMediaUploadSection({
     onUploadClick
 }: {
     label: string;
-    mediaType: 'fir' | 'accidentPic' | 'lorryReceipt' | 'insurancePolicy';
+    mediaType: 'fir' | 'accidentPic' | 'lorryReceipt' | 'insurancePolicy' | 'damageForm';
     existingUrl?: string | null;
     claimId: string;
-    onUploadClick: (mediaType: 'fir' | 'accidentPic' | 'lorryReceipt' | 'insurancePolicy') => void;
+    onUploadClick: (mediaType: 'fir' | 'accidentPic' | 'lorryReceipt' | 'insurancePolicy' | 'damageForm') => void;
 }) {
     return (
         <div className="border border-gray-200 rounded-xl p-4 flex items-center justify-between">
