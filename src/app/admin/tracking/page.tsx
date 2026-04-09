@@ -364,6 +364,18 @@ export default function AdminTrackingPage() {
     setConsentsLoading(false);
   };
 
+  const handleTrackConsentVehicle = async (consent: TraqoConsentRow) => {
+    const vehicleNumber = consent.name?.trim();
+    if (!vehicleNumber) {
+      toast.error('Vehicle number is not available for this consent.');
+      return;
+    }
+
+    setTrackVehicle(vehicleNumber);
+    setConsentsModalOpen(false);
+    setTrackingData(null);
+  };
+
   if (loading || !isAuthenticated) {
     return (
       <div className="py-8">
@@ -432,7 +444,7 @@ export default function AdminTrackingPage() {
                         <th className="px-4 py-3 text-left font-semibold text-slate-600">Updated</th>
                         <th className="px-4 py-3 text-left font-semibold text-slate-600">Location</th>
                         <th className="px-4 py-3 text-left font-semibold text-slate-600">Last 24h</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Requests</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Track</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 bg-white">
@@ -455,8 +467,14 @@ export default function AdminTrackingPage() {
                           <td className="px-4 py-3 text-slate-700">{consent.update_at || '-'}</td>
                           <td className="max-w-sm px-4 py-3 text-slate-700">{consent.location || '-'}</td>
                           <td className="px-4 py-3 text-slate-700">{consent.last_24h || '-'}</td>
-                          <td className="px-4 py-3 text-slate-700">
-                            {consent.total_requests != null ? consent.total_requests : '-'}
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              onClick={() => void handleTrackConsentVehicle(consent)}
+                              className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"
+                            >
+                              Track
+                            </button>
                           </td>
                         </tr>
                       ))}
