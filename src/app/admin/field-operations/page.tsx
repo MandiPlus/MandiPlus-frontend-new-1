@@ -120,6 +120,10 @@ export default function AdminFieldOperationsPage() {
   const [users, setUsers] = useState<AdminFieldUser[]>([]);
   const [activeTab, setActiveTab] = useState<TabKey>('leads');
   const [sendingAlertId, setSendingAlertId] = useState('');
+  const [selectedBoardPhoto, setSelectedBoardPhoto] = useState<{
+    url: string;
+    businessName: string;
+  } | null>(null);
   const [teamForm, setTeamForm] = useState({
     userId: '',
     role: 'MEETING_TEAM',
@@ -351,10 +355,14 @@ export default function AdminFieldOperationsPage() {
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div className="flex flex-1 flex-col gap-4 sm:flex-row sm:items-start">
                             {hasBoardPhoto(lead) ? (
-                              <a
-                                href={lead.boardPhotoUrl ?? undefined}
-                                target="_blank"
-                                rel="noreferrer"
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSelectedBoardPhoto({
+                                    url: lead.boardPhotoUrl ?? '',
+                                    businessName: lead.businessName,
+                                  })
+                                }
                                 className="group block w-full max-w-[220px] overflow-hidden rounded-[1.25rem] border border-slate-200 bg-slate-50"
                               >
                                 <img
@@ -365,7 +373,7 @@ export default function AdminFieldOperationsPage() {
                                 <div className="border-t border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                                   View board photo
                                 </div>
-                              </a>
+                              </button>
                             ) : (
                               <div className="flex h-40 w-full max-w-[220px] items-center justify-center rounded-[1.25rem] border border-dashed border-slate-200 bg-slate-50 px-4 text-center text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
                                 No board photo
@@ -730,6 +738,44 @@ export default function AdminFieldOperationsPage() {
             : null}
         </div>
       </section>
+
+      {selectedBoardPhoto ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
+          onClick={() => setSelectedBoardPhoto(null)}
+        >
+          <div
+            className="relative w-full max-w-4xl overflow-hidden rounded-[2rem] bg-white shadow-[0_30px_90px_-30px_rgba(15,23,42,0.5)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  {selectedBoardPhoto.businessName}
+                </p>
+                <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">
+                  Board photo
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedBoardPhoto(null)}
+                className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="bg-slate-100 p-4">
+              <img
+                src={selectedBoardPhoto.url}
+                alt={`${selectedBoardPhoto.businessName} board`}
+                className="max-h-[75vh] w-full rounded-[1.5rem] object-contain bg-white"
+              />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
