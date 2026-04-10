@@ -27,6 +27,8 @@ export interface AdminFieldLead {
   customerName: string;
   businessAddress: string;
   mobileNumber: string;
+  businessType?: string;
+  boardPhotoUrl?: string | null;
   currentStatus: string;
   createdAt: string;
   createdByUser?: {

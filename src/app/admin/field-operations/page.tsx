@@ -28,7 +28,9 @@ const leadStatuses = [
   'appointment_scheduled',
   'meeting_assigned',
   'meeting_completed',
+  'commission_buyer',
   'converted',
+  'not_receiving_call',
   'not_interested',
   'follow_up_required',
   'closed',
@@ -92,6 +94,10 @@ function formatStatusLabel(status: string) {
 
 function normalizeStatusValue(status: string) {
   return status.trim().toLowerCase().replaceAll(' ', '_');
+}
+
+function hasBoardPhoto(lead: AdminFieldLead) {
+  return Boolean(lead.boardPhotoUrl?.trim());
 }
 
 function sectionShell(children: React.ReactNode) {
@@ -343,7 +349,29 @@ export default function AdminFieldOperationsPage() {
                         className="rounded-[1.5rem] border border-slate-200/90 bg-white p-4 shadow-[0_14px_36px_-28px_rgba(15,23,42,0.18)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_40px_-28px_rgba(15,23,42,0.24)]"
                       >
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                          <div>
+                          <div className="flex flex-1 flex-col gap-4 sm:flex-row sm:items-start">
+                            {hasBoardPhoto(lead) ? (
+                              <a
+                                href={lead.boardPhotoUrl ?? undefined}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="group block w-full max-w-[220px] overflow-hidden rounded-[1.25rem] border border-slate-200 bg-slate-50"
+                              >
+                                <img
+                                  src={lead.boardPhotoUrl ?? ''}
+                                  alt={`${lead.businessName} board`}
+                                  className="h-40 w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                                />
+                                <div className="border-t border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                  View board photo
+                                </div>
+                              </a>
+                            ) : (
+                              <div className="flex h-40 w-full max-w-[220px] items-center justify-center rounded-[1.25rem] border border-dashed border-slate-200 bg-slate-50 px-4 text-center text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                                No board photo
+                              </div>
+                            )}
+                            <div className="flex-1">
                             <p className="text-base font-semibold text-slate-900">
                               {lead.businessName}
                             </p>
@@ -353,9 +381,15 @@ export default function AdminFieldOperationsPage() {
                             <p className="mt-2 text-sm leading-6 text-slate-500">
                               {lead.businessAddress}
                             </p>
+                            {lead.businessType ? (
+                              <p className="mt-2 text-sm font-medium text-slate-500">
+                                {lead.businessType}
+                              </p>
+                            ) : null}
                             <p className="mt-3 inline-flex rounded-full bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                               Submitted by {lead.createdByUser?.name || 'Field user'}
                             </p>
+                            </div>
                           </div>
                           <div className="w-full lg:w-56">
                             <div className="rounded-[1.25rem] border border-slate-200 bg-[linear-gradient(135deg,#f8fafc_0%,#ffffff_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
