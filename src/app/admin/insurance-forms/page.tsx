@@ -188,6 +188,7 @@ export default function InsuranceFormsPage() {
     const [weightmentSlip, setWeightmentSlip] = useState<File | null>(null);
     const cropperRef = useRef<ReactCropperElement>(null);
     const [invoiceDateInputType, setInvoiceDateInputType] = useState<'text' | 'date'>('text');
+    const [pdfRefreshKeys, setPdfRefreshKeys] = useState<Record<string, number>>({});
     const [filters, setFilters] = useState<InsuranceFormFilters>({
         invoiceType: '',
         invoiceNumber: '',
@@ -203,55 +204,96 @@ export default function InsuranceFormsPage() {
     const ITEMS_PER_PAGE = 10;
     const debouncedFilters = useDebounce(filters, 500);
 
+    const buildActiveFilters = useCallback((sourceFilters: InsuranceFormFilters): InvoiceFilterParams => {
+        const activeFilters: InvoiceFilterParams = {};
+
+        if (sourceFilters.invoiceType) {
+            activeFilters.invoiceType = sourceFilters.invoiceType;
+        }
+
+        if (sourceFilters.invoiceNumber?.trim()) {
+            const value = sourceFilters.invoiceNumber.trim();
+            if (value.length >= 2) activeFilters.invoiceNumber = value;
+        }
+
+        if (sourceFilters.vehicleNumber?.trim()) {
+            const value = sourceFilters.vehicleNumber.trim();
+            if (value.length >= 2) activeFilters.vehicleNumber = value;
+        }
+
+        if (sourceFilters.startDate) {
+            activeFilters.startDate = sourceFilters.startDate;
+        }
+
+        if (sourceFilters.endDate) {
+            activeFilters.endDate = sourceFilters.endDate;
+        }
+
+        if (sourceFilters.supplierName?.trim()) {
+            const value = sourceFilters.supplierName.trim();
+            if (value.length >= 3) activeFilters.supplierName = value;
+        }
+
+        if (sourceFilters.buyerName?.trim()) {
+            const value = sourceFilters.buyerName.trim();
+            if (value.length >= 3) activeFilters.buyerName = value;
+        }
+
+        if (sourceFilters.productName?.trim()) {
+            activeFilters.productName = sourceFilters.productName.trim();
+        }
+
+        if (sourceFilters.verificationStatus === 'verified') {
+            activeFilters.isVerified = true;
+            activeFilters.isRejected = false;
+        } else if (sourceFilters.verificationStatus === 'rejected') {
+            activeFilters.isRejected = true;
+        }
+
+        return activeFilters;
+    }, []);
+
+    const normalizeInvoices = useCallback((rawInvoices: any[]) => {
+        const sortedData = rawInvoices.sort((a: any, b: any) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+
+        const merged = sortedData.map((raw: any) => {
+            const inv = {
+                ...raw,
+                id: getInvoiceId(raw),
+            };
+            const key = getInvoiceKey(inv);
+            const override = key ? insuranceOverrides[key] : undefined;
+            if (!override) return inv;
+            return {
+                ...inv,
+                insurance: {
+                    fileUrl: override.fileUrl,
+                    uploadedAt: override.uploadedAt,
+                    fileType: override.fileType ?? 'application/pdf',
+                },
+            };
+        });
+
+        const invoiceNumberQuery = debouncedFilters.invoiceNumber?.trim().toLowerCase() || '';
+        const vehicleNumberQuery = debouncedFilters.vehicleNumber?.trim().toLowerCase() || '';
+        return merged.filter((inv) => {
+            const matchesInvoice = !invoiceNumberQuery
+                || String(inv.invoiceNumber || '').toLowerCase().includes(invoiceNumberQuery);
+            const matchesVehicle = !vehicleNumberQuery
+                || String(inv.vehicleNumber || '').toLowerCase().includes(vehicleNumberQuery);
+
+            return matchesInvoice && matchesVehicle;
+        });
+    }, [debouncedFilters.invoiceNumber, debouncedFilters.vehicleNumber, insuranceOverrides]);
+
     const fetchInvoices = useCallback(async () => {
         setLoading(true);
         setError('');
 
         try {
-            const activeFilters: InvoiceFilterParams = {};
-
-            if (debouncedFilters.invoiceType) {
-                activeFilters.invoiceType = debouncedFilters.invoiceType;
-            }
-
-            if (debouncedFilters.invoiceNumber?.trim()) {
-                const value = debouncedFilters.invoiceNumber.trim();
-                if (value.length >= 2) activeFilters.invoiceNumber = value;
-            }
-
-            if (debouncedFilters.vehicleNumber?.trim()) {
-                const value = debouncedFilters.vehicleNumber.trim();
-                if (value.length >= 2) activeFilters.vehicleNumber = value;
-            }
-
-            if (debouncedFilters.startDate) {
-                activeFilters.startDate = debouncedFilters.startDate;
-            }
-
-            if (debouncedFilters.endDate) {
-                activeFilters.endDate = debouncedFilters.endDate;
-            }
-
-            if (debouncedFilters.supplierName?.trim()) {
-                const value = debouncedFilters.supplierName.trim();
-                if (value.length >= 3) activeFilters.supplierName = value;
-            }
-
-            if (debouncedFilters.buyerName?.trim()) {
-                const value = debouncedFilters.buyerName.trim();
-                if (value.length >= 3) activeFilters.buyerName = value;
-            }
-
-            if (debouncedFilters.productName?.trim()) {
-                activeFilters.productName = debouncedFilters.productName.trim();
-            }
-
-            if (debouncedFilters.verificationStatus === 'verified') {
-                activeFilters.isVerified = true;
-                activeFilters.isRejected = false;
-            } else if (debouncedFilters.verificationStatus === 'rejected') {
-                activeFilters.isRejected = true;
-            }
+            const activeFilters = buildActiveFilters(debouncedFilters);
 
             const response = await adminApi.filterInvoices(activeFilters);
 
@@ -264,40 +306,7 @@ export default function InsuranceFormsPage() {
                 data = response as any;
             }
 
-            const sortedData = data.sort((a: any, b: any) =>
-                new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-            );
-
-            const merged = sortedData.map((raw: any) => {
-                const inv = {
-                    ...raw,
-                    id: getInvoiceId(raw),
-                };
-                const key = getInvoiceKey(inv);
-                const override = key ? insuranceOverrides[key] : undefined;
-                if (!override) return inv;
-                return {
-                    ...inv,
-                    insurance: {
-                        fileUrl: override.fileUrl,
-                        uploadedAt: override.uploadedAt,
-                        fileType: override.fileType ?? 'application/pdf',
-                    },
-                };
-            });
-
-            const invoiceNumberQuery = debouncedFilters.invoiceNumber?.trim().toLowerCase() || '';
-            const vehicleNumberQuery = debouncedFilters.vehicleNumber?.trim().toLowerCase() || '';
-            const result = merged.filter((inv) => {
-                const matchesInvoice = !invoiceNumberQuery
-                    || String(inv.invoiceNumber || '').toLowerCase().includes(invoiceNumberQuery);
-                const matchesVehicle = !vehicleNumberQuery
-                    || String(inv.vehicleNumber || '').toLowerCase().includes(vehicleNumberQuery);
-
-                return matchesInvoice && matchesVehicle;
-            });
-
-            setInvoices(result);
+            setInvoices(normalizeInvoices(data));
 
         } catch (err: any) {
             console.error("Fetch error:", err);
@@ -305,7 +314,47 @@ export default function InsuranceFormsPage() {
         } finally {
             setLoading(false);
         }
-    }, [debouncedFilters, insuranceOverrides]);
+    }, [buildActiveFilters, debouncedFilters, normalizeInvoices]);
+
+    const refreshInvoiceAfterRegenerate = useCallback(async (invoiceId: string) => {
+        const activeFilters = buildActiveFilters(debouncedFilters);
+
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+            try {
+                const response = await adminApi.filterInvoices(activeFilters);
+                let data: Invoice[] = [];
+
+                if (Array.isArray(response.data)) {
+                    data = response.data;
+                } else if (response.success && Array.isArray(response.data)) {
+                    data = response.data;
+                } else if (Array.isArray(response)) {
+                    data = response as any;
+                }
+
+                const normalized = normalizeInvoices(data);
+                const refreshedInvoice = normalized.find((invoice) => getInvoiceId(invoice) === invoiceId);
+
+                if (refreshedInvoice) {
+                    setInvoices((prev) => prev.map((invoice) => (
+                        getInvoiceId(invoice) === invoiceId ? refreshedInvoice : invoice
+                    )));
+                }
+
+                if (refreshedInvoice?.pdfUrl || refreshedInvoice?.pdfURL) {
+                    setPdfRefreshKeys((prev) => ({ ...prev, [invoiceId]: Date.now() }));
+                    return;
+                }
+            } catch (error) {
+                console.error('Failed to refresh regenerated invoice', error);
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+
+        await fetchInvoices();
+        setPdfRefreshKeys((prev) => ({ ...prev, [invoiceId]: Date.now() }));
+    }, [buildActiveFilters, debouncedFilters, fetchInvoices, normalizeInvoices]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -655,9 +704,15 @@ export default function InsuranceFormsPage() {
         return undefined;
     };
 
-    const handleViewPdf = (url: string | undefined) => {
+    const handleViewPdf = (inv: Invoice) => {
+        const url = inv.pdfUrl || inv.pdfURL;
         if (!url) return;
-        window.open(toFullFileUrl(url), '_blank');
+
+        const fullUrl = toFullFileUrl(url);
+        const invoiceId = getInvoiceId(inv);
+        const refreshKey = invoiceId ? (pdfRefreshKeys[invoiceId] || Date.now()) : Date.now();
+        const separator = fullUrl.includes('?') ? '&' : '?';
+        window.open(`${fullUrl}${separator}v=${refreshKey}`, '_blank');
     };
 
     const handleEditClick = (invoice: Invoice) => {
@@ -794,9 +849,14 @@ export default function InsuranceFormsPage() {
                 amount: computedAmount,
             };
 
-            await adminApi.regenerateInvoice(payload);
+            const regenerateResponse = await adminApi.regenerateInvoice(payload);
+            if (!regenerateResponse.success) {
+                throw new Error(regenerateResponse.message || 'Failed to regenerate invoice');
+            }
+
+            setPdfRefreshKeys((prev) => ({ ...prev, [editingInvoice.id]: Date.now() }));
             toast.success("Invoice updated & PDF regenerated");
-            await fetchInvoices();
+            await refreshInvoiceAfterRegenerate(editingInvoice.id);
             closeModal();
         } catch (error: any) {
             console.error("Regenerate error:", error);
@@ -1461,7 +1521,7 @@ export default function InsuranceFormsPage() {
                                                     <td className={`px-2 py-3 xl:py-2 text-center align-top ${expandedInvoiceId === inv.id ? 'bg-slate-50' : 'bg-white'}`}>
                                                         {(inv.pdfUrl || inv.pdfURL) ? (
                                                             <button
-                                                                onClick={() => handleViewPdf(inv.pdfUrl || inv.pdfURL)}
+                                                                onClick={() => handleViewPdf(inv)}
                                                                 className="inline-flex items-center justify-center w-9 h-9 text-[#4309ac] hover:bg-[#4309ac]/10 rounded-lg border border-[#4309ac]/20"
                                                                 title="View Invoice PDF"
                                                             >
@@ -1873,7 +1933,7 @@ export default function InsuranceFormsPage() {
                                                                                 <p className="text-xs font-semibold text-slate-500">Invoice PDF</p>
                                                                                 {(inv.pdfUrl || inv.pdfURL) ? (
                                                                                     <button
-                                                                                        onClick={() => handleViewPdf(inv.pdfUrl || inv.pdfURL)}
+                                                                                        onClick={() => handleViewPdf(inv)}
                                                                                         className="inline-flex items-center gap-2 rounded-lg border border-[#4309ac]/20 px-3 py-2 text-sm font-semibold text-[#4309ac] hover:bg-[#4309ac]/10"
                                                                                     >
                                                                                         <FileText className="w-4 h-4" />
@@ -1945,7 +2005,7 @@ export default function InsuranceFormsPage() {
                                         <div className="flex items-center gap-1.5 sm:gap-2 ml-2">
                                             {(inv.pdfUrl || inv.pdfURL) && (
                                                 <button
-                                                    onClick={() => handleViewPdf(inv.pdfUrl || inv.pdfURL)}
+                                                    onClick={() => handleViewPdf(inv)}
                                                     className="p-1.5 sm:p-2 text-green-600 hover:bg-green-50 rounded-lg border border-green-200"
                                                     title="View PDF"
                                                 >
