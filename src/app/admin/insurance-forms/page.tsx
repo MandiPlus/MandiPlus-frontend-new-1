@@ -714,8 +714,18 @@ export default function InsuranceFormsPage() {
     };
 
     const rotateImage = (degrees: number) => {
-        setRotation(prev => (prev + degrees) % 360);
-        cropperRef.current?.cropper.rotateTo(rotation + degrees);
+        setRotation((prev) => {
+            const nextRotation = (prev + degrees) % 360;
+            cropperRef.current?.cropper.rotateTo(nextRotation);
+            return nextRotation;
+        });
+    };
+
+    const closeCropper = () => {
+        setIsCropping(false);
+        setIsCropperReady(false);
+        setImageSrc(null);
+        setRotation(0);
     };
 
     const handleCropComplete = () => {
@@ -727,8 +737,7 @@ export default function InsuranceFormsPage() {
         }).toBlob(blob => {
             if (blob) {
                 setWeightmentSlip(new File([blob], 'updated-weightment-slip.jpg', { type: 'image/jpeg' }));
-                setIsCropping(false);
-                setImageSrc(null);
+                closeCropper();
             }
         }, 'image/jpeg', 0.9);
     };
@@ -804,6 +813,7 @@ export default function InsuranceFormsPage() {
         setInvoiceDateInputType('text');
         setFormData({});
         setWeightmentSlip(null);
+        closeCropper();
     };
 
     const getInsuredPersonName = (inv: Invoice) => {
@@ -1208,58 +1218,6 @@ export default function InsuranceFormsPage() {
                                 className="rounded-xl bg-[#4309ac] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2f0679] disabled:cursor-not-allowed disabled:opacity-60"
                             >
                                 {exporting ? 'Exporting...' : 'Export Selected Columns'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Cropper Overlay */}
-            {isCropping && imageSrc && (
-                <div className="fixed inset-0 z-50 bg-black flex flex-col">
-                    <div className="flex-1 w-full relative min-h-0 bg-black">
-                        <Cropper
-                            src={imageSrc}
-                            style={{ height: '100%', width: '100%' }}
-                            ref={cropperRef}
-                            guides={true}
-                            viewMode={1}
-                            dragMode="move"
-                            autoCropArea={1}
-                            checkOrientation={true}
-                            ready={() => {
-                                setIsCropperReady(true);
-                                setRotation(0);
-                            }}
-                        />
-                    </div>
-                    <div className="w-full bg-black/90 p-3 sm:p-4 flex justify-between items-center px-4 sm:px-6 z-50 border-t border-gray-800">
-                        <div className="flex gap-3 sm:gap-4 text-white">
-                            <button type="button" onClick={() => rotateImage(-90)}>
-                                <ArrowPathIcon className="w-5 h-5 sm:w-6 sm:h-6 transform rotate-90" />
-                            </button>
-                            <button type="button" onClick={() => rotateImage(90)}>
-                                <ArrowPathIcon className="w-5 h-5 sm:w-6 sm:h-6 -scale-x-100 transform rotate-90" />
-                            </button>
-                        </div>
-                        <div className="flex gap-4 sm:gap-6">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setIsCropping(false);
-                                    setImageSrc(null);
-                                }}
-                                className="text-red-500"
-                            >
-                                <XMarkIcon className="w-7 h-7 sm:w-8 sm:h-8" />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleCropComplete}
-                                disabled={!isCropperReady}
-                                className={isCropperReady ? 'text-[#25D366]' : 'text-gray-500'}
-                            >
-                                <CheckIcon className="w-7 h-7 sm:w-8 sm:h-8" />
                             </button>
                         </div>
                     </div>
@@ -2302,7 +2260,7 @@ export default function InsuranceFormsPage() {
             {/* Edit Invoice Modal - Responsive */}
             {isEditing && editingInvoice && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[2000] p-3 sm:p-4">
-                    <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-lg max-h-[90vh] sm:max-h-[80vh] overflow-y-auto shadow-2xl">
+                    <div className="relative bg-white rounded-2xl sm:rounded-3xl w-full max-w-lg max-h-[90vh] sm:max-h-[80vh] overflow-y-auto shadow-2xl">
                         <div className="sticky top-0 bg-white border-b px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center rounded-t-2xl sm:rounded-t-3xl z-10">
                             <h3 className="text-lg sm:text-xl font-bold text-slate-800">Update Invoice</h3>
                             <button
@@ -2553,6 +2511,80 @@ export default function InsuranceFormsPage() {
                                 {isRegenerating ? 'Updating...' : 'Update & Regenerate PDF'}
                             </button>
                         </div>
+
+                        {isCropping && imageSrc && (
+                            <div className="absolute inset-0 z-30 flex flex-col rounded-2xl sm:rounded-3xl bg-black/80 backdrop-blur-[1px]">
+                                <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-white sm:px-6">
+                                    <div>
+                                        <p className="text-sm font-semibold">Crop Weighment Slip</p>
+                                        <p className="text-xs text-white/70">Adjust the image before regenerating the invoice PDF.</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={closeCropper}
+                                        className="rounded-full p-1 text-white/80 transition hover:bg-white/10 hover:text-white"
+                                    >
+                                        <XMarkIcon className="h-5 w-5" />
+                                    </button>
+                                </div>
+
+                                <div className="relative min-h-[320px] flex-1 bg-black">
+                                    <Cropper
+                                        src={imageSrc}
+                                        style={{ height: '100%', width: '100%' }}
+                                        ref={cropperRef}
+                                        guides={true}
+                                        viewMode={1}
+                                        dragMode="move"
+                                        autoCropArea={1}
+                                        checkOrientation={true}
+                                        ready={() => {
+                                            setIsCropperReady(true);
+                                            setRotation(0);
+                                        }}
+                                    />
+                                </div>
+
+                                <div className="flex items-center justify-between border-t border-white/10 bg-black/90 px-4 py-3 sm:px-6">
+                                    <div className="flex gap-3 text-white">
+                                        <button
+                                            type="button"
+                                            onClick={() => rotateImage(-90)}
+                                            className="rounded-full p-2 transition hover:bg-white/10"
+                                            aria-label="Rotate left"
+                                        >
+                                            <ArrowPathIcon className="h-5 w-5 rotate-90 transform sm:h-6 sm:w-6" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => rotateImage(90)}
+                                            className="rounded-full p-2 transition hover:bg-white/10"
+                                            aria-label="Rotate right"
+                                        >
+                                            <ArrowPathIcon className="h-5 w-5 -scale-x-100 rotate-90 transform sm:h-6 sm:w-6" />
+                                        </button>
+                                    </div>
+
+                                    <div className="flex gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={closeCropper}
+                                            className="rounded-lg border border-white/15 px-3 py-2 text-sm font-medium text-white/80 transition hover:bg-white/10 hover:text-white"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleCropComplete}
+                                            disabled={!isCropperReady}
+                                            className="rounded-lg bg-[#25D366] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#1ebe5d] disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            Apply Crop
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
