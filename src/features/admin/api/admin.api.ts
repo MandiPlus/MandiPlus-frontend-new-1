@@ -835,7 +835,10 @@ class AdminApi {
         "/invoices/regenerate",
         payload,
       );
-      return response.data;
+      return this.normalizeApiResponse(
+        response.data,
+        "Invoice updated & PDF regenerated",
+      );
     } catch (error: any) {
       return {
         success: false,
