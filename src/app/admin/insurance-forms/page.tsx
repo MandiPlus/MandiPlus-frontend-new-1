@@ -13,7 +13,6 @@ import { Menu, Transition } from '@headlessui/react';
 import { FileText, RefreshCw, Upload, Eye, CheckCircle, AlertCircle, X, XCircle, Pencil, ChevronDown, ChevronRight, MoreVertical, Link as LinkIcon, RotateCcw } from 'lucide-react';
 
 import InsuranceUploadModal from '@/features/admin/components/InsuranceUploadModal';
-import { uploadWeighmentSlips } from '@/features/insurance/api';
 
 function useDebounce<T>(value: T, delay: number): T {
     const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -767,7 +766,7 @@ export default function InsuranceFormsPage() {
 
         try {
             if (weightmentSlip) {
-                await uploadWeighmentSlips(editingInvoice.id, [weightmentSlip]);
+                await adminApi.uploadWeighmentSlips(editingInvoice.id, [weightmentSlip]);
             }
 
             const qty = Number(formData.quantity) || 0;

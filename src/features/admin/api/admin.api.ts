@@ -793,7 +793,7 @@ class AdminApi {
     files: File[],
   ): Promise<any> => {
     try {
-      const token = localStorage.getItem("accessToken");
+      const token = localStorage.getItem("adminToken");
       if (!token) {
         throw new Error("Authentication required");
       }
