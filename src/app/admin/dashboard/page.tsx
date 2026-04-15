@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
+import { adminApi } from '@/features/admin/api/admin.api';
 import axios from 'axios';
 import {
     Bar,
@@ -18,7 +19,7 @@ import {
     XAxis,
     YAxis
 } from 'recharts';
-import { FileText, Filter, IndianRupee, Timer, Users, UserSquare2 } from 'lucide-react';
+import { Download, FileText, Filter, IndianRupee, Timer, Users, UserSquare2 } from 'lucide-react';
 
 type InvoiceStatus = 'Verified' | 'Pending' | 'Rejected';
 type ClaimStatus = 'Pending' | 'Surveyor Assigned' | 'Completed';
@@ -129,6 +130,13 @@ function monthLabel(d: Date) {
 function toNum(v: unknown) {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
+}
+
+function getErrorMessage(error: unknown) {
+    if (error instanceof Error && error.message) {
+        return error.message;
+    }
+    return 'Failed to run tender coconut report.';
 }
 
 function startOfDay(value: string) {
@@ -309,6 +317,9 @@ export default function AnalyticsDashboardPage() {
     const [product, setProduct] = useState('');
     const [state, setState] = useState('');
     const [topProductsMetric, setTopProductsMetric] = useState<TopProductsMetric>('premium');
+    const [runningTenderReport, setRunningTenderReport] = useState(false);
+    const [tenderReportMessage, setTenderReportMessage] = useState('');
+    const [tenderReportError, setTenderReportError] = useState('');
 
     useEffect(() => {
         if (!isAuthenticated) {
@@ -792,16 +803,69 @@ export default function AnalyticsDashboardPage() {
 
     const filters = filterOptions;
 
+    const handleRunTenderCoconutReport = async () => {
+        try {
+            setRunningTenderReport(true);
+            setTenderReportError('');
+            setTenderReportMessage('');
+
+            const response = await adminApi.runLatestTenderCoconutReport();
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to run tender coconut report.');
+            }
+
+            const data = response.data;
+            if (!data) {
+                setTenderReportMessage('Report run completed, but no tender coconut invoices were found for the previous day.');
+                return;
+            }
+
+            if ((data.totalInvoices || 0) === 0) {
+                setTenderReportMessage(`No tender coconut invoices found for ${data.reportDate}.`);
+                return;
+            }
+
+            setTenderReportMessage(
+                `Tender coconut reports generated for ${data.reportDate}. ${data.totalInvoices} invoices included and sent to ${data.recipients.join(', ')}.`
+            );
+        } catch (error: unknown) {
+            setTenderReportError(getErrorMessage(error));
+        } finally {
+            setRunningTenderReport(false);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100/80 py-8">
             <div className="mx-auto w-full max-w-[1560px] px-2 sm:px-3 lg:px-4">
-                <div className="mb-5">
-                    <h1 className="text-3xl font-bold tracking-tight text-slate-900">MandiPlus Analytics Dashboard</h1>
-                    <p className="mt-1 text-sm text-slate-500">     </p>
+                <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                        <h1 className="text-3xl font-bold tracking-tight text-slate-900">MandiPlus Analytics Dashboard</h1>
+                        <p className="mt-1 text-sm text-slate-500">     </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={handleRunTenderCoconutReport}
+                        disabled={runningTenderReport}
+                        className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-[#1155b8] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0d4697] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        <Download className="h-4 w-4" />
+                        {runningTenderReport ? 'Generating...' : 'Run Tender Coconut Report'}
+                    </button>
                 </div>
                 {error ? (
                     <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                         {error}
+                    </div>
+                ) : null}
+                {tenderReportError ? (
+                    <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                        {tenderReportError}
+                    </div>
+                ) : null}
+                {tenderReportMessage ? (
+                    <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                        {tenderReportMessage}
                     </div>
                 ) : null}
 

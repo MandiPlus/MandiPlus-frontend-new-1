@@ -189,6 +189,17 @@ export interface ArrivalReportRow {
   updatedAt: string;
 }
 
+export interface TenderCoconutReportRunResult {
+  reportDate: string;
+  totalInvoices: number;
+  averagePremium: number;
+  totalPremiumAmount: number;
+  dashboardPaymentReported: number;
+  summaryUrl?: string | null;
+  breakupUrl?: string | null;
+  recipients: string[];
+}
+
 export interface AdminWalletStatementItem {
   id: string;
   type: string;
@@ -855,6 +866,35 @@ class AdminApi {
         success: false,
         message:
           error.response?.data?.message || "Failed to run latest arrival report",
+        error: error.message,
+      };
+    }
+  };
+
+  public runLatestTenderCoconutReport = async (): Promise<
+    ApiResponse<TenderCoconutReportRunResult | null>
+  > => {
+    try {
+      const response = await this.client.post<
+        TenderCoconutReportRunResult | ApiResponse<TenderCoconutReportRunResult | null>
+      >("/invoices/admin/tender-coconut-reports/run-latest");
+      if (
+        response.data &&
+        typeof response.data === "object" &&
+        "success" in response.data
+      ) {
+        return response.data as ApiResponse<TenderCoconutReportRunResult | null>;
+      }
+      return {
+        success: true,
+        data: (response.data as TenderCoconutReportRunResult) || null,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to run latest tender coconut report",
         error: error.message,
       };
     }
