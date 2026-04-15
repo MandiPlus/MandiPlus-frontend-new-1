@@ -22,10 +22,11 @@ function classNames(...classes: string[]) {
 
 function getActionAvailability(status: AdminAccountRow['status']) {
   return {
-    canEditSections: status === 'PENDING',
+    canEditSections: status === 'PENDING' || status === 'APPROVED',
     canApprove: status === 'PENDING',
     canReject: status === 'PENDING',
     canSuspend: status === 'APPROVED',
+    canUpdateAccess: status === 'APPROVED',
   };
 }
 
@@ -113,6 +114,7 @@ export default function AdminAccountApprovals({
   const updateStatus = async (
     account: AdminAccountRow,
     status: 'APPROVED' | 'REJECTED' | 'SUSPENDED',
+    successMessage?: string,
   ) => {
     setSavingId(account.id);
     const response = await adminApi.updateAdminAccountApproval(account.id, {
@@ -129,11 +131,12 @@ export default function AdminAccountApprovals({
     }
 
     toast.success(
-      status === 'APPROVED'
-        ? 'Admin account approved'
-        : status === 'REJECTED'
-          ? 'Admin account rejected'
-          : 'Admin account suspended',
+      successMessage ||
+        (status === 'APPROVED'
+          ? 'Admin account approved'
+          : status === 'REJECTED'
+            ? 'Admin account rejected'
+            : 'Admin account suspended'),
     );
     setOpenSectionPickerId(null);
     await loadAccounts();
@@ -185,6 +188,9 @@ export default function AdminAccountApprovals({
                     const selectedSections = sectionDrafts[account.id] || [];
                     const pickerOpen = openSectionPickerId === account.id;
                     const actionAvailability = getActionAvailability(account.status);
+                    const sectionsChanged =
+                      JSON.stringify([...selectedSections].sort()) !==
+                      JSON.stringify([...(account.assignedSections || [])].sort());
 
                     return (
                       <tr key={account.id} className="align-top">
@@ -300,6 +306,24 @@ export default function AdminAccountApprovals({
                               className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-60"
                             >
                               Suspend
+                            </button>
+                            <button
+                              type="button"
+                              disabled={
+                                savingId === account.id ||
+                                !actionAvailability.canUpdateAccess ||
+                                !sectionsChanged
+                              }
+                              onClick={() =>
+                                void updateStatus(
+                                  account,
+                                  'APPROVED',
+                                  'Admin access updated',
+                                )
+                              }
+                              className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                            >
+                              Update Access
                             </button>
                           </div>
                         </td>
