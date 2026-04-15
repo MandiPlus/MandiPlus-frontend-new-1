@@ -3,43 +3,13 @@
 import { Fragment, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import {
-    FolderIcon,
-    HomeIcon,
-    UsersIcon,
     XMarkIcon,
-    ClipboardDocumentListIcon,
-    PencilSquareIcon,
-    BanknotesIcon,
-    CreditCardIcon,
-    MapPinIcon,
-    ChatBubbleLeftRightIcon,
-    DocumentChartBarIcon,
-    CalendarIcon,
 } from '@heroicons/react/24/outline';
 import { Bars3Icon } from '@heroicons/react/16/solid';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAdmin } from '../context/AdminContext';
-
-// Updated Navigation List
-const navigation = [
-    { name: 'Dashboard', href: '/admin/dashboard', icon: HomeIcon },
-    { name: 'Users', href: '/admin/users', icon: UsersIcon },
-    { name: 'Invoice / Insurance Forms', href: '/admin/insurance-forms', icon: FolderIcon },
-    { name: 'Claim Requests', href: '/admin/claims', icon: ClipboardDocumentListIcon },
-    { name: 'Tracking', href: '/admin/tracking', icon: MapPinIcon },
-    { name: 'Created Trips', href: '/admin/trips', icon: MapPinIcon },
-    { name: 'Agent Commissions', href: '/admin/agent-commissions', icon: BanknotesIcon },
-    { name: 'Insurance Payments', href: '/admin/insurance-payments', icon: CreditCardIcon },
-    { name: 'Arrival Reports', href: '/admin/arrival-reports', icon: DocumentChartBarIcon },
-    { name: 'Field Operations', href: '/admin/field-operations', icon: CalendarIcon },
-    { name: 'WhatsApp Chats', href: '/admin/chat-logs', icon: ChatBubbleLeftRightIcon },
-    {
-    name: 'Edit Insurance PDF',
-    href: '/admin/pdf-editor',
-    icon: PencilSquareIcon,
-},
-];
+import { ADMIN_NAV_ITEMS } from '../access';
 
 function classNames(...classes: string[]) {
     return classes.filter(Boolean).join(' ');
@@ -48,7 +18,10 @@ function classNames(...classes: string[]) {
 export default function AdminSidebar() {
     const pathname = usePathname();
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const { logout } = useAdmin();
+    const { logout, accessProfile } = useAdmin();
+    const navigation = ADMIN_NAV_ITEMS.filter((item) =>
+        accessProfile?.allowedSections?.includes(item.section),
+    );
 
     return (
         <>

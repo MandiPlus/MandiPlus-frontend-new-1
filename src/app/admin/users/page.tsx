@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import { formatDate } from '@/features/admin/utils/format';
 import { AdminWalletStatementItem, adminApi } from '@/features/admin/api/admin.api';
+import AdminAccountApprovals from '@/features/admin/components/AdminAccountApprovals';
 import { toast } from 'react-toastify';
 
 // --- 1. Interface Updated ---
@@ -22,6 +23,7 @@ interface User {
 }
 
 type UserSection = 'ALL' | 'CUSTOMER' | 'TRANSPORTER';
+type AdminViewSection = UserSection | 'ADMIN_REQUESTS';
 
 // --- 2. Helper for Mobile Format ---
 const formatIndianMobile = (phone: string | undefined) => {
@@ -43,7 +45,7 @@ export default function UsersPage() {
 
     const [searchTerm, setSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
-    const [activeSection, setActiveSection] = useState<UserSection>('ALL');
+    const [activeSection, setActiveSection] = useState<AdminViewSection>('ALL');
     const [creditAmounts, setCreditAmounts] = useState<Record<string, string>>({});
     const [effectiveDates, setEffectiveDates] = useState<Record<string, string>>({});
     const [remarks, setRemarks] = useState<Record<string, string>>({});
@@ -61,6 +63,9 @@ export default function UsersPage() {
     const ITEMS_PER_PAGE = 10;
     const showWalletColumns = activeSection !== 'ALL';
     const sectionTitle =
+        activeSection === 'ADMIN_REQUESTS'
+            ? 'Admin Requests'
+            :
         activeSection === 'CUSTOMER'
             ? 'Customers'
             : activeSection === 'TRANSPORTER'
@@ -123,6 +128,7 @@ export default function UsersPage() {
     // Search Logic
     useEffect(() => {
         const bySection = allUsers.filter((user) => {
+            if (activeSection === 'ADMIN_REQUESTS') return false;
             if (activeSection === 'CUSTOMER') return user.identity === 'CUSTOMER';
             if (activeSection === 'TRANSPORTER') return user.identity === 'TRANSPORTER';
             return true;
@@ -412,6 +418,16 @@ export default function UsersPage() {
                     >
                         Transporters
                     </button>
+                    <button
+                        onClick={() => setActiveSection('ADMIN_REQUESTS')}
+                        className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+                            activeSection === 'ADMIN_REQUESTS'
+                                ? 'bg-green-600 text-white'
+                                : 'bg-white text-gray-700 border border-gray-300'
+                        }`}
+                    >
+                        Admin Requests
+                    </button>
                 </div>
 
                 {error && (
@@ -420,6 +436,9 @@ export default function UsersPage() {
                     </div>
                 )}
 
+                {activeSection === 'ADMIN_REQUESTS' ? (
+                    <AdminAccountApprovals searchTerm={searchTerm} />
+                ) : (
                 <div className="mt-8 flex flex-col">
                     <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
                         <div className="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
@@ -640,9 +659,10 @@ export default function UsersPage() {
                         </div>
                     </div>
                 </div>
+                )}
 
                 {/* Pagination Controls */}
-                {totalPages > 1 && (
+                {activeSection !== 'ADMIN_REQUESTS' && totalPages > 1 && (
                     <div className="mt-4 flex items-center justify-between">
                         <div className="flex-1 flex justify-between sm:hidden">
                             <button

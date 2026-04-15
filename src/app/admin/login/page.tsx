@@ -58,6 +58,12 @@ export default function LoginPage() {
                             return to home page
                         </Link>
                     </p>
+                    <p className="mt-2 text-center text-sm text-gray-600">
+                        Need limited dashboard access?{' '}
+                        <Link href="/admin/signup" className="font-medium text-green-600 hover:text-green-500">
+                            Request an account
+                        </Link>
+                    </p>
                 </div>
                 <div className="mt-8 bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
                     {error && (
@@ -82,8 +88,8 @@ export default function LoginPage() {
                                 <input
                                     id="email"
                                     name="email"
-                                    type="email"
-                                    autoComplete="email"
+                                    type="text"
+                                    autoComplete="username"
                                     required
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}

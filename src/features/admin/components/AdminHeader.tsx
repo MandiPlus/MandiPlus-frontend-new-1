@@ -177,7 +177,7 @@ function buildNotifications(users: UserNotificationSource[], invoices: Insurance
 }
 
 export default function AdminHeader() {
-    const { logout, isAuthenticated } = useAdmin();
+    const { logout, isAuthenticated, canAccessSection } = useAdmin();
     const pathname = usePathname();
     const [notifications, setNotifications] = useState<NotificationItem[]>([]);
     const [lastSeenAt, setLastSeenAt] = useState<string>(() => {
@@ -203,9 +203,15 @@ export default function AdminHeader() {
         const fetchNotifications = async () => {
             try {
                 const [usersRes, formsRes, claimsRes] = await Promise.all([
-                    adminApi.getUsers(1, 200),
-                    adminApi.getInsuranceForms(1, 200),
-                    adminApi.getClaims()
+                    canAccessSection('users')
+                        ? adminApi.getUsers(1, 200)
+                        : Promise.resolve({ success: true, data: { users: [] } } as any),
+                    canAccessSection('insurance-forms')
+                        ? adminApi.getInsuranceForms(1, 200)
+                        : Promise.resolve({ success: true, data: { forms: [] } } as any),
+                    canAccessSection('claims')
+                        ? adminApi.getClaims()
+                        : Promise.resolve({ success: true, data: [] } as any)
                 ]);
 
                 if (!isMounted) return;
@@ -261,7 +267,7 @@ export default function AdminHeader() {
             isMounted = false;
             window.clearInterval(intervalId);
         };
-    }, [isAuthenticated]);
+    }, [canAccessSection, isAuthenticated]);
 
     const markNotificationsAsSeen = () => {
         const now = new Date().toISOString();

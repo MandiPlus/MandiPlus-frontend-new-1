@@ -77,6 +77,21 @@ interface LoginResponse {
   token: string;
 }
 
+export interface AdminAccountRow {
+  id: string;
+  fullName: string;
+  username: string;
+  mobileNumber?: string | null;
+  requestedRole: string;
+  status: string;
+  assignedSections: string[];
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  rejectionReason?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AdminImpersonationResponse {
   token: string;
   user: {
@@ -260,7 +275,7 @@ export interface UpdateClaimStatusDto {
 // ----------------------------------------
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001";
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 
 class AdminApi {
   private client: AxiosInstance;
@@ -375,6 +390,63 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || "Login failed",
+        error: error.message,
+      };
+    }
+  };
+
+  public signupAdminAccount = async (payload: {
+    fullName: string;
+    username: string;
+    mobileNumber: string;
+    password: string;
+  }): Promise<ApiResponse<{ id: string; username: string; status: string }>> => {
+    try {
+      const response = await this.client.post("/auth/admin/signup", payload);
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Signup failed",
+        error: error.message,
+      };
+    }
+  };
+
+  public getAdminAccounts = async (): Promise<ApiResponse<AdminAccountRow[]>> => {
+    try {
+      const response = await this.client.get<ApiResponse<AdminAccountRow[]>>(
+        "/auth/admin/accounts",
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to fetch admin accounts",
+        error: error.message,
+      };
+    }
+  };
+
+  public updateAdminAccountApproval = async (
+    accountId: string,
+    payload: {
+      status: "APPROVED" | "REJECTED" | "SUSPENDED";
+      assignedSections?: string[];
+      rejectionReason?: string;
+    },
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/auth/admin/accounts/${accountId}/approval`,
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to update admin account",
         error: error.message,
       };
     }
