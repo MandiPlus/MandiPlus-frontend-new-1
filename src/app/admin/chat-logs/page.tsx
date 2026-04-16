@@ -14,6 +14,10 @@ type Conversation = {
   last_status: string;
   total_messages: number;
   failed_messages: number;
+  name?: string | null;
+  profile_name?: string | null;
+  display_name?: string | null;
+  contact_name?: string | null;
 };
 
 type ChatMessage = {
@@ -33,7 +37,8 @@ type MediaKind = 'image' | 'video' | 'audio' | 'document' | 'sticker';
 
 type MediaInfo = {
   kind: MediaKind;
-  mediaId: string;
+  mediaId?: string;
+  directUrl?: string;
   filename?: string;
   caption?: string;
   isVoice?: boolean;
@@ -75,6 +80,9 @@ type TemplateListResponse = {
   items: TemplateItem[];
 };
 
+type ChatFilter = 'all' | 'unread' | 'delivered' | 'failed';
+type ChatTheme = 'light' | 'dark';
+
 function formatPhone(value: string) {
   if (!value) return 'Unknown';
   if (value.length < 4) return value;
@@ -92,6 +100,16 @@ function formatTime(value: string) {
   });
 }
 
+function formatDayLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 function payloadPreview(payload: unknown): string | null {
   if (!payload) return null;
 
@@ -106,10 +124,10 @@ function payloadPreview(payload: unknown): string | null {
         })()
       : payload;
 
-  const sources: any[] = [];
+  const sources: Record<string, unknown>[] = [];
   if (asObject && typeof asObject === 'object') {
-    sources.push(asObject);
-    const req = (asObject as any).request;
+    sources.push(asObject as Record<string, unknown>);
+    const req = (asObject as Record<string, unknown>).request;
     if (req && typeof req === 'object') sources.push(req);
   }
 
@@ -159,7 +177,11 @@ function payloadPreview(payload: unknown): string | null {
 
     if (Array.isArray(src?.contacts) && src.contacts.length > 0) {
       const names = src.contacts
-        .map((c: any) => c?.name?.formatted_name)
+        .map((c: unknown) =>
+          typeof c === 'object' && c !== null
+            ? (c as { name?: { formatted_name?: string } }).name?.formatted_name
+            : undefined
+        )
         .filter((v: unknown) => typeof v === 'string' && v.trim())
         .slice(0, 3);
       if (names.length > 0) return `[contacts] ${names.join(', ')}`;
@@ -193,14 +215,79 @@ function payloadPreview(payload: unknown): string | null {
   }
 }
 
-function previewText(text: string | null, fallbackType: string, payload?: unknown) {
+function extractTemplateBodyParameters(payload: unknown): string[] {
+  for (const src of payloadSources(payload)) {
+    const template = src?.template as Record<string, unknown> | undefined;
+    const components = Array.isArray(template?.components)
+      ? (template.components as Array<Record<string, unknown>>)
+      : [];
+
+    for (const component of components) {
+      if (String(component?.type || '').toLowerCase() !== 'body') continue;
+      const parameters = Array.isArray(component?.parameters)
+        ? (component.parameters as Array<Record<string, unknown>>)
+        : [];
+      return parameters
+        .map((param) => (typeof param?.text === 'string' ? param.text : ''))
+        .filter((value) => value.trim());
+    }
+  }
+  return [];
+}
+
+function renderTemplateText(template: TemplateItem | null | undefined, payload?: unknown): string | null {
+  if (!template) return null;
+  const body = templateBodyPreview(template);
+  if (!body.trim()) return null;
+
+  const parameters = extractTemplateBodyParameters(payload);
+  if (parameters.length === 0) return body;
+
+  return body.replace(/\{\{(\d+)\}\}/g, (_match, rawIndex: string) => {
+    const index = Number(rawIndex) - 1;
+    return parameters[index] ?? `{{${rawIndex}}}`;
+  });
+}
+
+function getTemplateNameFromPayload(payload: unknown): string | null {
+  for (const src of payloadSources(payload)) {
+    const template = src?.template as Record<string, unknown> | undefined;
+    if (typeof template?.name === 'string' && template.name.trim()) {
+      return template.name.trim();
+    }
+  }
+  return null;
+}
+
+function getTemplateNameFromStoredText(text: string | null): string | null {
+  const value = (text || '').trim();
+  const match = value.match(/^\[template\]\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
+}
+
+function previewText(
+  text: string | null,
+  fallbackType: string,
+  payload?: unknown,
+  templatesByName?: Record<string, TemplateItem>
+) {
+  const templateNameFromText = getTemplateNameFromStoredText(text);
+  if (templateNameFromText && templatesByName) {
+    const rendered = renderTemplateText(templatesByName[templateNameFromText], payload);
+    if (rendered && rendered.trim()) return rendered.trim();
+  }
   if (text && text.trim()) return text.trim();
+  const templateName = getTemplateNameFromPayload(payload);
+  if (templateName && templatesByName) {
+    const rendered = renderTemplateText(templatesByName[templateName], payload);
+    if (rendered && rendered.trim()) return rendered.trim();
+  }
   const fromPayload = payloadPreview(payload);
   if (fromPayload && fromPayload.trim()) return fromPayload.trim();
   return `[${fallbackType}]`;
 }
 
-function payloadAsObject(payload: unknown): any | null {
+function payloadAsObject(payload: unknown): Record<string, unknown> | null {
   if (!payload) return null;
   if (typeof payload === 'string') {
     try {
@@ -209,71 +296,76 @@ function payloadAsObject(payload: unknown): any | null {
       return null;
     }
   }
-  if (typeof payload === 'object') return payload;
+  if (typeof payload === 'object') return payload as Record<string, unknown>;
   return null;
 }
 
-function payloadSources(payload: unknown): any[] {
+function payloadSources(payload: unknown): Record<string, unknown>[] {
   const obj = payloadAsObject(payload);
   if (!obj || typeof obj !== 'object') return [];
   const sources = [obj];
-  if (obj.request && typeof obj.request === 'object') sources.push(obj.request);
+  if (obj.request && typeof obj.request === 'object') {
+    sources.push(obj.request as Record<string, unknown>);
+  }
   return sources;
 }
 
-function extractInboundMedia(message: ChatMessage): MediaInfo | null {
-  if (message.direction !== 'inbound') return null;
+function extractMessageMedia(message: ChatMessage): MediaInfo | null {
   for (const src of payloadSources(message.payload)) {
     const image = src?.image;
-    if (image?.id) {
+    if (image?.id || image?.link) {
       return {
         kind: 'image',
-        mediaId: String(image.id),
+        mediaId: image?.id ? String(image.id) : undefined,
+        directUrl: typeof image?.link === 'string' ? image.link : undefined,
         caption: typeof image.caption === 'string' ? image.caption : undefined,
       };
     }
 
     const video = src?.video;
-    if (video?.id) {
+    if (video?.id || video?.link) {
       return {
         kind: 'video',
-        mediaId: String(video.id),
+        mediaId: video?.id ? String(video.id) : undefined,
+        directUrl: typeof video?.link === 'string' ? video.link : undefined,
         caption: typeof video.caption === 'string' ? video.caption : undefined,
       };
     }
 
     const audio = src?.audio;
-    if (audio?.id) {
+    if (audio?.id || audio?.link) {
       return {
         kind: 'audio',
-        mediaId: String(audio.id),
+        mediaId: audio?.id ? String(audio.id) : undefined,
+        directUrl: typeof audio?.link === 'string' ? audio.link : undefined,
         isVoice: Boolean(audio.voice),
       };
     }
 
     const document = src?.document;
-    if (document?.id) {
+    if (document?.id || document?.link) {
       return {
         kind: 'document',
-        mediaId: String(document.id),
+        mediaId: document?.id ? String(document.id) : undefined,
+        directUrl: typeof document?.link === 'string' ? document.link : undefined,
         filename: typeof document.filename === 'string' ? document.filename : undefined,
         caption: typeof document.caption === 'string' ? document.caption : undefined,
       };
     }
 
     const sticker = src?.sticker;
-    if (sticker?.id) {
+    if (sticker?.id || sticker?.link) {
       return {
         kind: 'sticker',
-        mediaId: String(sticker.id),
+        mediaId: sticker?.id ? String(sticker.id) : undefined,
+        directUrl: typeof sticker?.link === 'string' ? sticker.link : undefined,
       };
     }
   }
   return null;
 }
 
-function extractInboundLocation(message: ChatMessage): LocationInfo | null {
-  if (message.direction !== 'inbound') return null;
+function extractMessageLocation(message: ChatMessage): LocationInfo | null {
   for (const src of payloadSources(message.payload)) {
     const location = src?.location;
     if (location) {
@@ -299,6 +391,12 @@ function statusBadgeClass(status: string) {
   return 'bg-slate-200 text-slate-700';
 }
 
+function statusLabel(status: string) {
+  const normalized = (status || '').toLowerCase();
+  if (normalized === 'processed') return 'received';
+  return status || 'unknown';
+}
+
 function extractBodyPlaceholders(template: TemplateItem): number {
   const bodyComponent = (template.components || []).find(
     (comp) => (comp.type || '').toUpperCase() === 'BODY'
@@ -317,9 +415,208 @@ function templateBodyPreview(template: TemplateItem): string {
   return bodyComponent?.text || '';
 }
 
-export default function AdminChatLogsPage() {
+function getConversationName(
+  conversation: Conversation,
+  contactDirectory?: Record<string, { name?: string }>
+) {
+  const candidates = [
+    contactDirectory?.[conversation.phone]?.name,
+    conversation.name,
+    conversation.profile_name,
+    conversation.display_name,
+    conversation.contact_name,
+  ];
+  const match = candidates.find((value) => typeof value === 'string' && value.trim());
+  return match?.trim() || '';
+}
+
+function getConversationInitials(conversation: Conversation) {
+  const name = getConversationName(conversation);
+  if (name) {
+    const parts = name.split(/\s+/).filter(Boolean).slice(0, 2);
+    return parts.map((part) => part[0]?.toUpperCase() || '').join('') || 'WA';
+  }
+  const phone = conversation.phone || '';
+  return phone.slice(-2).toUpperCase() || 'WA';
+}
+
+function isUnreadConversation(conversation: Conversation) {
+  const status = (conversation.last_status || '').toLowerCase();
+  const direction = (conversation.last_direction || '').toLowerCase();
+  return direction === 'inbound' && ['received', 'unread', 'pending'].includes(status);
+}
+
+function isDeliveredConversation(conversation: Conversation) {
+  return (conversation.last_status || '').toLowerCase() === 'delivered';
+}
+
+function isFailedConversation(conversation: Conversation) {
+  return conversation.failed_messages > 0 || (conversation.last_status || '').toLowerCase() === 'failed';
+}
+
+function matchesFilter(conversation: Conversation, filter: ChatFilter) {
+  if (filter === 'unread') return isUnreadConversation(conversation);
+  if (filter === 'delivered') return isDeliveredConversation(conversation);
+  if (filter === 'failed') return isFailedConversation(conversation);
+  return true;
+}
+
+function messageMetaLabel(message: ChatMessage) {
+  const direction = (message.direction || '').toLowerCase();
+  if (direction === 'system') return 'System event';
+  if (direction === 'inbound') return 'Incoming';
+  return 'Outgoing';
+}
+
+function getAttachmentExtension(filename?: string, url?: string) {
+  const source = (filename || url || '').split('?')[0];
+  const part = source.split('.').pop()?.toLowerCase() || '';
+  return part;
+}
+
+function buildOpenUrl(media: MediaInfo, resolvedUrl: string) {
+  if (media.kind !== 'document') return resolvedUrl;
+
+  const extension = getAttachmentExtension(media.filename, media.directUrl || resolvedUrl);
+  const officeExtensions = new Set(['xlsx', 'xls', 'csv', 'doc', 'docx', 'ppt', 'pptx']);
+
+  if (media.directUrl && officeExtensions.has(extension)) {
+    return `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(media.directUrl)}`;
+  }
+
+  return media.directUrl || resolvedUrl;
+}
+
+function openAttachment(media: MediaInfo, resolvedUrl: string) {
+  const targetUrl = buildOpenUrl(media, resolvedUrl);
+  window.open(targetUrl, '_blank', 'noopener,noreferrer');
+}
+
+function prettifyFieldLabel(key: string) {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/\./g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function collectPayloadMetadata(messages: ChatMessage[]) {
+  const rows: Array<{ key: string; value: string }> = [];
+  const seen = new Set<string>();
+  const skipKeys = new Set([
+    'id',
+    'type',
+    'text',
+    'body',
+    'caption',
+    'filename',
+    'mime_type',
+    'link',
+    'status',
+    'timestamp',
+    'recipient_type',
+    'messaging_product',
+    'preview_url',
+  ]);
+
+  const visit = (value: unknown, path = '', depth = 0) => {
+    if (rows.length >= 10 || depth > 2 || value === null || value === undefined) return;
+
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      const normalized = String(value).trim();
+      if (!normalized || normalized.length > 120) return;
+      const key = path.split('.').pop() || path;
+      if (!key || skipKeys.has(key.toLowerCase()) || seen.has(path)) return;
+      seen.add(path);
+      rows.push({ key: prettifyFieldLabel(key), value: normalized });
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.slice(0, 3).forEach((item) => visit(item, path, depth + 1));
+      return;
+    }
+
+    if (typeof value === 'object') {
+      Object.entries(value as Record<string, unknown>).forEach(([childKey, childValue]) => {
+        if (rows.length >= 10) return;
+        const nextPath = path ? `${path}.${childKey}` : childKey;
+        visit(childValue, nextPath, depth + 1);
+      });
+    }
+  };
+
+  [...messages]
+    .reverse()
+    .slice(0, 12)
+    .forEach((message) => {
+      payloadSources(message.payload).forEach((src) => visit(src));
+    });
+
+  return rows;
+}
+
+function extractContactNameFromMessages(messages: ChatMessage[]) {
+  for (const message of [...messages].reverse()) {
+    for (const src of payloadSources(message.payload)) {
+      const candidates = [
+        typeof src?.profile_name === 'string' ? src.profile_name : '',
+        typeof src?.name === 'string' ? src.name : '',
+        typeof src?.profile?.name === 'string' ? src.profile.name : '',
+        typeof src?.contact?.name === 'string' ? src.contact.name : '',
+        typeof src?.contacts?.[0]?.name?.formatted_name === 'string'
+          ? src.contacts[0].name.formatted_name
+          : '',
+      ];
+      const match = candidates.find((value) => value.trim());
+      if (match) return match.trim();
+    }
+  }
+  return '';
+}
+
+const themeOptions: Array<{
+  key: ChatTheme;
+  label: string;
+  shell: string;
+  panel: string;
+  topbar: string;
+  pane: string;
+  incoming: string;
+  outgoing: string;
+  system: string;
+  wallpaper: string;
+}> = [
+  {
+    key: 'light',
+    label: 'Light',
+    shell: 'bg-[#f0f2f5]',
+    panel: 'bg-white',
+    topbar: 'bg-[#f0f2f5]',
+    pane: '#efeae2',
+    incoming: 'bg-white text-slate-900',
+    outgoing: 'bg-[#d9fdd3] text-slate-900',
+    system: 'bg-[#fff3c4] text-amber-950',
+    wallpaper: "url('/images/whatsapp-bg.png')",
+  },
+  {
+    key: 'dark',
+    label: 'Dark',
+    shell: 'bg-[#111b21]',
+    panel: 'bg-[#111b21]',
+    topbar: 'bg-[#111b21]',
+    pane: '#0b141a',
+    incoming: 'bg-[#202c33] text-slate-100',
+    outgoing: 'bg-[#005c4b] text-white',
+    system: 'bg-[#374151] text-slate-100',
+    wallpaper:
+      "radial-gradient(circle at 25% 25%, rgba(255,255,255,0.04) 0, rgba(255,255,255,0.04) 2px, transparent 2px), radial-gradient(circle at 75% 35%, rgba(255,255,255,0.03) 0, rgba(255,255,255,0.03) 2px, transparent 2px), linear-gradient(180deg, rgba(17,27,33,0.98), rgba(11,20,26,1))",
+  },
+];
+
+export function AdminChatLogsView({ standalone = false }: { standalone?: boolean }) {
   const router = useRouter();
   const { isAuthenticated } = useAdmin();
+  const [contactDirectory, setContactDirectory] = useState<Record<string, { name: string }>>({});
 
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -328,10 +625,19 @@ export default function AdminChatLogsPage() {
   const [selectedPhone, setSelectedPhone] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
+  const [mediaFailures, setMediaFailures] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState('');
+  const [chatFilter, setChatFilter] = useState<ChatFilter>('all');
+  const [chatTheme, setChatTheme] = useState<ChatTheme>('light');
   const [refreshTick, setRefreshTick] = useState(0);
   const [draftMessage, setDraftMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [sendingMedia, setSendingMedia] = useState(false);
+  const [showNewContactModal, setShowNewContactModal] = useState(false);
+  const [newContactName, setNewContactName] = useState('');
+  const [newContactPhone, setNewContactPhone] = useState('');
+  const [newContactMessage, setNewContactMessage] = useState('');
+  const [savingContact, setSavingContact] = useState(false);
 
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
@@ -343,6 +649,9 @@ export default function AdminChatLogsPage() {
   const [templateVars, setTemplateVars] = useState<string[]>([]);
   const [sendingTemplate, setSendingTemplate] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const hasLoadedConversationsRef = useRef(false);
+  const hasLoadedMessagesRef = useRef(false);
   const scrollSnapshotRef = useRef<{
     scrollTop: number;
     scrollHeight: number;
@@ -372,6 +681,52 @@ export default function AdminChatLogsPage() {
     () => (selectedTemplate ? extractBodyPlaceholders(selectedTemplate) : 0),
     [selectedTemplate]
   );
+  const templatesByName = useMemo(
+    () =>
+      templates.reduce<Record<string, TemplateItem>>((acc, template) => {
+        acc[template.name] = template;
+        return acc;
+      }, {}),
+    [templates]
+  );
+  const activeTheme = useMemo(
+    () => themeOptions.find((theme) => theme.key === chatTheme) || themeOptions[0],
+    [chatTheme]
+  );
+  const currentTheme = standalone ? activeTheme : themeOptions[0];
+  const latestMessage = messages[messages.length - 1] || null;
+  const contactMetadata = useMemo(() => collectPayloadMetadata(messages), [messages]);
+  const getDisplayName = (conversation: Conversation) =>
+    getConversationName(conversation, contactDirectory) || formatPhone(conversation.phone);
+  const isDark = standalone && chatTheme === 'dark';
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const storedContacts = localStorage.getItem('chatContactDirectory');
+      if (storedContacts) {
+        setContactDirectory(JSON.parse(storedContacts));
+      }
+      const storedTheme = localStorage.getItem('chatLogsTheme');
+      if (storedTheme === 'light' || storedTheme === 'dark') {
+        setChatTheme(storedTheme);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem('chatContactDirectory', JSON.stringify(contactDirectory));
+    } catch {}
+  }, [contactDirectory]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem('chatLogsTheme', chatTheme);
+    } catch {}
+  }, [chatTheme]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -384,14 +739,30 @@ export default function AdminChatLogsPage() {
 
     const fetchConversations = async () => {
       try {
-        setLoadingConversations(true);
-        setError('');
+        if (!hasLoadedConversationsRef.current) {
+          setLoadingConversations(true);
+        }
         const res = await axios.get<ConversationResponse>(
           `${botBaseUrl}/admin/chat/conversations?limit=250`,
           axiosConfig
         );
         const items = Array.isArray(res.data?.items) ? res.data.items : [];
-        setConversations(items);
+        setConversations((prev) => {
+          const same =
+            prev.length === items.length &&
+            prev.every((item, index) => {
+              const next = items[index];
+              return (
+                item.phone === next?.phone &&
+                item.last_message_at === next?.last_message_at &&
+                item.last_status === next?.last_status &&
+                item.total_messages === next?.total_messages &&
+                item.failed_messages === next?.failed_messages
+              );
+            });
+          return same ? prev : items;
+        });
+        hasLoadedConversationsRef.current = true;
 
         if (!selectedPhone && items.length > 0) {
           setSelectedPhone(items[0].phone);
@@ -403,7 +774,9 @@ export default function AdminChatLogsPage() {
           setSelectedPhone(items[0].phone);
         }
       } catch {
-        setError('Could not load chat conversations from bot backend.');
+        if (!hasLoadedConversationsRef.current) {
+          setError('Could not load chat conversations from bot backend.');
+        }
       } finally {
         setLoadingConversations(false);
       }
@@ -413,12 +786,42 @@ export default function AdminChatLogsPage() {
   }, [isAuthenticated, botBaseUrl, axiosConfig, refreshTick, selectedPhone]);
 
   useEffect(() => {
+    if (conversations.length === 0) return;
+    setContactDirectory((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      conversations.forEach((conversation) => {
+        const backendName = getConversationName(conversation);
+        if (backendName && next[conversation.phone]?.name !== backendName) {
+          next[conversation.phone] = { name: backendName };
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [conversations]);
+
+  useEffect(() => {
+    if (!selectedPhone || messages.length === 0) return;
+    const inferredName = extractContactNameFromMessages(messages);
+    if (!inferredName) return;
+    setContactDirectory((prev) => {
+      if (prev[selectedPhone]?.name === inferredName) return prev;
+      return {
+        ...prev,
+        [selectedPhone]: { name: inferredName },
+      };
+    });
+  }, [messages, selectedPhone]);
+
+  useEffect(() => {
     if (!isAuthenticated || !selectedPhone) return;
 
     const fetchMessages = async () => {
       try {
-        setLoadingMessages(true);
-        setError('');
+        if (!hasLoadedMessagesRef.current) {
+          setLoadingMessages(true);
+        }
         const container = messagesContainerRef.current;
         if (container) {
           scrollSnapshotRef.current = {
@@ -431,10 +834,28 @@ export default function AdminChatLogsPage() {
           `${botBaseUrl}/admin/chat/conversations/${selectedPhone}/messages?limit=700`,
           axiosConfig
         );
-        setMessages(Array.isArray(res.data?.items) ? res.data.items : []);
+        const nextItems = Array.isArray(res.data?.items) ? res.data.items : [];
+        setMessages((prev) => {
+          const same =
+            prev.length === nextItems.length &&
+            prev.every((item, index) => {
+              const next = nextItems[index];
+              return (
+                item.id === next?.id &&
+                item.status === next?.status &&
+                item.created_at === next?.created_at &&
+                item.text_content === next?.text_content &&
+                item.error_text === next?.error_text
+              );
+            });
+          return same ? prev : nextItems;
+        });
+        hasLoadedMessagesRef.current = true;
       } catch {
-        setError('Could not load messages for selected chat.');
-        setMessages([]);
+        if (!hasLoadedMessagesRef.current) {
+          setError('Could not load messages for selected chat.');
+          setMessages([]);
+        }
       } finally {
         setLoadingMessages(false);
       }
@@ -470,6 +891,8 @@ export default function AdminChatLogsPage() {
       });
       return {};
     });
+    setMediaFailures({});
+    hasLoadedMessagesRef.current = false;
   }, [selectedPhone]);
 
   useEffect(() => {
@@ -479,13 +902,24 @@ export default function AdminChatLogsPage() {
 
     const resolveMedia = async () => {
       const targets = messages
-        .map((message) => ({ message, media: extractInboundMedia(message) }))
+        .map((message) => ({ message, media: extractMessageMedia(message) }))
         .filter((item) => item.media && !mediaUrls[item.message.id]);
 
       await Promise.all(
         targets.map(async (item) => {
           const media = item.media as MediaInfo;
           try {
+            if (media.directUrl) {
+              if (cancelled) return;
+              setMediaUrls((prev) => ({ ...prev, [item.message.id]: media.directUrl as string }));
+              return;
+            }
+            if (!media.mediaId) {
+              if (!cancelled) {
+                setMediaFailures((prev) => ({ ...prev, [item.message.id]: true }));
+              }
+              return;
+            }
             const response = await axios.get(
               `${botBaseUrl}/admin/chat/media/${media.mediaId}`,
               {
@@ -505,7 +939,9 @@ export default function AdminChatLogsPage() {
               return { ...prev, [item.message.id]: objectUrl };
             });
           } catch {
-            // keep text fallback for failed media fetch
+            if (!cancelled) {
+              setMediaFailures((prev) => ({ ...prev, [item.message.id]: true }));
+            }
           }
         })
       );
@@ -519,7 +955,7 @@ export default function AdminChatLogsPage() {
   }, [messages, selectedPhone, botBaseUrl, axiosConfig, mediaUrls]);
 
   useEffect(() => {
-    const id = setInterval(() => setRefreshTick((x) => x + 1), 15000);
+    const id = setInterval(() => setRefreshTick((x) => x + 1), 5000);
     return () => clearInterval(id);
   }, []);
 
@@ -549,6 +985,27 @@ export default function AdminChatLogsPage() {
   }, [showTemplateModal, templateSearch, isAuthenticated, botBaseUrl, axiosConfig]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const fetchTemplateCatalog = async () => {
+      try {
+        const res = await axios.get<TemplateListResponse>(
+          `${botBaseUrl}/admin/chat/templates`,
+          {
+            ...axiosConfig,
+            params: { limit: 300 },
+          }
+        );
+        setTemplates(Array.isArray(res.data?.items) ? res.data.items : []);
+      } catch {
+        // Keep chat UI usable even if template catalog fetch fails.
+      }
+    };
+
+    fetchTemplateCatalog();
+  }, [isAuthenticated, botBaseUrl, axiosConfig]);
+
+  useEffect(() => {
     if (!selectedTemplate) {
       setTemplateVars([]);
       return;
@@ -560,15 +1017,70 @@ export default function AdminChatLogsPage() {
     });
   }, [selectedTemplate, bodyVarCount]);
 
+  const uniqueConversations = useMemo(() => {
+    const byPhone = new Map<string, Conversation>();
+    for (const conversation of conversations) {
+      const existing = byPhone.get(conversation.phone);
+      if (!existing) {
+        byPhone.set(conversation.phone, conversation);
+        continue;
+      }
+      const existingTime = new Date(existing.last_message_at).getTime() || 0;
+      const nextTime = new Date(conversation.last_message_at).getTime() || 0;
+      if (nextTime >= existingTime) {
+        byPhone.set(conversation.phone, conversation);
+      }
+    }
+    return [...byPhone.values()];
+  }, [conversations]);
+
+  const filterCountsSafe = useMemo(
+    () => ({
+      all: uniqueConversations.length,
+      unread: uniqueConversations.filter(isUnreadConversation).length,
+      delivered: uniqueConversations.filter(isDeliveredConversation).length,
+      failed: uniqueConversations.filter(isFailedConversation).length,
+    }),
+    [uniqueConversations]
+  );
+
   const filteredConversations = useMemo(() => {
-    if (!search.trim()) return conversations;
     const key = search.trim().toLowerCase();
-    return conversations.filter(
-      (c) =>
-        c.phone.toLowerCase().includes(key) ||
-        (c.last_text || '').toLowerCase().includes(key)
-    );
-  }, [conversations, search]);
+
+    return uniqueConversations.filter((conversation) => {
+      if (!matchesFilter(conversation, chatFilter)) return false;
+      if (!key) return true;
+
+      const conversationName = getConversationName(conversation, contactDirectory).toLowerCase();
+      return (
+        conversation.phone.toLowerCase().includes(key) ||
+        conversationName.includes(key) ||
+        (conversation.last_text || '').toLowerCase().includes(key)
+      );
+    });
+  }, [uniqueConversations, search, chatFilter, contactDirectory]);
+
+  const selectedConversation = useMemo(
+    () => uniqueConversations.find((item) => item.phone === selectedPhone) || null,
+    [uniqueConversations, selectedPhone]
+  );
+
+  const groupedMessages = useMemo(() => {
+    const groups: Array<{ label: string; items: ChatMessage[] }> = [];
+
+    for (const message of messages) {
+      const label = formatDayLabel(message.created_at);
+      const lastGroup = groups[groups.length - 1];
+
+      if (!lastGroup || lastGroup.label !== label) {
+        groups.push({ label, items: [message] });
+      } else {
+        lastGroup.items.push(message);
+      }
+    }
+
+    return groups;
+  }, [messages]);
 
   const handleSendMessage = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -594,6 +1106,35 @@ export default function AdminChatLogsPage() {
     }
   };
 
+  const handleSendMedia = async (file: File) => {
+    if (!selectedPhone || sendingMedia) return;
+
+    try {
+      setSendingMedia(true);
+      setError('');
+      const formData = new FormData();
+      formData.append('phone', selectedPhone);
+      formData.append('caption', draftMessage.trim());
+      formData.append('file', file);
+
+      await axios.post(`${botBaseUrl}/admin/chat/send-media`, formData, {
+        headers: {
+          ...(axiosConfig.headers || {}),
+        },
+      });
+
+      setDraftMessage('');
+      setRefreshTick((x) => x + 1);
+    } catch {
+      setError('Failed to send media file.');
+    } finally {
+      setSendingMedia(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   const openTemplateModal = () => {
     if (!selectedPhone) {
       setError('Select a conversation first.');
@@ -604,6 +1145,11 @@ export default function AdminChatLogsPage() {
     setSelectedTemplate(null);
     setTemplateVars([]);
     setTemplateSearch('');
+  };
+
+  const openFilePicker = () => {
+    setShowActionMenu(false);
+    fileInputRef.current?.click();
   };
 
   const handleTemplateVarChange = (index: number, value: string) => {
@@ -645,82 +1191,325 @@ export default function AdminChatLogsPage() {
     }
   };
 
+  const handleCreateContactAndSend = async () => {
+    const phone = newContactPhone.replace(/\D/g, '');
+    const name = newContactName.trim();
+    const firstMessage = newContactMessage.trim();
+
+    if (!phone) {
+      setError('Enter a valid contact number.');
+      return;
+    }
+
+    try {
+      setSavingContact(true);
+      setError('');
+
+      setContactDirectory((prev) => ({
+        ...prev,
+        [phone]: {
+          name: name || prev[phone]?.name || formatPhone(phone),
+        },
+      }));
+
+      if (firstMessage) {
+        await axios.post(
+          `${botBaseUrl}/admin/chat/send`,
+          {
+            phone,
+            text: firstMessage,
+          },
+          axiosConfig
+        );
+      }
+
+      setSelectedPhone(phone);
+      setDraftMessage('');
+      setNewContactName('');
+      setNewContactPhone('');
+      setNewContactMessage('');
+      setShowNewContactModal(false);
+      setRefreshTick((x) => x + 1);
+    } catch {
+      setError('Could not create the contact and send the message.');
+    } finally {
+      setSavingContact(false);
+    }
+  };
+
+  const filterButtons: Array<{
+    key: ChatFilter;
+    label: string;
+    count: number;
+    tone: string;
+    activeTone: string;
+  }> = [
+    {
+      key: 'all',
+      label: 'All chats',
+      count: filterCountsSafe.all,
+      tone: 'text-slate-600',
+      activeTone: 'bg-slate-900 text-white',
+    },
+    {
+      key: 'unread',
+      label: 'Unread',
+      count: filterCountsSafe.unread,
+      tone: 'text-emerald-700',
+      activeTone: 'bg-emerald-600 text-white',
+    },
+    {
+      key: 'delivered',
+      label: 'Delivered',
+      count: filterCountsSafe.delivered,
+      tone: 'text-sky-700',
+      activeTone: 'bg-sky-600 text-white',
+    },
+    {
+      key: 'failed',
+      label: 'Failed',
+      count: filterCountsSafe.failed,
+      tone: 'text-rose-700',
+      activeTone: 'bg-rose-600 text-white',
+    },
+  ];
+
   return (
-    <div className="h-[calc(100vh-7.5rem)] py-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">WhatsApp Chat Logs</h1>
-          <p className="text-sm text-slate-500">
-            New conversations are stored and visible from backend deployment onward.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setRefreshTick((x) => x + 1)}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          Refresh
-        </button>
-      </div>
+    <div className={standalone ? `${isDark ? 'h-screen bg-[#0b141a] p-3 text-slate-100' : 'h-screen bg-[#edf1f5] p-3'}` : 'h-[calc(100vh-7.5rem)] py-5'}>
 
       {error ? (
-        <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+        <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error}
         </div>
       ) : null}
 
-      <div className="grid h-[calc(100%-3.5rem)] grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm lg:grid-cols-[360px_1fr]">
-        <aside className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-          <div className="border-b border-slate-200 p-3">
+      <div
+        className={`grid h-full grid-cols-1 gap-3 ${standalone ? 'xl:grid-cols-[210px_360px_minmax(0,1fr)_300px]' : 'rounded-[28px] border border-slate-200 p-3 shadow-sm lg:grid-cols-[380px_1fr]'} ${currentTheme.shell}`}
+      >
+        {standalone ? (
+          <aside className={`flex h-full flex-col rounded-[24px] border shadow-sm ${isDark ? 'border-[#25323a] bg-[#111b21] text-slate-100' : 'border-slate-200 bg-white'}`}>
+            <div className={`px-4 py-5 ${isDark ? 'border-b border-[#25323a]' : 'border-b border-slate-200'}`}>
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-800">
+                  WA
+                </div>
+                <div>
+                  <p className={`text-base font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Inbox</p>
+                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>WhatsApp workspace</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1 px-3 py-4">
+              {filterButtons.map((filter) => {
+                const active = chatFilter === filter.key;
+                return (
+                  <button
+                    key={`rail-${filter.key}`}
+                    type="button"
+                    onClick={() => setChatFilter(filter.key)}
+                    className={`flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-sm transition ${
+                      active ? 'bg-emerald-600 text-white' : isDark ? 'text-slate-200 hover:bg-[#1f2c33]' : 'text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>{filter.label}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs ${active ? 'bg-white/15 text-white' : isDark ? 'bg-[#1f2c33] text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+                      {filter.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className={`mx-3 pt-4 ${isDark ? 'border-t border-[#25323a]' : 'border-t border-slate-200'}`}>
+              <p className={`px-2 text-[11px] font-semibold uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Themes</p>
+              <div className="mt-2 space-y-1">
+                {themeOptions.map((theme) => {
+                  const active = theme.key === chatTheme;
+                  return (
+                    <button
+                      key={`rail-theme-${theme.key}`}
+                      type="button"
+                      onClick={() => setChatTheme(theme.key)}
+                      className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition ${
+                        active ? isDark ? 'bg-[#1f2c33] text-white' : 'bg-slate-100 text-slate-900' : isDark ? 'text-slate-300 hover:bg-[#1a262d]' : 'text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span
+                        className="h-3 w-3 rounded-full border border-white shadow-sm"
+                        style={{ backgroundColor: theme.key === 'dark' ? '#0b141a' : '#25d366' }}
+                      />
+                      <span>{theme.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className={`mt-auto px-4 py-4 ${isDark ? 'border-t border-[#25323a]' : 'border-t border-slate-200'}`}>
+              <div className={`rounded-2xl px-3 py-3 ${isDark ? 'bg-[#1a262d]' : 'bg-slate-50'}`}>
+                <p className={`text-xs font-medium ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>Live sync</p>
+                <p className={`mt-1 text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>New messages flow in automatically.</p>
+              </div>
+            </div>
+          </aside>
+        ) : null}
+        <aside className={`flex h-full flex-col overflow-hidden rounded-[24px] border ${standalone ? (isDark ? 'border-[#25323a] bg-[#111b21] shadow-sm' : 'border-slate-200 bg-white shadow-sm') : `border-slate-200 ${currentTheme.panel}`}`}>
+          <div className={`px-4 py-4 ${isDark && standalone ? 'border-b border-[#25323a]' : 'border-b border-slate-200'}`}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className={`text-lg font-semibold ${isDark && standalone ? 'text-slate-100' : 'text-slate-900'}`}>Chats</p>
+                <p className={`text-xs ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>Search by number, name, or preview</p>
+              </div>
+              {standalone ? (
+                <button
+                  type="button"
+                  onClick={() => setShowNewContactModal(true)}
+                  className={`rounded-xl px-3 py-2 text-xs font-medium transition ${isDark ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                >
+                  New contact
+                </button>
+              ) : (
+                <div className="h-8 w-8" />
+              )}
+            </div>
+
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search phone or message..."
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-500"
+              placeholder="Search name, number, or message"
+              className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition focus:border-emerald-500 ${isDark && standalone ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500 focus:bg-[#1f2c33]' : 'border-slate-200 bg-slate-50 focus:bg-white'}`}
             />
+
+            {!standalone ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {filterButtons.map((filter) => {
+                  const active = chatFilter === filter.key;
+                  return (
+                    <button
+                      key={filter.key}
+                      type="button"
+                      onClick={() => setChatFilter(filter.key)}
+                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium transition ${
+                        active
+                          ? `${filter.activeTone} border-transparent shadow-sm`
+                          : `border-slate-200 bg-white hover:bg-slate-50 ${filter.tone}`
+                      }`}
+                    >
+                      <span>{filter.label}</span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 ${
+                          active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        {filter.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
 
-          <div className="flex-1 overflow-y-auto">
+          <div className={`flex-1 overflow-y-auto ${standalone ? (isDark ? 'bg-[#111b21]' : 'bg-white') : 'bg-[#fcfdfd]'}`}>
             {loadingConversations ? (
-              <p className="p-4 text-sm text-slate-500">Loading conversations...</p>
+              <p className={`p-4 text-sm ${standalone && isDark ? 'text-slate-400' : 'text-slate-500'}`}>Loading conversations...</p>
             ) : filteredConversations.length === 0 ? (
-              <p className="p-4 text-sm text-slate-500">No conversations found.</p>
+              <p className={`p-4 text-sm ${standalone && isDark ? 'text-slate-400' : 'text-slate-500'}`}>No conversations found.</p>
             ) : (
               filteredConversations.map((conv) => {
                 const active = conv.phone === selectedPhone;
+                const conversationName = getDisplayName(conv);
+                const unread = isUnreadConversation(conv);
+                const delivered = isDeliveredConversation(conv);
+                const failed = isFailedConversation(conv);
                 return (
                   <button
                     type="button"
                     key={conv.phone}
                     onClick={() => setSelectedPhone(conv.phone)}
-                    className={`w-full border-b border-slate-200 px-3 py-3 text-left ${
-                      active ? 'bg-emerald-100/70' : 'bg-white hover:bg-slate-50'
+                    className={`flex w-full items-start gap-3 border-b px-4 py-3 text-left transition ${
+                      standalone && isDark
+                        ? active
+                          ? 'border-[#25323a] bg-[#1a262d]'
+                          : 'border-[#1a262d] bg-[#111b21] hover:bg-[#162229]'
+                        : active
+                        ? 'border-slate-100 bg-emerald-50'
+                        : 'border-slate-100 bg-white hover:bg-slate-50'
                     }`}
                   >
-                    <div className="mb-1 flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-semibold text-slate-900">
-                        {formatPhone(conv.phone)}
-                      </p>
-                      <p className="shrink-0 text-xs text-slate-500">
-                        {formatTime(conv.last_message_at)}
-                      </p>
+                    <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${standalone && isDark ? 'bg-[#233138] text-slate-100' : 'bg-[#d9fdd3] text-emerald-900'}`}>
+                      {getConversationName(conv, contactDirectory)
+                        ? getConversationInitials({
+                            ...conv,
+                            name: getConversationName(conv, contactDirectory),
+                            profile_name: null,
+                            display_name: null,
+                            contact_name: null,
+                          })
+                        : getConversationInitials(conv)}
                     </div>
-                    <p className="truncate text-xs text-slate-600">
-                      {previewText(conv.last_text, conv.last_message_type)}
-                    </p>
-                    <div className="mt-2 flex items-center gap-2 text-[11px]">
-                      <span className="rounded bg-slate-200 px-2 py-0.5 text-slate-700">
-                        {conv.total_messages} msgs
-                      </span>
-                      {conv.failed_messages > 0 ? (
-                        <span className="rounded bg-rose-100 px-2 py-0.5 text-rose-700">
-                          {conv.failed_messages} failed
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className={`truncate text-sm font-semibold ${standalone && isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                            {conversationName}
+                          </p>
+                          <p className={`truncate text-xs ${standalone && isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                            {formatPhone(conv.phone)}
+                          </p>
+                        </div>
+                        <p
+                        className={`shrink-0 text-[11px] font-medium ${
+                            unread ? 'text-emerald-700' : standalone && isDark ? 'text-slate-400' : 'text-slate-500'
+                          }`}
+                        >
+                          {formatTime(conv.last_message_at)}
+                        </p>
+                      </div>
+
+                      <div className="mt-1 flex items-center gap-2">
+                        <p className={`min-w-0 flex-1 truncate text-sm ${standalone && isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                          {previewText(conv.last_text, conv.last_message_type, undefined, templatesByName)}
+                        </p>
+                        {unread ? (
+                          <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-600 px-1.5 text-[10px] font-semibold text-white">
+                            New
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                        <span className={`rounded-full px-2 py-1 ${standalone && isDark ? 'bg-[#233138] text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+                          {conv.total_messages} msgs
                         </span>
-                      ) : (
-                        <span className="rounded bg-emerald-100 px-2 py-0.5 text-emerald-700">
-                          healthy
+                        <span className={`rounded-full px-2 py-1 ${statusBadgeClass(conv.last_status)}`}>
+                          {statusLabel(conv.last_status)}
                         </span>
-                      )}
+                        {delivered ? (
+                          <span
+                            className={`rounded-full px-2 py-1 ${
+                              standalone && isDark
+                                ? 'bg-[#0f2f3e] text-sky-300'
+                                : 'bg-sky-50 text-sky-700'
+                            }`}
+                          >
+                            Delivered
+                          </span>
+                        ) : null}
+                        {failed ? (
+                          <span
+                            className={`rounded-full px-2 py-1 ${
+                              standalone && isDark
+                                ? 'bg-[#3a1f28] text-rose-300'
+                                : 'bg-rose-50 text-rose-700'
+                            }`}
+                          >
+                            {conv.failed_messages || 1} failed
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                   </button>
                 );
@@ -729,20 +1518,65 @@ export default function AdminChatLogsPage() {
           </div>
         </aside>
 
-        <section className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-[#efeae2]">
-          <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">
-                {selectedPhone ? formatPhone(selectedPhone) : 'Select a conversation'}
-              </p>
-              <p className="text-xs text-slate-500">
-                {messages.length} message{messages.length === 1 ? '' : 's'}
-              </p>
+        <section className={`flex h-full flex-col overflow-hidden rounded-[24px] border ${standalone ? (isDark ? 'border-[#25323a] bg-[#111b21] shadow-sm' : 'border-slate-200 bg-white shadow-sm') : `border-slate-200 ${currentTheme.panel}`}`}>
+          <div className={`flex items-center justify-between px-4 py-3 ${standalone ? (isDark ? 'border-b border-[#25323a] bg-[#111b21]' : 'border-b border-slate-200 bg-white') : `border-b border-slate-200 ${currentTheme.topbar}`}`}>
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#d9fdd3] text-sm font-semibold text-emerald-900">
+                {selectedConversation
+                  ? getConversationInitials({
+                      ...selectedConversation,
+                      name: getConversationName(selectedConversation, contactDirectory),
+                      profile_name: null,
+                      display_name: null,
+                      contact_name: null,
+                    })
+                  : 'WA'}
+              </div>
+              <div className="min-w-0">
+                <p className={`truncate text-sm font-semibold ${isDark && standalone ? 'text-slate-100' : 'text-slate-900'}`}>
+                  {selectedConversation
+                    ? getDisplayName(selectedConversation)
+                    : 'Select a conversation'}
+                </p>
+                <div className={`flex flex-wrap items-center gap-2 text-xs ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>
+                  {selectedConversation ? (
+                    <>
+                      <span>{formatPhone(selectedConversation.phone)}</span>
+                      <span className="text-slate-300">•</span>
+                      <span>{messages.length} messages</span>
+                      <span className="text-slate-300">•</span>
+                      <span className={`rounded-full px-2 py-0.5 ${statusBadgeClass(selectedConversation.last_status)}`}>
+                        {statusLabel(selectedConversation.last_status)}
+                      </span>
+                    </>
+                  ) : (
+                    <span>Choose a chat from the left panel</span>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="text-xs text-slate-500">Auto-refresh: 15s</div>
+            {!standalone ? (
+              <button
+                type="button"
+                onClick={() => {
+                  window.open('/whatsapp-chats', '_blank', 'noopener,noreferrer');
+                }}
+                className="hidden rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 sm:block"
+              >
+                Open in new tab
+              </button>
+            ) : null}
           </div>
 
-          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-3 py-4">
+          <div
+            ref={messagesContainerRef}
+            className="flex-1 overflow-y-auto px-4 py-4"
+            style={{
+              backgroundColor: currentTheme.pane,
+              backgroundImage: currentTheme.wallpaper,
+              backgroundRepeat: 'repeat',
+            }}
+          >
             {!selectedPhone ? (
               <p className="text-sm text-slate-500">Choose a chat from the left panel.</p>
             ) : loadingMessages && messages.length === 0 ? (
@@ -750,203 +1584,477 @@ export default function AdminChatLogsPage() {
             ) : messages.length === 0 ? (
               <p className="text-sm text-slate-500">No messages available for this number.</p>
             ) : (
-              messages.map((message) => {
-                const incoming = message.direction === 'inbound';
-                const system = message.direction === 'system';
-                const media = extractInboundMedia(message);
-                const mediaUrl = media ? mediaUrls[message.id] : null;
-                const location = extractInboundLocation(message);
-                const messageText = previewText(
-                  message.text_content,
-                  message.message_type,
-                  message.payload
-                );
-                const hideMediaPlaceholder =
-                  !!media && /^\[(image|video|audio|voice|document|sticker)\]/i.test(messageText.trim());
-                const hideLocationPlaceholder =
-                  !!location && /^\[location\]/i.test(messageText.trim());
-                const shouldRenderText = !(hideMediaPlaceholder || hideLocationPlaceholder);
-                const bubbleClass = system
-                  ? 'bg-amber-100 border-amber-300 text-amber-900'
-                  : incoming
-                  ? 'bg-white border-slate-300 text-slate-900'
-                  : 'bg-emerald-100 border-emerald-300 text-slate-900';
-
-                return (
-                  <div
-                    key={message.id}
-                    className={`mb-3 flex ${incoming || system ? 'justify-start' : 'justify-end'}`}
-                  >
-                    <div className={`max-w-[85%] rounded-xl border px-3 py-2 shadow-sm ${bubbleClass}`}>
-                      {media ? (
-                        <div className="mb-2">
-                          {media.kind === 'image' || media.kind === 'sticker' ? (
-                            mediaUrl ? (
-                              <img
-                                src={mediaUrl}
-                                alt={media.kind}
-                                className="max-h-80 max-w-full rounded-lg border border-slate-200 object-contain"
-                              />
-                            ) : (
-                              <p className="text-xs text-slate-500">Loading {media.kind}...</p>
-                            )
-                          ) : null}
-
-                          {media.kind === 'video' ? (
-                            mediaUrl ? (
-                              <video
-                                src={mediaUrl}
-                                controls
-                                className="max-h-80 max-w-full rounded-lg border border-slate-200"
-                              />
-                            ) : (
-                              <p className="text-xs text-slate-500">Loading video...</p>
-                            )
-                          ) : null}
-
-                          {media.kind === 'audio' ? (
-                            mediaUrl ? (
-                              <audio src={mediaUrl} controls className="w-full min-w-[240px]" />
-                            ) : (
-                              <p className="text-xs text-slate-500">
-                                Loading {media.isVoice ? 'voice note' : 'audio'}...
-                              </p>
-                            )
-                          ) : null}
-
-                          {media.kind === 'document' ? (
-                            mediaUrl ? (
-                              <a
-                                href={mediaUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
-                              >
-                                Open {media.filename || 'document'}
-                              </a>
-                            ) : (
-                              <p className="text-xs text-slate-500">
-                                Loading {media.filename || 'document'}...
-                              </p>
-                            )
-                          ) : null}
-                        </div>
-                      ) : null}
-
-                      {location ? (
-                        <div className="mb-2 rounded-lg border border-slate-200 bg-white/80 p-2 text-xs">
-                          <p className="font-medium text-slate-700">Location</p>
-                          {location.name ? <p className="text-slate-600">{location.name}</p> : null}
-                          {location.address ? <p className="text-slate-600">{location.address}</p> : null}
-                          {location.latitude !== undefined && location.longitude !== undefined ? (
-                            <a
-                              href={`https://maps.google.com/?q=${location.latitude},${location.longitude}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-emerald-700 underline"
-                            >
-                              Open in Maps ({location.latitude}, {location.longitude})
-                            </a>
-                          ) : null}
-                        </div>
-                      ) : null}
-
-                      {shouldRenderText ? (
-                        <p className="whitespace-pre-wrap break-words text-sm">{messageText}</p>
-                      ) : null}
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-                        <span className="rounded bg-black/5 px-1.5 py-0.5 uppercase tracking-wide">
-                          {message.direction}
-                        </span>
-                        <span
-                          className={`rounded px-1.5 py-0.5 font-medium ${statusBadgeClass(
-                            message.status
-                          )}`}
-                        >
-                          {message.status}
-                        </span>
-                        <span className="text-slate-500">{formatTime(message.created_at)}</span>
-                      </div>
-                      {message.error_text ? (
-                        <p className="mt-2 rounded bg-rose-100 px-2 py-1 text-xs text-rose-700">
-                          {message.error_text}
-                        </p>
-                      ) : null}
+              groupedMessages.map((group) => (
+                <div key={group.label}>
+                  <div className="mb-4 flex justify-center">
+                    <div className="rounded-full bg-white/90 px-3 py-1 text-[11px] font-medium text-slate-500 shadow-sm">
+                      {group.label}
                     </div>
                   </div>
-                );
-              })
+
+                  {group.items.map((message) => {
+                    const incoming = message.direction === 'inbound';
+                    const system = message.direction === 'system';
+                    const media = extractMessageMedia(message);
+                    const mediaUrl = media ? mediaUrls[message.id] : null;
+                    const location = extractMessageLocation(message);
+                    const messageText = previewText(
+                      message.text_content,
+                      message.message_type,
+                      message.payload,
+                      templatesByName
+                    );
+                    const hideMediaPlaceholder =
+                      !!media && /^\[(image|video|audio|voice|document|sticker)\]/i.test(messageText.trim());
+                    const hideLocationPlaceholder =
+                      !!location && /^\[location\]/i.test(messageText.trim());
+                    const shouldRenderText = !(hideMediaPlaceholder || hideLocationPlaceholder);
+                    const bubbleClass = system
+                      ? currentTheme.system
+                      : incoming
+                      ? currentTheme.incoming
+                      : currentTheme.outgoing;
+
+                    return (
+                      <div
+                        key={message.id}
+                        className={`mb-3 flex ${incoming || system ? 'justify-start' : 'justify-end'}`}
+                      >
+                        <div
+                          className={`max-w-[86%] rounded-2xl px-3 py-2 shadow-sm ${
+                            system ? 'border border-amber-200' : 'border border-black/5'
+                          } ${bubbleClass}`}
+                        >
+                          {media ? (
+                            <div className="mb-2">
+                              {media.kind === 'image' || media.kind === 'sticker' ? (
+                                mediaUrl ? (
+                                  <div className="space-y-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => openAttachment(media, mediaUrl)}
+                                      className="block"
+                                    >
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={mediaUrl}
+                                        alt={media.kind}
+                                        className="max-h-80 max-w-full rounded-2xl border border-slate-200 object-contain"
+                                      />
+                                    </button>
+                                    <div className="flex flex-wrap gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => openAttachment(media, mediaUrl)}
+                                        className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                                      >
+                                        Open
+                                      </button>
+                                      <a
+                                        href={mediaUrl}
+                                        download={media.filename || `${media.kind}-${message.id}`}
+                                        className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                                      >
+                                        Download
+                                      </a>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-slate-500">Loading {media.kind}...</p>
+                                )
+                              ) : null}
+
+                              {media.kind === 'video' ? (
+                                mediaUrl ? (
+                                  <div className="space-y-2">
+                                    <video
+                                      src={mediaUrl}
+                                      controls
+                                      className="max-h-80 max-w-full rounded-2xl border border-slate-200"
+                                    />
+                                    <div className="flex flex-wrap gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => openAttachment(media, mediaUrl)}
+                                        className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                                      >
+                                        Open
+                                      </button>
+                                      <a
+                                        href={mediaUrl}
+                                        download={media.filename || `video-${message.id}`}
+                                        className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                                      >
+                                        Download
+                                      </a>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-slate-500">Loading video...</p>
+                                )
+                              ) : null}
+
+                              {media.kind === 'audio' ? (
+                                mediaUrl ? (
+                                  <div className="space-y-2">
+                                    <audio src={mediaUrl} controls className="w-full min-w-[240px]" />
+                                    <div className="flex flex-wrap gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => openAttachment(media, mediaUrl)}
+                                        className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                                      >
+                                        Open
+                                      </button>
+                                      <a
+                                        href={mediaUrl}
+                                        download={media.filename || `audio-${message.id}`}
+                                        className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                                      >
+                                        Download
+                                      </a>
+                                    </div>
+                                  </div>
+                                ) : (
+                                    <p className="text-xs text-slate-500">
+                                      {mediaFailures[message.id]
+                                        ? media.isVoice
+                                          ? 'Voice note unavailable'
+                                          : 'Audio unavailable'
+                                        : `Fetching ${media.isVoice ? 'voice note' : 'audio'}...`}
+                                    </p>
+                                )
+                              ) : null}
+
+                              {media.kind === 'document' ? (
+                                mediaUrl ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => openAttachment(media, mediaUrl)}
+                                    className="block w-full rounded-2xl border border-slate-200 bg-white/90 p-3 text-left"
+                                  >
+                                    <p className="truncate text-sm font-medium text-slate-800">
+                                      {media.filename || 'document'}
+                                    </p>
+                                    {media.caption ? (
+                                      <p className="mt-1 text-xs text-slate-500">{media.caption}</p>
+                                    ) : null}
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                      <span
+                                        className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                                      >
+                                        Open
+                                      </span>
+                                      <a
+                                        href={mediaUrl}
+                                        download={media.filename || `document-${message.id}`}
+                                        onClick={(event) => event.stopPropagation()}
+                                        className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                                      >
+                                        Download
+                                      </a>
+                                    </div>
+                                  </button>
+                                ) : (
+                                  <p className="text-xs text-slate-500">
+                                    Loading {media.filename || 'document'}...
+                                  </p>
+                                )
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          {location ? (
+                            <div className="mb-2 rounded-2xl border border-slate-200 bg-white/90 p-3 text-xs">
+                              <p className="font-medium text-slate-700">Location</p>
+                              {location.name ? <p className="text-slate-600">{location.name}</p> : null}
+                              {location.address ? <p className="text-slate-600">{location.address}</p> : null}
+                              {location.latitude !== undefined && location.longitude !== undefined ? (
+                                <a
+                                  href={`https://maps.google.com/?q=${location.latitude},${location.longitude}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-emerald-700 underline"
+                                >
+                                  Open in Maps ({location.latitude}, {location.longitude})
+                                </a>
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          {shouldRenderText ? (
+                            <p className="whitespace-pre-wrap break-words text-sm leading-6">{messageText}</p>
+                          ) : null}
+
+                          <div className="mt-2 flex flex-wrap items-center justify-end gap-2 text-[11px] text-slate-500">
+                            <span>{messageMetaLabel(message)}</span>
+                            <span className="text-slate-300">•</span>
+                            <span>{formatTime(message.created_at)}</span>
+                            <span
+                              className={`rounded-full px-2 py-0.5 font-medium ${statusBadgeClass(
+                                message.status
+                              )}`}
+                            >
+                              {statusLabel(message.status)}
+                            </span>
+                          </div>
+                          {message.error_text ? (
+                            <p className="mt-2 rounded-2xl bg-rose-100 px-2 py-1.5 text-xs text-rose-700">
+                              {message.error_text}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))
             )}
           </div>
 
-          <form onSubmit={handleSendMessage} className="border-t border-slate-200 bg-white p-3">
+          <form onSubmit={handleSendMessage} className={`border-t p-3 ${standalone ? (isDark ? 'border-[#25323a] bg-[#111b21]' : 'border-slate-200 bg-white') : `border-slate-200 ${currentTheme.topbar}`}`}>
             <div className="flex items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    void handleSendMedia(file);
+                  }
+                }}
+              />
               <input
                 value={draftMessage}
                 onChange={(e) => setDraftMessage(e.target.value)}
-                placeholder={selectedPhone ? 'Type a message...' : 'Select a conversation first'}
-                disabled={!selectedPhone || sendingMessage}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 disabled:bg-slate-100"
+                placeholder={selectedPhone ? 'Type a message' : 'Select a conversation first'}
+                disabled={!selectedPhone || sendingMessage || sendingMedia}
+                className={`w-full rounded-full border px-4 py-3 text-sm outline-none focus:border-emerald-500 disabled:bg-slate-100 ${standalone && isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500 focus:bg-[#22323b]' : 'border-slate-200 bg-white'}`}
               />
-              <button
-                type="submit"
-                disabled={!selectedPhone || !draftMessage.trim() || sendingMessage}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
-              >
-                {sendingMessage ? 'Sending...' : 'Send'}
-              </button>
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setShowActionMenu((v) => !v)}
                   disabled={!selectedPhone}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-lg leading-none text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  className={`flex h-11 w-11 items-center justify-center rounded-full border text-lg leading-none disabled:cursor-not-allowed disabled:bg-slate-100 ${standalone && isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
                 >
-                  &#9776;
+                  +
                 </button>
                 {showActionMenu ? (
-                  <div className="absolute bottom-12 right-0 z-20 w-48 rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
+                  <div className={`absolute bottom-14 right-0 z-20 w-52 rounded-2xl border p-1.5 shadow-lg ${standalone && isDark ? 'border-[#31424c] bg-[#111b21]' : 'border-slate-200 bg-white'}`}>
+                    <button
+                      type="button"
+                      onClick={openFilePicker}
+                      className={`w-full rounded-xl px-3 py-2 text-left text-sm ${standalone && isDark ? 'text-slate-200 hover:bg-[#1f2c33]' : 'text-slate-700 hover:bg-slate-100'}`}
+                    >
+                      Send File
+                    </button>
                     <button
                       type="button"
                       onClick={openTemplateModal}
-                      className="w-full rounded-md px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+                      className={`w-full rounded-xl px-3 py-2 text-left text-sm ${standalone && isDark ? 'text-slate-200 hover:bg-[#1f2c33]' : 'text-slate-700 hover:bg-slate-100'}`}
                     >
                       Template Message
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowActionMenu(false)}
-                      className="w-full cursor-not-allowed rounded-md px-3 py-2 text-left text-sm text-slate-400"
+                      className="w-full cursor-not-allowed rounded-xl px-3 py-2 text-left text-sm text-slate-400"
                     >
                       Send Flow (Coming Soon)
                     </button>
                   </div>
                 ) : null}
               </div>
+              <button
+                type="submit"
+                disabled={!selectedPhone || !draftMessage.trim() || sendingMessage || sendingMedia}
+                className="rounded-full bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
+              >
+                {sendingMessage || sendingMedia ? 'Sending...' : 'Send'}
+              </button>
             </div>
           </form>
         </section>
+
+        {standalone ? (
+          <aside className={`flex h-full flex-col overflow-hidden rounded-[24px] border shadow-sm ${isDark ? 'border-[#25323a] bg-[#111b21] text-slate-100' : 'border-slate-200 bg-white'}`}>
+            <div className={`px-5 py-5 text-center ${isDark ? 'border-b border-[#25323a]' : 'border-b border-slate-200'}`}>
+              <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-slate-200 text-2xl font-semibold text-slate-600">
+                {selectedConversation
+                  ? getConversationInitials({
+                      ...selectedConversation,
+                      name: getConversationName(selectedConversation, contactDirectory),
+                      profile_name: null,
+                      display_name: null,
+                      contact_name: null,
+                    })
+                  : 'WA'}
+              </div>
+              <p className={`mt-4 text-lg font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                {selectedConversation
+                  ? getDisplayName(selectedConversation)
+                  : 'No contact selected'}
+              </p>
+              <p className={`mt-1 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                {selectedConversation ? formatPhone(selectedConversation.phone) : 'Pick a chat to inspect details'}
+              </p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {selectedConversation ? (
+                <>
+                  <div className={`space-y-3 rounded-2xl p-4 ${isDark ? 'bg-[#1a262d]' : 'bg-slate-50'}`}>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Status</span>
+                      <span className={`rounded-full px-2 py-0.5 font-medium ${statusBadgeClass(selectedConversation.last_status)}`}>
+                        {statusLabel(selectedConversation.last_status)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Total messages</span>
+                      <span className={`font-medium ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{selectedConversation.total_messages}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Failed messages</span>
+                      <span className={`font-medium ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{selectedConversation.failed_messages}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Direction</span>
+                      <span className={`font-medium capitalize ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{selectedConversation.last_direction || 'unknown'}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Last activity</span>
+                      <span className={`text-right font-medium ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{formatTime(selectedConversation.last_message_at)}</span>
+                    </div>
+                  </div>
+
+                  {latestMessage ? (
+                    <div className={`mt-5 rounded-2xl border p-4 ${isDark ? 'border-[#25323a]' : 'border-slate-200'}`}>
+                      <p className={`text-xs font-medium uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Latest message</p>
+                      <p className={`mt-2 text-sm leading-6 ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>
+                        {previewText(
+                          latestMessage.text_content,
+                          latestMessage.message_type,
+                          latestMessage.payload,
+                          templatesByName
+                        )}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <div className={`mt-5 rounded-2xl border p-4 ${isDark ? 'border-[#25323a]' : 'border-slate-200'}`}>
+                    <p className={`text-xs font-medium uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Metadata</p>
+                    {contactMetadata.length === 0 ? (
+                      <p className={`mt-2 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>No extra metadata available for this chat yet.</p>
+                    ) : (
+                      <div className="mt-3 space-y-3">
+                        {contactMetadata.map((row, index) => (
+                          <div key={`${row.key}:${row.value}:${index}`} className="flex items-start justify-between gap-3 text-sm">
+                            <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>{row.key}</span>
+                            <span className={`max-w-[55%] break-words text-right font-medium ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{row.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Select a conversation to view contact details and recent context.</p>
+              )}
+            </div>
+          </aside>
+        ) : null}
       </div>
 
+      {showNewContactModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="w-full max-w-lg rounded-[28px] bg-white shadow-2xl">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <p className="text-base font-semibold text-slate-900">New Contact</p>
+              <p className="text-sm text-slate-500">Save a name and send the first message from here.</p>
+            </div>
+
+            <div className="space-y-4 px-5 py-5">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Contact name</label>
+                <input
+                  value={newContactName}
+                  onChange={(e) => setNewContactName(e.target.value)}
+                  placeholder="Farmer name"
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Phone number</label>
+                <input
+                  value={newContactPhone}
+                  onChange={(e) => setNewContactPhone(e.target.value)}
+                  placeholder="919876543210"
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">First message</label>
+                <textarea
+                  value={newContactMessage}
+                  onChange={(e) => setNewContactMessage(e.target.value)}
+                  placeholder="Type the first message to send"
+                  rows={4}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNewContactModal(false);
+                  setNewContactName('');
+                  setNewContactPhone('');
+                  setNewContactMessage('');
+                }}
+                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateContactAndSend}
+                disabled={savingContact}
+                className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
+              >
+                {savingContact ? 'Saving...' : 'Save and send'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {showTemplateModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-2xl">
-            <div className="border-b border-slate-200 px-4 py-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-[28px] bg-white shadow-2xl">
+            <div className="border-b border-slate-200 px-5 py-4">
               <p className="text-sm font-semibold text-slate-900">Template Message</p>
               <p className="text-xs text-slate-500">Send to {formatPhone(selectedPhone)}</p>
             </div>
 
             <div className="grid max-h-[72vh] grid-cols-1 gap-0 overflow-hidden md:grid-cols-[320px_1fr]">
-              <div className="border-r border-slate-200">
+              <div className="border-r border-slate-200 bg-slate-50">
                 <div className="p-3">
                   <input
                     value={templateSearch}
                     onChange={(e) => setTemplateSearch(e.target.value)}
                     placeholder="Search templates..."
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
                   />
                 </div>
-                <div className="max-h-[60vh] overflow-y-auto border-t border-slate-100">
+                <div className="max-h-[60vh] overflow-y-auto border-t border-slate-100 bg-white">
                   {loadingTemplates ? (
                     <p className="p-3 text-sm text-slate-500">Loading templates...</p>
                   ) : templates.length === 0 ? (
@@ -960,7 +2068,7 @@ export default function AdminChatLogsPage() {
                           type="button"
                           onClick={() => setSelectedTemplate(tpl)}
                           className={`w-full border-b border-slate-100 px-3 py-3 text-left ${
-                            active ? 'bg-emerald-100/70' : 'hover:bg-slate-50'
+                            active ? 'bg-emerald-50' : 'hover:bg-slate-50'
                           }`}
                         >
                           <p className="truncate text-sm font-medium text-slate-900">{tpl.name}</p>
@@ -974,14 +2082,14 @@ export default function AdminChatLogsPage() {
                 </div>
               </div>
 
-              <div className="max-h-[72vh] overflow-y-auto p-4">
+              <div className="max-h-[72vh] overflow-y-auto p-5">
                 {!selectedTemplate ? (
                   <p className="text-sm text-slate-500">Select a template from the left list.</p>
                 ) : (
                   <div className="space-y-4">
                     <div>
                       <p className="text-sm font-semibold text-slate-900">{selectedTemplate.name}</p>
-                      <p className="mt-1 whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                      <p className="mt-2 whitespace-pre-wrap rounded-3xl border border-slate-200 bg-[#d9fdd3] p-4 text-sm text-slate-700">
                         {templateBodyPreview(selectedTemplate) || 'No body preview available.'}
                       </p>
                     </div>
@@ -997,7 +2105,7 @@ export default function AdminChatLogsPage() {
                             value={templateVars[idx] || ''}
                             onChange={(e) => handleTemplateVarChange(idx, e.target.value)}
                             placeholder={`Variable {{${idx + 1}}}`}
-                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                            className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
                           />
                         ))}
                       </div>
@@ -1008,21 +2116,21 @@ export default function AdminChatLogsPage() {
                 )}
 
                 {templateError ? (
-                  <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                  <p className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
                     {templateError}
                   </p>
                 ) : null}
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
               <button
                 type="button"
                 onClick={() => {
                   setShowTemplateModal(false);
                   setTemplateError('');
                 }}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
               >
                 Cancel
               </button>
@@ -1030,7 +2138,7 @@ export default function AdminChatLogsPage() {
                 type="button"
                 onClick={handleSendTemplate}
                 disabled={!selectedTemplate || sendingTemplate}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
               >
                 {sendingTemplate ? 'Sending...' : 'Send Template'}
               </button>
@@ -1040,5 +2148,9 @@ export default function AdminChatLogsPage() {
       ) : null}
     </div>
   );
+}
+
+export default function AdminChatLogsPage() {
+  return <AdminChatLogsView />;
 }
 
