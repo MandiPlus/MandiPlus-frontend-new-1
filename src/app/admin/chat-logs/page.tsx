@@ -128,7 +128,9 @@ function payloadPreview(payload: unknown): string | null {
   if (asObject && typeof asObject === 'object') {
     sources.push(asObject as Record<string, unknown>);
     const req = (asObject as Record<string, unknown>).request;
-    if (req && typeof req === 'object') sources.push(req);
+    if (req && typeof req === 'object') {
+  sources.push(req as Record<string, unknown>);
+}
   }
 
   for (const src of sources) {
