@@ -124,12 +124,12 @@ function payloadPreview(payload: unknown): string | null {
         })()
       : payload;
 
-  const sources: Record<string, unknown>[] = [];
+  const sources: Record<string, any>[] = [];
   if (asObject && typeof asObject === 'object') {
-    sources.push(asObject as Record<string, unknown>);
-    const req = (asObject as Record<string, unknown>).request;
+    sources.push(asObject as Record<string, any>);
+    const req = (asObject as Record<string, any>).request;
     if (req && typeof req === 'object') {
-  sources.push(req as Record<string, unknown>);
+  sources.push(req as Record<string, any>);
 }
   }
 
@@ -219,15 +219,15 @@ function payloadPreview(payload: unknown): string | null {
 
 function extractTemplateBodyParameters(payload: unknown): string[] {
   for (const src of payloadSources(payload)) {
-    const template = src?.template as Record<string, unknown> | undefined;
+    const template = src?.template as Record<string, any> | undefined;
     const components = Array.isArray(template?.components)
-      ? (template.components as Array<Record<string, unknown>>)
+      ? (template.components as Array<Record<string, any>>)
       : [];
 
     for (const component of components) {
       if (String(component?.type || '').toLowerCase() !== 'body') continue;
       const parameters = Array.isArray(component?.parameters)
-        ? (component.parameters as Array<Record<string, unknown>>)
+        ? (component.parameters as Array<Record<string, any>>)
         : [];
       return parameters
         .map((param) => (typeof param?.text === 'string' ? param.text : ''))
@@ -253,7 +253,7 @@ function renderTemplateText(template: TemplateItem | null | undefined, payload?:
 
 function getTemplateNameFromPayload(payload: unknown): string | null {
   for (const src of payloadSources(payload)) {
-    const template = src?.template as Record<string, unknown> | undefined;
+    const template = src?.template as Record<string, any> | undefined;
     if (typeof template?.name === 'string' && template.name.trim()) {
       return template.name.trim();
     }
@@ -289,7 +289,7 @@ function previewText(
   return `[${fallbackType}]`;
 }
 
-function payloadAsObject(payload: unknown): Record<string, unknown> | null {
+function payloadAsObject(payload: unknown): Record<string, any> | null {
   if (!payload) return null;
   if (typeof payload === 'string') {
     try {
@@ -298,16 +298,16 @@ function payloadAsObject(payload: unknown): Record<string, unknown> | null {
       return null;
     }
   }
-  if (typeof payload === 'object') return payload as Record<string, unknown>;
+  if (typeof payload === 'object') return payload as Record<string, any>;
   return null;
 }
 
-function payloadSources(payload: unknown): Record<string, unknown>[] {
+function payloadSources(payload: unknown): Record<string, any>[] {
   const obj = payloadAsObject(payload);
   if (!obj || typeof obj !== 'object') return [];
   const sources = [obj];
   if (obj.request && typeof obj.request === 'object') {
-    sources.push(obj.request as Record<string, unknown>);
+    sources.push(obj.request as Record<string, any>);
   }
   return sources;
 }
@@ -539,7 +539,7 @@ function collectPayloadMetadata(messages: ChatMessage[]) {
     }
 
     if (typeof value === 'object') {
-      Object.entries(value as Record<string, unknown>).forEach(([childKey, childValue]) => {
+      Object.entries(value as Record<string, any>).forEach(([childKey, childValue]) => {
         if (rows.length >= 10) return;
         const nextPath = path ? `${path}.${childKey}` : childKey;
         visit(childValue, nextPath, depth + 1);
