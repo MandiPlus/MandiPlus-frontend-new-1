@@ -10,6 +10,8 @@ const assignableSections = ADMIN_NAV_ITEMS.map((item) => ({
   value: item.section,
   label: item.name,
 }));
+const ALL_SECTION_VALUES = assignableSections.map((item) => item.value);
+const FULL_ACCESS_VALUE = '__full_access__';
 
 function formatDateTime(value?: string | null) {
   if (!value) return '-';
@@ -28,6 +30,16 @@ function getActionAvailability(status: AdminAccountRow['status']) {
     canSuspend: status === 'APPROVED',
     canUpdateAccess: status === 'APPROVED',
   };
+}
+
+function isFullAccessSelection(sections: string[]) {
+  return ALL_SECTION_VALUES.every((section) => sections.includes(section));
+}
+
+function getSectionSummaryLabel(sections: string[]) {
+  if (sections.length === 0) return 'Select sections';
+  if (isFullAccessSelection(sections)) return 'Full Access';
+  return `${sections.length} section${sections.length > 1 ? 's' : ''} selected`;
 }
 
 export default function AdminAccountApprovals({
@@ -102,6 +114,14 @@ export default function AdminAccountApprovals({
   const toggleSection = (accountId: string, section: string) => {
     setSectionDrafts((prev) => {
       const current = prev[accountId] || [];
+
+      if (section === FULL_ACCESS_VALUE) {
+        return {
+          ...prev,
+          [accountId]: isFullAccessSelection(current) ? [] : [...ALL_SECTION_VALUES],
+        };
+      }
+
       return {
         ...prev,
         [accountId]: current.includes(section)
@@ -186,6 +206,7 @@ export default function AdminAccountApprovals({
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {filteredAccounts.map((account) => {
                     const selectedSections = sectionDrafts[account.id] || [];
+                    const hasFullAccess = isFullAccessSelection(selectedSections);
                     const pickerOpen = openSectionPickerId === account.id;
                     const actionAvailability = getActionAvailability(account.status);
                     const sectionsChanged =
@@ -224,12 +245,22 @@ export default function AdminAccountApprovals({
                               }
                               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                             >
-                              {selectedSections.length > 0
-                                ? `${selectedSections.length} section${selectedSections.length > 1 ? 's' : ''} selected`
-                                : 'Select sections'}
+                              {getSectionSummaryLabel(selectedSections)}
                             </button>
                             {pickerOpen ? (
                               <div className="absolute z-20 mt-2 max-h-72 w-full overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+                                <label
+                                  className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={hasFullAccess}
+                                    disabled={!actionAvailability.canEditSections}
+                                    onChange={() => toggleSection(account.id, FULL_ACCESS_VALUE)}
+                                  />
+                                  <span>Full Access</span>
+                                </label>
+                                <div className="my-1 border-t border-slate-100" />
                                 {assignableSections.map((section) => (
                                   <label
                                     key={section.value}
@@ -248,18 +279,24 @@ export default function AdminAccountApprovals({
                             ) : null}
                             {selectedSections.length > 0 ? (
                               <div className="mt-2 flex flex-wrap gap-1">
-                                {selectedSections.map((section) => {
-                                  const label =
-                                    assignableSections.find((item) => item.value === section)?.label || section;
-                                  return (
-                                    <span
-                                      key={section}
-                                      className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"
-                                    >
-                                      {label}
-                                    </span>
-                                  );
-                                })}
+                                {hasFullAccess ? (
+                                  <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                                    Full Access
+                                  </span>
+                                ) : (
+                                  selectedSections.map((section) => {
+                                    const label =
+                                      assignableSections.find((item) => item.value === section)?.label || section;
+                                    return (
+                                      <span
+                                        key={section}
+                                        className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"
+                                      >
+                                        {label}
+                                      </span>
+                                    );
+                                  })
+                                )}
                               </div>
                             ) : null}
                           </div>

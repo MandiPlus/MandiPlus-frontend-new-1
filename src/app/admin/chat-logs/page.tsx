@@ -18,6 +18,7 @@ type Conversation = {
   profile_name?: string | null;
   display_name?: string | null;
   contact_name?: string | null;
+  unread_count?: number;
 };
 
 type ChatMessage = {
@@ -78,6 +79,51 @@ type TemplateItem = {
 type TemplateListResponse = {
   count: number;
   items: TemplateItem[];
+};
+
+type ContactProfile = {
+  phone: string;
+  name?: string | null;
+  profile_name?: string | null;
+  display_name?: string | null;
+  email?: string | null;
+  language?: string | null;
+  status?: string | null;
+  notes?: string | null;
+  assigned_to?: string | null;
+  source?: string | null;
+  last_read_at?: string | null;
+};
+
+type MetaSenderProfileResponse = {
+  ok: boolean;
+  item?: {
+    profile: {
+      phoneNumberId?: string;
+      displayPhoneNumber?: string;
+      verifiedName?: string;
+      qualityRating?: string;
+      codeVerificationStatus?: string;
+      nameStatus?: string;
+      newNameStatus?: string;
+      platformType?: string;
+      throughput?: unknown;
+      about?: string;
+      address?: string;
+      description?: string;
+      email?: string;
+      profilePictureUrl?: string;
+      websites?: string[];
+      vertical?: string;
+    };
+    templateCount: number;
+    templates: Array<{
+      name: string;
+      status?: string;
+      language?: string;
+      category?: string;
+    }>;
+  };
 };
 
 type ChatFilter = 'all' | 'unread' | 'delivered' | 'failed';
@@ -382,21 +428,51 @@ function extractMessageLocation(message: ChatMessage): LocationInfo | null {
   return null;
 }
 
-function statusBadgeClass(status: string) {
-  const normalized = (status || '').toLowerCase();
-  if (normalized === 'read') return 'bg-emerald-100 text-emerald-800';
-  if (normalized === 'delivered') return 'bg-sky-100 text-sky-800';
-  if (normalized === 'sent') return 'bg-slate-200 text-slate-700';
-  if (normalized === 'failed') return 'bg-rose-100 text-rose-800';
-  if (normalized === 'processed') return 'bg-violet-100 text-violet-800';
-  if (normalized === 'received') return 'bg-amber-100 text-amber-800';
-  return 'bg-slate-200 text-slate-700';
-}
-
 function statusLabel(status: string) {
   const normalized = (status || '').toLowerCase();
   if (normalized === 'processed') return 'received';
   return status || 'unknown';
+}
+
+function getWhatsappStatusType(status: string) {
+  const normalized = (status || '').toLowerCase();
+  if (normalized === 'read') return 'read';
+  if (normalized === 'delivered') return 'delivered';
+  if (normalized === 'sent') return 'sent';
+  if (normalized === 'failed') return 'failed';
+  return null;
+}
+
+function WhatsappTicks({
+  status,
+  className = '',
+}: {
+  status: string;
+  className?: string;
+}) {
+  const type = getWhatsappStatusType(status);
+  if (!type) return null;
+
+  if (type === 'failed') {
+    return (
+      <span className={`inline-flex items-center text-xs font-semibold text-rose-500 ${className}`}>
+        !
+      </span>
+    );
+  }
+
+  const colorClass =
+    type === 'read' ? 'text-sky-400' : 'text-slate-400';
+  const tickCount = type === 'sent' ? 1 : 2;
+
+  return (
+    <span className={`inline-flex items-center ${colorClass} ${className}`} aria-label={statusLabel(status)}>
+      <span className="text-[12px] leading-none">✓</span>
+      {tickCount === 2 ? (
+        <span className="-ml-1 text-[12px] leading-none">✓</span>
+      ) : null}
+    </span>
+  );
 }
 
 function extractBodyPlaceholders(template: TemplateItem): number {
@@ -443,9 +519,7 @@ function getConversationInitials(conversation: Conversation) {
 }
 
 function isUnreadConversation(conversation: Conversation) {
-  const status = (conversation.last_status || '').toLowerCase();
-  const direction = (conversation.last_direction || '').toLowerCase();
-  return direction === 'inbound' && ['received', 'unread', 'pending'].includes(status);
+  return Number(conversation.unread_count || 0) > 0;
 }
 
 function isDeliveredConversation(conversation: Conversation) {
@@ -635,11 +709,32 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   const [draftMessage, setDraftMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [sendingMedia, setSendingMedia] = useState(false);
+  const [deletingConversation, setDeletingConversation] = useState(false);
+  const [deletingMessageId, setDeletingMessageId] = useState('');
+  const [deleteModal, setDeleteModal] = useState<
+    | { type: 'conversation'; phone: string; label: string }
+    | { type: 'message'; message: ChatMessage }
+    | null
+  >(null);
   const [showNewContactModal, setShowNewContactModal] = useState(false);
   const [newContactName, setNewContactName] = useState('');
   const [newContactPhone, setNewContactPhone] = useState('');
   const [newContactMessage, setNewContactMessage] = useState('');
   const [savingContact, setSavingContact] = useState(false);
+  const [contactProfile, setContactProfile] = useState<ContactProfile | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    name: '',
+    profile_name: '',
+    display_name: '',
+    email: '',
+    language: '',
+    status: '',
+    notes: '',
+    assigned_to: '',
+  });
 
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
@@ -700,7 +795,15 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   const contactMetadata = useMemo(() => collectPayloadMetadata(messages), [messages]);
   const getDisplayName = (conversation: Conversation) =>
     getConversationName(conversation, contactDirectory) || formatPhone(conversation.phone);
+  const selectedConversation = useMemo(
+    () => conversations.find((item) => item.phone === selectedPhone) || null,
+    [conversations, selectedPhone]
+  );
+  const selectedUnreadCount = selectedConversation?.unread_count || 0;
   const isDark = standalone && chatTheme === 'dark';
+  const deletePillClass = standalone && isDark
+    ? 'border border-rose-400/30 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20'
+    : 'border border-rose-200 bg-white/85 text-rose-600 hover:bg-rose-50';
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -759,14 +862,17 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                 item.last_message_at === next?.last_message_at &&
                 item.last_status === next?.last_status &&
                 item.total_messages === next?.total_messages &&
-                item.failed_messages === next?.failed_messages
+                item.failed_messages === next?.failed_messages &&
+                item.unread_count === next?.unread_count
               );
             });
           return same ? prev : items;
         });
         hasLoadedConversationsRef.current = true;
 
-        if (!selectedPhone && items.length > 0) {
+        if (items.length === 0) {
+          setSelectedPhone('');
+        } else if (!selectedPhone && items.length > 0) {
           setSelectedPhone(items[0].phone);
         } else if (
           selectedPhone &&
@@ -817,6 +923,52 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   }, [messages, selectedPhone]);
 
   useEffect(() => {
+    if (!selectedPhone) {
+      setContactProfile(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchProfile = async () => {
+      try {
+        setLoadingProfile(true);
+        const response = await axios.get<{ ok: boolean; item: ContactProfile }>(
+          `${botBaseUrl}/admin/chat/contacts/${selectedPhone}`,
+          axiosConfig
+        );
+        if (!cancelled) {
+          setContactProfile(response.data?.item || null);
+        }
+      } catch {
+        if (!cancelled) {
+          setContactProfile({
+            phone: selectedPhone,
+            name: '',
+            profile_name: '',
+            display_name: '',
+            email: '',
+            language: '',
+            status: '',
+            notes: '',
+            assigned_to: '',
+            source: 'meta',
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingProfile(false);
+        }
+      }
+    };
+
+    void fetchProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPhone, botBaseUrl, axiosConfig]);
+
+  useEffect(() => {
     if (!isAuthenticated || !selectedPhone) return;
 
     const fetchMessages = async () => {
@@ -865,6 +1017,42 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
 
     fetchMessages();
   }, [isAuthenticated, selectedPhone, botBaseUrl, axiosConfig, refreshTick]);
+
+  useEffect(() => {
+    if (!selectedPhone || !selectedConversation || !selectedConversation.unread_count) return;
+
+    let cancelled = false;
+
+    const markAsRead = async () => {
+      try {
+        await axios.post(
+          `${botBaseUrl}/admin/chat/conversations/${selectedPhone}/read`,
+          {},
+          axiosConfig
+        );
+        if (cancelled) return;
+        setConversations((prev) =>
+          prev.map((conversation) =>
+            conversation.phone === selectedPhone
+              ? { ...conversation, unread_count: 0 }
+              : conversation
+          )
+        );
+        setContactProfile((prev) =>
+          prev?.phone === selectedPhone
+            ? { ...prev, last_read_at: new Date().toISOString() }
+            : prev
+        );
+      } catch {
+        // no-op
+      }
+    };
+
+    void markAsRead();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPhone, selectedConversation?.unread_count, botBaseUrl, axiosConfig]);
 
   useLayoutEffect(() => {
     const snapshot = scrollSnapshotRef.current;
@@ -1062,11 +1250,6 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     });
   }, [uniqueConversations, search, chatFilter, contactDirectory]);
 
-  const selectedConversation = useMemo(
-    () => uniqueConversations.find((item) => item.phone === selectedPhone) || null,
-    [uniqueConversations, selectedPhone]
-  );
-
   const groupedMessages = useMemo(() => {
     const groups: Array<{ label: string; items: ChatMessage[] }> = [];
 
@@ -1152,6 +1335,146 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   const openFilePicker = () => {
     setShowActionMenu(false);
     fileInputRef.current?.click();
+  };
+
+  const handleDeleteConversation = async (phone: string) => {
+    if (!phone || deletingConversation) return;
+    try {
+      setDeletingConversation(true);
+      setError('');
+      setShowActionMenu(false);
+      await axios.delete(`${botBaseUrl}/admin/chat/conversations/${phone}`, axiosConfig);
+
+      setConversations((prev) =>
+        prev.filter((conversation) => conversation.phone !== phone)
+      );
+      setContactDirectory((prev) => {
+        if (!prev[phone]) return prev;
+        const next = { ...prev };
+        delete next[phone];
+        return next;
+      });
+      setMessages([]);
+      setMediaUrls({});
+      setMediaFailures({});
+
+      const remainingConversations = uniqueConversations.filter((conversation) => conversation.phone !== phone);
+      setSelectedPhone(remainingConversations[0]?.phone || '');
+      setDeleteModal(null);
+      setRefreshTick((x) => x + 1);
+    } catch {
+      setError('Failed to delete conversation.');
+    } finally {
+      setDeletingConversation(false);
+    }
+  };
+
+  const handleDeleteMessage = async (message: ChatMessage) => {
+    if (deletingMessageId) return;
+
+    try {
+      setDeletingMessageId(message.id);
+      setError('');
+      await axios.delete(`${botBaseUrl}/admin/chat/messages/${message.id}`, axiosConfig);
+
+      setMessages((prev) => prev.filter((item) => item.id !== message.id));
+      setMediaUrls((prev) => {
+        if (!prev[message.id]) return prev;
+        const next = { ...prev };
+        delete next[message.id];
+        return next;
+      });
+      setMediaFailures((prev) => {
+        if (!prev[message.id]) return prev;
+        const next = { ...prev };
+        delete next[message.id];
+        return next;
+      });
+      setDeleteModal(null);
+      setRefreshTick((x) => x + 1);
+    } catch {
+      setError('Failed to delete message.');
+    } finally {
+      setDeletingMessageId('');
+    }
+  };
+
+  const openDeleteConversationModal = () => {
+    if (!selectedConversation) return;
+    setDeleteModal({
+      type: 'conversation',
+      phone: selectedConversation.phone,
+      label: `${getDisplayName(selectedConversation)} (${formatPhone(selectedConversation.phone)})`,
+    });
+  };
+
+  const openDeleteMessageModal = (message: ChatMessage) => {
+    setDeleteModal({ type: 'message', message });
+  };
+
+  const confirmDeleteModal = async () => {
+    if (!deleteModal) return;
+    if (deleteModal.type === 'conversation') {
+      await handleDeleteConversation(deleteModal.phone);
+      return;
+    }
+    await handleDeleteMessage(deleteModal.message);
+  };
+
+  const openProfileModal = () => {
+    if (!selectedPhone) return;
+    setProfileForm({
+      name: contactProfile?.name || '',
+      profile_name: contactProfile?.profile_name || '',
+      display_name: contactProfile?.display_name || '',
+      email: contactProfile?.email || '',
+      language: contactProfile?.language || '',
+      status: contactProfile?.status || '',
+      notes: contactProfile?.notes || '',
+      assigned_to: contactProfile?.assigned_to || '',
+    });
+    setShowProfileModal(true);
+  };
+
+  const saveProfile = async () => {
+    if (!selectedPhone) return;
+    try {
+      setSavingProfile(true);
+      setError('');
+      const response = await axios.put<{ ok: boolean; item: ContactProfile }>(
+        `${botBaseUrl}/admin/chat/contacts/${selectedPhone}`,
+        {
+          name: profileForm.name.trim() || null,
+          profile_name: profileForm.profile_name.trim() || null,
+          display_name: profileForm.display_name.trim() || null,
+          email: profileForm.email.trim() || null,
+          language: profileForm.language.trim() || null,
+          status: profileForm.status.trim() || null,
+          notes: profileForm.notes.trim() || null,
+          assigned_to: profileForm.assigned_to.trim() || null,
+        },
+        axiosConfig
+      );
+      const updated = response.data?.item || null;
+      setContactProfile(updated);
+      setContactDirectory((prev) => ({
+        ...prev,
+        [selectedPhone]: {
+          name:
+            updated?.display_name ||
+            updated?.name ||
+            updated?.profile_name ||
+            prev[selectedPhone]?.name ||
+            formatPhone(selectedPhone),
+        },
+      }));
+      setShowProfileModal(false);
+      setRefreshTick((x) => x + 1);
+    } catch {
+      setError('Failed to save profile.');
+    } finally {
+      setSavingProfile(false);
+    }
   };
 
   const handleTemplateVarChange = (index: number, value: string) => {
@@ -1423,8 +1746,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                 const active = conv.phone === selectedPhone;
                 const conversationName = getDisplayName(conv);
                 const unread = isUnreadConversation(conv);
-                const delivered = isDeliveredConversation(conv);
-                const failed = isFailedConversation(conv);
+                const showConversationTicks = conv.last_direction === 'outbound';
                 return (
                   <button
                     type="button"
@@ -1472,46 +1794,19 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                       </div>
 
                       <div className="mt-1 flex items-center gap-2">
+                        {showConversationTicks ? (
+                          <WhatsappTicks status={conv.last_status} className="shrink-0" />
+                        ) : null}
                         <p className={`min-w-0 flex-1 truncate text-sm ${standalone && isDark ? 'text-slate-300' : 'text-slate-600'}`}>
                           {previewText(conv.last_text, conv.last_message_type, undefined, templatesByName)}
                         </p>
                         {unread ? (
                           <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-600 px-1.5 text-[10px] font-semibold text-white">
-                            New
+                            {conv.unread_count}
                           </span>
                         ) : null}
                       </div>
 
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-                        <span className={`rounded-full px-2 py-1 ${standalone && isDark ? 'bg-[#233138] text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
-                          {conv.total_messages} msgs
-                        </span>
-                        <span className={`rounded-full px-2 py-1 ${statusBadgeClass(conv.last_status)}`}>
-                          {statusLabel(conv.last_status)}
-                        </span>
-                        {delivered ? (
-                          <span
-                            className={`rounded-full px-2 py-1 ${
-                              standalone && isDark
-                                ? 'bg-[#0f2f3e] text-sky-300'
-                                : 'bg-sky-50 text-sky-700'
-                            }`}
-                          >
-                            Delivered
-                          </span>
-                        ) : null}
-                        {failed ? (
-                          <span
-                            className={`rounded-full px-2 py-1 ${
-                              standalone && isDark
-                                ? 'bg-[#3a1f28] text-rose-300'
-                                : 'bg-rose-50 text-rose-700'
-                            }`}
-                          >
-                            {conv.failed_messages || 1} failed
-                          </span>
-                        ) : null}
-                      </div>
                     </div>
                   </button>
                 );
@@ -1544,12 +1839,14 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                   {selectedConversation ? (
                     <>
                       <span>{formatPhone(selectedConversation.phone)}</span>
-                      <span className="text-slate-300">•</span>
-                      <span>{messages.length} messages</span>
-                      <span className="text-slate-300">•</span>
-                      <span className={`rounded-full px-2 py-0.5 ${statusBadgeClass(selectedConversation.last_status)}`}>
-                        {statusLabel(selectedConversation.last_status)}
-                      </span>
+                      {selectedUnreadCount > 0 ? (
+                        <>
+                          <span className="text-slate-300">•</span>
+                          <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+                            {selectedUnreadCount} unread
+                          </span>
+                        </>
+                      ) : null}
                     </>
                   ) : (
                     <span>Choose a chat from the left panel</span>
@@ -1558,15 +1855,50 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               </div>
             </div>
             {!standalone ? (
-              <button
-                type="button"
-                onClick={() => {
-                  window.open('/whatsapp-chats', '_blank', 'noopener,noreferrer');
-                }}
-                className="hidden rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 sm:block"
-              >
-                Open in new tab
-              </button>
+              <div className="hidden items-center gap-2 sm:flex">
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.open('/whatsapp-chats', '_blank', 'noopener,noreferrer');
+                  }}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
+                >
+                  Open in new tab
+                </button>
+                {selectedConversation ? (
+                  <button
+                    type="button"
+                    onClick={openDeleteConversationModal}
+                    disabled={deletingConversation}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${deletePillClass} disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    {deletingConversation ? 'Deleting...' : 'Delete conversation'}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {standalone && selectedConversation ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openProfileModal}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                    isDark
+                      ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]'
+                      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Edit profile
+                </button>
+                <button
+                  type="button"
+                  onClick={openDeleteConversationModal}
+                  disabled={deletingConversation}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${deletePillClass} disabled:cursor-not-allowed disabled:opacity-60`}
+                >
+                  {deletingConversation ? 'Deleting...' : 'Delete conversation'}
+                </button>
+              </div>
             ) : null}
           </div>
 
@@ -1627,6 +1959,19 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                             system ? 'border border-amber-200' : 'border border-black/5'
                           } ${bubbleClass}`}
                         >
+                          <div className="mb-2 flex items-start justify-between gap-3">
+                            <div className={`text-[11px] font-medium ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>
+                              {messageMetaLabel(message)}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => openDeleteMessageModal(message)}
+                              disabled={deletingMessageId === message.id}
+                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold shadow-sm transition ${deletePillClass} disabled:cursor-not-allowed disabled:opacity-60`}
+                            >
+                              {deletingMessageId === message.id ? 'Deleting...' : 'Delete'}
+                            </button>
+                          </div>
                           {media ? (
                             <div className="mb-2">
                               {media.kind === 'image' || media.kind === 'sticker' ? (
@@ -1789,16 +2134,10 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                           ) : null}
 
                           <div className="mt-2 flex flex-wrap items-center justify-end gap-2 text-[11px] text-slate-500">
-                            <span>{messageMetaLabel(message)}</span>
-                            <span className="text-slate-300">•</span>
                             <span>{formatTime(message.created_at)}</span>
-                            <span
-                              className={`rounded-full px-2 py-0.5 font-medium ${statusBadgeClass(
-                                message.status
-                              )}`}
-                            >
-                              {statusLabel(message.status)}
-                            </span>
+                            {message.direction === 'outbound' ? (
+                              <WhatsappTicks status={message.status} />
+                            ) : null}
                           </div>
                           {message.error_text ? (
                             <p className="mt-2 rounded-2xl bg-rose-100 px-2 py-1.5 text-xs text-rose-700">
@@ -1862,6 +2201,18 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                     </button>
                     <button
                       type="button"
+                      onClick={openDeleteConversationModal}
+                      disabled={!selectedConversation || deletingConversation}
+                      className={`w-full rounded-xl px-3 py-2 text-left text-sm ${
+                        standalone && isDark
+                          ? 'text-rose-300 hover:bg-[#2a1f22]'
+                          : 'text-rose-700 hover:bg-rose-50'
+                      } disabled:cursor-not-allowed disabled:opacity-60`}
+                    >
+                      {deletingConversation ? 'Deleting Conversation...' : 'Delete Conversation'}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setShowActionMenu(false)}
                       className="w-full cursor-not-allowed rounded-xl px-3 py-2 text-left text-sm text-slate-400"
                     >
@@ -1910,20 +2261,6 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                 <>
                   <div className={`space-y-3 rounded-2xl p-4 ${isDark ? 'bg-[#1a262d]' : 'bg-slate-50'}`}>
                     <div className="flex items-center justify-between text-sm">
-                      <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Status</span>
-                      <span className={`rounded-full px-2 py-0.5 font-medium ${statusBadgeClass(selectedConversation.last_status)}`}>
-                        {statusLabel(selectedConversation.last_status)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Total messages</span>
-                      <span className={`font-medium ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{selectedConversation.total_messages}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Failed messages</span>
-                      <span className={`font-medium ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{selectedConversation.failed_messages}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
                       <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Direction</span>
                       <span className={`font-medium capitalize ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{selectedConversation.last_direction || 'unknown'}</span>
                     </div>
@@ -1970,6 +2307,150 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
           </aside>
         ) : null}
       </div>
+
+      {deleteModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className={`w-full max-w-md rounded-[28px] border p-6 shadow-2xl ${isDark ? 'border-[#31424c] bg-[#111b21] text-slate-100' : 'border-slate-200 bg-white text-slate-900'}`}>
+            <p className="text-lg font-semibold">
+              {deleteModal.type === 'conversation' ? 'Delete conversation?' : 'Delete message?'}
+            </p>
+            <p className={`mt-2 text-sm leading-6 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+              {deleteModal.type === 'conversation'
+                ? `This will remove the full stored chat history for ${deleteModal.label} from the admin panel.`
+                : `This will remove this ${messageMetaLabel(deleteModal.message).toLowerCase()} message from the admin chat log.`}
+            </p>
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteModal(null)}
+                className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                  isDark
+                    ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]'
+                    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmDeleteModal()}
+                disabled={
+                  deleteModal.type === 'conversation'
+                    ? deletingConversation
+                    : deletingMessageId === deleteModal.message.id
+                }
+                className={`rounded-full px-4 py-2 text-sm font-semibold ${deletePillClass} disabled:cursor-not-allowed disabled:opacity-60`}
+              >
+                {deleteModal.type === 'conversation'
+                  ? deletingConversation
+                    ? 'Deleting...'
+                    : 'Delete conversation'
+                  : deletingMessageId === deleteModal.message.id
+                    ? 'Deleting...'
+                    : 'Delete message'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showProfileModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+          <div className={`w-full max-w-2xl rounded-[28px] border p-6 shadow-2xl ${isDark ? 'border-[#31424c] bg-[#111b21] text-slate-100' : 'border-slate-200 bg-white text-slate-900'}`}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-lg font-semibold">Edit profile</p>
+                <p className={`mt-1 text-sm ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                  Manage this contact profile from the chat workspace.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(false)}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                  isDark ? 'bg-[#1a262d] text-slate-300 hover:bg-[#22323b]' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <input
+                value={profileForm.display_name}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, display_name: e.target.value }))}
+                placeholder="Display name"
+                className={`rounded-2xl border px-4 py-3 text-sm outline-none ${isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500' : 'border-slate-200 bg-white'}`}
+              />
+              <input
+                value={profileForm.name}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="Name"
+                className={`rounded-2xl border px-4 py-3 text-sm outline-none ${isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500' : 'border-slate-200 bg-white'}`}
+              />
+              <input
+                value={profileForm.profile_name}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, profile_name: e.target.value }))}
+                placeholder="Meta profile name"
+                className={`rounded-2xl border px-4 py-3 text-sm outline-none ${isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500' : 'border-slate-200 bg-white'}`}
+              />
+              <input
+                value={profileForm.assigned_to}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, assigned_to: e.target.value }))}
+                placeholder="Assigned to"
+                className={`rounded-2xl border px-4 py-3 text-sm outline-none ${isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500' : 'border-slate-200 bg-white'}`}
+              />
+              <input
+                value={profileForm.email}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, email: e.target.value }))}
+                placeholder="Email"
+                className={`rounded-2xl border px-4 py-3 text-sm outline-none ${isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500' : 'border-slate-200 bg-white'}`}
+              />
+              <input
+                value={profileForm.language}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, language: e.target.value }))}
+                placeholder="Language"
+                className={`rounded-2xl border px-4 py-3 text-sm outline-none ${isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500' : 'border-slate-200 bg-white'}`}
+              />
+              <input
+                value={profileForm.status}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, status: e.target.value }))}
+                placeholder="Status"
+                className={`rounded-2xl border px-4 py-3 text-sm outline-none md:col-span-2 ${isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500' : 'border-slate-200 bg-white'}`}
+              />
+              <textarea
+                value={profileForm.notes}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, notes: e.target.value }))}
+                placeholder="Notes"
+                rows={4}
+                className={`rounded-2xl border px-4 py-3 text-sm outline-none md:col-span-2 ${isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500' : 'border-slate-200 bg-white'}`}
+              />
+            </div>
+
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(false)}
+                className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                  isDark
+                    ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]'
+                    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveProfile()}
+                disabled={savingProfile}
+                className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
+              >
+                {savingProfile ? 'Saving...' : 'Save profile'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {showNewContactModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
@@ -2155,4 +2636,3 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
 export default function AdminChatLogsPage() {
   return <AdminChatLogsView />;
 }
-
