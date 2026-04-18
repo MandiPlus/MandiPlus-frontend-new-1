@@ -232,12 +232,13 @@ export default function AdminInsurancePaymentsPage() {
   };
 
   const openEditModal = (row: InsurancePaymentRow) => {
+    const premiumAmount = Number(row.premiumAmount || 0);
     const paymentCompletedValue = toInputDateTimeLocal(row.paymentCompletedAt);
     setPaymentCompletedInputType(paymentCompletedValue ? 'datetime-local' : 'text');
     setEditing(row);
     setForm({
-      premiumAmount: Number(row.premiumAmount || 0),
-      paymentAmount: Number(row.paymentAmount || 0),
+      premiumAmount,
+      paymentAmount: premiumAmount,
       paymentStatus: row.paymentStatus,
       isPaymentRequired: Boolean(row.isPaymentRequired),
       paymentCompletedAt: paymentCompletedValue,
@@ -607,13 +608,9 @@ export default function AdminInsurancePaymentsPage() {
                   type="number"
                   min="0"
                   value={form.premiumAmount ?? ''}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      premiumAmount: e.target.value === '' ? undefined : Number(e.target.value),
-                    }))
-                  }
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                  readOnly
+                  disabled
+                  className="mt-1 w-full rounded-md border border-gray-300 bg-gray-100 px-3 py-2 text-gray-500"
                 />
               </label>
 
