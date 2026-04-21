@@ -127,6 +127,21 @@ type MetaSenderProfileResponse = {
 };
 
 type ChatFilter = 'all' | 'unread' | 'delivered' | 'failed';
+type MainTab = 'chats' | 'invoice-details';
+
+type InvoiceCollection = {
+  id: string;
+  phone: string;
+  display_name: string | null;
+  status: 'pending' | 'done';
+  window_started_at: string | null;
+  window_closed_at: string;
+  message_count: number;
+  completed_by: string | null;
+  completed_at: string | null;
+  created_at: string;
+};
+
 type ChatTheme = 'light' | 'dark';
 
 function formatPhone(value: string) {
@@ -162,12 +177,12 @@ function payloadPreview(payload: unknown): string | null {
   const asObject =
     typeof payload === 'string'
       ? (() => {
-          try {
-            return JSON.parse(payload);
-          } catch {
-            return null;
-          }
-        })()
+        try {
+          return JSON.parse(payload);
+        } catch {
+          return null;
+        }
+      })()
       : payload;
 
   const sources: Record<string, any>[] = [];
@@ -175,8 +190,8 @@ function payloadPreview(payload: unknown): string | null {
     sources.push(asObject as Record<string, any>);
     const req = (asObject as Record<string, any>).request;
     if (req && typeof req === 'object') {
-  sources.push(req as Record<string, any>);
-}
+      sources.push(req as Record<string, any>);
+    }
   }
 
   for (const src of sources) {
@@ -662,32 +677,32 @@ const themeOptions: Array<{
   system: string;
   wallpaper: string;
 }> = [
-  {
-    key: 'light',
-    label: 'Light',
-    shell: 'bg-[#f0f2f5]',
-    panel: 'bg-white',
-    topbar: 'bg-[#f0f2f5]',
-    pane: '#efeae2',
-    incoming: 'bg-white text-slate-900',
-    outgoing: 'bg-[#d9fdd3] text-slate-900',
-    system: 'bg-[#fff3c4] text-amber-950',
-    wallpaper: "url('/images/whatsapp-bg.png')",
-  },
-  {
-    key: 'dark',
-    label: 'Dark',
-    shell: 'bg-[#111b21]',
-    panel: 'bg-[#111b21]',
-    topbar: 'bg-[#111b21]',
-    pane: '#0b141a',
-    incoming: 'bg-[#202c33] text-slate-100',
-    outgoing: 'bg-[#005c4b] text-white',
-    system: 'bg-[#374151] text-slate-100',
-    wallpaper:
-      "radial-gradient(circle at 25% 25%, rgba(255,255,255,0.04) 0, rgba(255,255,255,0.04) 2px, transparent 2px), radial-gradient(circle at 75% 35%, rgba(255,255,255,0.03) 0, rgba(255,255,255,0.03) 2px, transparent 2px), linear-gradient(180deg, rgba(17,27,33,0.98), rgba(11,20,26,1))",
-  },
-];
+    {
+      key: 'light',
+      label: 'Light',
+      shell: 'bg-[#f0f2f5]',
+      panel: 'bg-white',
+      topbar: 'bg-[#f0f2f5]',
+      pane: '#efeae2',
+      incoming: 'bg-white text-slate-900',
+      outgoing: 'bg-[#d9fdd3] text-slate-900',
+      system: 'bg-[#fff3c4] text-amber-950',
+      wallpaper: "url('/images/whatsapp-bg.png')",
+    },
+    {
+      key: 'dark',
+      label: 'Dark',
+      shell: 'bg-[#111b21]',
+      panel: 'bg-[#111b21]',
+      topbar: 'bg-[#111b21]',
+      pane: '#0b141a',
+      incoming: 'bg-[#202c33] text-slate-100',
+      outgoing: 'bg-[#005c4b] text-white',
+      system: 'bg-[#374151] text-slate-100',
+      wallpaper:
+        "radial-gradient(circle at 25% 25%, rgba(255,255,255,0.04) 0, rgba(255,255,255,0.04) 2px, transparent 2px), radial-gradient(circle at 75% 35%, rgba(255,255,255,0.03) 0, rgba(255,255,255,0.03) 2px, transparent 2px), linear-gradient(180deg, rgba(17,27,33,0.98), rgba(11,20,26,1))",
+    },
+  ];
 
 export function AdminChatLogsView({ standalone = false }: { standalone?: boolean }) {
   const router = useRouter();
@@ -745,6 +760,15 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateItem | null>(null);
   const [templateVars, setTemplateVars] = useState<string[]>([]);
   const [sendingTemplate, setSendingTemplate] = useState(false);
+
+  // Invoice Details tab
+  const [mainTab, setMainTab] = useState<MainTab>('chats');
+  const [invoiceCollections, setInvoiceCollections] = useState<InvoiceCollection[]>([]);
+  const [loadingCollections, setLoadingCollections] = useState(false);
+  const [collectionFilter, setCollectionFilter] = useState<'all' | 'pending' | 'done'>('pending');
+  const [completingId, setCompletingId] = useState<string | null>(null);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
+
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const hasLoadedConversationsRef = useRef(false);
@@ -766,10 +790,10 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     () =>
       botAdminToken
         ? {
-            headers: {
-              'x-admin-token': botAdminToken,
-            },
-          }
+          headers: {
+            'x-admin-token': botAdminToken,
+          },
+        }
         : {},
     [botAdminToken]
   );
@@ -816,21 +840,21 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
       if (storedTheme === 'light' || storedTheme === 'dark') {
         setChatTheme(storedTheme);
       }
-    } catch {}
+    } catch { }
   }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem('chatContactDirectory', JSON.stringify(contactDirectory));
-    } catch {}
+    } catch { }
   }, [contactDirectory]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem('chatLogsTheme', chatTheme);
-    } catch {}
+    } catch { }
   }, [chatTheme]);
 
   useEffect(() => {
@@ -838,6 +862,37 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
       router.push('/admin/login');
     }
   }, [isAuthenticated, router]);
+
+  // Fetch invoice collections whenever the tab is active or refreshTick changes
+  useEffect(() => {
+    if (!isAuthenticated || !botAdminToken) return;
+    setLoadingCollections(true);
+    const url = collectionFilter === 'all'
+      ? `${botBaseUrl}/admin/invoice-collections?limit=200`
+      : `${botBaseUrl}/admin/invoice-collections?status=${collectionFilter}&limit=200`;
+    axios.get(url, axiosConfig)
+      .then((res) => setInvoiceCollections(res.data?.items ?? []))
+      .catch(() => { })
+      .finally(() => setLoadingCollections(false));
+  }, [isAuthenticated, botAdminToken, botBaseUrl, axiosConfig, collectionFilter, refreshTick]);
+
+  const markCollectionDone = async (id: string) => {
+    if (completingId) return;
+    setCompletingId(id);
+    try {
+      await axios.post(
+        `${botBaseUrl}/admin/invoice-collections/${id}/complete`,
+        null,
+        axiosConfig,
+      );
+      setInvoiceCollections((prev) =>
+        prev.map((c) => c.id === id ? { ...c, status: 'done' } : c)
+      );
+    } catch { } finally {
+      setCompletingId(null);
+    }
+  };
+
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -1077,7 +1132,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
       Object.values(prev).forEach((url) => {
         try {
           URL.revokeObjectURL(url);
-        } catch {}
+        } catch { }
       });
       return {};
     });
@@ -1124,7 +1179,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               if (oldUrl) {
                 try {
                   URL.revokeObjectURL(oldUrl);
-                } catch {}
+                } catch { }
               }
               return { ...prev, [item.message.id]: objectUrl };
             });
@@ -1569,35 +1624,35 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     tone: string;
     activeTone: string;
   }> = [
-    {
-      key: 'all',
-      label: 'All chats',
-      count: filterCountsSafe.all,
-      tone: 'text-slate-600',
-      activeTone: 'bg-slate-900 text-white',
-    },
-    {
-      key: 'unread',
-      label: 'Unread',
-      count: filterCountsSafe.unread,
-      tone: 'text-emerald-700',
-      activeTone: 'bg-emerald-600 text-white',
-    },
-    {
-      key: 'delivered',
-      label: 'Delivered',
-      count: filterCountsSafe.delivered,
-      tone: 'text-sky-700',
-      activeTone: 'bg-sky-600 text-white',
-    },
-    {
-      key: 'failed',
-      label: 'Failed',
-      count: filterCountsSafe.failed,
-      tone: 'text-rose-700',
-      activeTone: 'bg-rose-600 text-white',
-    },
-  ];
+      {
+        key: 'all',
+        label: 'All chats',
+        count: filterCountsSafe.all,
+        tone: 'text-slate-600',
+        activeTone: 'bg-slate-900 text-white',
+      },
+      {
+        key: 'unread',
+        label: 'Unread',
+        count: filterCountsSafe.unread,
+        tone: 'text-emerald-700',
+        activeTone: 'bg-emerald-600 text-white',
+      },
+      {
+        key: 'delivered',
+        label: 'Delivered',
+        count: filterCountsSafe.delivered,
+        tone: 'text-sky-700',
+        activeTone: 'bg-sky-600 text-white',
+      },
+      {
+        key: 'failed',
+        label: 'Failed',
+        count: filterCountsSafe.failed,
+        tone: 'text-rose-700',
+        activeTone: 'bg-rose-600 text-white',
+      },
+    ];
 
   return (
     <div className={standalone ? `${isDark ? 'h-screen bg-[#0b141a] p-3 text-slate-100' : 'h-screen bg-[#edf1f5] p-3'}` : 'h-[calc(100vh-7.5rem)] py-5'}>
@@ -1633,9 +1688,8 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                     key={`rail-${filter.key}`}
                     type="button"
                     onClick={() => setChatFilter(filter.key)}
-                    className={`flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-sm transition ${
-                      active ? 'bg-emerald-600 text-white' : isDark ? 'text-slate-200 hover:bg-[#1f2c33]' : 'text-slate-700 hover:bg-slate-100'
-                    }`}
+                    className={`flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-sm transition ${active ? 'bg-emerald-600 text-white' : isDark ? 'text-slate-200 hover:bg-[#1f2c33]' : 'text-slate-700 hover:bg-slate-100'
+                      }`}
                   >
                     <span>{filter.label}</span>
                     <span className={`rounded-full px-2 py-0.5 text-xs ${active ? 'bg-white/15 text-white' : isDark ? 'bg-[#1f2c33] text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
@@ -1656,9 +1710,8 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                       key={`rail-theme-${theme.key}`}
                       type="button"
                       onClick={() => setChatTheme(theme.key)}
-                      className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition ${
-                        active ? isDark ? 'bg-[#1f2c33] text-white' : 'bg-slate-100 text-slate-900' : isDark ? 'text-slate-300 hover:bg-[#1a262d]' : 'text-slate-600 hover:bg-slate-50'
-                      }`}
+                      className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition ${active ? isDark ? 'bg-[#1f2c33] text-white' : 'bg-slate-100 text-slate-900' : isDark ? 'text-slate-300 hover:bg-[#1a262d]' : 'text-slate-600 hover:bg-slate-50'
+                        }`}
                     >
                       <span
                         className="h-3 w-3 rounded-full border border-white shadow-sm"
@@ -1680,64 +1733,182 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
           </aside>
         ) : null}
         <aside className={`flex h-full flex-col overflow-hidden rounded-[24px] border ${standalone ? (isDark ? 'border-[#25323a] bg-[#111b21] shadow-sm' : 'border-slate-200 bg-white shadow-sm') : `border-slate-200 ${currentTheme.panel}`}`}>
-          <div className={`px-4 py-4 ${isDark && standalone ? 'border-b border-[#25323a]' : 'border-b border-slate-200'}`}>
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <p className={`text-lg font-semibold ${isDark && standalone ? 'text-slate-100' : 'text-slate-900'}`}>Chats</p>
-                <p className={`text-xs ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>Search by number, name, or preview</p>
-              </div>
-              {standalone ? (
-                <button
-                  type="button"
-                  onClick={() => setShowNewContactModal(true)}
-                  className={`rounded-xl px-3 py-2 text-xs font-medium transition ${isDark ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
-                >
-                  New contact
-                </button>
-              ) : (
-                <div className="h-8 w-8" />
+          {/* ── Main tab switcher ── */}
+          <div className={`flex border-b ${isDark && standalone ? 'border-[#25323a]' : 'border-slate-200'}`}>
+            <button
+              type="button"
+              onClick={() => setMainTab('chats')}
+              className={`flex-1 py-3 text-sm font-medium transition ${mainTab === 'chats'
+                ? (isDark && standalone ? 'border-b-2 border-emerald-500 text-emerald-400' : 'border-b-2 border-emerald-600 text-emerald-700')
+                : (isDark && standalone ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700')
+                }`}
+            >
+              Chats
+            </button>
+            <button
+              type="button"
+              onClick={() => setMainTab('invoice-details')}
+              className={`relative flex-1 py-3 text-sm font-medium transition ${mainTab === 'invoice-details'
+                ? (isDark && standalone ? 'border-b-2 border-emerald-500 text-emerald-400' : 'border-b-2 border-emerald-600 text-emerald-700')
+                : (isDark && standalone ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700')
+                }`}
+            >
+              Invoice Details
+              {invoiceCollections.filter((c) => c.status === 'pending').length > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">
+                  {invoiceCollections.filter((c) => c.status === 'pending').length}
+                </span>
               )}
-            </div>
+            </button>
+          </div>
 
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, number, or message"
-              className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition focus:border-emerald-500 ${isDark && standalone ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500 focus:bg-[#1f2c33]' : 'border-slate-200 bg-slate-50 focus:bg-white'}`}
-            />
-
-            {!standalone ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {filterButtons.map((filter) => {
-                  const active = chatFilter === filter.key;
-                  return (
+          <div className={`px-4 py-4 ${isDark && standalone ? 'border-b border-[#25323a]' : 'border-b border-slate-200'}`}>
+            {mainTab === 'chats' ? (
+              <>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className={`text-lg font-semibold ${isDark && standalone ? 'text-slate-100' : 'text-slate-900'}`}>Chats</p>
+                    <p className={`text-xs ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>Search by number, name, or preview</p>
+                  </div>
+                  {standalone ? (
                     <button
-                      key={filter.key}
                       type="button"
-                      onClick={() => setChatFilter(filter.key)}
-                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium transition ${
-                        active
-                          ? `${filter.activeTone} border-transparent shadow-sm`
-                          : `border-slate-200 bg-white hover:bg-slate-50 ${filter.tone}`
-                      }`}
+                      onClick={() => setShowNewContactModal(true)}
+                      className={`rounded-xl px-3 py-2 text-xs font-medium transition ${isDark ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
                     >
-                      <span>{filter.label}</span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 ${
-                          active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
-                        }`}
-                      >
-                        {filter.count}
-                      </span>
+                      New contact
                     </button>
-                  );
-                })}
-              </div>
-            ) : null}
+                  ) : (
+                    <div className="h-8 w-8" />
+                  )}
+                </div>
+
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search name, number, or message"
+                  className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition focus:border-emerald-500 ${isDark && standalone ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500 focus:bg-[#1f2c33]' : 'border-slate-200 bg-slate-50 focus:bg-white'}`}
+                />
+
+                {!standalone ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {filterButtons.map((filter) => {
+                      const active = chatFilter === filter.key;
+                      return (
+                        <button
+                          key={filter.key}
+                          type="button"
+                          onClick={() => setChatFilter(filter.key)}
+                          className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium transition ${active
+                            ? `${filter.activeTone} border-transparent shadow-sm`
+                            : `border-slate-200 bg-white hover:bg-slate-50 ${filter.tone}`
+                            }`}
+                        >
+                          <span>{filter.label}</span>
+                          <span className={`rounded-full px-2 py-0.5 ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>
+                            {filter.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              /* Invoice Details header */
+              <>
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <p className={`text-lg font-semibold ${isDark && standalone ? 'text-slate-100' : 'text-slate-900'}`}>Invoice Details</p>
+                    <p className={`text-xs ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>Collected from WhatsApp</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRefreshTick((x) => x + 1)}
+                    className={`rounded-xl px-3 py-2 text-xs font-medium transition ${isDark && standalone ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                  >
+                    Refresh
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  {(['pending', 'done', 'all'] as const).map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => setCollectionFilter(f)}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-medium capitalize transition ${collectionFilter === f
+                        ? 'border-transparent bg-emerald-600 text-white shadow-sm'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                        }`}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
           <div className={`flex-1 overflow-y-auto ${standalone ? (isDark ? 'bg-[#111b21]' : 'bg-white') : 'bg-[#fcfdfd]'}`}>
-            {loadingConversations ? (
+            {mainTab === 'invoice-details' ? (
+              /* ── Invoice Details card list ── */
+              loadingCollections ? (
+                <p className="p-4 text-sm text-slate-500">Loading...</p>
+              ) : invoiceCollections.length === 0 ? (
+                <p className="p-4 text-sm text-slate-400">No invoice details found.</p>
+              ) : (
+                <div className="divide-y">
+                  {invoiceCollections.map((col) => {
+                    const isSelected = selectedCollectionId === col.id;
+                    const isDone = col.status === 'done';
+                    return (
+                      <div
+                        key={col.id}
+                        className={`cursor-pointer px-4 py-3 transition hover:bg-emerald-50 ${isSelected ? 'bg-emerald-50 ring-1 ring-inset ring-emerald-200' : ''
+                          }`}
+                        onClick={() => {
+                          setSelectedCollectionId(col.id);
+                          setSelectedPhone(col.phone);
+                        }}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-semibold text-slate-800">
+                              {col.display_name || col.phone}
+                            </p>
+                            <p className="text-xs text-slate-500">{col.phone}</p>
+                            <p className="mt-1 text-xs text-slate-400">
+                              {new Date(col.window_closed_at).toLocaleString('en-IN', {
+                                day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                              })}
+                              {' · '}{col.message_count} msg{col.message_count !== 1 ? 's' : ''}
+                            </p>
+                          </div>
+                          <div className="flex flex-col items-end gap-2 shrink-0">
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${isDone
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-amber-100 text-amber-700'
+                              }`}>
+                              {isDone ? '✓ Done' : 'Pending'}
+                            </span>
+                            {!isDone && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); markCollectionDone(col.id); }}
+                                disabled={completingId === col.id}
+                                className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                              >
+                                {completingId === col.id ? '...' : 'Mark Done'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            ) : loadingConversations ? (
               <p className={`p-4 text-sm ${standalone && isDark ? 'text-slate-400' : 'text-slate-500'}`}>Loading conversations...</p>
             ) : filteredConversations.length === 0 ? (
               <p className={`p-4 text-sm ${standalone && isDark ? 'text-slate-400' : 'text-slate-500'}`}>No conversations found.</p>
@@ -1752,25 +1923,24 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                     type="button"
                     key={conv.phone}
                     onClick={() => setSelectedPhone(conv.phone)}
-                    className={`flex w-full items-start gap-3 border-b px-4 py-3 text-left transition ${
-                      standalone && isDark
-                        ? active
-                          ? 'border-[#25323a] bg-[#1a262d]'
-                          : 'border-[#1a262d] bg-[#111b21] hover:bg-[#162229]'
-                        : active
+                    className={`flex w-full items-start gap-3 border-b px-4 py-3 text-left transition ${standalone && isDark
+                      ? active
+                        ? 'border-[#25323a] bg-[#1a262d]'
+                        : 'border-[#1a262d] bg-[#111b21] hover:bg-[#162229]'
+                      : active
                         ? 'border-slate-100 bg-emerald-50'
                         : 'border-slate-100 bg-white hover:bg-slate-50'
-                    }`}
+                      }`}
                   >
                     <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${standalone && isDark ? 'bg-[#233138] text-slate-100' : 'bg-[#d9fdd3] text-emerald-900'}`}>
                       {getConversationName(conv, contactDirectory)
                         ? getConversationInitials({
-                            ...conv,
-                            name: getConversationName(conv, contactDirectory),
-                            profile_name: null,
-                            display_name: null,
-                            contact_name: null,
-                          })
+                          ...conv,
+                          name: getConversationName(conv, contactDirectory),
+                          profile_name: null,
+                          display_name: null,
+                          contact_name: null,
+                        })
                         : getConversationInitials(conv)}
                     </div>
 
@@ -1785,9 +1955,8 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                           </p>
                         </div>
                         <p
-                        className={`shrink-0 text-[11px] font-medium ${
-                            unread ? 'text-emerald-700' : standalone && isDark ? 'text-slate-400' : 'text-slate-500'
-                          }`}
+                          className={`shrink-0 text-[11px] font-medium ${unread ? 'text-emerald-700' : standalone && isDark ? 'text-slate-400' : 'text-slate-500'
+                            }`}
                         >
                           {formatTime(conv.last_message_at)}
                         </p>
@@ -1821,12 +1990,12 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#d9fdd3] text-sm font-semibold text-emerald-900">
                 {selectedConversation
                   ? getConversationInitials({
-                      ...selectedConversation,
-                      name: getConversationName(selectedConversation, contactDirectory),
-                      profile_name: null,
-                      display_name: null,
-                      contact_name: null,
-                    })
+                    ...selectedConversation,
+                    name: getConversationName(selectedConversation, contactDirectory),
+                    profile_name: null,
+                    display_name: null,
+                    contact_name: null,
+                  })
                   : 'WA'}
               </div>
               <div className="min-w-0">
@@ -1882,11 +2051,10 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                 <button
                   type="button"
                   onClick={openProfileModal}
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                    isDark
-                      ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]'
-                      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                  }`}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${isDark
+                    ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]'
+                    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
                 >
                   Edit profile
                 </button>
@@ -1946,8 +2114,8 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                     const bubbleClass = system
                       ? currentTheme.system
                       : incoming
-                      ? currentTheme.incoming
-                      : currentTheme.outgoing;
+                        ? currentTheme.incoming
+                        : currentTheme.outgoing;
 
                     return (
                       <div
@@ -1955,9 +2123,8 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                         className={`mb-3 flex ${incoming || system ? 'justify-start' : 'justify-end'}`}
                       >
                         <div
-                          className={`max-w-[86%] rounded-2xl px-3 py-2 shadow-sm ${
-                            system ? 'border border-amber-200' : 'border border-black/5'
-                          } ${bubbleClass}`}
+                          className={`max-w-[86%] rounded-2xl px-3 py-2 shadow-sm ${system ? 'border border-amber-200' : 'border border-black/5'
+                            } ${bubbleClass}`}
                         >
                           <div className="mb-2 flex items-start justify-between gap-3">
                             <div className={`text-[11px] font-medium ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -2063,13 +2230,13 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                                     </div>
                                   </div>
                                 ) : (
-                                    <p className="text-xs text-slate-500">
-                                      {mediaFailures[message.id]
-                                        ? media.isVoice
-                                          ? 'Voice note unavailable'
-                                          : 'Audio unavailable'
-                                        : `Fetching ${media.isVoice ? 'voice note' : 'audio'}...`}
-                                    </p>
+                                  <p className="text-xs text-slate-500">
+                                    {mediaFailures[message.id]
+                                      ? media.isVoice
+                                        ? 'Voice note unavailable'
+                                        : 'Audio unavailable'
+                                      : `Fetching ${media.isVoice ? 'voice note' : 'audio'}...`}
+                                  </p>
                                 )
                               ) : null}
 
@@ -2203,11 +2370,10 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                       type="button"
                       onClick={openDeleteConversationModal}
                       disabled={!selectedConversation || deletingConversation}
-                      className={`w-full rounded-xl px-3 py-2 text-left text-sm ${
-                        standalone && isDark
-                          ? 'text-rose-300 hover:bg-[#2a1f22]'
-                          : 'text-rose-700 hover:bg-rose-50'
-                      } disabled:cursor-not-allowed disabled:opacity-60`}
+                      className={`w-full rounded-xl px-3 py-2 text-left text-sm ${standalone && isDark
+                        ? 'text-rose-300 hover:bg-[#2a1f22]'
+                        : 'text-rose-700 hover:bg-rose-50'
+                        } disabled:cursor-not-allowed disabled:opacity-60`}
                     >
                       {deletingConversation ? 'Deleting Conversation...' : 'Delete Conversation'}
                     </button>
@@ -2238,12 +2404,12 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-slate-200 text-2xl font-semibold text-slate-600">
                 {selectedConversation
                   ? getConversationInitials({
-                      ...selectedConversation,
-                      name: getConversationName(selectedConversation, contactDirectory),
-                      profile_name: null,
-                      display_name: null,
-                      contact_name: null,
-                    })
+                    ...selectedConversation,
+                    name: getConversationName(selectedConversation, contactDirectory),
+                    profile_name: null,
+                    display_name: null,
+                    contact_name: null,
+                  })
                   : 'WA'}
               </div>
               <p className={`mt-4 text-lg font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
@@ -2323,11 +2489,10 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               <button
                 type="button"
                 onClick={() => setDeleteModal(null)}
-                className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                  isDark
-                    ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]'
-                    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
+                className={`rounded-full px-4 py-2 text-sm font-semibold ${isDark
+                  ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]'
+                  : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
               >
                 Cancel
               </button>
@@ -2367,9 +2532,8 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               <button
                 type="button"
                 onClick={() => setShowProfileModal(false)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-                  isDark ? 'bg-[#1a262d] text-slate-300 hover:bg-[#22323b]' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${isDark ? 'bg-[#1a262d] text-slate-300 hover:bg-[#22323b]' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
               >
                 Close
               </button>
@@ -2431,11 +2595,10 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               <button
                 type="button"
                 onClick={() => setShowProfileModal(false)}
-                className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                  isDark
-                    ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]'
-                    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
+                className={`rounded-full px-4 py-2 text-sm font-semibold ${isDark
+                  ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]'
+                  : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
               >
                 Cancel
               </button>
@@ -2550,9 +2713,8 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                           key={`${tpl.name}_${tpl.language || 'en'}`}
                           type="button"
                           onClick={() => setSelectedTemplate(tpl)}
-                          className={`w-full border-b border-slate-100 px-3 py-3 text-left ${
-                            active ? 'bg-emerald-50' : 'hover:bg-slate-50'
-                          }`}
+                          className={`w-full border-b border-slate-100 px-3 py-3 text-left ${active ? 'bg-emerald-50' : 'hover:bg-slate-50'
+                            }`}
                         >
                           <p className="truncate text-sm font-medium text-slate-900">{tpl.name}</p>
                           <p className="mt-1 text-xs text-slate-500">
