@@ -1216,7 +1216,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   }, [messages, selectedPhone, botBaseUrl, axiosConfig, mediaUrls]);
 
   useEffect(() => {
-    const id = setInterval(() => setRefreshTick((x) => x + 1), 5000);
+    const id = setInterval(() => setRefreshTick((x) => x + 1), 120000);
     return () => clearInterval(id);
   }, []);
 
