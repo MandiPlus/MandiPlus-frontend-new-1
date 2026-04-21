@@ -140,6 +140,22 @@ type InvoiceCollection = {
   completed_by: string | null;
   completed_at: string | null;
   created_at: string;
+  ai_draft?: {
+    commodity?: string | null;
+    quantity?: number | null;
+    unit?: string | null;
+    rate?: number | null;
+    total_amount?: number | null;
+    buyer_name?: string | null;
+    seller_name?: string | null;
+    invoice_date?: string | null;
+    vehicle_number?: string | null;
+    notes?: string | null;
+    confidence?: 'high' | 'medium' | 'low';
+    missing_fields?: string[];
+    ai_note?: string;
+    error?: string;
+  } | null;
 };
 
 type ChatTheme = 'light' | 'dark';
@@ -1903,6 +1919,50 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                             )}
                           </div>
                         </div>
+
+                        {/* AI Draft panel — shown when card is selected */}
+                        {isSelected && col.ai_draft && !col.ai_draft.error && (
+                          <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3 shadow-sm" onClick={(e) => e.stopPropagation()}>
+                            <div className="mb-2 flex items-center justify-between">
+                              <p className="text-xs font-semibold text-slate-700">🤖 AI Invoice Draft</p>
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${col.ai_draft.confidence === 'high' ? 'bg-emerald-100 text-emerald-700'
+                                : col.ai_draft.confidence === 'medium' ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-rose-100 text-rose-700'
+                                }`}>
+                                {col.ai_draft.confidence ?? 'low'} confidence
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                              {col.ai_draft.commodity && <><span className="text-slate-400">Commodity</span><span className="font-medium text-slate-700">{col.ai_draft.commodity}</span></>}
+                              {col.ai_draft.quantity != null && <><span className="text-slate-400">Qty</span><span className="font-medium text-slate-700">{col.ai_draft.quantity} {col.ai_draft.unit || ''}</span></>}
+                              {col.ai_draft.rate != null && <><span className="text-slate-400">Rate</span><span className="font-medium text-slate-700">₹{col.ai_draft.rate}</span></>}
+                              {col.ai_draft.total_amount != null && <><span className="text-slate-400">Total</span><span className="font-medium text-emerald-700">₹{col.ai_draft.total_amount.toLocaleString('en-IN')}</span></>}
+                              {col.ai_draft.buyer_name && <><span className="text-slate-400">Buyer</span><span className="font-medium text-slate-700">{col.ai_draft.buyer_name}</span></>}
+                              {col.ai_draft.seller_name && <><span className="text-slate-400">Seller</span><span className="font-medium text-slate-700">{col.ai_draft.seller_name}</span></>}
+                              {col.ai_draft.vehicle_number && <><span className="text-slate-400">Vehicle</span><span className="font-medium text-slate-700">{col.ai_draft.vehicle_number}</span></>}
+                              {col.ai_draft.invoice_date && <><span className="text-slate-400">Date</span><span className="font-medium text-slate-700">{col.ai_draft.invoice_date}</span></>}
+                            </div>
+                            {col.ai_draft.notes && (
+                              <p className="mt-2 text-[11px] text-slate-500 italic">{col.ai_draft.notes}</p>
+                            )}
+                            {/* Missing fields warning */}
+                            {col.ai_draft.missing_fields && col.ai_draft.missing_fields.length > 0 && (
+                              <div className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5">
+                                <p className="text-[11px] font-semibold text-amber-700">⚠ Missing: {col.ai_draft.missing_fields.join(', ')}</p>
+                              </div>
+                            )}
+                            {/* AI note for exec */}
+                            {col.ai_draft.ai_note && (
+                              <p className="mt-1.5 text-[11px] text-slate-500 italic">💬 {col.ai_draft.ai_note}</p>
+                            )}
+                          </div>
+                        )}
+                        {isSelected && col.ai_draft?.error && (
+                          <p className="mt-2 text-[11px] text-rose-400 italic">AI extraction unavailable</p>
+                        )}
+                        {isSelected && !col.ai_draft && (
+                          <p className="mt-2 text-[11px] text-slate-400 italic">AI draft processing...</p>
+                        )}
                       </div>
                     );
                   })}
