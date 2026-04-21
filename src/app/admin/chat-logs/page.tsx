@@ -865,16 +865,16 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
 
   // Fetch invoice collections whenever the tab is active or refreshTick changes
   useEffect(() => {
-    if (!isAuthenticated || !botAdminToken) return;
+    if (!isAuthenticated) return;
     setLoadingCollections(true);
     const url = collectionFilter === 'all'
       ? `${botBaseUrl}/admin/invoice-collections?limit=200`
       : `${botBaseUrl}/admin/invoice-collections?status=${collectionFilter}&limit=200`;
     axios.get(url, axiosConfig)
       .then((res) => setInvoiceCollections(res.data?.items ?? []))
-      .catch(() => { })
+      .catch((err) => console.error('invoice-collections fetch error:', err))
       .finally(() => setLoadingCollections(false));
-  }, [isAuthenticated, botAdminToken, botBaseUrl, axiosConfig, collectionFilter, refreshTick]);
+  }, [isAuthenticated, botBaseUrl, axiosConfig, collectionFilter, refreshTick]);
 
   const markCollectionDone = async (id: string) => {
     if (completingId) return;
