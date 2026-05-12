@@ -15,6 +15,13 @@ const PAYMENT_STATUS_OPTIONS = [
   'FAILED',
   'REFUNDED',
 ];
+const REPORT_PERIOD_OPTIONS = [
+  { value: 'daily', label: 'Daily Report' },
+  { value: 'weekly', label: 'Weekly Report' },
+  { value: 'monthly', label: 'Monthly Report' },
+  { value: 'quarterly', label: 'Quarterly Report' },
+  { value: 'annual', label: 'Annual Report' },
+] as const;
 const ITEMS_PER_PAGE = 20;
 const FETCH_LIMIT = 500;
 
@@ -72,11 +79,112 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function formatDateForInput(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getOrdinalDay(day: number) {
+  const remainder10 = day % 10;
+  const remainder100 = day % 100;
+
+  if (remainder10 === 1 && remainder100 !== 11) return `${day}st`;
+  if (remainder10 === 2 && remainder100 !== 12) return `${day}nd`;
+  if (remainder10 === 3 && remainder100 !== 13) return `${day}rd`;
+  return `${day}th`;
+}
+
+function formatDateForReportFileName(
+  date: Date,
+  options?: { includeYear?: boolean },
+) {
+  const monthName = date.toLocaleString('en-IN', { month: 'long' }).toLowerCase();
+  const dayLabel = getOrdinalDay(date.getDate());
+
+  if (options?.includeYear) {
+    return `${dayLabel} ${monthName} ${date.getFullYear()}`;
+  }
+
+  return `${dayLabel} ${monthName}`;
+}
+
+function getReportDateRange(period: (typeof REPORT_PERIOD_OPTIONS)[number]['value']) {
+  const now = new Date();
+  const end = new Date(now);
+  const start = new Date(now);
+
+  if (period === 'daily') {
+    return {
+      fromDate: formatDateForInput(start),
+      toDate: formatDateForInput(end),
+    };
+  }
+
+  if (period === 'weekly') {
+    start.setDate(start.getDate() - 6);
+    return {
+      fromDate: formatDateForInput(start),
+      toDate: formatDateForInput(end),
+    };
+  }
+
+  if (period === 'monthly') {
+    start.setMonth(start.getMonth() - 1);
+    start.setDate(start.getDate() + 1);
+    return {
+      fromDate: formatDateForInput(start),
+      toDate: formatDateForInput(end),
+    };
+  }
+
+  if (period === 'quarterly') {
+    start.setMonth(start.getMonth() - 3);
+    start.setDate(start.getDate() + 1);
+    return {
+      fromDate: formatDateForInput(start),
+      toDate: formatDateForInput(end),
+    };
+  }
+
+  start.setFullYear(start.getFullYear() - 1);
+  start.setDate(start.getDate() + 1);
+  return {
+    fromDate: formatDateForInput(start),
+    toDate: formatDateForInput(end),
+  };
+}
+
+function getPresetReportFileName(
+  period: (typeof REPORT_PERIOD_OPTIONS)[number]['value'],
+  fromDate: string,
+  toDate: string,
+) {
+  const start = new Date(fromDate);
+  const end = new Date(toDate);
+
+  if (period === 'daily') {
+    const day = String(start.getDate()).padStart(2, '0');
+    const month = String(start.getMonth() + 1).padStart(2, '0');
+    const year = start.getFullYear();
+    return `daily payment report-${day}-${month}-${year}.xlsx`;
+  }
+
+  const includeYear = period === 'annual';
+  const startLabel = formatDateForReportFileName(start, { includeYear });
+  const endLabel = formatDateForReportFileName(end, { includeYear });
+
+  return `${period} payment report-${startLabel} to ${endLabel}.xlsx`;
+}
+
 export default function AdminInsurancePaymentsPage() {
   const router = useRouter();
   const { isAuthenticated } = useAdmin();
   const [rows, setRows] = useState<InsurancePaymentRow[]>([]);
+  const [productOptionRows, setProductOptionRows] = useState<InsurancePaymentRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
 
   const [fromDate, setFromDate] = useState('');
@@ -85,6 +193,8 @@ export default function AdminInsurancePaymentsPage() {
   const [toDateInputType, setToDateInputType] = useState<'text' | 'date'>('text');
   const [paymentStatus, setPaymentStatus] = useState('');
   const [productName, setProductName] = useState('');
+  const [reportPeriod, setReportPeriod] =
+    useState<(typeof REPORT_PERIOD_OPTIONS)[number]['value']>('daily');
   const [nameQuery, setNameQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [jumpPageInput, setJumpPageInput] = useState('1');
@@ -122,19 +232,51 @@ export default function AdminInsurancePaymentsPage() {
     return collected;
   }, [fromDate, toDate, paymentStatus, productName]);
 
+  const fetchRowsForProductOptions = useCallback(async () => {
+    const collected: InsurancePaymentRow[] = [];
+    let page = 1;
+    let pages = 1;
+
+    do {
+      const response = await adminApi.getInsurancePayments({
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        paymentStatus: paymentStatus || undefined,
+        page,
+        limit: FETCH_LIMIT,
+      });
+
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to load insurance payments');
+      }
+
+      const chunk = Array.isArray(response.data) ? response.data : [];
+      collected.push(...chunk);
+      pages = Math.max(1, Number(response.totalPages || 1));
+      page += 1;
+    } while (page <= pages);
+
+    return collected;
+  }, [fromDate, toDate, paymentStatus]);
+
   const fetchRows = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
-      const allRows = await fetchAllRowsForFilters();
+      const [allRows, allProductRows] = await Promise.all([
+        fetchAllRowsForFilters(),
+        fetchRowsForProductOptions(),
+      ]);
       setRows(allRows);
+      setProductOptionRows(allProductRows);
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Failed to load insurance payments'));
       setRows([]);
+      setProductOptionRows([]);
     } finally {
       setLoading(false);
     }
-  }, [fetchAllRowsForFilters]);
+  }, [fetchAllRowsForFilters, fetchRowsForProductOptions]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -154,9 +296,14 @@ export default function AdminInsurancePaymentsPage() {
   }, [rows, nameQuery]);
 
   const productOptions = useMemo(() => {
-    return [...new Set(rows.map((row) => String(row.productName || '').trim()).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b));
-  }, [rows]);
+    return [
+      ...new Set(
+        productOptionRows
+          .map((row) => String(row.productName || '').trim())
+          .filter(Boolean),
+      ),
+    ].sort((a, b) => a.localeCompare(b));
+  }, [productOptionRows]);
 
   const totalRows = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(totalRows / ITEMS_PER_PAGE));
@@ -192,43 +339,68 @@ export default function AdminInsurancePaymentsPage() {
   }, [nameQuery]);
 
   const exportToExcel = () => {
-    const headers = [
-      'Invoice Number',
-      'Invoice Date',
-      'Insured Person',
-      'Premium Amount',
-      'Payment Amount',
-      'Balance',
-      'Status',
-      'Updated At',
-    ];
-    const lines = filteredRows.map((row) => [
-      row.invoiceNumber || '',
-      formatDate(row.createdAt),
-      row.insuredPerson || row.buyer || '',
-      Number(row.premiumAmount || 0),
-      Number(row.paymentAmount || 0),
-      getEffectiveBalance(row),
-      row.paymentStatus || 'PENDING',
-      formatDate(row.updatedAt),
-    ]);
-    const csv = [headers, ...lines]
-      .map((cols) =>
-        cols
-          .map((col) => `"${String(col ?? '').replace(/"/g, '""')}"`)
-          .join(','),
-      )
-      .join('\n');
+    setExporting(true);
 
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `insurance-payments-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
+    adminApi
+      .exportInsurancePayments({
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        paymentStatus: paymentStatus || undefined,
+        productName: productName || undefined,
+        searchQuery: nameQuery.trim() || undefined,
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `insurance-payments-${new Date().toISOString().slice(0, 10)}.xlsx`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+      })
+      .catch((err: unknown) => {
+        alert(getErrorMessage(err, 'Failed to export insurance payments'));
+      })
+      .finally(() => {
+        setExporting(false);
+      });
+  };
+
+  const exportPresetReport = () => {
+    const { fromDate: presetFromDate, toDate: presetToDate } =
+      getReportDateRange(reportPeriod);
+
+    setExporting(true);
+
+    adminApi
+      .exportInsurancePayments({
+        fromDate: presetFromDate,
+        toDate: presetToDate,
+        paymentStatus: paymentStatus || undefined,
+        productName: productName || undefined,
+        searchQuery: nameQuery.trim() || undefined,
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = getPresetReportFileName(
+          reportPeriod,
+          presetFromDate,
+          presetToDate,
+        );
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+      })
+      .catch((err: unknown) => {
+        alert(getErrorMessage(err, 'Failed to export insurance payments report'));
+      })
+      .finally(() => {
+        setExporting(false);
+      });
   };
 
   const openEditModal = (row: InsurancePaymentRow) => {
@@ -287,13 +459,6 @@ export default function AdminInsurancePaymentsPage() {
   return (
     <div className="py-6">
       <div className="w-full px-2 sm:px-3 lg:px-4 xl:px-6">
-        <div className="mb-5">
-          <h1 className="text-2xl font-semibold text-gray-900">
-            Insurance Payments
-          </h1>
-          
-        </div>
-
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-7">
             <input
@@ -364,9 +529,10 @@ export default function AdminInsurancePaymentsPage() {
             <button
               type="button"
               onClick={exportToExcel}
+              disabled={exporting}
               className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
-              Export to Excel
+              {exporting ? 'Exporting...' : 'Export to Excel'}
             </button>
             <button
               type="button"
@@ -384,6 +550,40 @@ export default function AdminInsurancePaymentsPage() {
             >
               Reset Filters
             </button>
+          </div>
+          <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-3">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-sky-700">
+              Report Downloads
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-7">
+              <div className="md:col-span-2">
+                <select
+                  value={reportPeriod}
+                  onChange={(e) =>
+                    setReportPeriod(
+                      e.target.value as (typeof REPORT_PERIOD_OPTIONS)[number]['value'],
+                    )
+                  }
+                  className="w-full rounded-md border border-sky-300 bg-white px-3 py-2 text-sm text-sky-900"
+                >
+                  {REPORT_PERIOD_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <button
+                  type="button"
+                  onClick={exportPresetReport}
+                  disabled={exporting}
+                  className="w-full rounded-md bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-60"
+                >
+                  {exporting ? 'Exporting...' : 'Download Report'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 

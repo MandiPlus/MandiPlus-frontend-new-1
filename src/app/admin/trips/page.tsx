@@ -24,6 +24,10 @@ type TrackModalState = {
   destinationName: string;
 };
 
+function normalizeSearchValue(value?: string | null): string {
+  return (value || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+}
+
 function normalizeCoordValue(value?: string | null): string | null {
   if (!value) return null;
   const normalized = value
@@ -72,6 +76,10 @@ export default function AdminTripsPage() {
   });
 
   const [trips, setTrips] = useState<AdminTripRow[]>([]);
+  const [searchFilters, setSearchFilters] = useState({
+    driverPhone: '',
+    vehicleNumber: '',
+  });
   const [phoneOverrides, setPhoneOverrides] = useState<Record<string, string>>({});
   const [routeLabels, setRouteLabels] = useState<Record<string, string>>({});
   const [trackModal, setTrackModal] = useState<TrackModalState | null>(null);
@@ -284,6 +292,19 @@ export default function AdminTripsPage() {
   const delayedAlertsSent = trips.filter(
     (trip) => Boolean(trip.alerts?.delayedSentAt)
   ).length;
+  const filteredTrips = useMemo(() => {
+    const phoneQuery = normalizeSearchValue(searchFilters.driverPhone);
+    const vehicleQuery = normalizeSearchValue(searchFilters.vehicleNumber);
+
+    return trips.filter((trip) => {
+      const normalizedPhone = normalizeSearchValue(trip.tel);
+      const normalizedVehicle = normalizeSearchValue(trip.truck?.truckNumber);
+      const matchesPhone = !phoneQuery || normalizedPhone.includes(phoneQuery);
+      const matchesVehicle = !vehicleQuery || normalizedVehicle.includes(vehicleQuery);
+
+      return matchesPhone && matchesVehicle;
+    });
+  }, [searchFilters.driverPhone, searchFilters.vehicleNumber, trips]);
 
   const trackCurrent = useMemo<Coord | null>(() => {
     if (
@@ -378,33 +399,6 @@ export default function AdminTripsPage() {
 
   return (
     <div className="py-6 space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Created Trips</h1>
-          <p className="text-sm text-gray-600">
-            Track trips, review alert status, and send WhatsApp updates from one place.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void handleSendAllCurrentPositionAlerts()}
-            disabled={busy.sendAllPositions}
-            className="rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-          >
-            {busy.sendAllPositions ? 'Sending Positions...' : 'Send Position To All Active'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void fetchTrips()}
-            disabled={busy.fetchTrips}
-            className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 disabled:opacity-60"
-          >
-            {busy.fetchTrips ? 'Refreshing...' : 'Refresh Trips'}
-          </button>
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -435,10 +429,73 @@ export default function AdminTripsPage() {
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex flex-col gap-1">
           <h2 className="text-lg font-semibold text-gray-900">Trips List</h2>
-          <p className="text-xs text-gray-500">
-            Use the override field only when you want to send a manual alert to a different
-            WhatsApp number than the linked customer number.
-          </p>
+        </div>
+        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
+            <div className="flex-1">
+              <label
+                htmlFor="trip-driver-phone-search"
+                className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600"
+              >
+                Search by driver phone
+              </label>
+              <input
+                id="trip-driver-phone-search"
+                type="text"
+                value={searchFilters.driverPhone}
+                onChange={(e) =>
+                  setSearchFilters((prev) => ({
+                    ...prev,
+                    driverPhone: e.target.value,
+                  }))
+                }
+                placeholder="Enter driver phone number"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800"
+              />
+            </div>
+            <div className="flex-1">
+              <label
+                htmlFor="trip-vehicle-number-search"
+                className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600"
+              >
+                Search by vehicle number
+              </label>
+              <input
+                id="trip-vehicle-number-search"
+                type="text"
+                value={searchFilters.vehicleNumber}
+                onChange={(e) =>
+                  setSearchFilters((prev) => ({
+                    ...prev,
+                    vehicleNumber: e.target.value,
+                  }))
+                }
+                placeholder="Enter vehicle number"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm uppercase text-gray-800"
+              />
+            </div>
+            <div className="flex flex-wrap items-end gap-2 xl:flex-nowrap">
+              <button
+                type="button"
+                onClick={() => void handleSendAllCurrentPositionAlerts()}
+                disabled={busy.sendAllPositions}
+                className="rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {busy.sendAllPositions ? 'Sending Positions...' : 'Send Position To All Active'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void fetchTrips()}
+                disabled={busy.fetchTrips}
+                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 disabled:opacity-60"
+              >
+                {busy.fetchTrips ? 'Refreshing...' : 'Refresh Trips'}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="mb-3 text-xs text-slate-500">
+          Showing {filteredTrips.length} of {trips.length} trips
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -455,14 +512,14 @@ export default function AdminTripsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
-              {trips.length === 0 ? (
+              {filteredTrips.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-3 py-4 text-center text-gray-500">
-                    No trips found.
+                    {trips.length === 0 ? 'No trips found.' : 'No trips match the current search.'}
                   </td>
                 </tr>
               ) : (
-                trips.map((trip) => (
+                filteredTrips.map((trip) => (
                   <tr key={trip.id}>
                     <td className="px-3 py-3 align-top font-medium text-gray-900">
                       <div className="flex flex-col gap-1">

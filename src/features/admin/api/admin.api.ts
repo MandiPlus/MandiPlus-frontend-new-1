@@ -1202,6 +1202,7 @@ class AdminApi {
     toDate?: string;
     paymentStatus?: string;
     productName?: string;
+    searchQuery?: string;
     page?: number;
     limit?: number;
   }): Promise<ApiResponse<InsurancePaymentRow[]>> => {
@@ -1252,6 +1253,21 @@ class AdminApi {
         error: error.message,
       };
     }
+  };
+
+  public exportInsurancePayments = async (filters?: {
+    fromDate?: string;
+    toDate?: string;
+    paymentStatus?: string;
+    productName?: string;
+    searchQuery?: string;
+  }): Promise<Blob> => {
+    const response = await this.client.get('/insurance-payments/admin/export', {
+      params: filters,
+      responseType: 'blob',
+    });
+
+    return response.data;
   };
 
   public updateInsurancePayment = async (
