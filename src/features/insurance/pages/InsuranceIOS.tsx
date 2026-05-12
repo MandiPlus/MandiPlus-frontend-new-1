@@ -113,6 +113,8 @@ const itemsData = [
     { name: "Potato", hsn: "07019000" },
     { name: "Ginger (Fresh)", hsn: "07030010" },
     { name: "Sweet Potato", hsn: "07142000" },
+    { name: "Grapes", hsn: "08061000" },
+
 ];
 
 // --- Constants ---
