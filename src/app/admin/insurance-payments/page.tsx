@@ -116,6 +116,7 @@ function getReportDateRange(period: (typeof REPORT_PERIOD_OPTIONS)[number]['valu
   const start = new Date(now);
 
   if (period === 'daily') {
+    start.setDate(start.getDate() - 1);
     return {
       fromDate: formatDateForInput(start),
       toDate: formatDateForInput(end),
