@@ -36,7 +36,8 @@ const formatIndianMobile = (phone: string | undefined) => {
 
 export default function UsersPage() {
     const router = useRouter();
-    const { isAuthenticated } = useAdmin();
+    const { isAuthenticated, accessProfile } = useAdmin();
+    const isFullAdmin = Boolean(accessProfile?.isFullAdmin);
 
     const [allUsers, setAllUsers] = useState<User[]>([]);
     const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
@@ -124,6 +125,12 @@ export default function UsersPage() {
 
         fetchData();
     }, [isAuthenticated, router]);
+
+    useEffect(() => {
+        if (!isFullAdmin && activeSection === 'ADMIN_REQUESTS') {
+            setActiveSection('ALL');
+        }
+    }, [activeSection, isFullAdmin]);
 
     // Search Logic
     useEffect(() => {
@@ -418,16 +425,18 @@ export default function UsersPage() {
                     >
                         Transporters
                     </button>
-                    <button
-                        onClick={() => setActiveSection('ADMIN_REQUESTS')}
-                        className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
-                            activeSection === 'ADMIN_REQUESTS'
-                                ? 'bg-green-600 text-white'
-                                : 'bg-white text-gray-700 border border-gray-300'
-                        }`}
-                    >
-                        Admin Requests
-                    </button>
+                    {isFullAdmin ? (
+                        <button
+                            onClick={() => setActiveSection('ADMIN_REQUESTS')}
+                            className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+                                activeSection === 'ADMIN_REQUESTS'
+                                    ? 'bg-green-600 text-white'
+                                    : 'bg-white text-gray-700 border border-gray-300'
+                            }`}
+                        >
+                            Admin Requests
+                        </button>
+                    ) : null}
                 </div>
 
                 {error && (

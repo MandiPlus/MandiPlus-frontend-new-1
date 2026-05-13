@@ -160,6 +160,7 @@ export interface InsurancePaymentRow {
   id: string;
   invoiceId: string;
   invoiceNumber: string;
+  recipientPhone?: string;
   createdAt: string;
   productName?: string;
   buyer: string;
@@ -1130,6 +1131,28 @@ class AdminApi {
         success: false,
         message:
           error.response?.data?.message || "Failed to resend payment link",
+        error: error.message,
+      };
+    }
+  };
+
+  public sendPaymentReminderForInvoice = async (
+    invoiceId: string,
+    phoneNumber?: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/payment/reminders/send/${invoiceId}`,
+        {
+          phoneNumber,
+        },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to send payment reminder",
         error: error.message,
       };
     }

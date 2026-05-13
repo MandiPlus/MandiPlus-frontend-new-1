@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'react-toastify';
 import {
   InsurancePaymentRow,
   UpdateInsurancePaymentPayload,
@@ -77,6 +78,10 @@ function toInputDateTimeLocal(value?: string | null): string {
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) return error.message;
   return fallback;
+}
+
+function normalizePhoneInput(value?: string | null) {
+  return String(value || '').replace(/\D/g, '');
 }
 
 function formatDateForInput(date: Date) {
@@ -186,6 +191,7 @@ export default function AdminInsurancePaymentsPage() {
   const [productOptionRows, setProductOptionRows] = useState<InsurancePaymentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [sendingAllReminders, setSendingAllReminders] = useState(false);
   const [error, setError] = useState('');
 
   const [fromDate, setFromDate] = useState('');
@@ -201,7 +207,14 @@ export default function AdminInsurancePaymentsPage() {
   const [jumpPageInput, setJumpPageInput] = useState('1');
 
   const [editing, setEditing] = useState<InsurancePaymentRow | null>(null);
+  const [reminderTarget, setReminderTarget] = useState<InsurancePaymentRow | null>(
+    null,
+  );
+  const [reminderPhone, setReminderPhone] = useState('');
   const [saving, setSaving] = useState(false);
+  const [remindingInvoiceIds, setRemindingInvoiceIds] = useState<
+    Record<string, boolean>
+  >({});
   const [paymentCompletedInputType, setPaymentCompletedInputType] = useState<'text' | 'datetime-local'>('text');
   const [form, setForm] = useState<UpdateInsurancePaymentPayload>({});
 
@@ -404,6 +417,58 @@ export default function AdminInsurancePaymentsPage() {
       });
   };
 
+  const sendReminderToAllPending = async () => {
+    const pendingRows = filteredRows.filter(
+      (row) => String(row.paymentStatus || '').toUpperCase() === 'PENDING',
+    );
+
+    if (pendingRows.length === 0) {
+      toast.info('No pending payments found for reminder');
+      return;
+    }
+
+    setSendingAllReminders(true);
+    let sentCount = 0;
+    let failedCount = 0;
+
+    try {
+      for (const row of pendingRows) {
+        setRemindingInvoiceIds((prev) => ({ ...prev, [row.invoiceId]: true }));
+        try {
+          const response = await adminApi.sendPaymentReminderForInvoice(
+            row.invoiceId,
+            row.recipientPhone,
+          );
+          if (!response.success) {
+            throw new Error(response.message || 'Failed to send payment reminder');
+          }
+          sentCount += 1;
+        } catch {
+          failedCount += 1;
+        } finally {
+          setRemindingInvoiceIds((prev) => ({
+            ...prev,
+            [row.invoiceId]: false,
+          }));
+        }
+      }
+
+      if (failedCount === 0) {
+        toast.success(`Payment reminders sent for ${sentCount} invoices`);
+      } else if (sentCount === 0) {
+        toast.error('Failed to send payment reminders');
+      } else {
+        toast.warn(
+          `Payment reminders sent for ${sentCount} invoices, failed for ${failedCount}`,
+        );
+      }
+
+      await fetchRows();
+    } finally {
+      setSendingAllReminders(false);
+    }
+  };
+
   const openEditModal = (row: InsurancePaymentRow) => {
     const premiumAmount = Number(row.premiumAmount || 0);
     const paymentCompletedValue = toInputDateTimeLocal(row.paymentCompletedAt);
@@ -454,6 +519,50 @@ export default function AdminInsurancePaymentsPage() {
       alert(getErrorMessage(err, 'Failed to update insurance payment'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openReminderModal = (row: InsurancePaymentRow) => {
+    setReminderTarget(row);
+    setReminderPhone(normalizePhoneInput(row.recipientPhone));
+  };
+
+  const closeReminderModal = () => {
+    setReminderTarget(null);
+    setReminderPhone('');
+  };
+
+  const sendReminder = async () => {
+    if (!reminderTarget) return;
+    const normalizedPhone = normalizePhoneInput(reminderPhone);
+    if (!normalizedPhone) {
+      toast.error('Please enter a mobile number');
+      return;
+    }
+
+    setRemindingInvoiceIds((prev) => ({
+      ...prev,
+      [reminderTarget.invoiceId]: true,
+    }));
+    try {
+      const response = await adminApi.sendPaymentReminderForInvoice(
+        reminderTarget.invoiceId,
+        normalizedPhone,
+      );
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to send payment reminder');
+      }
+
+      toast.success(`Payment reminder sent for ${reminderTarget.invoiceNumber}`);
+      closeReminderModal();
+      await fetchRows();
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Failed to send payment reminder'));
+    } finally {
+      setRemindingInvoiceIds((prev) => ({
+        ...prev,
+        [reminderTarget.invoiceId]: false,
+      }));
     }
   };
 
@@ -584,6 +693,18 @@ export default function AdminInsurancePaymentsPage() {
                   {exporting ? 'Exporting...' : 'Download Report'}
                 </button>
               </div>
+              <div className="md:col-span-2">
+                <button
+                  type="button"
+                  onClick={sendReminderToAllPending}
+                  disabled={sendingAllReminders}
+                  className="w-full rounded-md bg-[#4309ac] px-3 py-2 text-sm font-semibold text-white hover:bg-[#35088a] disabled:opacity-60"
+                >
+                  {sendingAllReminders
+                    ? 'Sending Reminders...'
+                    : 'Send Payment Reminder to All'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -700,13 +821,27 @@ export default function AdminInsurancePaymentsPage() {
                         {formatDate(row.updatedAt)}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(row)}
-                          className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
-                        >
-                          Edit
-                        </button>
+                        <div className="flex justify-end gap-2">
+                          {String(row.paymentStatus || '').toUpperCase() === 'PENDING' ? (
+                            <button
+                              type="button"
+                              onClick={() => openReminderModal(row)}
+                              disabled={Boolean(remindingInvoiceIds[row.invoiceId])}
+                              className="rounded-md bg-[#4309ac] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#35088a] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {remindingInvoiceIds[row.invoiceId]
+                                ? 'Sending...'
+                                : 'Send Reminder'}
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(row)}
+                            className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                          >
+                            Edit
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -911,6 +1046,52 @@ export default function AdminInsurancePaymentsPage() {
                 className="rounded-md bg-[#4309ac] px-4 py-2 text-sm font-semibold text-white hover:bg-[#35088a] disabled:opacity-60"
               >
                 {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {reminderTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Send Reminder: {reminderTarget.invoiceNumber}
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              This number will be used for the reminder and saved as the latest
+              reminder number for this invoice.
+            </p>
+
+            <label className="mt-4 block text-sm text-gray-700">
+              Mobile Number
+              <input
+                type="text"
+                value={reminderPhone}
+                onChange={(e) => setReminderPhone(e.target.value)}
+                placeholder="Enter mobile number"
+                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+              />
+            </label>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeReminderModal}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                disabled={Boolean(remindingInvoiceIds[reminderTarget.invoiceId])}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={sendReminder}
+                disabled={Boolean(remindingInvoiceIds[reminderTarget.invoiceId])}
+                className="rounded-md bg-[#4309ac] px-4 py-2 text-sm font-semibold text-white hover:bg-[#35088a] disabled:opacity-60"
+              >
+                {remindingInvoiceIds[reminderTarget.invoiceId]
+                  ? 'Sending...'
+                  : 'Send Reminder'}
               </button>
             </div>
           </div>
