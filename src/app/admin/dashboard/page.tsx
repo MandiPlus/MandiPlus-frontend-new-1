@@ -436,7 +436,7 @@ export default function AnalyticsDashboardPage() {
         });
     }, [records, product, state]);
     const premiumEligibleRecords = useMemo(
-        () => filteredRecords.filter((r) => r.invoiceStatus !== 'Rejected'),
+        () => filteredRecords.filter((r) => r.invoiceStatus === 'Verified'),
         [filteredRecords]
     );
     const comparisonFilteredRecords = useMemo(() => {
@@ -447,7 +447,7 @@ export default function AnalyticsDashboardPage() {
         });
     }, [comparisonRecords, product, state]);
     const comparisonPremiumEligibleRecords = useMemo(
-        () => comparisonFilteredRecords.filter((r) => r.invoiceStatus !== 'Rejected'),
+        () => comparisonFilteredRecords.filter((r) => r.invoiceStatus === 'Verified'),
         [comparisonFilteredRecords]
     );
 
