@@ -419,7 +419,9 @@ export default function AdminInsurancePaymentsPage() {
 
   const sendReminderToAllPending = async () => {
     const pendingRows = filteredRows.filter(
-      (row) => String(row.paymentStatus || '').toUpperCase() === 'PENDING',
+      (row) =>
+        Boolean(row.isPaymentRequired) &&
+        String(row.paymentStatus || '').toUpperCase() === 'PENDING',
     );
 
     if (pendingRows.length === 0) {
@@ -822,7 +824,8 @@ export default function AdminInsurancePaymentsPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-2">
-                          {String(row.paymentStatus || '').toUpperCase() === 'PENDING' ? (
+                          {Boolean(row.isPaymentRequired) &&
+                          String(row.paymentStatus || '').toUpperCase() === 'PENDING' ? (
                             <button
                               type="button"
                               onClick={() => openReminderModal(row)}
