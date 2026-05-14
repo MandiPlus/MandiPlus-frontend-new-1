@@ -197,7 +197,6 @@ export default function AdminInsurancePaymentsPage() {
   const [productOptionRows, setProductOptionRows] = useState<InsurancePaymentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
-  const [sendingAllReminders, setSendingAllReminders] = useState(false);
   const [error, setError] = useState('');
 
   const [fromDate, setFromDate] = useState('');
@@ -423,60 +422,6 @@ export default function AdminInsurancePaymentsPage() {
       });
   };
 
-  const sendReminderToAllPending = async () => {
-    const pendingRows = filteredRows.filter(
-      (row) =>
-        Boolean(row.isPaymentRequired) &&
-        String(row.paymentStatus || '').toUpperCase() === 'PENDING',
-    );
-
-    if (pendingRows.length === 0) {
-      toast.info('No pending payments found for reminder');
-      return;
-    }
-
-    setSendingAllReminders(true);
-    let sentCount = 0;
-    let failedCount = 0;
-
-    try {
-      for (const row of pendingRows) {
-        setRemindingInvoiceIds((prev) => ({ ...prev, [row.invoiceId]: true }));
-        try {
-          const response = await adminApi.sendPaymentReminderForInvoice(
-            row.invoiceId,
-            row.recipientPhone,
-          );
-          if (!response.success) {
-            throw new Error(response.message || 'Failed to send payment reminder');
-          }
-          sentCount += 1;
-        } catch {
-          failedCount += 1;
-        } finally {
-          setRemindingInvoiceIds((prev) => ({
-            ...prev,
-            [row.invoiceId]: false,
-          }));
-        }
-      }
-
-      if (failedCount === 0) {
-        toast.success(`Payment reminders sent for ${sentCount} invoices`);
-      } else if (sentCount === 0) {
-        toast.error('Failed to send payment reminders');
-      } else {
-        toast.warn(
-          `Payment reminders sent for ${sentCount} invoices, failed for ${failedCount}`,
-        );
-      }
-
-      await fetchRows();
-    } finally {
-      setSendingAllReminders(false);
-    }
-  };
-
   const openEditModal = (row: InsurancePaymentRow) => {
     const premiumAmount = Number(row.premiumAmount || 0);
     const paymentCompletedValue = toInputDateTimeLocal(row.paymentCompletedAt);
@@ -699,18 +644,6 @@ export default function AdminInsurancePaymentsPage() {
                   className="w-full rounded-md bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-60"
                 >
                   {exporting ? 'Exporting...' : 'Download Report'}
-                </button>
-              </div>
-              <div className="md:col-span-2">
-                <button
-                  type="button"
-                  onClick={sendReminderToAllPending}
-                  disabled={sendingAllReminders}
-                  className="w-full rounded-md bg-[#4309ac] px-3 py-2 text-sm font-semibold text-white hover:bg-[#35088a] disabled:opacity-60"
-                >
-                  {sendingAllReminders
-                    ? 'Sending Reminders...'
-                    : 'Send Payment Reminder to All'}
                 </button>
               </div>
             </div>
