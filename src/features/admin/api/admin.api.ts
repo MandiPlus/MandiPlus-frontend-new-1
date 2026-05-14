@@ -161,6 +161,8 @@ export interface InsurancePaymentRow {
   invoiceId: string;
   invoiceNumber: string;
   recipientPhone?: string;
+  pdfUrl?: string | null;
+  paymentReceiptUrl?: string | null;
   createdAt: string;
   productName?: string;
   buyer: string;

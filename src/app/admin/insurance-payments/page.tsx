@@ -80,6 +80,12 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function openPdfInNewTab(url?: string | null) {
+  if (!url) return;
+  if (typeof window === 'undefined') return;
+  window.open(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`, '_blank', 'noopener,noreferrer');
+}
+
 function normalizePhoneInput(value?: string | null) {
   return String(value || '').replace(/\D/g, '');
 }
@@ -823,7 +829,25 @@ export default function AdminInsurancePaymentsPage() {
                         {formatDate(row.updatedAt)}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {row.pdfUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => openPdfInNewTab(row.pdfUrl)}
+                              className="rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100"
+                            >
+                              View Invoice
+                            </button>
+                          ) : null}
+                          {row.paymentReceiptUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => openPdfInNewTab(row.paymentReceiptUrl)}
+                              className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                            >
+                              View Receipt
+                            </button>
+                          ) : null}
                           {Boolean(row.isPaymentRequired) &&
                           String(row.paymentStatus || '').toUpperCase() === 'PENDING' ? (
                             <button
