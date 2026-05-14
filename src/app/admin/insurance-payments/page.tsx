@@ -4,6 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import {
+  FileText,
+  Pencil,
+  ReceiptText,
+} from 'lucide-react';
+import { FaWhatsapp } from 'react-icons/fa';
+import {
   InsurancePaymentRow,
   UpdateInsurancePaymentPayload,
   adminApi,
@@ -55,6 +61,45 @@ function formatDate(value?: string | null) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return '-';
   return parsed.toLocaleString('en-IN');
+}
+
+function getActionButtonClasses(tone: 'invoice' | 'receipt' | 'reminder' | 'edit') {
+  if (tone === 'invoice') {
+    return 'border-sky-200 bg-sky-50 text-sky-700 hover:-translate-y-0.5 hover:border-sky-300 hover:bg-sky-100';
+  }
+  if (tone === 'receipt') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-100';
+  }
+  if (tone === 'reminder') {
+    return 'border-green-200 bg-green-50 text-green-700 hover:-translate-y-0.5 hover:border-green-300 hover:bg-green-100';
+  }
+  return 'border-violet-200 bg-violet-50 text-violet-700 hover:-translate-y-0.5 hover:border-violet-300 hover:bg-violet-100';
+}
+
+function isSameLocalDay(left: Date, right: Date) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+function wasPaymentMarkedPaidToday(row: InsurancePaymentRow, referenceDate = new Date()) {
+  if (String(row.paymentStatus || '').toUpperCase() !== 'PAID') {
+    return false;
+  }
+
+  const candidateDate = row.paymentCompletedAt || row.updatedAt;
+  if (!candidateDate) {
+    return false;
+  }
+
+  const parsed = new Date(candidateDate);
+  if (Number.isNaN(parsed.getTime())) {
+    return false;
+  }
+
+  return isSameLocalDay(parsed, referenceDate);
 }
 
 function getEffectivePaidAmount(row: InsurancePaymentRow): number {
@@ -338,6 +383,28 @@ export default function AdminInsurancePaymentsPage() {
 
   const totalPayment = useMemo(
     () => filteredRows.reduce((sum, row) => sum + getEffectivePaidAmount(row), 0),
+    [filteredRows],
+  );
+
+  const totalPendingPayment = useMemo(
+    () =>
+      filteredRows.reduce((sum, row) => {
+        if (String(row.paymentStatus || '').toUpperCase() !== 'PENDING') {
+          return sum;
+        }
+        return sum + getEffectiveBalance(row);
+      }, 0),
+    [filteredRows],
+  );
+
+  const paymentReceivedToday = useMemo(
+    () =>
+      filteredRows.reduce((sum, row) => {
+        if (!wasPaymentMarkedPaidToday(row)) {
+          return sum;
+        }
+        return sum + getEffectivePaidAmount(row);
+      }, 0),
     [filteredRows],
   );
   const pageStart = totalRows === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
@@ -650,25 +717,41 @@ export default function AdminInsurancePaymentsPage() {
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Rows</p>
-            <p className="mt-1 text-2xl font-bold text-gray-900">{totalRows}</p>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+            <p className="text-xs uppercase tracking-wide text-slate-600">Rows</p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">{totalRows}</p>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 shadow-sm">
             <p className="text-xs uppercase tracking-wide text-gray-500">
               Premium Amount
             </p>
-            <p className="mt-1 text-2xl font-bold text-gray-900">
+            <p className="mt-1 text-2xl font-bold text-cyan-900">
               {formatCurrency(totalPremium)}
             </p>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-gray-500">
-              Payment Amount
+          <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 shadow-sm">
+            <p className="text-xs uppercase tracking-wide text-violet-700">
+              Payment Received
             </p>
-            <p className="mt-1 text-2xl font-bold text-gray-900">
+            <p className="mt-1 text-2xl font-bold text-violet-900">
               {formatCurrency(totalPayment)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+            <p className="text-xs uppercase tracking-wide text-amber-700">
+              Pending Payment
+            </p>
+            <p className="mt-1 text-2xl font-bold text-amber-900">
+              {formatCurrency(totalPendingPayment)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+            <p className="text-xs uppercase tracking-wide text-emerald-700">
+              Payment Received Today
+            </p>
+            <p className="mt-1 text-2xl font-bold text-emerald-900">
+              {formatCurrency(paymentReceivedToday)}
             </p>
           </div>
         </div>
@@ -761,24 +844,28 @@ export default function AdminInsurancePaymentsPage() {
                       <td className="px-4 py-3 text-gray-700">
                         {formatDate(row.updatedAt)}
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex flex-wrap justify-end gap-2">
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <div className="flex flex-nowrap items-center justify-end gap-2">
                           {row.pdfUrl ? (
                             <button
                               type="button"
                               onClick={() => openPdfInNewTab(row.pdfUrl)}
-                              className="rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-100"
+                              title="View Invoice PDF"
+                              aria-label={`View invoice PDF for ${row.invoiceNumber}`}
+                              className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border shadow-sm transition-all duration-200 ${getActionButtonClasses('invoice')}`}
                             >
-                              View Invoice
+                              <FileText className="h-4 w-4" strokeWidth={2.2} />
                             </button>
                           ) : null}
                           {row.paymentReceiptUrl ? (
                             <button
                               type="button"
                               onClick={() => openPdfInNewTab(row.paymentReceiptUrl)}
-                              className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                              title="View Payment Receipt"
+                              aria-label={`View payment receipt for ${row.invoiceNumber}`}
+                              className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border shadow-sm transition-all duration-200 ${getActionButtonClasses('receipt')}`}
                             >
-                              View Receipt
+                              <ReceiptText className="h-4 w-4" strokeWidth={2.2} />
                             </button>
                           ) : null}
                           {Boolean(row.isPaymentRequired) &&
@@ -787,19 +874,25 @@ export default function AdminInsurancePaymentsPage() {
                               type="button"
                               onClick={() => openReminderModal(row)}
                               disabled={Boolean(remindingInvoiceIds[row.invoiceId])}
-                              className="rounded-md bg-[#4309ac] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#35088a] disabled:cursor-not-allowed disabled:opacity-60"
+                              title="Send WhatsApp Reminder"
+                              aria-label={`Send WhatsApp reminder for ${row.invoiceNumber}`}
+                              className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border shadow-sm transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60 ${getActionButtonClasses('reminder')}`}
                             >
-                              {remindingInvoiceIds[row.invoiceId]
-                                ? 'Sending...'
-                                : 'Send Reminder'}
+                              {remindingInvoiceIds[row.invoiceId] ? (
+                                <span className="text-sm font-bold">...</span>
+                              ) : (
+                                <FaWhatsapp className="h-4 w-4" />
+                              )}
                             </button>
                           ) : null}
                           <button
                             type="button"
                             onClick={() => openEditModal(row)}
-                            className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                            title="Edit Payment"
+                            aria-label={`Edit payment details for ${row.invoiceNumber}`}
+                            className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border shadow-sm transition-all duration-200 ${getActionButtonClasses('edit')}`}
                           >
-                            Edit
+                            <Pencil className="h-4 w-4" strokeWidth={2.2} />
                           </button>
                         </div>
                       </td>
