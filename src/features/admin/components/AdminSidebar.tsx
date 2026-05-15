@@ -81,7 +81,7 @@ export default function AdminSidebar() {
                                     <div className="mt-5 h-0 flex-1 overflow-y-auto">
                                         <nav className="space-y-1 px-2">
                                             {navigation.map((item) => {
-                                                const isActive = pathname === item.href;
+                                                const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
 
                                                 return (
                                                     <Link
@@ -130,7 +130,7 @@ export default function AdminSidebar() {
                             </div>
                             <nav className="mt-5 flex-1 space-y-1 bg-white px-2">
                                 {navigation.map((item) => {
-                                    const isActive = pathname === item.href;
+                                    const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                                     return (
                                         <Link
                                             key={item.name}
