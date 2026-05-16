@@ -977,6 +977,30 @@ class AdminApi {
     }
   };
 
+  public unverifyMasterUser = async (
+    userId: string,
+    reason?: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/users/admin/${userId}/unverify-master`,
+        { reason },
+      );
+      const data = response.data;
+      if (data && typeof data === 'object' && 'success' in data) {
+        return data;
+      }
+      return { success: true, data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to unverify master user',
+        error: error.message,
+      };
+    }
+  };
+
   public unmergeUser = async (
     userId: string,
     reason?: string,

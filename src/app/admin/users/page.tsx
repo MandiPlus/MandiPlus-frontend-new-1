@@ -95,6 +95,7 @@ export default function UsersPage() {
     const [mergedUsersModalMaster, setMergedUsersModalMaster] = useState<User | null>(null);
     const [pendingBillingType, setPendingBillingType] = useState<'BULK' | 'PER_POLICY'>('BULK');
     const [verifyingMasterByUser, setVerifyingMasterByUser] = useState<Record<string, boolean>>({});
+    const [unverifyingMasterByUser, setUnverifyingMasterByUser] = useState<Record<string, boolean>>({});
     const [mergingByUser, setMergingByUser] = useState<Record<string, boolean>>({});
     const [unmergingByUser, setUnmergingByUser] = useState<Record<string, boolean>>({});
     const [mergeTargetByUser, setMergeTargetByUser] = useState<Record<string, string>>({});
@@ -522,6 +523,26 @@ export default function UsersPage() {
         }
     };
 
+    const handleUnverifyMaster = async (user: User) => {
+        if (!user?.id) return;
+        setUnverifyingMasterByUser((prev) => ({ ...prev, [user.id]: true }));
+        try {
+            const response = await adminApi.unverifyMasterUser(
+                user.id,
+                'Verified master status removed manually from admin user ledger screen',
+            );
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to unverify master user');
+            }
+            await loadAdminUsers();
+            toast.success(`${user.name || 'User'} is no longer a verified master user`);
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to unverify master user');
+        } finally {
+            setUnverifyingMasterByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
+    };
+
     const handleManualMerge = async (user: User, targetUserIdOverride?: string) => {
         const targetUserId = targetUserIdOverride || mergeTargetByUser[user.id];
         if (!targetUserId) {
@@ -918,10 +939,26 @@ export default function UsersPage() {
                                                         {user.isMerged ? (
                                                             <span className="text-xs font-medium text-slate-500">Merged child</span>
                                                         ) : user.isLedgerMasterVerified ? (
-                                                            <span className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
-                                                                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-[11px] font-bold text-white">✓</span>
-                                                                Verified
-                                                            </span>
+                                                            <div className="flex min-w-[12rem] items-center gap-2">
+                                                                <span className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
+                                                                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-[11px] font-bold text-white">✓</span>
+                                                                    Verified
+                                                                </span>
+                                                                {isVerifiedSection ? (
+                                                                    <button
+                                                                        onClick={() => handleUnverifyMaster(user)}
+                                                                        disabled={unverifyingMasterByUser[user.id] || mergedUsersForMaster.length > 0}
+                                                                        title={
+                                                                            mergedUsersForMaster.length > 0
+                                                                                ? 'Unmerge all linked users before unverifying'
+                                                                                : 'Remove verified master status'
+                                                                        }
+                                                                        className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                                                                    >
+                                                                        {unverifyingMasterByUser[user.id] ? 'Unverifying...' : 'Unverify'}
+                                                                    </button>
+                                                                ) : null}
+                                                            </div>
                                                         ) : (
                                                             <button
                                                                 onClick={() => handleVerifyMaster(user)}
