@@ -11,7 +11,11 @@ export default function AdminShell({
 }) {
   const pathname = usePathname();
 
-  if (pathname === '/admin/login' || pathname === '/admin/signup') {
+  if (
+    pathname === '/admin/login' ||
+    pathname === '/admin/signup' ||
+    pathname === '/admin/impersonate'
+  ) {
     return <>{children}</>;
   }
 

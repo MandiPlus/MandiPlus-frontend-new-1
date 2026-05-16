@@ -1,8 +1,14 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { getCurrentUser, getStoredAuthToken, logout as logoutApi, setAuthToken } from "@/features/auth/api";
-import { useRouter } from "next/navigation";
+import {
+    AUTH_TOKEN_CHANGED_EVENT,
+    getCurrentUser,
+    getStoredAuthToken,
+    logout as logoutApi,
+    setAuthToken,
+} from "@/features/auth/api";
+import { usePathname, useRouter } from "next/navigation";
 
 interface AuthContextType {
     user: any;
@@ -19,6 +25,11 @@ const IMPERSONATION_ADMIN_TOKEN_KEY = "impersonationAdminToken";
 const IMPERSONATED_USER_NAME_KEY = "impersonatedUserName";
 const IMPERSONATED_USER_ID_KEY = "impersonatedUserId";
 const IMPERSONATION_STARTED_AT_KEY = "impersonationStartedAt";
+
+function getImpersonationStorage(): Storage | null {
+    if (typeof window === "undefined") return null;
+    return window.sessionStorage;
+}
 
 function getJwtExpiryMs(token: string): number | null {
     try {
@@ -59,6 +70,13 @@ function normalizeUserPayload(payload: any): any {
     return payload?.data ?? payload;
 }
 
+function isAdminSurface(pathname: string | null): boolean {
+    return Boolean(
+        pathname &&
+        (pathname.startsWith("/admin") || pathname.startsWith("/whatsapp-chats")),
+    );
+}
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [user, setUser] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -67,7 +85,34 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [warningShownForToken, setWarningShownForToken] = useState<string | null>(null);
     const [isImpersonating, setIsImpersonating] = useState(false);
     const [impersonatedUserName, setImpersonatedUserName] = useState("");
+    const pathname = usePathname();
     const router = useRouter();
+
+    const syncUserFromStoredToken = async () => {
+        const storedToken = getStoredAuthToken();
+
+        if (!storedToken) {
+            localStorage.removeItem("user");
+            setUser(null);
+            return;
+        }
+
+        setAuthToken(storedToken, { suppressEvent: true });
+        try {
+            const fetchedUser = await getCurrentUser();
+            const normalized = normalizeUserPayload(fetchedUser);
+            if (normalized) {
+                setUser(normalized);
+                localStorage.setItem("user", JSON.stringify(normalized));
+            } else {
+                localStorage.removeItem("user");
+                setUser(null);
+            }
+        } catch {
+            localStorage.removeItem("user");
+            setUser(null);
+        }
+    };
 
     const clearAuthState = () => {
         localStorage.removeItem("user");
@@ -81,10 +126,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     const clearImpersonationState = () => {
-        localStorage.removeItem(IMPERSONATION_ACTIVE_KEY);
-        localStorage.removeItem(IMPERSONATED_USER_NAME_KEY);
-        localStorage.removeItem(IMPERSONATED_USER_ID_KEY);
-        localStorage.removeItem(IMPERSONATION_STARTED_AT_KEY);
+        const impersonationStorage = getImpersonationStorage();
+        impersonationStorage?.removeItem(IMPERSONATION_ACTIVE_KEY);
+        impersonationStorage?.removeItem(IMPERSONATED_USER_NAME_KEY);
+        impersonationStorage?.removeItem(IMPERSONATED_USER_ID_KEY);
+        impersonationStorage?.removeItem(IMPERSONATION_STARTED_AT_KEY);
         setIsImpersonating(false);
         setImpersonatedUserName("");
     };
@@ -100,32 +146,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     useEffect(() => {
+        if (isAdminSurface(pathname)) {
+            setLoading(false);
+            return;
+        }
+
         const initAuth = async () => {
             try {
-                const activeImpersonation = localStorage.getItem(IMPERSONATION_ACTIVE_KEY) === "1";
-                const activeImpersonatedUser = localStorage.getItem(IMPERSONATED_USER_NAME_KEY) || "";
+                const impersonationStorage = getImpersonationStorage();
+                const activeImpersonation = impersonationStorage?.getItem(IMPERSONATION_ACTIVE_KEY) === "1";
+                const activeImpersonatedUser = impersonationStorage?.getItem(IMPERSONATED_USER_NAME_KEY) || "";
                 setIsImpersonating(activeImpersonation);
                 setImpersonatedUserName(activeImpersonatedUser);
-
-                const storedToken = getStoredAuthToken();
-
-                if (storedToken) {
-                    setAuthToken(storedToken);
-                    try {
-                        const fetchedUser = await getCurrentUser();
-                        const normalized = normalizeUserPayload(fetchedUser);
-                        if (normalized) {
-                            setUser(normalized);
-                            localStorage.setItem("user", JSON.stringify(normalized));
-                        } else {
-                            localStorage.removeItem("user");
-                            setUser(null);
-                        }
-                    } catch {
-                        localStorage.removeItem("user");
-                        setUser(null);
-                    }
-                }
+                await syncUserFromStoredToken();
             } catch {
                 localStorage.clear();
                 setAuthToken(null);
@@ -135,54 +168,91 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         };
 
         initAuth();
-    }, []);
+    }, [pathname]);
 
     useEffect(() => {
+        if (isAdminSurface(pathname)) {
+            return;
+        }
+
         const handleStorageChange = (event: StorageEvent) => {
-                if (event.key === "accessToken") {
-                    if (sessionStorage.getItem("tabAccessToken")) {
-                        return;
-                    }
-                    if (event.newValue) {
-                        setAuthToken(event.newValue);
-                    void getCurrentUser()
-                        .then((fetchedUser) => {
-                            const normalized = normalizeUserPayload(fetchedUser);
-                            if (normalized) {
-                                setUser(normalized);
-                                localStorage.setItem("user", JSON.stringify(normalized));
-                            } else {
-                                localStorage.removeItem("user");
-                                setUser(null);
-                            }
-                        })
-                        .catch(() => {
+            if (event.key !== "accessToken") {
+                return;
+            }
+
+            if (sessionStorage.getItem("tabAccessToken")) {
+                return;
+            }
+
+            if (event.newValue) {
+                setAuthToken(event.newValue);
+                void getCurrentUser()
+                    .then((fetchedUser) => {
+                        const normalized = normalizeUserPayload(fetchedUser);
+                        if (normalized) {
+                            setUser(normalized);
+                            localStorage.setItem("user", JSON.stringify(normalized));
+                        } else {
                             localStorage.removeItem("user");
                             setUser(null);
-                        });
-                    setWarningShownForToken(null);
-                    setShowSessionWarning(false);
-                } else {
-                    setAuthToken(null);
-                    setUser(null);
-                    setShowSessionWarning(false);
-                    router.push("/session-expired");
-                }
+                        }
+                    })
+                    .catch(() => {
+                        localStorage.removeItem("user");
+                        setUser(null);
+                    });
+                setWarningShownForToken(null);
+                setShowSessionWarning(false);
+            } else {
+                setAuthToken(null);
+                setUser(null);
+                setShowSessionWarning(false);
+                router.push("/session-expired");
             }
         };
 
         window.addEventListener("storage", handleStorageChange);
         return () => window.removeEventListener("storage", handleStorageChange);
-    }, [router]);
+    }, [pathname, router]);
+
+    useEffect(() => {
+        if (isAdminSurface(pathname)) {
+            return;
+        }
+
+        const handleAuthTokenChanged = async () => {
+            setLoading(true);
+            const impersonationStorage = getImpersonationStorage();
+            const activeImpersonation = impersonationStorage?.getItem(IMPERSONATION_ACTIVE_KEY) === "1";
+            setIsImpersonating(activeImpersonation);
+            setImpersonatedUserName(impersonationStorage?.getItem(IMPERSONATED_USER_NAME_KEY) || "");
+            try {
+                await syncUserFromStoredToken();
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        window.addEventListener(
+            AUTH_TOKEN_CHANGED_EVENT,
+            handleAuthTokenChanged as EventListener,
+        );
+        return () =>
+            window.removeEventListener(
+                AUTH_TOKEN_CHANGED_EVENT,
+                handleAuthTokenChanged as EventListener,
+            );
+    }, [pathname]);
 
     // Auto token-expiry based logout has been disabled.
     // We intentionally do NOT run a timer that logs the user out when JWT expires.
 
     const login = async (token: string, userData?: any) => {
         setAuthToken(token);
-        const activeImpersonation = localStorage.getItem(IMPERSONATION_ACTIVE_KEY) === "1";
+        const impersonationStorage = getImpersonationStorage();
+        const activeImpersonation = impersonationStorage?.getItem(IMPERSONATION_ACTIVE_KEY) === "1";
         setIsImpersonating(activeImpersonation);
-        setImpersonatedUserName(localStorage.getItem(IMPERSONATED_USER_NAME_KEY) || "");
+        setImpersonatedUserName(impersonationStorage?.getItem(IMPERSONATED_USER_NAME_KEY) || "");
         setWarningShownForToken(null);
         setShowSessionWarning(false);
 
@@ -214,25 +284,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     const exitImpersonation = () => {
+        const impersonationStorage = getImpersonationStorage();
         const adminToken =
-            localStorage.getItem(IMPERSONATION_ADMIN_TOKEN_KEY) ||
+            impersonationStorage?.getItem(IMPERSONATION_ADMIN_TOKEN_KEY) ||
+            sessionStorage.getItem(IMPERSONATION_ADMIN_TOKEN_KEY) ||
             localStorage.getItem("adminToken");
 
         clearImpersonationState();
-        localStorage.removeItem(IMPERSONATION_ADMIN_TOKEN_KEY);
+        impersonationStorage?.removeItem(IMPERSONATION_ADMIN_TOKEN_KEY);
+        sessionStorage.removeItem(IMPERSONATION_ADMIN_TOKEN_KEY);
         localStorage.removeItem("refreshToken");
 
         if (!adminToken) {
             clearAuthState();
-            router.push("/admin/login");
+            window.location.replace("/admin/login");
             return;
         }
 
+        localStorage.setItem("adminToken", adminToken);
+        sessionStorage.removeItem("tabAccessToken");
         localStorage.removeItem("accessToken");
         localStorage.removeItem("user");
-        setAuthToken(null);
+        setAuthToken(null, { suppressEvent: true });
         setUser(null);
-        router.push("/admin/dashboard");
+        window.location.replace("/admin/dashboard");
     };
 
     return (

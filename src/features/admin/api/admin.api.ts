@@ -32,6 +32,33 @@ interface User {
   availableBalance?: number;
   holdBalance?: number;
   totalBalance?: number;
+  canonicalUserId?: string;
+  isLedgerMasterVerified?: boolean;
+  duplicateCount?: number;
+  aliasNames?: string[];
+  aliasPhones?: string[];
+  isMerged?: boolean;
+  canonicalMasterName?: string | null;
+  canonicalMasterMobileNumber?: string | null;
+}
+
+export interface AdminLedgerUser extends User {
+  id: string;
+  canonicalUserId: string;
+  isLedgerMasterVerified: boolean;
+  duplicateCount: number;
+  aliasNames: string[];
+  aliasPhones: string[];
+}
+
+export interface PossibleDuplicateUserRow {
+  id: string;
+  score: number;
+  reason: string;
+  matchingSignals: string[];
+  status: string;
+  sourceUser: AdminLedgerUser;
+  candidateUser: AdminLedgerUser;
 }
 
 export type UserIdentity =
@@ -339,6 +366,11 @@ class AdminApi {
             return Promise.reject(error);
           }
           if (typeof window !== "undefined") {
+            const isImpersonatingThisTab =
+              sessionStorage.getItem("impersonationActive") === "1";
+            if (isImpersonatingThisTab) {
+              return Promise.reject(error);
+            }
             localStorage.removeItem("adminToken");
             window.location.href = "/admin-session-expired";
           }
@@ -823,6 +855,171 @@ class AdminApi {
     } catch (error) {
       console.error("Export failed", error);
       return null;
+    }
+  };
+
+  public getAdminLedgerUsers = async (): Promise<ApiResponse<AdminLedgerUser[]>> => {
+    try {
+      const response = await this.client.get<AdminLedgerUser[]>('/users/admin/list');
+      const rows = Array.isArray(response.data)
+        ? response.data
+        : ((response.data as any)?.data ?? []);
+      return {
+        success: true,
+        data: rows,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to fetch admin ledger users',
+        error: error.message,
+      };
+    }
+  };
+
+  public scanPossibleDuplicates = async (): Promise<
+    ApiResponse<PossibleDuplicateUserRow[]>
+  > => {
+    try {
+      const response = await this.client.post<PossibleDuplicateUserRow[]>(
+        '/users/admin/possible-duplicates/scan',
+      );
+      const rows = Array.isArray(response.data)
+        ? response.data
+        : ((response.data as any)?.data ?? []);
+      return {
+        success: true,
+        data: rows,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          'Failed to scan possible duplicate users',
+        error: error.message,
+      };
+    }
+  };
+
+  public getPossibleDuplicates = async (): Promise<
+    ApiResponse<PossibleDuplicateUserRow[]>
+  > => {
+    try {
+      const response = await this.client.get<PossibleDuplicateUserRow[]>(
+        '/users/admin/possible-duplicates',
+      );
+      const rows = Array.isArray(response.data)
+        ? response.data
+        : ((response.data as any)?.data ?? []);
+      return {
+        success: true,
+        data: rows,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          'Failed to fetch possible duplicate users',
+        error: error.message,
+      };
+    }
+  };
+
+  public mergeUsers = async (payload: {
+    sourceUserId: string;
+    targetUserId: string;
+    reason?: string;
+    notes?: string;
+  }): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        '/users/admin/merge',
+        payload,
+      );
+      const data = response.data;
+      if (data && typeof data === 'object' && 'success' in data) {
+        return data;
+      }
+      return { success: true, data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to merge users',
+        error: error.message,
+      };
+    }
+  };
+
+  public verifyMasterUser = async (
+    userId: string,
+    reason?: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/users/admin/${userId}/verify-master`,
+        { reason },
+      );
+      const data = response.data;
+      if (data && typeof data === 'object' && 'success' in data) {
+        return data;
+      }
+      return { success: true, data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to verify master user',
+        error: error.message,
+      };
+    }
+  };
+
+  public unmergeUser = async (
+    userId: string,
+    reason?: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/users/admin/${userId}/unmerge`,
+        { reason },
+      );
+      const data = response.data;
+      if (data && typeof data === 'object' && 'success' in data) {
+        return data;
+      }
+      return { success: true, data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to unmerge user',
+        error: error.message,
+      };
+    }
+  };
+
+  public ignorePossibleDuplicate = async (
+    id: string,
+  ): Promise<ApiResponse<{ success: boolean }>> => {
+    try {
+      const response = await this.client.post(`/users/admin/possible-duplicates/${id}/ignore`);
+      const data = response.data;
+      if (data && typeof data === 'object' && 'success' in data) {
+        return data;
+      }
+      return {
+        success: true,
+        data: { success: true },
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to ignore duplicate suggestion',
+        error: error.message,
+      };
     }
   };
 

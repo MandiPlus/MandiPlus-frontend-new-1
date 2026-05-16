@@ -21,6 +21,10 @@ export default function AdminAccessGate({
   useEffect(() => {
     if (loading) return;
 
+    if (pathname === '/admin/impersonate') {
+      return;
+    }
+
     if (pathname === '/admin/login' || pathname === '/admin/signup') {
       if (isAuthenticated && accessProfile) {
         router.replace(getFirstAllowedAdminPath(accessProfile));
@@ -47,7 +51,12 @@ export default function AdminAccessGate({
     );
   }
 
-  if (pathname !== '/admin/login' && pathname !== '/admin/signup' && !isAuthenticated) {
+  if (
+    pathname !== '/admin/login' &&
+    pathname !== '/admin/signup' &&
+    pathname !== '/admin/impersonate' &&
+    !isAuthenticated
+  ) {
     return null;
   }
 
@@ -55,6 +64,7 @@ export default function AdminAccessGate({
   if (
     pathname !== '/admin/login' &&
     pathname !== '/admin/signup' &&
+    pathname !== '/admin/impersonate' &&
     section &&
     !canAccessSection(section)
   ) {

@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { adminApi } from '../api/admin.api';
 import {
     AdminAccessProfile,
@@ -42,6 +42,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     const [showSessionWarning, setShowSessionWarning] = useState(false);
     const [warningMinutesLeft, setWarningMinutesLeft] = useState(15);
     const [warningShownForToken, setWarningShownForToken] = useState<string | null>(null);
+    const pathname = usePathname();
     const router = useRouter();
     const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
 
@@ -89,6 +90,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         const initAdminAccess = async () => {
+            if (pathname === '/admin/impersonate') {
+                setLoading(false);
+                return;
+            }
+
             const token = getStoredCandidateToken();
             if (!token) {
                 setLoading(false);
@@ -121,9 +127,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         };
 
         void initAdminAccess();
-    }, []);
+    }, [pathname]);
 
     useEffect(() => {
+        if (pathname === '/admin/impersonate') {
+            setShowSessionWarning(false);
+            setWarningShownForToken(null);
+            return;
+        }
+
         const tick = () => {
             const token = localStorage.getItem('adminToken');
             if (!token) {
@@ -153,7 +165,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         tick();
         const timer = setInterval(tick, 30000);
         return () => clearInterval(timer);
-    }, [warningShownForToken]);
+    }, [pathname, warningShownForToken]);
 
     const login = async (email: string, password: string) => {
         try {

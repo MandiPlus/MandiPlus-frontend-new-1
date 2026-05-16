@@ -4,23 +4,15 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import { formatDate } from '@/features/admin/utils/format';
-import { AdminWalletStatementItem, adminApi } from '@/features/admin/api/admin.api';
+import {
+    AdminLedgerUser,
+    AdminWalletStatementItem,
+    adminApi,
+} from '@/features/admin/api/admin.api';
 import AdminAccountApprovals from '@/features/admin/components/AdminAccountApprovals';
 import { toast } from 'react-toastify';
 
-// --- 1. Interface Updated ---
-interface User {
-    id: string;
-    _id?: string;
-    name: string; // Added Name
-    mobileNumber: string;
-    identity?: string;
-    billingType?: 'BULK' | 'PER_POLICY' | null;
-    category?: string;
-    state?: string;
-    walletBalance?: number;
-    createdAt: string;
-}
+type User = AdminLedgerUser;
 
 type UserSection = 'ALL' | 'CUSTOMER' | 'TRANSPORTER';
 type AdminViewSection = UserSection | 'ADMIN_REQUESTS';
@@ -32,6 +24,46 @@ const formatIndianMobile = (phone: string | undefined) => {
     if (cleaned.length === 10) return `+91 ${cleaned.slice(0, 5)} ${cleaned.slice(5)}`;
     if (cleaned.length === 12 && cleaned.startsWith('91')) return `+91 ${cleaned.slice(2, 7)} ${cleaned.slice(7)}`;
     return phone;
+};
+
+const normalizeNameForMatch = (value: string | undefined) =>
+    (value || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+const normalizePhoneForMatch = (value: string | undefined) => {
+    const digits = (value || '').replace(/\D/g, '');
+    if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+    return digits;
+};
+
+const getSimilarityScore = (leftRaw: string, rightRaw: string) => {
+    const left = leftRaw.replace(/\s+/g, '');
+    const right = rightRaw.replace(/\s+/g, '');
+    if (!left || !right) return 0;
+    if (left === right) return 1;
+
+    const rows = left.length + 1;
+    const cols = right.length + 1;
+    const matrix = Array.from({ length: rows }, () => Array.from({ length: cols }, () => 0));
+
+    for (let i = 0; i < rows; i += 1) matrix[i][0] = i;
+    for (let j = 0; j < cols; j += 1) matrix[0][j] = j;
+
+    for (let i = 1; i < rows; i += 1) {
+        for (let j = 1; j < cols; j += 1) {
+            const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+            matrix[i][j] = Math.min(
+                matrix[i - 1][j] + 1,
+                matrix[i][j - 1] + 1,
+                matrix[i - 1][j - 1] + cost,
+            );
+        }
+    }
+
+    return 1 - matrix[left.length][right.length] / Math.max(left.length, right.length);
 };
 
 export default function UsersPage() {
@@ -61,6 +93,10 @@ export default function UsersPage() {
     const [walletLogs, setWalletLogs] = useState<AdminWalletStatementItem[]>([]);
     const [billingTypeModalUser, setBillingTypeModalUser] = useState<User | null>(null);
     const [pendingBillingType, setPendingBillingType] = useState<'BULK' | 'PER_POLICY'>('BULK');
+    const [verifyingMasterByUser, setVerifyingMasterByUser] = useState<Record<string, boolean>>({});
+    const [mergingByUser, setMergingByUser] = useState<Record<string, boolean>>({});
+    const [unmergingByUser, setUnmergingByUser] = useState<Record<string, boolean>>({});
+    const [mergeTargetByUser, setMergeTargetByUser] = useState<Record<string, string>>({});
     const ITEMS_PER_PAGE = 10;
     const showWalletColumns = activeSection !== 'ALL';
     const sectionTitle =
@@ -73,6 +109,108 @@ export default function UsersPage() {
                 ? 'Transporters'
                 : 'Users';
 
+    const loadAdminUsers = async () => {
+        const walletsRes = await adminApi.getAdminCustomerWallets();
+        const usersRes = await adminApi.getAdminLedgerUsers();
+
+        const walletsRaw = walletsRes.success && Array.isArray(walletsRes.data)
+            ? walletsRes.data
+            : [];
+        const walletByUserId = new Map<string, any>(
+            walletsRaw
+                .map((u: any) => [String(u.userId || u.canonicalUserId || u.id || u._id || ''), u] as const)
+                .filter(([id]) => Boolean(id))
+        );
+
+        let usersRaw: any[] = [];
+        if (usersRes.success && Array.isArray(usersRes.data)) {
+            usersRaw = usersRes.data;
+        } else {
+            const fallbackUsersRes = await adminApi.getUsers(1, 500);
+            usersRaw = fallbackUsersRes.success
+                ? (Array.isArray(fallbackUsersRes.data?.users) ? fallbackUsersRes.data?.users : [])
+                : [];
+        }
+
+        const processedUsers = usersRaw.map((u: any) => {
+            const resolvedId = String(u.id || u._id || '');
+            const walletRow = walletByUserId.get(String(u.canonicalUserId || resolvedId || ''));
+            return {
+                ...u,
+                id: resolvedId,
+                canonicalUserId: String(u.canonicalUserId || resolvedId),
+                isLedgerMasterVerified: Boolean(u.isLedgerMasterVerified),
+                duplicateCount: Number(u.duplicateCount || 0),
+                aliasNames: Array.isArray(u.aliasNames) ? u.aliasNames : [],
+                aliasPhones: Array.isArray(u.aliasPhones) ? u.aliasPhones : [],
+                walletBalance: walletRow?.walletBalance ?? 0,
+            } as User;
+        });
+
+        const sortedData = processedUsers.sort((a: User, b: User) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+
+        setAllUsers(sortedData);
+                setFilteredUsers(sortedData);
+    };
+
+    const verifiedMasterUsers = allUsers.filter(
+        (user) => user.isLedgerMasterVerified && user.id === user.canonicalUserId,
+    );
+
+    const getSuggestedMaster = (user: User) => {
+        if (user.isLedgerMasterVerified) return null;
+
+        const userName = normalizeNameForMatch(user.name);
+        const userPhone = normalizePhoneForMatch(user.mobileNumber);
+
+        let bestMatch: User | null = null;
+        let bestScore = 0;
+        let bestReason = '';
+
+        for (const master of verifiedMasterUsers) {
+            if (master.id === user.id) continue;
+
+            const masterName = normalizeNameForMatch(master.name);
+            const masterPhone = normalizePhoneForMatch(master.mobileNumber);
+            const sharedPhone = Boolean(userPhone && masterPhone && userPhone === masterPhone);
+            const similarNameScore = getSimilarityScore(userName, masterName);
+            const sameState = Boolean(user.state && master.state && user.state === master.state);
+
+            let score = 0;
+            let reason = '';
+
+            if (sharedPhone) {
+                score = 100;
+                reason = 'Same phone number';
+            } else if (userName && masterName && userName === masterName) {
+                score = sameState ? 92 : 84;
+                reason = sameState ? 'Exact name and same state' : 'Exact name match';
+            } else if (similarNameScore >= 0.86) {
+                score = sameState ? 82 : 74;
+                reason = sameState ? 'Very similar name and same state' : 'Very similar name';
+            } else if (similarNameScore >= 0.72 && sameState) {
+                score = 64;
+                reason = 'Similar name and same state';
+            }
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestMatch = master;
+                bestReason = reason;
+            }
+        }
+
+        if (!bestMatch || bestScore < 64) return null;
+
+        return {
+            user: bestMatch,
+            score: bestScore,
+            reason: bestReason,
+        };
+    };
+
     useEffect(() => {
         if (!isAuthenticated) {
             router.push('/admin/login');
@@ -83,36 +221,7 @@ export default function UsersPage() {
             try {
                 setLoading(true);
                 setError('');
-                const walletsRes = await adminApi.getAdminCustomerWallets();
-                const usersRes = await adminApi.getUsers(1, 500);
-
-                const walletsRaw = walletsRes.success && Array.isArray(walletsRes.data)
-                    ? walletsRes.data
-                    : [];
-                const usersRaw = usersRes.success
-                    ? (Array.isArray(usersRes.data?.users) ? usersRes.data?.users : [])
-                    : [];
-
-                const walletByUserId = new Map<string, any>(
-                    walletsRaw
-                        .map((u: any) => [String(u.userId || u.id || u._id || ''), u] as const)
-                        .filter(([id]) => Boolean(id))
-                );
-
-                // Map ID for consistency
-                const processedUsers = usersRaw.map((u: any) => ({
-                    ...u,
-                    id: String(u.id || u._id || ''),
-                    walletBalance: walletByUserId.get(String(u.id || u._id || ''))?.walletBalance ?? 0,
-                }));
-
-                // 3. Sort by Date (Newest First)
-                const sortedData = processedUsers.sort((a: User, b: User) =>
-                    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-                );
-
-                setAllUsers(sortedData);
-                setFilteredUsers(sortedData);
+                await loadAdminUsers();
             } catch (err: any) {
                 console.error('Failed to fetch data:', err);
                 const message = err.response?.data?.message || 'Failed to load data';
@@ -346,7 +455,11 @@ export default function UsersPage() {
 
             if (typeof window !== 'undefined') {
                 if (adminToken) {
-                    localStorage.setItem('impersonationAdminToken', adminToken);
+                    try {
+                        popup?.sessionStorage.setItem('impersonationAdminToken', adminToken);
+                    } catch {
+                        sessionStorage.setItem('impersonationAdminToken', adminToken);
+                    }
                 }
                 const url =
                     `/admin/impersonate?token=${encodeURIComponent(response.data.token)}` +
@@ -367,6 +480,86 @@ export default function UsersPage() {
             toast.error(err?.message || 'Failed to access this account');
         } finally {
             setImpersonatingByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
+    };
+
+    const handleVerifyMaster = async (user: User) => {
+        if (!user?.id) return;
+        setVerifyingMasterByUser((prev) => ({ ...prev, [user.id]: true }));
+        try {
+            const response = await adminApi.verifyMasterUser(
+                user.id,
+                'Verified manually from admin user ledger screen',
+            );
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to verify master user');
+            }
+            await loadAdminUsers();
+            toast.success(`${user.name || 'User'} is now a verified master user`);
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to verify master user');
+        } finally {
+            setVerifyingMasterByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
+    };
+
+    const handleManualMerge = async (user: User, targetUserIdOverride?: string) => {
+        const targetUserId = targetUserIdOverride || mergeTargetByUser[user.id];
+        if (!targetUserId) {
+            toast.error('Please select a verified master user first');
+            return;
+        }
+
+        if (targetUserId === user.id) {
+            toast.error('User cannot be merged into itself');
+            return;
+        }
+
+        const targetUser = verifiedMasterUsers.find((item) => item.id === targetUserId);
+        if (!targetUser) {
+            toast.error('Selected verified master user was not found');
+            return;
+        }
+
+        setMergingByUser((prev) => ({ ...prev, [user.id]: true }));
+        try {
+            const response = await adminApi.mergeUsers({
+                sourceUserId: user.id,
+                targetUserId,
+                reason: 'Manual merge into verified master user',
+                notes: `Merged ${user.name || user.id} into verified master ${targetUser.name || targetUser.id}`,
+            });
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to merge user');
+            }
+
+            setMergeTargetByUser((prev) => ({ ...prev, [user.id]: '' }));
+            await loadAdminUsers();
+            toast.success(`${user.name || 'User'} merged into ${targetUser.name || 'verified master'}`);
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to merge user');
+        } finally {
+            setMergingByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
+    };
+
+    const handleUnmergeUser = async (user: User) => {
+        if (!user?.id) return;
+        setUnmergingByUser((prev) => ({ ...prev, [user.id]: true }));
+        try {
+            const response = await adminApi.unmergeUser(
+                user.id,
+                'Unmerged manually from admin user ledger screen',
+            );
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to unmerge user');
+            }
+            await loadAdminUsers();
+            toast.success(`${user.name || 'User'} was unmerged successfully`);
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to unmerge user');
+        } finally {
+            setUnmergingByUser((prev) => ({ ...prev, [user.id]: false }));
         }
     };
 
@@ -497,6 +690,12 @@ export default function UsersPage() {
                                                 </th>
                                             )}
                                             <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                Verify Master
+                                            </th>
+                                            <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                Merge Into Master
+                                            </th>
+                                            <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                 Access
                                             </th>
                                         </tr>
@@ -504,16 +703,41 @@ export default function UsersPage() {
                                     <tbody className="divide-y divide-gray-200 bg-white">
                                         {paginatedUsers.length === 0 ? (
                                             <tr>
-                                                <td colSpan={showWalletColumns ? 7 : 8} className="px-6 py-4 text-center text-sm text-gray-500">
+                                                <td colSpan={showWalletColumns ? 9 : 10} className="px-6 py-4 text-center text-sm text-gray-500">
                                                     No users found
                                                 </td>
                                             </tr>
                                         ) : (
-                                            paginatedUsers.map((user) => (
+                                            paginatedUsers.map((user) => {
+                                                const suggestedMaster = getSuggestedMaster(user);
+                                                const selectedMergeTarget =
+                                                    mergeTargetByUser[user.id] || suggestedMaster?.user.id || '';
+
+                                                return (
                                                 <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                                                     {/* Name */}
                                                     <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
-                                                        {user.name || 'N/A'}
+                                                        <div className="flex items-center gap-2">
+                                                            <span>{user.name || 'N/A'}</span>
+                                                            {user.isLedgerMasterVerified ? (
+                                                                <span
+                                                                    className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-xs font-bold text-white"
+                                                                    title="Verified master user"
+                                                                >
+                                                                    ✓
+                                                                </span>
+                                                            ) : null}
+                                                        </div>
+                                                        {user.duplicateCount > 0 ? (
+                                                            <p className="mt-1 text-xs font-medium text-amber-600">
+                                                                {user.duplicateCount} pending duplicate{user.duplicateCount > 1 ? 's' : ''}
+                                                            </p>
+                                                        ) : null}
+                                                        {user.isMerged ? (
+                                                            <p className="mt-1 text-xs font-medium text-rose-600">
+                                                                Merged into {user.canonicalMasterName || 'master user'}
+                                                            </p>
+                                                        ) : null}
                                                     </td>
                                                     {/* Mobile Number */}
                                                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
@@ -568,7 +792,11 @@ export default function UsersPage() {
                                                     )}
                                                     {showWalletColumns && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                                                            {user.identity === 'TRANSPORTER' && user.billingType === 'PER_POLICY' ? (
+                                                            {user.isMerged ? (
+                                                                <span className="text-xs font-medium text-slate-500">
+                                                                    Uses master user ledger
+                                                                </span>
+                                                            ) : user.identity === 'TRANSPORTER' && user.billingType === 'PER_POLICY' ? (
                                                                 <span className="text-xs font-medium text-gray-500">
                                                                     Wallet not applicable for per-policy transporter
                                                                 </span>
@@ -651,6 +879,84 @@ export default function UsersPage() {
                                                         </td>
                                                     )}
                                                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                                        {user.isMerged ? (
+                                                            <span className="text-xs font-medium text-slate-500">Merged child</span>
+                                                        ) : user.isLedgerMasterVerified ? (
+                                                            <span className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
+                                                                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-[11px] font-bold text-white">✓</span>
+                                                                Verified
+                                                            </span>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handleVerifyMaster(user)}
+                                                                disabled={verifyingMasterByUser[user.id] || user.id !== user.canonicalUserId}
+                                                                className="rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-60"
+                                                            >
+                                                                {verifyingMasterByUser[user.id] ? 'Verifying...' : 'Verify'}
+                                                            </button>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-3 py-4 text-sm text-gray-500">
+                                                        {user.isMerged ? (
+                                                            <div className="min-w-[18rem]">
+                                                                <p className="mb-2 text-xs font-medium text-rose-600">
+                                                                    Linked to {user.canonicalMasterName || 'master user'}.
+                                                                </p>
+                                                                <button
+                                                                    onClick={() => handleUnmergeUser(user)}
+                                                                    disabled={unmergingByUser[user.id]}
+                                                                    className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                                                                >
+                                                                    {unmergingByUser[user.id] ? 'Unmerging...' : 'Unmerge'}
+                                                                </button>
+                                                            </div>
+                                                        ) : user.isLedgerMasterVerified ? (
+                                                            <span className="text-xs font-medium text-slate-500">Master user</span>
+                                                        ) : (
+                                                            <div className="min-w-[18rem]">
+                                                                {suggestedMaster ? (
+                                                                    <p className="mb-2 text-xs font-medium text-amber-700">
+                                                                        Suggested: {suggestedMaster.user.name || 'Master user'} ({suggestedMaster.score}) - {suggestedMaster.reason}
+                                                                    </p>
+                                                                ) : (
+                                                                    <p className="mb-2 text-xs text-slate-400">
+                                                                        No strong suggestion. Select a verified master manually.
+                                                                    </p>
+                                                                )}
+                                                                <div className="flex items-center gap-2">
+                                                                <select
+                                                                    value={selectedMergeTarget}
+                                                                    onChange={(e) =>
+                                                                        setMergeTargetByUser((prev) => ({
+                                                                            ...prev,
+                                                                            [user.id]: e.target.value,
+                                                                        }))
+                                                                    }
+                                                                    className="w-44 rounded-md border border-gray-300 px-2 py-1 text-xs"
+                                                                >
+                                                                    <option value="">Select verified user</option>
+                                                                    {verifiedMasterUsers
+                                                                        .filter((master) => master.id !== user.id)
+                                                                        .map((master) => (
+                                                                            <option key={master.id} value={master.id}>
+                                                                                {master.name || 'User'} ({formatIndianMobile(master.mobileNumber)})
+                                                                            </option>
+                                                                        ))}
+                                                                </select>
+                                                                <button
+                                                                    onClick={() =>
+                                                                        handleManualMerge(user, selectedMergeTarget)
+                                                                    }
+                                                                    disabled={mergingByUser[user.id] || verifiedMasterUsers.length === 0}
+                                                                    className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                                                                >
+                                                                    {mergingByUser[user.id] ? 'Merging...' : 'Merge'}
+                                                                </button>
+                                                            </div>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                         <button
                                                             onClick={() => handleImpersonateUser(user)}
                                                             disabled={impersonatingByUser[user.id]}
@@ -660,7 +966,7 @@ export default function UsersPage() {
                                                         </button>
                                                     </td>
                                                 </tr>
-                                            ))
+                                            )})
                                         )}
                                     </tbody>
                                 </table>

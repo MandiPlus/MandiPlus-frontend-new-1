@@ -5,6 +5,7 @@ import { setCookie, deleteCookie } from 'cookies-next';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 const ACCESS_TOKEN_KEY = "accessToken";
 const TAB_ACCESS_TOKEN_KEY = "tabAccessToken";
+export const AUTH_TOKEN_CHANGED_EVENT = "mandiplus:auth-token-changed";
 
 // --- TYPES ---
 
@@ -60,7 +61,7 @@ export const getStoredAuthToken = (): string | null => {
 
 export const setAuthToken = (
     token: string | null,
-    options?: { tabOnly?: boolean },
+    options?: { tabOnly?: boolean; suppressEvent?: boolean },
 ): void => {
     if (token) {
         axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
@@ -71,12 +72,32 @@ export const setAuthToken = (
                 localStorage.setItem(ACCESS_TOKEN_KEY, token);
                 sessionStorage.removeItem(TAB_ACCESS_TOKEN_KEY);
             }
+            if (!options?.suppressEvent) {
+                window.dispatchEvent(
+                    new CustomEvent(AUTH_TOKEN_CHANGED_EVENT, {
+                        detail: {
+                            token,
+                            tabOnly: Boolean(options?.tabOnly),
+                        },
+                    }),
+                );
+            }
         }
     } else {
         delete axios.defaults.headers.common["Authorization"];
         if (typeof window !== 'undefined') {
             localStorage.removeItem(ACCESS_TOKEN_KEY);
             sessionStorage.removeItem(TAB_ACCESS_TOKEN_KEY);
+            if (!options?.suppressEvent) {
+                window.dispatchEvent(
+                    new CustomEvent(AUTH_TOKEN_CHANGED_EVENT, {
+                        detail: {
+                            token: null,
+                            tabOnly: false,
+                        },
+                    }),
+                );
+            }
         }
     }
 };
