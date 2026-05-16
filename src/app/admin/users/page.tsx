@@ -14,7 +14,7 @@ import { toast } from 'react-toastify';
 
 type User = AdminLedgerUser;
 
-type UserSection = 'ALL' | 'CUSTOMER' | 'TRANSPORTER';
+type UserSection = 'ALL' | 'CUSTOMER' | 'TRANSPORTER' | 'VERIFIED';
 type AdminViewSection = UserSection | 'ADMIN_REQUESTS';
 
 // --- 2. Helper for Mobile Format ---
@@ -92,13 +92,17 @@ export default function UsersPage() {
     const [walletLogUser, setWalletLogUser] = useState<User | null>(null);
     const [walletLogs, setWalletLogs] = useState<AdminWalletStatementItem[]>([]);
     const [billingTypeModalUser, setBillingTypeModalUser] = useState<User | null>(null);
+    const [mergedUsersModalMaster, setMergedUsersModalMaster] = useState<User | null>(null);
     const [pendingBillingType, setPendingBillingType] = useState<'BULK' | 'PER_POLICY'>('BULK');
     const [verifyingMasterByUser, setVerifyingMasterByUser] = useState<Record<string, boolean>>({});
     const [mergingByUser, setMergingByUser] = useState<Record<string, boolean>>({});
     const [unmergingByUser, setUnmergingByUser] = useState<Record<string, boolean>>({});
     const [mergeTargetByUser, setMergeTargetByUser] = useState<Record<string, string>>({});
     const ITEMS_PER_PAGE = 10;
-    const showWalletColumns = activeSection !== 'ALL';
+    const isVerifiedSection = activeSection === 'VERIFIED';
+    const showWalletColumns =
+        activeSection === 'CUSTOMER' || activeSection === 'TRANSPORTER';
+    const tableColumnCount = showWalletColumns ? 9 : isVerifiedSection ? 11 : 10;
     const sectionTitle =
         activeSection === 'ADMIN_REQUESTS'
             ? 'Admin Requests'
@@ -107,6 +111,8 @@ export default function UsersPage() {
             ? 'Customers'
             : activeSection === 'TRANSPORTER'
                 ? 'Transporters'
+                : activeSection === 'VERIFIED'
+                    ? 'Verified Users'
                 : 'Users';
 
     const loadAdminUsers = async () => {
@@ -158,6 +164,16 @@ export default function UsersPage() {
     const verifiedMasterUsers = allUsers.filter(
         (user) => user.isLedgerMasterVerified && user.id === user.canonicalUserId,
     );
+    const mergedUsersByMasterId = allUsers.reduce((map, user) => {
+        if (!user.isMerged || !user.canonicalUserId || user.canonicalUserId === user.id) {
+            return map;
+        }
+
+        const existing = map.get(user.canonicalUserId) || [];
+        existing.push(user);
+        map.set(user.canonicalUserId, existing);
+        return map;
+    }, new Map<string, User[]>());
 
     const getSuggestedMaster = (user: User) => {
         if (user.isLedgerMasterVerified) return null;
@@ -247,6 +263,9 @@ export default function UsersPage() {
             if (activeSection === 'ADMIN_REQUESTS') return false;
             if (activeSection === 'CUSTOMER') return user.identity === 'CUSTOMER';
             if (activeSection === 'TRANSPORTER') return user.identity === 'TRANSPORTER';
+            if (activeSection === 'VERIFIED') {
+                return user.isLedgerMasterVerified && user.id === user.canonicalUserId;
+            }
             return true;
         });
 
@@ -618,6 +637,16 @@ export default function UsersPage() {
                     >
                         Transporters
                     </button>
+                    <button
+                        onClick={() => setActiveSection('VERIFIED')}
+                        className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+                            activeSection === 'VERIFIED'
+                                ? 'bg-green-600 text-white'
+                                : 'bg-white text-gray-700 border border-gray-300'
+                        }`}
+                    >
+                        Verified Users
+                    </button>
                     {isFullAdmin ? (
                         <button
                             onClick={() => setActiveSection('ADMIN_REQUESTS')}
@@ -695,6 +724,11 @@ export default function UsersPage() {
                                             <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                 Merge Into Master
                                             </th>
+                                            {isVerifiedSection && (
+                                                <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                    Merged Users
+                                                </th>
+                                            )}
                                             <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                 Access
                                             </th>
@@ -703,7 +737,7 @@ export default function UsersPage() {
                                     <tbody className="divide-y divide-gray-200 bg-white">
                                         {paginatedUsers.length === 0 ? (
                                             <tr>
-                                                <td colSpan={showWalletColumns ? 9 : 10} className="px-6 py-4 text-center text-sm text-gray-500">
+                                                <td colSpan={tableColumnCount} className="px-6 py-4 text-center text-sm text-gray-500">
                                                     No users found
                                                 </td>
                                             </tr>
@@ -712,6 +746,8 @@ export default function UsersPage() {
                                                 const suggestedMaster = getSuggestedMaster(user);
                                                 const selectedMergeTarget =
                                                     mergeTargetByUser[user.id] || suggestedMaster?.user.id || '';
+                                                const mergedUsersForMaster =
+                                                    mergedUsersByMasterId.get(user.id) || [];
 
                                                 return (
                                                 <tr key={user.id} className="hover:bg-gray-50 transition-colors">
@@ -956,6 +992,21 @@ export default function UsersPage() {
                                                             </div>
                                                         )}
                                                     </td>
+                                                    {isVerifiedSection && (
+                                                        <td className="px-3 py-4 text-sm text-gray-500">
+                                                            <div className="min-w-[12rem]">
+                                                                <p className="mb-2 text-xs font-medium text-slate-600">
+                                                                    {mergedUsersForMaster.length} merged user{mergedUsersForMaster.length === 1 ? '' : 's'}
+                                                                </p>
+                                                                <button
+                                                                    onClick={() => setMergedUsersModalMaster(user)}
+                                                                    className="rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+                                                                >
+                                                                    View Merged Users
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    )}
                                                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                         <button
                                                             onClick={() => handleImpersonateUser(user)}
@@ -1097,6 +1148,78 @@ export default function UsersPage() {
                                                     {tx.direction === 'CREDIT' ? '+' : '-'}₹{Number(tx.amount || 0).toFixed(2)}
                                                 </td>
                                                 <td className="px-4 py-3 text-right text-sm text-gray-700">₹{Number(tx.balanceAfter || 0).toFixed(2)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {mergedUsersModalMaster && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <div className="w-full max-w-4xl rounded-xl bg-white shadow-2xl">
+                        <div className="flex items-center justify-between border-b px-5 py-4">
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-900">Merged Users</h3>
+                                <p className="text-xs text-gray-500">
+                                    {mergedUsersModalMaster.name || 'Verified user'} ({formatIndianMobile(mergedUsersModalMaster.mobileNumber)})
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setMergedUsersModalMaster(null)}
+                                className="rounded-md border px-3 py-1 text-sm text-gray-600 hover:bg-gray-50"
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        <div className="max-h-[65vh] overflow-auto">
+                            {(mergedUsersByMasterId.get(mergedUsersModalMaster.id) || []).length === 0 ? (
+                                <div className="px-5 py-8 text-sm text-gray-500">
+                                    No merged users are linked to this verified user yet.
+                                </div>
+                            ) : (
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Name</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Mobile</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Identity</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">State</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Registered</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Access</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100 bg-white">
+                                        {(mergedUsersByMasterId.get(mergedUsersModalMaster.id) || []).map((mergedUser) => (
+                                            <tr key={mergedUser.id}>
+                                                <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                                                    {mergedUser.name || 'N/A'}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-600">
+                                                    {formatIndianMobile(mergedUser.mobileNumber)}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-600">
+                                                    {mergedUser.identity || 'N/A'}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-600">
+                                                    {mergedUser.state || 'N/A'}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-600">
+                                                    {formatDate(mergedUser.createdAt)}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-600">
+                                                    <button
+                                                        onClick={() => handleImpersonateUser(mergedUser)}
+                                                        disabled={impersonatingByUser[mergedUser.id]}
+                                                        className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                                                    >
+                                                        {impersonatingByUser[mergedUser.id] ? 'Opening...' : 'Access Account'}
+                                                    </button>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
