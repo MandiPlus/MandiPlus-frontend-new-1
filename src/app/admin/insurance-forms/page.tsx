@@ -38,6 +38,7 @@ interface Invoice {
     _id?: string;
     invoiceNumber: string;
     invoiceDate: string;
+    invoiceType?: string;
     supplierName: string;
     supplierAddress: string[];
     billToName: string;
@@ -880,13 +881,21 @@ export default function InsuranceFormsPage() {
             return inv.insuredPersonNameSnapshot.trim();
         }
         const note = (inv.weighmentSlipNote || '').toLowerCase().trim();
-        const isCash = note.includes('cash') || note.includes('nak') || note.includes('nag');
+        const isCash =
+            note.includes('cash') ||
+            note.includes('nak') ||
+            note.includes('nag') ||
+            inv.invoiceType === 'BUYER_INVOICE';
         return isCash ? (inv.billToName || '') : (inv.supplierName || '');
     };
 
     const getOtherPartyName = (inv: Invoice) => {
         const note = (inv.weighmentSlipNote || '').toLowerCase().trim();
-        const isCash = note.includes('cash') || note.includes('nak') || note.includes('nag');
+        const isCash =
+            note.includes('cash') ||
+            note.includes('nak') ||
+            note.includes('nag') ||
+            inv.invoiceType === 'BUYER_INVOICE';
         return isCash ? (inv.supplierName || '') : (inv.billToName || '');
     };
 

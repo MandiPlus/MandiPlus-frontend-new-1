@@ -17,10 +17,23 @@ import "cropperjs/dist/cropper.css";
 import {
     createInsuranceForm,
     getInvoiceCustomerAccounts,
+    getSupplierPartyAssists,
+    getSupplierHistoricalParties,
     getTruckFlagStatus,
+    getVerifiedSuppliers,
+    type HistoricalPartyOption,
     type InvoiceCustomerAccount,
+    type SupplierPartyAssistProduct,
+    type SupplierPartyAssistResponse,
+    type SupplierPartyAssistTemplate,
+    type SupplierPartyAssistVehicle,
+    type VerifiedSupplierOption,
 } from '../api';
 import { useAuth } from "@/features/auth/context/AuthContext";
+import AssistPanel from '../components/AssistPanel';
+import LookupDropdown, {
+    type LookupDropdownOption,
+} from '../components/LookupDropdown';
 
 // --- Types ---
 
@@ -250,6 +263,21 @@ const InsuranceIOS = () => {
     const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
     const [resumeQuestionIndex, setResumeQuestionIndex] = useState<number | null>(null);
     const [customerAccounts, setCustomerAccounts] = useState<InvoiceCustomerAccount[]>([]);
+    const [verifiedSuppliers, setVerifiedSuppliers] = useState<VerifiedSupplierOption[]>([]);
+    const [supplierLookupQuery, setSupplierLookupQuery] = useState('');
+    const [buyerLookupQuery, setBuyerLookupQuery] = useState('');
+    const [selectedSupplierId, setSelectedSupplierId] = useState('');
+    const [historicalParties, setHistoricalParties] = useState<HistoricalPartyOption[]>([]);
+    const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(false);
+    const [isLoadingParties, setIsLoadingParties] = useState(false);
+    const [supplierLookupError, setSupplierLookupError] = useState('');
+    const [partyLookupError, setPartyLookupError] = useState('');
+    const [supplierPartyAssists, setSupplierPartyAssists] = useState<SupplierPartyAssistResponse>({
+        productSuggestions: [],
+        vehicleSuggestions: [],
+        recentTemplates: [],
+    });
+    const [isLoadingAssists, setIsLoadingAssists] = useState(false);
     const identity = user?.identity || '';
     // React state updates can lag behind the last chat answer; keep the selected customerUserId
     // in a ref so submit always includes it when needed.
@@ -269,6 +297,32 @@ const InsuranceIOS = () => {
         }
         return `${account.name} (${account.mobileNumber}) - Wallet: ₹${balance}`;
     };
+
+    const loadVerifiedSuppliers = async () => {
+        setIsLoadingSuppliers(true);
+        setSupplierLookupError('');
+        try {
+            const suppliers = await getVerifiedSuppliers();
+            setVerifiedSuppliers(suppliers);
+            if (suppliers.length === 0) {
+                setSupplierLookupError(
+                    'Verified supplier lookup returned no rows. If you just changed the backend, restart it and retry.',
+                );
+            }
+        } catch (e) {
+            console.error('Failed to load verified suppliers', e);
+            setVerifiedSuppliers([]);
+            setSupplierLookupError(
+                'Failed to load verified suppliers. Restart backend and retry.',
+            );
+        } finally {
+            setIsLoadingSuppliers(false);
+        }
+    };
+
+    useEffect(() => {
+        void loadVerifiedSuppliers();
+    }, []);
 
     // Cropper States
     const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -337,6 +391,122 @@ const InsuranceIOS = () => {
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, currentQuestionIndex]);
+
+    useEffect(() => {
+        const currentField = questions[currentQuestionIndex]?.field;
+        if (!currentField || editingMessageIndex !== null) {
+            return;
+        }
+
+        if (currentField === 'supplierName') {
+            setSupplierLookupQuery(formData.supplierName || '');
+        }
+
+        if (currentField === 'buyerName') {
+            setBuyerLookupQuery(formData.buyerName || '');
+        }
+
+        if (!inputValue.trim()) {
+            const nextValue = formData[currentField as keyof FormData];
+            if (
+                nextValue !== undefined &&
+                nextValue !== null &&
+                String(nextValue).trim() !== ''
+            ) {
+                setInputValue(String(nextValue));
+            }
+        }
+    }, [
+        currentQuestionIndex,
+        editingMessageIndex,
+        formData.buyerAddress,
+        formData.buyerName,
+        formData.placeOfSupply,
+        formData.supplierAddress,
+        formData.supplierName,
+        inputValue,
+    ]);
+
+    useEffect(() => {
+        const currentField = questions[currentQuestionIndex]?.field;
+        if (currentField !== 'buyerName') {
+            return;
+        }
+
+        const loadHistoricalParties = async () => {
+            const supplierName = formData.supplierName.trim();
+            if (!supplierName) {
+                setHistoricalParties([]);
+                return;
+            }
+
+            setIsLoadingParties(true);
+            setPartyLookupError('');
+            try {
+                const parties = await getSupplierHistoricalParties({
+                    supplierId: selectedSupplierId || undefined,
+                    supplierName,
+                });
+                setHistoricalParties(parties);
+                if (parties.length === 0) {
+                    setPartyLookupError(
+                        'No matching historical parties were found for this supplier yet.',
+                    );
+                }
+            } catch (e) {
+                console.error('Failed to load historical parties', e);
+                setHistoricalParties([]);
+                setPartyLookupError(
+                    'Failed to load historical parties. Restart backend and retry.',
+                );
+            } finally {
+                setIsLoadingParties(false);
+            }
+        };
+
+        void loadHistoricalParties();
+    }, [currentQuestionIndex, formData.supplierName, selectedSupplierId]);
+
+    useEffect(() => {
+        const currentField = questions[currentQuestionIndex]?.field;
+        if (!['buyerAddress', 'placeOfSupply', 'itemName', 'vehicleNumber', 'ownerName'].includes(String(currentField))) {
+            return;
+        }
+
+        const supplierName = formData.supplierName.trim();
+        const partyName = formData.buyerName.trim();
+        if (!supplierName || !partyName) {
+            setSupplierPartyAssists({
+                productSuggestions: [],
+                vehicleSuggestions: [],
+                recentTemplates: [],
+            });
+            return;
+        }
+
+        const loadAssists = async () => {
+            setIsLoadingAssists(true);
+            try {
+                const assists = await getSupplierPartyAssists({
+                    supplierId: selectedSupplierId || undefined,
+                    supplierName,
+                    partyName,
+                });
+                setSupplierPartyAssists(assists);
+            } catch (e) {
+                console.error('Failed to load supplier-party assists', e);
+                setSupplierPartyAssists({
+                    productSuggestions: [],
+                    vehicleSuggestions: [],
+                    recentTemplates: [],
+                });
+            } finally {
+                setIsLoadingAssists(false);
+            }
+        };
+
+        void loadAssists();
+    }, [currentQuestionIndex, formData.buyerName, formData.supplierName, selectedSupplierId]);
 
     useEffect(() => {
         const loadCustomers = async () => {
@@ -796,6 +966,133 @@ const InsuranceIOS = () => {
         void processInput(opt);
     };
 
+    const handleSupplierLookupSubmit = () => {
+        const value = supplierLookupQuery.trim();
+        if (!value) {
+            return;
+        }
+
+        setSelectedSupplierId('');
+        setFormData((prev) => ({
+            ...prev,
+            supplierName: value,
+            supplierAddress: '',
+            placeOfSupply: '',
+        }));
+        void processInput(value);
+    };
+
+    const handleSupplierSelect = (option: LookupDropdownOption) => {
+        const matchedSupplier = verifiedSuppliers.find(
+            (supplier) => supplier.id === option.id,
+        );
+        if (!matchedSupplier) {
+            return;
+        }
+
+        setSupplierLookupQuery(matchedSupplier.name);
+        setSelectedSupplierId(matchedSupplier.id);
+        setFormData((prev) => ({
+            ...prev,
+            supplierName: matchedSupplier.name,
+            supplierAddress: matchedSupplier.address || '',
+            placeOfSupply: matchedSupplier.placeOfSupply || '',
+        }));
+        void processInput(matchedSupplier.name);
+    };
+
+    const handleBuyerLookupSubmit = () => {
+        const value = buyerLookupQuery.trim();
+        if (!value) {
+            return;
+        }
+
+        setFormData((prev) => ({
+            ...prev,
+            buyerName: value,
+            buyerAddress: '',
+        }));
+        void processInput(value);
+    };
+
+    const handleBuyerSelect = (option: LookupDropdownOption) => {
+        const matchedParty = historicalParties.find((party) => party.name === option.id);
+        if (!matchedParty) {
+            return;
+        }
+
+        setBuyerLookupQuery(matchedParty.name);
+        setFormData((prev) => ({
+            ...prev,
+            buyerName: matchedParty.name,
+            buyerAddress: matchedParty.address || '',
+        }));
+        void processInput(matchedParty.name);
+    };
+
+    const applyTemplateToForm = (template: SupplierPartyAssistTemplate) => {
+        const normalizedNotes = String(template.notes || '').trim().toLowerCase();
+        const inferredInvoiceType =
+            normalizedNotes === 'cash' ? 'BUYER_INVOICE' : 'SUPPLIER_INVOICE';
+        setFormData((prev) => ({
+            ...prev,
+            itemName: template.productName || prev.itemName,
+            hsn: template.hsnCode || prev.hsn,
+            quantity: template.quantity || prev.quantity,
+            rate: template.rate || prev.rate,
+            vehicleNumber: template.vehicleNumber || prev.vehicleNumber,
+            ownerName: template.ownerName || prev.ownerName,
+            notes: template.notes || prev.notes,
+            invoiceType: inferredInvoiceType,
+        }));
+    };
+
+    const handleTemplateSelect = (template: SupplierPartyAssistTemplate) => {
+        applyTemplateToForm(template);
+        if (currentQuestion.field === 'itemName' && template.productName) {
+            void processInput(template.productName);
+        }
+    };
+
+    const handleRepeatLatestInvoice = (template: SupplierPartyAssistTemplate) => {
+        applyTemplateToForm(template);
+        setWeightmentSlip(null);
+        setInputValue('');
+        setError('');
+        setCurrentQuestionIndex(
+            questions.findIndex((question) => question.field === 'weightmentSlip'),
+        );
+        setMessages((prev) => [
+            ...prev,
+            {
+                text: `Repeat last invoice loaded from ${template.invoiceNumber}. Upload weighment slip or edit if needed.`,
+                sender: 'bot',
+            },
+        ]);
+    };
+
+    const handleProductSelect = (product: SupplierPartyAssistProduct) => {
+        setFormData((prev) => ({
+            ...prev,
+            itemName: product.name,
+            hsn: product.hsnCode || prev.hsn,
+        }));
+        if (currentQuestion.field === 'itemName') {
+            void processInput(product.name);
+        }
+    };
+
+    const handleVehicleSelect = (vehicle: SupplierPartyAssistVehicle) => {
+        setFormData((prev) => ({
+            ...prev,
+            vehicleNumber: vehicle.vehicleNumber,
+            ownerName: vehicle.ownerName || prev.ownerName,
+        }));
+        if (currentQuestion.field === 'vehicleNumber') {
+            void processInput(vehicle.vehicleNumber);
+        }
+    };
+
     // Click handler for Address Suggestions
     const handleAddressSelect = (address: OSMAddress) => {
         const standardizedAddress = formatOSMAddress(address.address);
@@ -926,10 +1223,47 @@ const InsuranceIOS = () => {
     const currentQuestion = questions[currentQuestionIndex] || questions[questions.length - 1];
     const isFileInput = currentQuestion.type === 'file';
     const isSelectInput = currentQuestion.type === 'select';
+    const isSupplierLookupQuestion = currentQuestion.field === 'supplierName';
+    const isBuyerLookupQuestion = currentQuestion.field === 'buyerName';
+    const showLookupDropdown =
+        (isSupplierLookupQuestion || isBuyerLookupQuestion) && !isSubmitting;
+    const showAssistPanel =
+        ['buyerAddress', 'placeOfSupply', 'itemName', 'vehicleNumber', 'ownerName'].includes(String(currentQuestion.field)) &&
+        !isSubmitting;
     const selectOptions =
         currentQuestion.field === 'customerUserId'
             ? customerAccounts.map((c) => formatCustomerOption(c))
             : currentQuestion.options || [];
+    const supplierLookupOptions: LookupDropdownOption[] = verifiedSuppliers
+        .filter((supplier) => {
+            const needle = supplierLookupQuery.trim().toLowerCase();
+            if (!needle) {
+                return true;
+            }
+
+            return `${supplier.name} ${supplier.mobileNumber}`.toLowerCase().includes(needle);
+        })
+        .map((supplier) => ({
+            id: supplier.id,
+            title: supplier.name,
+            subtitle: supplier.address || 'Address can be added manually',
+            meta: supplier.mobileNumber,
+        }));
+    const buyerLookupOptions: LookupDropdownOption[] = historicalParties
+        .filter((party) => {
+            const needle = buyerLookupQuery.trim().toLowerCase();
+            if (!needle) {
+                return true;
+            }
+
+            return `${party.name} ${party.address}`.toLowerCase().includes(needle);
+        })
+        .map((party) => ({
+            id: party.name,
+            title: party.name,
+            subtitle: party.address || 'Address can be added manually',
+            meta: `${party.invoiceCount} invoice${party.invoiceCount === 1 ? '' : 's'}`,
+        }));
 
     return (
         <div
@@ -1117,6 +1451,71 @@ const InsuranceIOS = () => {
                 <div ref={messagesEndRef} />
             </div>
 
+            {showLookupDropdown ? (
+                <LookupDropdown
+                    label={isSupplierLookupQuestion ? 'Verified suppliers' : 'Historical parties'}
+                    query={isSupplierLookupQuestion ? supplierLookupQuery : buyerLookupQuery}
+                    onQueryChange={
+                        isSupplierLookupQuestion ? setSupplierLookupQuery : setBuyerLookupQuery
+                    }
+                    onQuerySubmit={
+                        isSupplierLookupQuestion
+                            ? handleSupplierLookupSubmit
+                            : handleBuyerLookupSubmit
+                    }
+                    options={
+                        isSupplierLookupQuestion ? supplierLookupOptions : buyerLookupOptions
+                    }
+                    onSelect={
+                        isSupplierLookupQuestion
+                            ? handleSupplierSelect
+                            : handleBuyerSelect
+                    }
+                    loading={
+                        isSupplierLookupQuestion ? isLoadingSuppliers : isLoadingParties
+                    }
+                    errorMessage={
+                        isSupplierLookupQuestion ? supplierLookupError : partyLookupError
+                    }
+                    onRetry={
+                        isSupplierLookupQuestion
+                            ? () => {
+                                void loadVerifiedSuppliers();
+                            }
+                            : undefined
+                    }
+                    emptyMessage={
+                        isSupplierLookupQuestion
+                            ? 'No verified suppliers found'
+                            : 'No historical parties found for this supplier'
+                    }
+                    submitLabel="Use typed value"
+                />
+            ) : null}
+
+            {showAssistPanel ? (
+                <AssistPanel
+                    templates={supplierPartyAssists.recentTemplates}
+                    products={supplierPartyAssists.productSuggestions}
+                    vehicles={supplierPartyAssists.vehicleSuggestions}
+                    loading={isLoadingAssists}
+                    showTemplates={
+                        currentQuestion.field === 'buyerAddress' ||
+                        currentQuestion.field === 'placeOfSupply' ||
+                        currentQuestion.field === 'itemName'
+                    }
+                    showProducts={currentQuestion.field === 'itemName'}
+                    showVehicles={
+                        currentQuestion.field === 'vehicleNumber' ||
+                        currentQuestion.field === 'ownerName'
+                    }
+                    onRepeatLatest={handleRepeatLatestInvoice}
+                    onTemplateSelect={handleTemplateSelect}
+                    onProductSelect={handleProductSelect}
+                    onVehicleSelect={handleVehicleSelect}
+                />
+            ) : null}
+
             {/* Address Suggestions Floating Above Input */}
             {addressSuggestions.length > 0 && (
                 <div className="bg-white border-t border-gray-200 shadow-lg z-20 max-h-40 overflow-y-auto">
@@ -1142,7 +1541,7 @@ const InsuranceIOS = () => {
             )}
 
             {/* INPUT AREA */}
-            {(!isSelectInput || editingMessageIndex !== null) && (
+            {(!isSelectInput || editingMessageIndex !== null) && !showLookupDropdown && (
                 <div
                     className="border-t bg-[#f0f0f0] p-2 flex-none"
                     style={{

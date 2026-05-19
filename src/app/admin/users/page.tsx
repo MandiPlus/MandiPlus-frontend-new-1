@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import { formatDate } from '@/features/admin/utils/format';
 import {
+    AdminCreateUserPayload,
     AdminLedgerUser,
+    AdminUpdateUserPayload,
     AdminWalletStatementItem,
     adminApi,
 } from '@/features/admin/api/admin.api';
@@ -16,6 +18,78 @@ type User = AdminLedgerUser;
 
 type UserSection = 'ALL' | 'CUSTOMER' | 'TRANSPORTER' | 'VERIFIED';
 type AdminViewSection = UserSection | 'ADMIN_REQUESTS';
+
+const indianStates = [
+    { value: 'ANDHRA_PRADESH', label: 'Andhra Pradesh' },
+    { value: 'ARUNACHAL_PRADESH', label: 'Arunachal Pradesh' },
+    { value: 'ASSAM', label: 'Assam' },
+    { value: 'BIHAR', label: 'Bihar' },
+    { value: 'CHHATTISGARH', label: 'Chhattisgarh' },
+    { value: 'GOA', label: 'Goa' },
+    { value: 'GUJARAT', label: 'Gujarat' },
+    { value: 'HARYANA', label: 'Haryana' },
+    { value: 'HIMACHAL_PRADESH', label: 'Himachal Pradesh' },
+    { value: 'JHARKHAND', label: 'Jharkhand' },
+    { value: 'KARNATAKA', label: 'Karnataka' },
+    { value: 'KERALA', label: 'Kerala' },
+    { value: 'MADHYA_PRADESH', label: 'Madhya Pradesh' },
+    { value: 'MAHARASHTRA', label: 'Maharashtra' },
+    { value: 'MANIPUR', label: 'Manipur' },
+    { value: 'MEGHALAYA', label: 'Meghalaya' },
+    { value: 'MIZORAM', label: 'Mizoram' },
+    { value: 'NAGALAND', label: 'Nagaland' },
+    { value: 'ODISHA', label: 'Odisha' },
+    { value: 'PUNJAB', label: 'Punjab' },
+    { value: 'RAJASTHAN', label: 'Rajasthan' },
+    { value: 'SIKKIM', label: 'Sikkim' },
+    { value: 'TAMIL_NADU', label: 'Tamil Nadu' },
+    { value: 'TELANGANA', label: 'Telangana' },
+    { value: 'TRIPURA', label: 'Tripura' },
+    { value: 'UTTAR_PRADESH', label: 'Uttar Pradesh' },
+    { value: 'UTTARAKHAND', label: 'Uttarakhand' },
+    { value: 'WEST_BENGAL', label: 'West Bengal' },
+    { value: 'DELHI', label: 'Delhi' },
+];
+
+const adminCreateIdentityOptions: Array<{
+    value: AdminCreateUserPayload['identity'];
+    label: string;
+}> = [
+    { value: 'BUYER', label: 'Buyer' },
+    { value: 'SUPPLIER', label: 'Supplier' },
+    { value: 'AGENT', label: 'Agent' },
+    { value: 'CUSTOMER', label: 'Customer' },
+    { value: 'TRANSPORTER', label: 'Transporter' },
+];
+
+type AdminCreateUserForm = Omit<AdminCreateUserPayload, 'unionMember'> & {
+    initialWalletAmount: string;
+    verifyAsMaster: boolean;
+    unionMember: boolean;
+};
+
+type AdminEditUserForm = {
+    id: string;
+    name: string;
+    mobileNumber: string;
+    secondaryMobileNumber: string;
+    state: string;
+    identity: AdminCreateUserPayload['identity'];
+    billingType: 'BULK' | 'PER_POLICY';
+    unionMember: boolean;
+};
+
+const emptyCreateUserForm: AdminCreateUserForm = {
+    name: '',
+    mobileNumber: '',
+    secondaryMobileNumber: '',
+    state: '',
+    identity: 'BUYER',
+    billingType: 'BULK',
+    initialWalletAmount: '',
+    verifyAsMaster: false,
+    unionMember: false,
+};
 
 // --- 2. Helper for Mobile Format ---
 const formatIndianMobile = (phone: string | undefined) => {
@@ -91,19 +165,31 @@ export default function UsersPage() {
     const [walletLogsLoading, setWalletLogsLoading] = useState(false);
     const [walletLogUser, setWalletLogUser] = useState<User | null>(null);
     const [walletLogs, setWalletLogs] = useState<AdminWalletStatementItem[]>([]);
+    const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
+    const [createUserLoading, setCreateUserLoading] = useState(false);
+    const [createUserForm, setCreateUserForm] =
+        useState<AdminCreateUserForm>(emptyCreateUserForm);
+    const [editUserModalOpen, setEditUserModalOpen] = useState(false);
+    const [editUserLoading, setEditUserLoading] = useState(false);
+    const [editUserForm, setEditUserForm] = useState<AdminEditUserForm | null>(null);
     const [billingTypeModalUser, setBillingTypeModalUser] = useState<User | null>(null);
     const [mergedUsersModalMaster, setMergedUsersModalMaster] = useState<User | null>(null);
+    const [bulkMergeModalMaster, setBulkMergeModalMaster] = useState<User | null>(null);
+    const [bulkMergeSearchTerm, setBulkMergeSearchTerm] = useState('');
+    const [bulkMergeSelectedUserIds, setBulkMergeSelectedUserIds] = useState<string[]>([]);
+    const [bulkMergeLoading, setBulkMergeLoading] = useState(false);
     const [pendingBillingType, setPendingBillingType] = useState<'BULK' | 'PER_POLICY'>('BULK');
     const [verifyingMasterByUser, setVerifyingMasterByUser] = useState<Record<string, boolean>>({});
     const [unverifyingMasterByUser, setUnverifyingMasterByUser] = useState<Record<string, boolean>>({});
     const [mergingByUser, setMergingByUser] = useState<Record<string, boolean>>({});
     const [unmergingByUser, setUnmergingByUser] = useState<Record<string, boolean>>({});
+    const [updatingUnionByUser, setUpdatingUnionByUser] = useState<Record<string, boolean>>({});
     const [mergeTargetByUser, setMergeTargetByUser] = useState<Record<string, string>>({});
     const ITEMS_PER_PAGE = 10;
     const isVerifiedSection = activeSection === 'VERIFIED';
     const showWalletColumns =
         activeSection === 'CUSTOMER' || activeSection === 'TRANSPORTER';
-    const tableColumnCount = showWalletColumns ? 9 : isVerifiedSection ? 11 : 10;
+    const tableColumnCount = showWalletColumns ? 11 : isVerifiedSection ? 13 : 12;
     const sectionTitle =
         activeSection === 'ADMIN_REQUESTS'
             ? 'Admin Requests'
@@ -165,6 +251,7 @@ export default function UsersPage() {
     const verifiedMasterUsers = allUsers.filter(
         (user) => user.isLedgerMasterVerified && user.id === user.canonicalUserId,
     );
+    const verifiedMasterUserIds = new Set(verifiedMasterUsers.map((user) => user.id));
     const mergedUsersByMasterId = allUsers.reduce((map, user) => {
         if (!user.isMerged || !user.canonicalUserId || user.canonicalUserId === user.id) {
             return map;
@@ -228,6 +315,40 @@ export default function UsersPage() {
         };
     };
 
+    const bulkMergeCandidates = bulkMergeModalMaster
+        ? allUsers
+            .filter((user) => (
+                user.id !== bulkMergeModalMaster.id &&
+                !user.isMerged &&
+                !user.isLedgerMasterVerified &&
+                user.id === user.canonicalUserId &&
+                !verifiedMasterUserIds.has(user.id)
+            ))
+            .filter((user) => {
+                const lowerTerm = bulkMergeSearchTerm.trim().toLowerCase();
+                if (!lowerTerm) return true;
+                return (
+                    (user.name || '').toLowerCase().includes(lowerTerm) ||
+                    (user.mobileNumber || '').toLowerCase().includes(lowerTerm) ||
+                    (user.secondaryMobileNumber || '').toLowerCase().includes(lowerTerm) ||
+                    (user.state || '').toLowerCase().includes(lowerTerm)
+                );
+            })
+            .sort((left, right) => {
+                const leftSuggested = getSuggestedMaster(left)?.user.id === bulkMergeModalMaster.id ? 1 : 0;
+                const rightSuggested = getSuggestedMaster(right)?.user.id === bulkMergeModalMaster.id ? 1 : 0;
+                if (rightSuggested !== leftSuggested) {
+                    return rightSuggested - leftSuggested;
+                }
+                return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+            })
+        : [];
+
+    const allBulkMergeCandidateIds = bulkMergeCandidates.map((user) => user.id);
+    const isAllBulkMergeSelected =
+        allBulkMergeCandidateIds.length > 0 &&
+        allBulkMergeCandidateIds.every((id) => bulkMergeSelectedUserIds.includes(id));
+
     useEffect(() => {
         if (!isAuthenticated) {
             router.push('/admin/login');
@@ -267,7 +388,7 @@ export default function UsersPage() {
             if (activeSection === 'VERIFIED') {
                 return user.isLedgerMasterVerified && user.id === user.canonicalUserId;
             }
-            return true;
+            return !user.isLedgerMasterVerified;
         });
 
         if (!searchTerm) {
@@ -281,11 +402,27 @@ export default function UsersPage() {
             );
             setFilteredUsers(filtered);
         }
-        setCurrentPage(1);
     }, [searchTerm, allUsers, activeSection]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, activeSection]);
 
     // Pagination Logic
     const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
+    useEffect(() => {
+        if (totalPages === 0) {
+            if (currentPage !== 1) {
+                setCurrentPage(1);
+            }
+            return;
+        }
+
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [currentPage, totalPages]);
+
     const paginatedUsers = filteredUsers.slice(
         (currentPage - 1) * ITEMS_PER_PAGE,
         currentPage * ITEMS_PER_PAGE
@@ -432,6 +569,314 @@ export default function UsersPage() {
         const user = billingTypeModalUser;
         setBillingTypeModalUser(null);
         await handleConvertIdentity(user, 'TRANSPORTER', pendingBillingType);
+    };
+
+    const closeCreateUserModal = () => {
+        if (createUserLoading) return;
+        setCreateUserModalOpen(false);
+        setCreateUserForm(emptyCreateUserForm);
+    };
+
+    const openEditUserModal = (user: User) => {
+        setEditUserForm({
+            id: user.id,
+            name: user.name || '',
+            mobileNumber: normalizeAdminMobile(user.mobileNumber),
+            secondaryMobileNumber: normalizeAdminMobile(user.secondaryMobileNumber || ''),
+            state: user.state || '',
+            identity: (user.identity as AdminCreateUserPayload['identity']) || 'BUYER',
+            billingType: user.billingType === 'PER_POLICY' ? 'PER_POLICY' : 'BULK',
+            unionMember: String(user.unionMember || '').toUpperCase() === 'GCA',
+        });
+        setEditUserModalOpen(true);
+    };
+
+    const closeEditUserModal = () => {
+        if (editUserLoading) return;
+        setEditUserModalOpen(false);
+        setEditUserForm(null);
+    };
+
+    const normalizeAdminMobile = (value: string) =>
+        value.replace(/\D/g, '').slice(0, 10);
+
+    const handleCreateUser = async () => {
+        const normalizedMobile = normalizeAdminMobile(createUserForm.mobileNumber);
+        const normalizedSecondaryMobile = normalizeAdminMobile(
+            createUserForm.secondaryMobileNumber || '',
+        );
+        const walletAmountRaw = createUserForm.initialWalletAmount.trim();
+        const initialWalletAmount = walletAmountRaw ? Number(walletAmountRaw) : 0;
+
+        if (!createUserForm.name.trim()) {
+            toast.error('Please enter the user name');
+            return;
+        }
+
+        if (normalizedMobile.length !== 10) {
+            toast.error('Please enter a valid 10-digit mobile number');
+            return;
+        }
+
+        if (!createUserForm.state) {
+            toast.error('Please select the state');
+            return;
+        }
+
+        if (
+            normalizedSecondaryMobile &&
+            normalizedSecondaryMobile.length !== 10
+        ) {
+            toast.error('Secondary mobile number must be 10 digits');
+            return;
+        }
+
+        if (
+            normalizedSecondaryMobile &&
+            normalizedSecondaryMobile === normalizedMobile
+        ) {
+            toast.error('Primary and secondary mobile numbers cannot be the same');
+            return;
+        }
+
+        if (
+            createUserForm.identity === 'CUSTOMER' &&
+            walletAmountRaw &&
+            (!Number.isFinite(initialWalletAmount) || initialWalletAmount < 0)
+        ) {
+            toast.error('Wallet amount must be a valid positive number');
+            return;
+        }
+
+        setCreateUserLoading(true);
+        setError('');
+        try {
+            const payload: AdminCreateUserPayload = {
+                name: createUserForm.name.trim(),
+                mobileNumber: normalizedMobile,
+                state: createUserForm.state,
+                identity: createUserForm.identity,
+                ...(normalizedSecondaryMobile
+                    ? { secondaryMobileNumber: normalizedSecondaryMobile }
+                    : {}),
+                ...(createUserForm.identity === 'TRANSPORTER'
+                    ? { billingType: createUserForm.billingType || 'BULK' }
+                    : {}),
+                unionMember: createUserForm.unionMember ? 'GCA' : null,
+            };
+
+            const response = await adminApi.createUser(payload);
+            if (!response.success || !response.data) {
+                toast.error(response.message || 'Failed to create user');
+                return;
+            }
+
+            const createdUser: User = {
+                ...response.data,
+                id: String(response.data.id || (response.data as any)._id || ''),
+                canonicalUserId: String(
+                    response.data.canonicalUserId ||
+                    response.data.id ||
+                    (response.data as any)._id ||
+                    '',
+                ),
+                isLedgerMasterVerified: Boolean(response.data.isLedgerMasterVerified),
+                duplicateCount: Number(response.data.duplicateCount || 0),
+                aliasNames: Array.isArray(response.data.aliasNames)
+                    ? response.data.aliasNames
+                    : [],
+                aliasPhones: Array.isArray(response.data.aliasPhones)
+                    ? response.data.aliasPhones
+                    : [],
+                walletBalance: Number((response.data as any).walletBalance || 0),
+            };
+
+            if (createUserForm.verifyAsMaster) {
+                const verifyResponse = await adminApi.verifyMasterUser(
+                    createdUser.id,
+                    'Verified during admin user creation',
+                );
+                if (!verifyResponse.success) {
+                    throw new Error(
+                        verifyResponse.message || 'User created but verification failed',
+                    );
+                }
+
+                createdUser.isLedgerMasterVerified = true;
+                createdUser.canonicalUserId = createdUser.id;
+            }
+
+            if (
+                createUserForm.identity === 'CUSTOMER' &&
+                walletAmountRaw &&
+                initialWalletAmount > 0
+            ) {
+                const walletResponse = await adminApi.adjustUserWallet(
+                    createdUser.id,
+                    initialWalletAmount,
+                    'Admin wallet opening balance',
+                );
+
+                if (!walletResponse.success) {
+                    throw new Error(
+                        walletResponse.message || 'User created but wallet credit failed',
+                    );
+                }
+
+                const creditedBalance = Number((walletResponse as any)?.data?.balance);
+                createdUser.walletBalance = Number.isFinite(creditedBalance)
+                    ? Number(creditedBalance.toFixed(2))
+                    : Number(initialWalletAmount.toFixed(2));
+            }
+
+            setAllUsers((prev) =>
+                [createdUser, ...prev].sort(
+                    (a, b) =>
+                        new Date(b.createdAt).getTime() -
+                        new Date(a.createdAt).getTime(),
+                ),
+            );
+            setCreateUserModalOpen(false);
+            setCreateUserForm(emptyCreateUserForm);
+            toast.success('User created successfully. No OTP was required.');
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to create user');
+        } finally {
+            setCreateUserLoading(false);
+        }
+    };
+
+    const handleSaveEditedUser = async () => {
+        if (!editUserForm) return;
+
+        const normalizedMobile = normalizeAdminMobile(editUserForm.mobileNumber);
+        const normalizedSecondaryMobile = normalizeAdminMobile(
+            editUserForm.secondaryMobileNumber || '',
+        );
+
+        if (!editUserForm.name.trim()) {
+            toast.error('Please enter the user name');
+            return;
+        }
+
+        if (normalizedMobile.length !== 10) {
+            toast.error('Please enter a valid 10-digit mobile number');
+            return;
+        }
+
+        if (!editUserForm.state) {
+            toast.error('Please select the state');
+            return;
+        }
+
+        if (
+            normalizedSecondaryMobile &&
+            normalizedSecondaryMobile.length !== 10
+        ) {
+            toast.error('Alternate number must be 10 digits');
+            return;
+        }
+
+        if (
+            normalizedSecondaryMobile &&
+            normalizedSecondaryMobile === normalizedMobile
+        ) {
+            toast.error('Primary and alternate numbers cannot be the same');
+            return;
+        }
+
+        setEditUserLoading(true);
+        try {
+            const payload: AdminUpdateUserPayload = {
+                name: editUserForm.name.trim(),
+                mobileNumber: normalizedMobile,
+                state: editUserForm.state,
+                identity: editUserForm.identity,
+                secondaryMobileNumber: normalizedSecondaryMobile || undefined,
+                billingType:
+                    editUserForm.identity === 'TRANSPORTER'
+                        ? editUserForm.billingType
+                        : null,
+                unionMember: editUserForm.unionMember ? 'GCA' : null,
+            };
+
+            const response = await adminApi.updateUser(editUserForm.id, payload);
+            if (!response.success || !response.data) {
+                toast.error(response.message || 'Failed to update user');
+                return;
+            }
+            const updatedData = response.data;
+
+            setAllUsers((prev) =>
+                prev.map((user) =>
+                    user.id === editUserForm.id
+                        ? {
+                            ...user,
+                            ...updatedData,
+                            id: String(updatedData.id || user.id),
+                            canonicalUserId: String(
+                                updatedData.canonicalUserId || user.canonicalUserId || user.id,
+                            ),
+                            secondaryMobileNumber:
+                                updatedData.secondaryMobileNumber ?? null,
+                            aliasNames: Array.isArray(updatedData.aliasNames)
+                                ? updatedData.aliasNames
+                                : user.aliasNames,
+                            aliasPhones: Array.isArray(updatedData.aliasPhones)
+                                ? updatedData.aliasPhones
+                                : user.aliasPhones,
+                        }
+                        : user,
+                ),
+            );
+
+            closeEditUserModal();
+            toast.success('User details updated successfully');
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to update user');
+        } finally {
+            setEditUserLoading(false);
+        }
+    };
+
+    const handleToggleUnionMember = async (user: User, checked: boolean) => {
+        setUpdatingUnionByUser((prev) => ({ ...prev, [user.id]: true }));
+        try {
+            const response = await adminApi.updateUser(user.id, {
+                unionMember: checked ? 'GCA' : null,
+            });
+
+            if (!response.success || !response.data) {
+                toast.error(response.message || 'Failed to update GCA membership');
+                return;
+            }
+
+            const updatedData = response.data;
+
+            setAllUsers((prev) =>
+                prev.map((currentUser) =>
+                    currentUser.id === user.id
+                        ? {
+                            ...currentUser,
+                            ...updatedData,
+                            unionMember: updatedData.unionMember ?? null,
+                        }
+                        : currentUser,
+                ),
+            );
+
+            if (editUserForm?.id === user.id) {
+                setEditUserForm((prev) =>
+                    prev ? { ...prev, unionMember: checked } : prev,
+                );
+            }
+
+            toast.success(checked ? 'Marked as GCA member' : 'Removed GCA membership');
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to update GCA membership');
+        } finally {
+            setUpdatingUnionByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
     };
 
     const handleOpenWalletLogs = async (user: User) => {
@@ -603,6 +1048,91 @@ export default function UsersPage() {
         }
     };
 
+    const openBulkMergeModal = (masterUser: User) => {
+        setBulkMergeModalMaster(masterUser);
+        setBulkMergeSearchTerm('');
+        setBulkMergeSelectedUserIds([]);
+    };
+
+    const resetBulkMergeModalState = () => {
+        setBulkMergeModalMaster(null);
+        setBulkMergeSearchTerm('');
+        setBulkMergeSelectedUserIds([]);
+    };
+
+    const closeBulkMergeModal = () => {
+        if (bulkMergeLoading) return;
+        resetBulkMergeModalState();
+    };
+
+    const toggleBulkMergeSelection = (userId: string) => {
+        setBulkMergeSelectedUserIds((prev) =>
+            prev.includes(userId)
+                ? prev.filter((id) => id !== userId)
+                : [...prev, userId],
+        );
+    };
+
+    const toggleSelectAllBulkMergeCandidates = () => {
+        if (allBulkMergeCandidateIds.length === 0) {
+            return;
+        }
+
+        setBulkMergeSelectedUserIds((prev) => {
+            if (isAllBulkMergeSelected) {
+                return prev.filter((id) => !allBulkMergeCandidateIds.includes(id));
+            }
+
+            return Array.from(new Set([...prev, ...allBulkMergeCandidateIds]));
+        });
+    };
+
+    const handleBulkMerge = async () => {
+        if (!bulkMergeModalMaster?.id) {
+            toast.error('Verified master user not found');
+            return;
+        }
+
+        if (bulkMergeSelectedUserIds.length === 0) {
+            toast.error('Please select at least one user to merge');
+            return;
+        }
+
+        setBulkMergeLoading(true);
+        try {
+            let mergedCount = 0;
+
+            for (const sourceUserId of bulkMergeSelectedUserIds) {
+                const sourceUser = allUsers.find((user) => user.id === sourceUserId);
+                const response = await adminApi.mergeUsers({
+                    sourceUserId,
+                    targetUserId: bulkMergeModalMaster.id,
+                    reason: 'Bulk merge into verified master user',
+                    notes: `Merged ${sourceUser?.name || sourceUserId} into verified master ${bulkMergeModalMaster.name || bulkMergeModalMaster.id} from verified users modal`,
+                });
+
+                if (!response.success) {
+                    throw new Error(
+                        response.message ||
+                            `Failed to merge ${sourceUser?.name || 'selected user'}`,
+                    );
+                }
+
+                mergedCount += 1;
+            }
+
+            await loadAdminUsers();
+            toast.success(
+                `${mergedCount} user${mergedCount === 1 ? '' : 's'} merged into ${bulkMergeModalMaster.name || 'verified master'}`,
+            );
+            resetBulkMergeModalState();
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to merge selected users');
+        } finally {
+            setBulkMergeLoading(false);
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex justify-center items-center h-64">
@@ -614,16 +1144,24 @@ export default function UsersPage() {
     return (
         <div className="py-6">
             <div className="w-full max-w-none px-4 sm:px-6 lg:px-8">
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <h1 className="text-2xl font-semibold text-gray-900">{sectionTitle}</h1>
-                    <div className="mt-4 md:mt-0">
+                    <div className="flex flex-row items-center gap-3 md:justify-end">
                         <input
                             type="text"
                             placeholder={`Search ${sectionTitle.toLowerCase()} by Name or Mobile...`}
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm px-4 py-2 border"
+                            className="block min-w-0 flex-1 rounded-md border-gray-300 px-4 py-2 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm md:min-w-[320px] md:max-w-[420px] border"
                         />
+                        {activeSection !== 'ADMIN_REQUESTS' ? (
+                            <button
+                                onClick={() => setCreateUserModalOpen(true)}
+                                className="whitespace-nowrap rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-700"
+                            >
+                                Create User
+                            </button>
+                        ) : null}
                     </div>
                 </div>
 
@@ -692,11 +1230,12 @@ export default function UsersPage() {
                     <AdminAccountApprovals searchTerm={searchTerm} />
                 ) : (
                 <div className="mt-8 flex flex-col">
-                    <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
-                        <div className="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
+                    <div className="-mx-4 sm:-mx-6 lg:-mx-8">
+                        <div className="px-4 sm:px-6 lg:px-8">
                             <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                                <div className="h-[calc(100vh-255px)] overflow-auto">
                                 <table className="min-w-full divide-y divide-gray-300">
-                                    <thead className="bg-gray-50">
+                                    <thead className="sticky top-0 z-10 bg-gray-50">
                                         <tr>
                                             {/* 1. Name */}
                                             <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
@@ -705,6 +1244,9 @@ export default function UsersPage() {
                                             {/* 2. Mobile Number */}
                                             <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                 Mobile Number
+                                            </th>
+                                            <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                Alternate Number
                                             </th>
                                             {/* 3. State */}
                                             <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
@@ -740,9 +1282,12 @@ export default function UsersPage() {
                                                 </th>
                                             )}
                                             <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                GCA Member
+                                            </th>
+                                            <th scope="col" className="px-2 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                 Verify Master
                                             </th>
-                                            <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                            <th scope="col" className="px-2 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                 Merge Into Master
                                             </th>
                                             {isVerifiedSection && (
@@ -799,6 +1344,11 @@ export default function UsersPage() {
                                                     {/* Mobile Number */}
                                                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                         {formatIndianMobile(user.mobileNumber)}
+                                                    </td>
+                                                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                                        {user.secondaryMobileNumber
+                                                            ? formatIndianMobile(user.secondaryMobileNumber)
+                                                            : 'N/A'}
                                                     </td>
                                                     {/* State */}
                                                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
@@ -935,11 +1485,62 @@ export default function UsersPage() {
                                                             )}
                                                         </td>
                                                     )}
-                                                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 align-top">
+                                                        {(() => {
+                                                            const isGcaMember =
+                                                                String(user.unionMember || '').toUpperCase() === 'GCA';
+                                                            const isUpdating = Boolean(updatingUnionByUser[user.id]);
+
+                                                            return (
+                                                                <div className="inline-flex items-center gap-2">
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled={isUpdating || isGcaMember}
+                                                                        onClick={() => handleToggleUnionMember(user, true)}
+                                                                        title="Mark as GCA member"
+                                                                        className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-sm font-bold transition-colors ${
+                                                                            isGcaMember
+                                                                                ? 'cursor-not-allowed border-emerald-200 bg-emerald-500 text-white'
+                                                                                : 'border-slate-300 bg-white text-emerald-600 hover:border-emerald-300 hover:bg-emerald-50'
+                                                                        } disabled:opacity-60`}
+                                                                    >
+                                                                        ✓
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled={isUpdating || !isGcaMember}
+                                                                        onClick={() => handleToggleUnionMember(user, false)}
+                                                                        title="Remove GCA membership"
+                                                                        className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-sm font-bold transition-colors ${
+                                                                            isGcaMember
+                                                                                ? 'border-slate-300 bg-white text-rose-600 hover:border-rose-300 hover:bg-rose-50'
+                                                                                : 'cursor-not-allowed border-rose-200 bg-rose-500 text-white'
+                                                                        } disabled:opacity-60`}
+                                                                    >
+                                                                        ✕
+                                                                    </button>
+                                                                    <span
+                                                                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                                                            isGcaMember
+                                                                                ? 'bg-emerald-50 text-emerald-700'
+                                                                                : 'bg-slate-100 text-slate-500'
+                                                                        }`}
+                                                                    >
+                                                                        {isUpdating
+                                                                            ? 'Saving...'
+                                                                            : isGcaMember
+                                                                                ? 'GCA'
+                                                                                : 'Not set'}
+                                                                    </span>
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                    </td>
+                                                    <td className="whitespace-nowrap px-2 py-4 text-sm text-gray-500 align-top">
                                                         {user.isMerged ? (
                                                             <span className="text-xs font-medium text-slate-500">Merged child</span>
                                                         ) : user.isLedgerMasterVerified ? (
-                                                            <div className="flex min-w-[12rem] items-center gap-2">
+                                                            <div className="flex items-center gap-2">
                                                                 <span className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
                                                                     <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-[11px] font-bold text-white">✓</span>
                                                                     Verified
@@ -969,9 +1570,9 @@ export default function UsersPage() {
                                                             </button>
                                                         )}
                                                     </td>
-                                                    <td className="px-3 py-4 text-sm text-gray-500">
+                                                    <td className="px-2 py-4 text-sm text-gray-500 align-top">
                                                         {user.isMerged ? (
-                                                            <div className="min-w-[18rem]">
+                                                            <div className="min-w-[14rem]">
                                                                 <p className="mb-2 text-xs font-medium text-rose-600">
                                                                     Linked to {user.canonicalMasterName || 'master user'}.
                                                                 </p>
@@ -984,9 +1585,19 @@ export default function UsersPage() {
                                                                 </button>
                                                             </div>
                                                         ) : user.isLedgerMasterVerified ? (
-                                                            <span className="text-xs font-medium text-slate-500">Master user</span>
+                                                            <div className="min-w-[12rem]">
+                                                                <p className="mb-2 text-xs font-medium text-slate-500">
+                                                                    Master user
+                                                                </p>
+                                                                <button
+                                                                    onClick={() => openBulkMergeModal(user)}
+                                                                    className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
+                                                                >
+                                                                    Merge Users
+                                                                </button>
+                                                            </div>
                                                         ) : (
-                                                            <div className="min-w-[18rem]">
+                                                            <div className="min-w-[14rem]">
                                                                 {suggestedMaster ? (
                                                                     <p className="mb-2 text-xs font-medium text-amber-700">
                                                                         Suggested: {suggestedMaster.user.name || 'Master user'} ({suggestedMaster.score}) - {suggestedMaster.reason}
@@ -1005,7 +1616,7 @@ export default function UsersPage() {
                                                                             [user.id]: e.target.value,
                                                                         }))
                                                                     }
-                                                                    className="w-44 rounded-md border border-gray-300 px-2 py-1 text-xs"
+                                                                    className="w-32 rounded-md border border-gray-300 px-2 py-1 text-xs"
                                                                 >
                                                                     <option value="">Select verified user</option>
                                                                     {verifiedMasterUsers
@@ -1045,19 +1656,28 @@ export default function UsersPage() {
                                                         </td>
                                                     )}
                                                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                                                        <button
-                                                            onClick={() => handleImpersonateUser(user)}
-                                                            disabled={impersonatingByUser[user.id]}
-                                                            className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-                                                        >
-                                                            {impersonatingByUser[user.id] ? 'Opening...' : 'Access Account'}
-                                                        </button>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                onClick={() => openEditUserModal(user)}
+                                                                className="rounded-md bg-slate-600 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-700"
+                                                            >
+                                                                Edit
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleImpersonateUser(user)}
+                                                                disabled={impersonatingByUser[user.id]}
+                                                                className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                                                            >
+                                                                {impersonatingByUser[user.id] ? 'Opening...' : 'Access Account'}
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             )})
                                         )}
                                     </tbody>
                                 </table>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1262,6 +1882,569 @@ export default function UsersPage() {
                                     </tbody>
                                 </table>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {bulkMergeModalMaster && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <div className="w-full max-w-5xl rounded-xl bg-white shadow-2xl">
+                        <div className="flex items-center justify-between border-b px-5 py-4">
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-900">Merge Into Master</h3>
+                                <p className="text-xs text-gray-500">
+                                    {bulkMergeModalMaster.name || 'Verified user'} ({formatIndianMobile(bulkMergeModalMaster.mobileNumber)})
+                                </p>
+                            </div>
+                            <button
+                                onClick={closeBulkMergeModal}
+                                disabled={bulkMergeLoading}
+                                className="rounded-md border px-3 py-1 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        <div className="border-b px-5 py-4">
+                            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                <input
+                                    type="text"
+                                    placeholder="Search users by name, mobile, alternate number, or state"
+                                    value={bulkMergeSearchTerm}
+                                    onChange={(e) => setBulkMergeSearchTerm(e.target.value)}
+                                    className="w-full rounded-md border border-gray-300 px-4 py-2 text-sm md:max-w-md"
+                                />
+                                <div className="flex items-center gap-3">
+                                    <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+                                        <input
+                                            type="checkbox"
+                                            checked={isAllBulkMergeSelected}
+                                            onChange={toggleSelectAllBulkMergeCandidates}
+                                            className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                        />
+                                        Select all
+                                    </label>
+                                    <span className="text-sm text-gray-500">
+                                        {bulkMergeSelectedUserIds.length} selected
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="max-h-[60vh] overflow-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="sticky top-0 bg-gray-50">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Select</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Name</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Mobile</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Alternate</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">State</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Identity</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Suggestion</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100 bg-white">
+                                    {bulkMergeCandidates.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
+                                                No mergeable users found for this search.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        bulkMergeCandidates.map((candidate) => {
+                                            const suggestedMaster = getSuggestedMaster(candidate);
+                                            const isSuggestedForThisMaster =
+                                                suggestedMaster?.user.id === bulkMergeModalMaster.id;
+
+                                            return (
+                                                <tr key={candidate.id}>
+                                                    <td className="px-4 py-3 text-sm text-gray-700">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={bulkMergeSelectedUserIds.includes(candidate.id)}
+                                                            onChange={() => toggleBulkMergeSelection(candidate.id)}
+                                                            className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                                        />
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                                                        {candidate.name || 'N/A'}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm text-gray-600">
+                                                        {formatIndianMobile(candidate.mobileNumber)}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm text-gray-600">
+                                                        {candidate.secondaryMobileNumber
+                                                            ? formatIndianMobile(candidate.secondaryMobileNumber)
+                                                            : 'N/A'}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm text-gray-600">
+                                                        {candidate.state || 'N/A'}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm text-gray-600">
+                                                        {candidate.identity || 'N/A'}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm text-gray-600">
+                                                        {isSuggestedForThisMaster ? (
+                                                            <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700">
+                                                                Suggested match
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-xs text-gray-400">Manual selection</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="flex items-center justify-between border-t px-5 py-4">
+                            <p className="text-sm text-gray-500">
+                                Selected users will be merged into this verified master user.
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={closeBulkMergeModal}
+                                    disabled={bulkMergeLoading}
+                                    className="rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleBulkMerge}
+                                    disabled={bulkMergeLoading || bulkMergeSelectedUserIds.length === 0}
+                                    className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                                >
+                                    {bulkMergeLoading
+                                        ? 'Merging...'
+                                        : `Merge Selected (${bulkMergeSelectedUserIds.length})`}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {createUserModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl">
+                        <div className="border-b px-5 py-4">
+                            <h3 className="text-lg font-semibold text-gray-900">Create User</h3>
+                            <p className="mt-1 text-sm text-gray-500">
+                                Admin can create a user directly from this screen. OTP verification is not required.
+                            </p>
+                        </div>
+
+                        <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
+                            <div className="sm:col-span-2">
+                                <label className="mb-1 block text-sm font-medium text-gray-700">Full Name</label>
+                                <input
+                                    type="text"
+                                    value={createUserForm.name}
+                                    onChange={(e) =>
+                                        setCreateUserForm((prev) => ({ ...prev, name: e.target.value }))
+                                    }
+                                    placeholder="Enter full name"
+                                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="mb-1 block text-sm font-medium text-gray-700">Mobile Number</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength={10}
+                                    value={createUserForm.mobileNumber}
+                                    onChange={(e) =>
+                                        setCreateUserForm((prev) => ({
+                                            ...prev,
+                                            mobileNumber: normalizeAdminMobile(e.target.value),
+                                        }))
+                                    }
+                                    placeholder="10-digit mobile number"
+                                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="mb-1 block text-sm font-medium text-gray-700">Secondary Mobile</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength={10}
+                                    value={createUserForm.secondaryMobileNumber || ''}
+                                    onChange={(e) =>
+                                        setCreateUserForm((prev) => ({
+                                            ...prev,
+                                            secondaryMobileNumber: normalizeAdminMobile(e.target.value),
+                                        }))
+                                    }
+                                    placeholder="Optional"
+                                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="mb-1 block text-sm font-medium text-gray-700">State</label>
+                                <select
+                                    value={createUserForm.state}
+                                    onChange={(e) =>
+                                        setCreateUserForm((prev) => ({ ...prev, state: e.target.value }))
+                                    }
+                                    className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                >
+                                    <option value="">Select state</option>
+                                    {indianStates.map((state) => (
+                                        <option key={state.value} value={state.value}>
+                                            {state.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="mb-1 block text-sm font-medium text-gray-700">Identity</label>
+                                <select
+                                    value={createUserForm.identity}
+                                    onChange={(e) =>
+                                        setCreateUserForm((prev) => ({
+                                            ...prev,
+                                            identity: e.target.value as AdminCreateUserPayload['identity'],
+                                            billingType:
+                                                e.target.value === 'TRANSPORTER'
+                                                    ? prev.billingType || 'BULK'
+                                                    : 'BULK',
+                                            initialWalletAmount:
+                                                e.target.value === 'CUSTOMER'
+                                                    ? prev.initialWalletAmount
+                                                    : '',
+                                        }))
+                                    }
+                                    className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                >
+                                    {adminCreateIdentityOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {createUserForm.identity === 'TRANSPORTER' ? (
+                                <div className="sm:col-span-2">
+                                    <label className="mb-1 block text-sm font-medium text-gray-700">Billing Type</label>
+                                    <div className="flex flex-wrap gap-3">
+                                        <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-gray-700">
+                                            <input
+                                                type="radio"
+                                                name="createUserBillingType"
+                                                checked={createUserForm.billingType !== 'PER_POLICY'}
+                                                onChange={() =>
+                                                    setCreateUserForm((prev) => ({
+                                                        ...prev,
+                                                        billingType: 'BULK',
+                                                    }))
+                                                }
+                                            />
+                                            <span>Bulk</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-gray-700">
+                                            <input
+                                                type="radio"
+                                                name="createUserBillingType"
+                                                checked={createUserForm.billingType === 'PER_POLICY'}
+                                                onChange={() =>
+                                                    setCreateUserForm((prev) => ({
+                                                        ...prev,
+                                                        billingType: 'PER_POLICY',
+                                                    }))
+                                                }
+                                            />
+                                            <span>Per Policy</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            {createUserForm.identity === 'CUSTOMER' ? (
+                                <div className="sm:col-span-2">
+                                    <label className="mb-1 block text-sm font-medium text-gray-700">
+                                        Add Money In Wallet
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={createUserForm.initialWalletAmount}
+                                        onChange={(e) =>
+                                            setCreateUserForm((prev) => ({
+                                                ...prev,
+                                                initialWalletAmount: e.target.value,
+                                            }))
+                                        }
+                                        placeholder="Optional opening balance"
+                                        className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                    />
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        Optional. If entered, this amount will be credited to the customer's wallet after creation.
+                                    </p>
+                                </div>
+                            ) : null}
+
+                            <div className="sm:col-span-2">
+                                <label className="flex items-start gap-3 rounded-md border px-4 py-3 text-sm text-gray-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={createUserForm.unionMember}
+                                        onChange={(e) =>
+                                            setCreateUserForm((prev) => ({
+                                                ...prev,
+                                                unionMember: e.target.checked,
+                                            }))
+                                        }
+                                        className="mt-1"
+                                    />
+                                    <div>
+                                        <p className="font-medium text-gray-900">Mark as GCA member</p>
+                                        <p className="text-xs text-gray-500">
+                                            This will save <span className="font-medium">GCA</span> in the user's <span className="font-mono">union_member</span> column.
+                                        </p>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <div className="sm:col-span-2">
+                                <label className="flex items-start gap-3 rounded-md border px-4 py-3 text-sm text-gray-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={createUserForm.verifyAsMaster}
+                                        onChange={(e) =>
+                                            setCreateUserForm((prev) => ({
+                                                ...prev,
+                                                verifyAsMaster: e.target.checked,
+                                            }))
+                                        }
+                                        className="mt-1"
+                                    />
+                                    <div>
+                                        <p className="font-medium text-gray-900">Verify user</p>
+                                        <p className="text-xs text-gray-500">
+                                            The newly created user will be added as a verified user and will show the blue tick.
+                                        </p>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3 border-t px-5 py-4">
+                            <button
+                                onClick={closeCreateUserModal}
+                                disabled={createUserLoading}
+                                className="rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleCreateUser}
+                                disabled={createUserLoading}
+                                className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-60"
+                            >
+                                {createUserLoading ? 'Creating...' : 'Create User'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {editUserModalOpen && editUserForm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl">
+                        <div className="border-b px-5 py-4">
+                            <h3 className="text-lg font-semibold text-gray-900">Edit User Details</h3>
+                            <p className="mt-1 text-sm text-gray-500">
+                                Update name, role, mobile number, alternate number, and state from the dashboard.
+                            </p>
+                        </div>
+
+                        <div className="grid gap-4 px-5 py-4 sm:grid-cols-2">
+                            <div className="sm:col-span-2">
+                                <label className="mb-1 block text-sm font-medium text-gray-700">Full Name</label>
+                                <input
+                                    type="text"
+                                    value={editUserForm.name}
+                                    onChange={(e) =>
+                                        setEditUserForm((prev) => (
+                                            prev ? { ...prev, name: e.target.value } : prev
+                                        ))
+                                    }
+                                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="mb-1 block text-sm font-medium text-gray-700">Mobile Number</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength={10}
+                                    value={editUserForm.mobileNumber}
+                                    onChange={(e) =>
+                                        setEditUserForm((prev) => (
+                                            prev
+                                                ? { ...prev, mobileNumber: normalizeAdminMobile(e.target.value) }
+                                                : prev
+                                        ))
+                                    }
+                                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="mb-1 block text-sm font-medium text-gray-700">Alternate Number</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength={10}
+                                    value={editUserForm.secondaryMobileNumber}
+                                    onChange={(e) =>
+                                        setEditUserForm((prev) => (
+                                            prev
+                                                ? {
+                                                    ...prev,
+                                                    secondaryMobileNumber: normalizeAdminMobile(e.target.value),
+                                                }
+                                                : prev
+                                        ))
+                                    }
+                                    placeholder="Optional"
+                                    className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="mb-1 block text-sm font-medium text-gray-700">State</label>
+                                <select
+                                    value={editUserForm.state}
+                                    onChange={(e) =>
+                                        setEditUserForm((prev) => (
+                                            prev ? { ...prev, state: e.target.value } : prev
+                                        ))
+                                    }
+                                    className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                >
+                                    <option value="">Select state</option>
+                                    {indianStates.map((state) => (
+                                        <option key={state.value} value={state.value}>
+                                            {state.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="mb-1 block text-sm font-medium text-gray-700">Identity</label>
+                                <select
+                                    value={editUserForm.identity}
+                                    onChange={(e) =>
+                                        setEditUserForm((prev) => (
+                                            prev
+                                                ? {
+                                                    ...prev,
+                                                    identity: e.target.value as AdminCreateUserPayload['identity'],
+                                                    billingType:
+                                                        e.target.value === 'TRANSPORTER'
+                                                            ? prev.billingType || 'BULK'
+                                                            : 'BULK',
+                                                }
+                                                : prev
+                                        ))
+                                    }
+                                    className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                >
+                                    {adminCreateIdentityOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {editUserForm.identity === 'TRANSPORTER' ? (
+                                <div className="sm:col-span-2">
+                                    <label className="mb-1 block text-sm font-medium text-gray-700">Billing Type</label>
+                                    <div className="flex flex-wrap gap-3">
+                                        <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-gray-700">
+                                            <input
+                                                type="radio"
+                                                name="editUserBillingType"
+                                                checked={editUserForm.billingType !== 'PER_POLICY'}
+                                                onChange={() =>
+                                                    setEditUserForm((prev) => (
+                                                        prev ? { ...prev, billingType: 'BULK' } : prev
+                                                    ))
+                                                }
+                                            />
+                                            <span>Bulk</span>
+                                        </label>
+                                        <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-gray-700">
+                                            <input
+                                                type="radio"
+                                                name="editUserBillingType"
+                                                checked={editUserForm.billingType === 'PER_POLICY'}
+                                                onChange={() =>
+                                                    setEditUserForm((prev) => (
+                                                        prev ? { ...prev, billingType: 'PER_POLICY' } : prev
+                                                    ))
+                                                }
+                                            />
+                                            <span>Per Policy</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            <div className="sm:col-span-2">
+                                <label className="flex items-start gap-3 rounded-md border px-4 py-3 text-sm text-gray-700">
+                                    <input
+                                        type="checkbox"
+                                        checked={editUserForm.unionMember}
+                                        onChange={(e) =>
+                                            setEditUserForm((prev) => (
+                                                prev ? { ...prev, unionMember: e.target.checked } : prev
+                                            ))
+                                        }
+                                        className="mt-1"
+                                    />
+                                    <div>
+                                        <p className="font-medium text-gray-900">Mark as GCA member</p>
+                                        <p className="text-xs text-gray-500">
+                                            This updates the user's <span className="font-mono">union_member</span> value to <span className="font-medium">GCA</span>.
+                                        </p>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3 border-t px-5 py-4">
+                            <button
+                                onClick={closeEditUserModal}
+                                disabled={editUserLoading}
+                                className="rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSaveEditedUser}
+                                disabled={editUserLoading}
+                                className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-60"
+                            >
+                                {editUserLoading ? 'Saving...' : 'Save Changes'}
+                            </button>
                         </div>
                     </div>
                 </div>

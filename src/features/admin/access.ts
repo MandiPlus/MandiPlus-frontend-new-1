@@ -9,6 +9,7 @@ import {
   PencilSquareIcon,
   BanknotesIcon,
   CreditCardIcon,
+  DocumentTextIcon,
   MapPinIcon,
   ChatBubbleLeftRightIcon,
   DocumentChartBarIcon,
@@ -18,6 +19,7 @@ import {
 export const ADMIN_SECTIONS = [
   'dashboard',
   'users',
+  'ledger',
   'insurance-forms',
   'claims',
   'tracking',
@@ -52,6 +54,7 @@ export const ADMIN_NAV_ITEMS: Array<{
 }> = [
   { name: 'Dashboard', href: '/admin/dashboard', icon: HomeIcon, section: 'dashboard' },
   { name: 'Users', href: '/admin/users', icon: UsersIcon, section: 'users' },
+  { name: 'Ledger', href: '/admin/ledger', icon: DocumentTextIcon, section: 'ledger' },
   { name: 'Invoice / Insurance Forms', href: '/admin/insurance-forms', icon: FolderIcon, section: 'insurance-forms' },
   { name: 'Claim Requests', href: '/admin/claims', icon: ClipboardDocumentListIcon, section: 'claims' },
   { name: 'Tracking', href: '/admin/tracking', icon: MapPinIcon, section: 'tracking' },
@@ -67,6 +70,7 @@ export const ADMIN_NAV_ITEMS: Array<{
 export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/dashboard': 'dashboard',
   '/admin/users': 'users',
+  '/admin/ledger': 'ledger',
   '/admin/insurance-forms': 'insurance-forms',
   '/admin/claims': 'claims',
   '/admin/tracking': 'tracking',
