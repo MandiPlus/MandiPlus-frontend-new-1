@@ -76,6 +76,7 @@ export interface AdminMasterLedgerRow {
   invoiceId: string;
   invoiceNumber: string;
   invoiceDate: string | null;
+  insuredPersonName?: string | null;
   sourceUserId: string | null;
   sourceUserName: string | null;
   sourceUserMobile: string | null;
@@ -1000,6 +1001,37 @@ class AdminApi {
         message:
           error.response?.data?.message ||
           'Failed to fetch master user ledger',
+        error: error.message,
+      };
+    }
+  };
+
+  public updateLedgerPaymentStatus = async (payload: {
+    invoiceIds: string[];
+    paymentStatus: 'PAID' | 'PENDING';
+    remarks: string;
+  }): Promise<ApiResponse<{ updatedCount: number }>> => {
+    try {
+      const response = await this.client.post<ApiResponse<{ updatedCount: number }>>(
+        '/users/admin/ledger/payment-status',
+        payload,
+      );
+      const data = response.data as any;
+
+      if (data && typeof data === 'object' && 'success' in data) {
+        return data;
+      }
+
+      return {
+        success: true,
+        data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          'Failed to update ledger payment status',
         error: error.message,
       };
     }

@@ -286,6 +286,7 @@ export default function AdminInsurancePaymentsPage() {
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
         productName: productName || undefined,
+        searchQuery: nameQuery.trim() || undefined,
         page,
         limit: FETCH_LIMIT,
       });
@@ -301,7 +302,7 @@ export default function AdminInsurancePaymentsPage() {
     } while (page <= pages);
 
     return collected;
-  }, [fromDate, toDate, paymentStatus, productName]);
+  }, [fromDate, toDate, paymentStatus, productName, nameQuery]);
 
   const fetchRowsForProductOptions = useCallback(async () => {
     const collected: InsurancePaymentRow[] = [];
@@ -358,13 +359,8 @@ export default function AdminInsurancePaymentsPage() {
   }, [isAuthenticated, router, fetchRows]);
 
   const filteredRows = useMemo(() => {
-    const query = nameQuery.trim().toLowerCase();
-    if (!query) return rows;
-    return rows.filter((row) => {
-      const haystack = `${row.buyer || ''} ${row.insuredPerson || ''} ${row.supplier || ''} ${row.invoiceNumber || ''}`.toLowerCase();
-      return haystack.includes(query);
-    });
-  }, [rows, nameQuery]);
+    return rows;
+  }, [rows]);
 
   const productOptions = useMemo(() => {
     return [

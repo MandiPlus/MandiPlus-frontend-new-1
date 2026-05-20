@@ -1848,6 +1848,7 @@ export default function UsersPage() {
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">State</th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Registered</th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Access</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100 bg-white">
@@ -1875,6 +1876,15 @@ export default function UsersPage() {
                                                         className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
                                                     >
                                                         {impersonatingByUser[mergedUser.id] ? 'Opening...' : 'Access Account'}
+                                                    </button>
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-600">
+                                                    <button
+                                                        onClick={() => handleUnmergeUser(mergedUser)}
+                                                        disabled={unmergingByUser[mergedUser.id]}
+                                                        className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                                                    >
+                                                        {unmergingByUser[mergedUser.id] ? 'Unmerging...' : 'Unmerge'}
                                                     </button>
                                                 </td>
                                             </tr>
