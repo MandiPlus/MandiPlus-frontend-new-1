@@ -93,13 +93,50 @@ function LedgerLoadingOverlay({ label }: { label: string }) {
   );
 }
 
-function LedgerDetailTable({ rows }: { rows: AdminMasterLedgerRow[] }) {
+function LedgerDetailTable({
+  rows,
+  selectedInvoiceIds,
+  onToggleRow,
+  onToggleAll,
+}: {
+  rows: AdminMasterLedgerRow[];
+  selectedInvoiceIds?: Set<string>;
+  onToggleRow?: (invoiceId: string, checked: boolean) => void;
+  onToggleAll?: (checked: boolean) => void;
+}) {
+  const selectable = Boolean(selectedInvoiceIds && onToggleRow && onToggleAll);
+  const allVisibleSelected =
+    selectable &&
+    rows.length > 0 &&
+    rows.every((row) => selectedInvoiceIds?.has(row.invoiceId));
+  const someVisibleSelected =
+    selectable && rows.some((row) => selectedInvoiceIds?.has(row.invoiceId));
+
   return (
-    <table className="min-w-[1500px] divide-y divide-slate-200 text-sm">
+    <table className="min-w-[1650px] divide-y divide-slate-200 text-sm">
       <thead className="sticky top-0 z-10 bg-slate-50">
         <tr>
+          {selectable ? (
+            <th className="w-12 px-4 py-3 text-left font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                checked={Boolean(allVisibleSelected)}
+                ref={(input) => {
+                  if (input) {
+                    input.indeterminate = Boolean(
+                      someVisibleSelected && !allVisibleSelected,
+                    );
+                  }
+                }}
+                onChange={(event) => onToggleAll?.(event.target.checked)}
+                aria-label="Select all visible ledger rows"
+                className="h-4 w-4 rounded border-slate-300 text-sky-600"
+              />
+            </th>
+          ) : null}
           <th className="px-4 py-3 text-left font-semibold text-slate-700">Invoice Number</th>
           <th className="px-4 py-3 text-left font-semibold text-slate-700">Invoice Date</th>
+          <th className="px-4 py-3 text-left font-semibold text-slate-700">Insured Person</th>
           <th className="px-4 py-3 text-right font-semibold text-slate-700">Premium Amount</th>
           <th className="px-4 py-3 text-right font-semibold text-slate-700">Paid Amount</th>
           <th className="px-4 py-3 text-right font-semibold text-slate-700">Pending Amount</th>
@@ -112,17 +149,33 @@ function LedgerDetailTable({ rows }: { rows: AdminMasterLedgerRow[] }) {
       <tbody className="divide-y divide-slate-100 bg-white">
         {rows.length === 0 ? (
           <tr>
-            <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+            <td colSpan={selectable ? 11 : 10} className="px-4 py-8 text-center text-slate-500">
               No ledger rows found.
             </td>
           </tr>
         ) : (
           rows.map((row) => (
             <tr key={row.invoiceId}>
+              {selectable ? (
+                <td className="px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(selectedInvoiceIds?.has(row.invoiceId))}
+                    onChange={(event) =>
+                      onToggleRow?.(row.invoiceId, event.target.checked)
+                    }
+                    aria-label={`Select ${row.invoiceNumber || row.invoiceId}`}
+                    className="h-4 w-4 rounded border-slate-300 text-sky-600"
+                  />
+                </td>
+              ) : null}
               <td className="px-4 py-3 font-medium text-slate-900">
                 {row.invoiceNumber || '-'}
               </td>
               <td className="px-4 py-3 text-slate-700">{formatDate(row.invoiceDate)}</td>
+              <td className="px-4 py-3 text-slate-700">
+                {row.insuredPersonName || row.sourceUserName || '-'}
+              </td>
               <td className="px-4 py-3 text-right text-slate-900">
                 {formatCurrency(row.premiumAmount)}
               </td>
@@ -184,6 +237,13 @@ export default function AdminLedgerPage() {
   const [jumpPageInput, setJumpPageInput] = useState('1');
   const [pageSize, setPageSize] = useState(25);
   const [exportingType, setExportingType] = useState('');
+  const [ledgerReloadKey, setLedgerReloadKey] = useState(0);
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set());
+  const [bulkStatusModal, setBulkStatusModal] = useState<{
+    status: 'PAID' | 'PENDING';
+  } | null>(null);
+  const [bulkRemark, setBulkRemark] = useState('');
+  const [bulkUpdating, setBulkUpdating] = useState(false);
 
   const isGcaSelected = selectedMasterId === GCA_LEDGER_OPTION;
 
@@ -307,7 +367,7 @@ export default function AdminLedgerPage() {
     };
 
     void loadLedger();
-  }, [masterUsers, selectedMasterId]);
+  }, [masterUsers, selectedMasterId, ledgerReloadKey]);
 
   const filteredRows = useMemo(() => {
     const rows = ledger?.rows || [];
@@ -328,6 +388,7 @@ export default function AdminLedgerPage() {
 
       const haystack = [
         row.invoiceNumber,
+        row.insuredPersonName,
         row.sourceUserName,
         row.sourceUserMobile,
         row.walletDebitReference,
@@ -372,9 +433,20 @@ export default function AdminLedgerPage() {
     return filteredGcaRows.slice(start, start + pageSize);
   }, [currentPage, filteredGcaRows, pageSize]);
 
+  const selectedLedgerRows = useMemo(
+    () => filteredRows.filter((row) => selectedInvoiceIds.has(row.invoiceId)),
+    [filteredRows, selectedInvoiceIds],
+  );
+
+  const selectedCount = selectedInvoiceIds.size;
+
   useEffect(() => {
     setCurrentPage(1);
   }, [selectedMasterId, searchTerm, statusFilter, pageSize]);
+
+  useEffect(() => {
+    setSelectedInvoiceIds(new Set());
+  }, [selectedMasterId, searchTerm, statusFilter, pageSize, ledgerReloadKey]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -544,6 +616,7 @@ export default function AdminLedgerPage() {
     const headers = [
       'Invoice Number',
       'Invoice Date',
+      'Insured Person',
       'Premium Amount',
       'Paid Amount',
       'Pending Amount',
@@ -555,6 +628,7 @@ export default function AdminLedgerPage() {
     const exportRows = rows.map((row) => [
       row.invoiceNumber || '-',
       formatDate(row.invoiceDate),
+      row.insuredPersonName || row.sourceUserName || '-',
       row.premiumAmount.toFixed(2),
       row.paidAmount.toFixed(2),
       row.pendingAmount.toFixed(2),
@@ -607,6 +681,74 @@ export default function AdminLedgerPage() {
       exporter();
     } finally {
       setExportingType('');
+    }
+  };
+
+  const toggleLedgerRowSelection = (invoiceId: string, checked: boolean) => {
+    setSelectedInvoiceIds((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(invoiceId);
+      } else {
+        next.delete(invoiceId);
+      }
+      return next;
+    });
+  };
+
+  const toggleVisibleLedgerRows = (checked: boolean) => {
+    setSelectedInvoiceIds((current) => {
+      const next = new Set(current);
+      paginatedRows.forEach((row) => {
+        if (checked) {
+          next.add(row.invoiceId);
+        } else {
+          next.delete(row.invoiceId);
+        }
+      });
+      return next;
+    });
+  };
+
+  const openBulkStatusModal = (status: 'PAID' | 'PENDING') => {
+    if (selectedCount === 0) {
+      setError('Select at least one ledger row first');
+      return;
+    }
+    setError('');
+    setBulkRemark('');
+    setBulkStatusModal({ status });
+  };
+
+  const submitBulkStatusUpdate = async () => {
+    if (!bulkStatusModal) return;
+    const remarks = bulkRemark.trim();
+    if (!remarks) {
+      setError('Remark is required before updating selected rows');
+      return;
+    }
+
+    try {
+      setBulkUpdating(true);
+      setError('');
+      const response = await adminApi.updateLedgerPaymentStatus({
+        invoiceIds: Array.from(selectedInvoiceIds),
+        paymentStatus: bulkStatusModal.status,
+        remarks,
+      });
+
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to update selected rows');
+      }
+
+      setBulkStatusModal(null);
+      setBulkRemark('');
+      setSelectedInvoiceIds(new Set());
+      setLedgerReloadKey((value) => value + 1);
+    } catch (updateError: any) {
+      setError(updateError?.message || 'Failed to update selected rows');
+    } finally {
+      setBulkUpdating(false);
     }
   };
 
@@ -754,6 +896,27 @@ export default function AdminLedgerPage() {
                 >
                   {exportingType === 'individual-pdf' ? 'Generating...' : 'Download PDF'}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => openBulkStatusModal('PAID')}
+                  disabled={loadingLedger || selectedCount === 0 || bulkUpdating}
+                  className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Mark Paid
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openBulkStatusModal('PENDING')}
+                  disabled={loadingLedger || selectedCount === 0 || bulkUpdating}
+                  className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Mark Pending
+                </button>
+                {selectedCount > 0 ? (
+                  <span className="inline-flex items-center rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700">
+                    {selectedCount} selected
+                  </span>
+                ) : null}
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
@@ -874,7 +1037,12 @@ export default function AdminLedgerPage() {
                   </tbody>
                 </table>
               ) : (
-                <LedgerDetailTable rows={paginatedRows} />
+                <LedgerDetailTable
+                  rows={paginatedRows}
+                  selectedInvoiceIds={selectedInvoiceIds}
+                  onToggleRow={toggleLedgerRowSelection}
+                  onToggleAll={toggleVisibleLedgerRows}
+                />
               )}
             </div>
 
@@ -972,6 +1140,81 @@ export default function AdminLedgerPage() {
           </div>
         </div>
       </div>
+
+      {bulkStatusModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h3 className="text-lg font-semibold text-slate-900">
+                Mark {selectedCount} row{selectedCount === 1 ? '' : 's'} as{' '}
+                {bulkStatusModal.status}
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Add a remark so this manual ledger update has a clear reason.
+              </p>
+            </div>
+
+            <div className="space-y-4 px-5 py-4">
+              <div className="max-h-32 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                {selectedLedgerRows.slice(0, 8).map((row) => (
+                  <div key={row.invoiceId} className="flex justify-between gap-3 py-1">
+                    <span className="font-medium text-slate-800">
+                      {row.invoiceNumber || row.invoiceId}
+                    </span>
+                    <span>{row.insuredPersonName || row.sourceUserName || '-'}</span>
+                  </div>
+                ))}
+                {selectedLedgerRows.length > 8 ? (
+                  <div className="pt-1 text-slate-500">
+                    +{selectedLedgerRows.length - 8} more selected
+                  </div>
+                ) : null}
+              </div>
+
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Remark</span>
+                <textarea
+                  value={bulkRemark}
+                  onChange={(event) => setBulkRemark(event.target.value)}
+                  rows={4}
+                  placeholder={
+                    bulkStatusModal.status === 'PAID'
+                      ? 'Example: Payment verified manually from bank statement'
+                      : 'Example: Reverted because payment was not received'
+                  }
+                  className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                />
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkStatusModal(null);
+                  setBulkRemark('');
+                }}
+                disabled={bulkUpdating}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitBulkStatusUpdate}
+                disabled={bulkUpdating || !bulkRemark.trim()}
+                className={`rounded-md px-3 py-1.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${
+                  bulkStatusModal.status === 'PAID'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-amber-600 hover:bg-amber-700'
+                }`}
+              >
+                {bulkUpdating ? 'Updating...' : `Mark ${bulkStatusModal.status}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {gcaLedgerModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
