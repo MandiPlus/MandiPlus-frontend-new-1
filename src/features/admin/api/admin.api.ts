@@ -21,9 +21,11 @@ interface User {
   id?: string;
   name?: string;
   mobileNumber: string;
+  secondaryMobileNumber?: string | null;
   category?: string;
   identity?: string;
   billingType?: "BULK" | "PER_POLICY" | null;
+  unionMember?: string | null;
   state?: string;
   createdAt: string;
   totalForms?: number;
@@ -51,6 +53,57 @@ export interface AdminLedgerUser extends User {
   aliasPhones: string[];
 }
 
+export interface AdminMasterLedgerLinkedUser {
+  id: string;
+  name: string;
+  mobileNumber: string;
+  secondaryMobileNumber?: string | null;
+  state?: string | null;
+  isMaster: boolean;
+  isMerged: boolean;
+}
+
+export interface AdminMasterLedgerSummary {
+  totalInvoices: number;
+  totalPremiumAmount: number;
+  totalPaidAmount: number;
+  totalPendingAmount: number;
+  paidCount: number;
+  pendingCount: number;
+}
+
+export interface AdminMasterLedgerRow {
+  invoiceId: string;
+  invoiceNumber: string;
+  invoiceDate: string | null;
+  sourceUserId: string | null;
+  sourceUserName: string | null;
+  sourceUserMobile: string | null;
+  premiumAmount: number;
+  paidAmount: number;
+  pendingAmount: number;
+  paymentStatus: string;
+  paymentCompletedAt: string | null;
+  walletDebitReference: string | null;
+  walletTransactionId?: string | null;
+  remarks: string | null;
+  proofOfPaymentImage: string | null;
+  duplicateCount: number;
+  duplicateInvoiceIds: string[];
+}
+
+export interface AdminMasterLedgerPayload {
+  masterUser: {
+    id: string;
+    name: string;
+    mobileNumber: string;
+    state?: string | null;
+  };
+  linkedUsers: AdminMasterLedgerLinkedUser[];
+  summary: AdminMasterLedgerSummary;
+  rows: AdminMasterLedgerRow[];
+}
+
 export interface PossibleDuplicateUserRow {
   id: string;
   score: number;
@@ -67,7 +120,28 @@ export type UserIdentity =
   | "INTERNAL_TEAM"
   | "BUYER"
   | "SUPPLIER"
-  | "AGENT";
+  | "AGENT"
+  | "FIELD_AGENT";
+
+export interface AdminCreateUserPayload {
+  name: string;
+  mobileNumber: string;
+  secondaryMobileNumber?: string;
+  state: string;
+  identity: UserIdentity;
+  billingType?: "BULK" | "PER_POLICY";
+  unionMember?: string | null;
+}
+
+export interface AdminUpdateUserPayload {
+  name?: string;
+  mobileNumber?: string;
+  secondaryMobileNumber?: string;
+  state?: string;
+  identity?: UserIdentity;
+  billingType?: "BULK" | "PER_POLICY" | null;
+  unionMember?: string | null;
+}
 
 export interface InsuranceForm {
   _id: string;
@@ -199,6 +273,7 @@ export interface InsurancePaymentRow {
   paymentAmount: number;
   balance: number;
   paymentStatus: string;
+  paymentMethod?: string | null;
   isPaymentRequired: boolean;
   paymentCompletedAt?: string | null;
   remarks?: string | null;
@@ -260,6 +335,7 @@ export interface UpdateInsurancePaymentPayload {
   premiumAmount?: number;
   paymentAmount?: number;
   paymentStatus?: string;
+  paymentMethod?: string | null;
   isPaymentRequired?: boolean;
   paymentCompletedAt?: string | null;
   remarks?: string | null;
@@ -739,6 +815,29 @@ class AdminApi {
     }
   };
 
+  public updateUser = async (
+    userId: string,
+    payload: AdminUpdateUserPayload,
+  ): Promise<ApiResponse<AdminLedgerUser>> => {
+    try {
+      const response = await this.client.patch(`/users/${userId}`, payload);
+      const data = response.data as any;
+      if (data && typeof data === "object" && "success" in data) {
+        return data as ApiResponse<AdminLedgerUser>;
+      }
+      return {
+        success: true,
+        data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to update user",
+        error: error.message,
+      };
+    }
+  };
+
   public getInsuranceForms = async (
     page: number = 1,
     limit: number = 10,
@@ -873,6 +972,58 @@ class AdminApi {
         success: false,
         message:
           error.response?.data?.message || 'Failed to fetch admin ledger users',
+        error: error.message,
+      };
+    }
+  };
+
+  public getMasterUserLedger = async (
+    userId: string,
+  ): Promise<ApiResponse<AdminMasterLedgerPayload>> => {
+    try {
+      const response = await this.client.get<ApiResponse<AdminMasterLedgerPayload>>(
+        `/users/admin/${userId}/master-ledger`,
+      );
+      const payload = response.data;
+
+      if (payload && typeof payload === 'object' && 'success' in payload) {
+        return payload;
+      }
+
+      return {
+        success: true,
+        data: payload as AdminMasterLedgerPayload,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          'Failed to fetch master user ledger',
+        error: error.message,
+      };
+    }
+  };
+
+  public createUser = async (
+    payload: AdminCreateUserPayload,
+  ): Promise<ApiResponse<AdminLedgerUser>> => {
+    try {
+      const response = await this.client.post<AdminLedgerUser>('/users', payload);
+      const data = response.data as any;
+
+      if (data && typeof data === 'object' && 'success' in data) {
+        return data as ApiResponse<AdminLedgerUser>;
+      }
+
+      return {
+        success: true,
+        data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to create user',
         error: error.message,
       };
     }

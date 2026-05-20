@@ -22,6 +22,13 @@ const PAYMENT_STATUS_OPTIONS = [
   'FAILED',
   'REFUNDED',
 ];
+const PAYMENT_METHOD_OPTIONS = [
+  'BULK',
+  'CREDIT',
+  'PER_POLICY',
+  'CASH',
+  'GCA',
+] as const;
 const REPORT_PERIOD_OPTIONS = [
   { value: 'daily', label: 'Daily Report' },
   { value: 'weekly', label: 'Weekly Report' },
@@ -498,6 +505,7 @@ export default function AdminInsurancePaymentsPage() {
       premiumAmount,
       paymentAmount: premiumAmount,
       paymentStatus: row.paymentStatus,
+      paymentMethod: row.paymentMethod || '',
       isPaymentRequired: Boolean(row.isPaymentRequired),
       paymentCompletedAt: paymentCompletedValue,
       remarks: row.remarks || '',
@@ -520,6 +528,7 @@ export default function AdminInsurancePaymentsPage() {
         paymentAmount:
           form.paymentAmount === undefined ? undefined : Number(form.paymentAmount),
         paymentStatus: form.paymentStatus,
+        paymentMethod: form.paymentMethod || null,
         isPaymentRequired: form.isPaymentRequired,
         paymentCompletedAt: form.paymentCompletedAt || null,
         remarks: form.remarks ?? null,
@@ -789,6 +798,9 @@ export default function AdminInsurancePaymentsPage() {
                     Status
                   </th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                    Payment Method
+                  </th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700">
                     Updated At
                   </th>
                   <th className="px-4 py-3 text-right font-semibold text-gray-700">
@@ -800,7 +812,7 @@ export default function AdminInsurancePaymentsPage() {
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={10}
                       className="px-4 py-6 text-center text-sm text-gray-500"
                     >
                       Loading insurance payments...
@@ -809,7 +821,7 @@ export default function AdminInsurancePaymentsPage() {
                 ) : paginatedRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={10}
                       className="px-4 py-6 text-center text-sm text-gray-500"
                     >
                       No records found.
@@ -840,6 +852,9 @@ export default function AdminInsurancePaymentsPage() {
                         >
                           {row.paymentStatus || 'PENDING'}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">
+                        {row.paymentMethod || '-'}
                       </td>
                       <td className="px-4 py-3 text-gray-700">
                         {formatDate(row.updatedAt)}
@@ -1031,6 +1046,27 @@ export default function AdminInsurancePaymentsPage() {
                   {PAYMENT_STATUS_OPTIONS.map((status) => (
                     <option key={status} value={status}>
                       {status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm text-gray-700">
+                Payment Method
+                <select
+                  value={typeof form.paymentMethod === 'string' ? form.paymentMethod : ''}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      paymentMethod: e.target.value || null,
+                    }))
+                  }
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                >
+                  <option value="">Select payment method</option>
+                  {PAYMENT_METHOD_OPTIONS.map((method) => (
+                    <option key={method} value={method}>
+                      {method}
                     </option>
                   ))}
                 </select>

@@ -148,6 +148,54 @@ export interface TruckFlagStatus {
   message: string | null;
 }
 
+export interface VerifiedSupplierOption {
+  id: string;
+  name: string;
+  mobileNumber: string;
+  address: string;
+  placeOfSupply: string;
+}
+
+export interface HistoricalPartyOption {
+  name: string;
+  address: string;
+  shipToAddress: string;
+  placeOfSupply: string;
+  invoiceCount: number;
+  lastInvoiceDate: string | null;
+}
+
+export interface SupplierPartyAssistProduct {
+  name: string;
+  hsnCode: string;
+  count: number;
+}
+
+export interface SupplierPartyAssistVehicle {
+  vehicleNumber: string;
+  ownerName: string;
+  count: number;
+}
+
+export interface SupplierPartyAssistTemplate {
+  id: string;
+  invoiceNumber: string;
+  invoiceDate: string | null;
+  productName: string;
+  hsnCode: string;
+  quantity: number;
+  rate: number;
+  vehicleNumber: string;
+  ownerName: string;
+  notes: string;
+}
+
+export interface SupplierPartyAssistResponse {
+  productSuggestions: SupplierPartyAssistProduct[];
+  vehicleSuggestions: SupplierPartyAssistVehicle[];
+  recentTemplates: SupplierPartyAssistTemplate[];
+}
+
 /* -------------------------------------------------------------------------- */
 /* APIs                                                                       */
 /* -------------------------------------------------------------------------- */
@@ -214,6 +262,83 @@ export const getTruckFlagStatus = async (
   } catch (error) {
     const err = error as AxiosError<ApiError>;
     throw err.response?.data || { message: "Failed to check truck flag status" };
+  }
+};
+
+export const getVerifiedSuppliers = async (): Promise<
+  VerifiedSupplierOption[]
+> => {
+  try {
+    const token = getStoredAuthToken();
+    const response = await axios.get(`${API_BASE_URL}/invoices/verified-suppliers`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const payload = response.data?.data ?? response.data;
+    return Array.isArray(payload) ? payload : [];
+  } catch (error) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to fetch verified suppliers" };
+  }
+};
+
+export const getSupplierHistoricalParties = async (
+  params: {
+    supplierId?: string;
+    supplierName?: string;
+    search?: string;
+  },
+): Promise<HistoricalPartyOption[]> => {
+  try {
+    const token = getStoredAuthToken();
+    const response = await axios.get(`${API_BASE_URL}/invoices/supplier-parties`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      params,
+    });
+
+    const payload = response.data?.data ?? response.data;
+    return Array.isArray(payload) ? payload : [];
+  } catch (error) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to fetch supplier parties" };
+  }
+};
+
+export const getSupplierPartyAssists = async (
+  params: {
+    supplierId?: string;
+    supplierName?: string;
+    partyName: string;
+  },
+): Promise<SupplierPartyAssistResponse> => {
+  try {
+    const token = getStoredAuthToken();
+    const response = await axios.get(`${API_BASE_URL}/invoices/supplier-party-assists`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      params,
+    });
+
+    const payload = response.data?.data ?? response.data;
+    return {
+      productSuggestions: Array.isArray(payload?.productSuggestions)
+        ? payload.productSuggestions
+        : [],
+      vehicleSuggestions: Array.isArray(payload?.vehicleSuggestions)
+        ? payload.vehicleSuggestions
+        : [],
+      recentTemplates: Array.isArray(payload?.recentTemplates)
+        ? payload.recentTemplates
+        : [],
+    };
+  } catch (error) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to fetch supplier-party assists" };
   }
 };
 

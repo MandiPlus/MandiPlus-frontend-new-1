@@ -27,6 +27,15 @@ interface TestResponse {
     steps: StepResult[];
 }
 
+interface RetryDownloadResponse {
+    ok: boolean;
+    policy_id: string | null;
+    cert_status?: string | null;
+    pdf_available?: boolean;
+    summary: string;
+    download_http?: number;
+}
+
 function JsonBlock({ data, title }: { data: unknown; title: string }) {
     const [open, setOpen] = useState(false);
     if (data === null || data === undefined) return null;
@@ -54,9 +63,11 @@ export default function TataUatTestPage() {
     const [result, setResult] = useState<TestResponse | null>(null);
     const [error, setError] = useState('');
     const [expandedStep, setExpandedStep] = useState<number | null>(null);
+    const [retryingDownload, setRetryingDownload] = useState(false);
 
     const [formData, setFormData] = useState({
-        botUrl: 'http://localhost:10000',
+        backendUrl: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001',
+        accessToken: '',
         supplierName: 'TATA AIG UAT Supplier',
         supplierAddress: 'Mumbai, Maharashtra',
         buyerName: 'TATA AIG UAT Buyer',
@@ -84,10 +95,20 @@ export default function TataUatTestPage() {
         setExpandedStep(null);
 
         try {
-            const targetUrl = formData.botUrl.replace(/\/$/, '') + '/admin/test-tata-aig';
+            const adminToken = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
+            const uatAccessToken = formData.accessToken.trim();
+            if (!adminToken && !uatAccessToken) {
+                throw new Error('Enter the Tata UAT access token or log in as admin.');
+            }
+
+            const targetUrl = formData.backendUrl.replace(/\/$/, '') + '/admin/tata-aig/uat-test';
             const response = await fetch(targetUrl, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
+                    ...(uatAccessToken ? { 'x-tata-uat-access-token': uatAccessToken } : {}),
+                },
                 body: JSON.stringify({
                     supplierName: formData.supplierName,
                     supplierAddress: formData.supplierAddress,
@@ -115,10 +136,78 @@ export default function TataUatTestPage() {
                 setExpandedStep(-1); // -1 = all expanded
             }
         } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : 'Network error or CORS issue. Make sure the bot is running.';
+            const msg = err instanceof Error ? err.message : 'Network error or CORS issue. Make sure the backend is running.';
             setError(msg);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleRetryDownload = async () => {
+        if (!result?.policy_id || retryingDownload) return;
+
+        setRetryingDownload(true);
+        setError('');
+
+        try {
+            const adminToken = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
+            const uatAccessToken = formData.accessToken.trim();
+            if (!adminToken && !uatAccessToken) {
+                throw new Error('Enter the Tata UAT access token or log in as admin.');
+            }
+
+            const targetUrl = formData.backendUrl.replace(/\/$/, '') + '/admin/tata-aig/retry-download';
+            const response = await fetch(targetUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
+                    ...(uatAccessToken ? { 'x-tata-uat-access-token': uatAccessToken } : {}),
+                },
+                body: JSON.stringify({
+                    policyId: result.policy_id,
+                    includeBase64: false,
+                }),
+            });
+
+            const data: RetryDownloadResponse = await response.json();
+            if (!response.ok) {
+                throw new Error((data as unknown as { message?: string }).message || data.summary || 'Retry download failed');
+            }
+
+            setResult((prev) => {
+                if (!prev) return prev;
+
+                const updatedSteps = prev.steps.map((step) => {
+                    if (step.step !== 5) return step;
+
+                    return {
+                        ...step,
+                        passed: Boolean(data.pdf_available),
+                        http_status: data.download_http ?? step.http_status,
+                        detail: data.summary,
+                        cert_status: data.cert_status ?? step.cert_status,
+                        pdf_available: data.pdf_available,
+                    };
+                });
+
+                return {
+                    ...prev,
+                    ok: prev.steps
+                        .map((step) => {
+                            if (step.step !== 5) return step;
+                            return updatedSteps.find((updated) => updated.step === 5) ?? step;
+                        })
+                        .every((step) => (step.step === 5 ? true : step.passed)),
+                    summary: data.summary,
+                    steps: updatedSteps,
+                };
+            });
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Retry download failed';
+            setError(msg);
+        } finally {
+            setRetryingDownload(false);
         }
     };
 
@@ -150,13 +239,23 @@ export default function TataUatTestPage() {
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
-                        <label className="block text-sm font-semibold text-gray-700 mb-1">Bot API URL</label>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Backend API URL</label>
                         <input
-                            type="text" name="botUrl" value={formData.botUrl} onChange={handleChange}
+                            type="text" name="backendUrl" value={formData.backendUrl} onChange={handleChange}
                             className="w-full p-2 border rounded text-sm text-gray-800"
-                            placeholder="e.g. https://mandiplus-bot-staging.onrender.com" required
+                            placeholder="e.g. https://api.mandiplus.com" required
                         />
-                        <p className="text-xs text-gray-500 mt-1">Point this to your Staging Bot URL</p>
+                        <p className="text-xs text-gray-500 mt-1">Point this to your deployed Mandi Plus backend</p>
+                    </div>
+
+                    <div className="bg-amber-50 p-4 rounded-lg border border-amber-100">
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Tata UAT Access Token</label>
+                        <input
+                            type="password" name="accessToken" value={formData.accessToken} onChange={handleChange}
+                            className="w-full p-2 border rounded text-sm text-gray-800"
+                            placeholder="Enter shared UAT token" required={typeof window !== 'undefined' ? !localStorage.getItem('adminToken') : false}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Use this for Tata reviewers. Admin login also continues to work.</p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -234,12 +333,23 @@ export default function TataUatTestPage() {
 
                         {/* Toggle all */}
                         <div className="flex justify-end">
-                            <button
-                                onClick={() => setExpandedStep(expandedStep === -1 ? null : -1)}
-                                className="text-xs text-indigo-600 hover:underline"
-                            >
-                                {expandedStep === -1 ? 'Collapse all' : 'Expand all'}
-                            </button>
+                            <div className="flex items-center gap-3">
+                                {result.policy_id && (
+                                    <button
+                                        onClick={handleRetryDownload}
+                                        disabled={retryingDownload}
+                                        className="text-xs font-semibold text-emerald-700 hover:underline disabled:opacity-50"
+                                    >
+                                        {retryingDownload ? 'Retrying...' : 'Retry Download'}
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => setExpandedStep(expandedStep === -1 ? null : -1)}
+                                    className="text-xs text-indigo-600 hover:underline"
+                                >
+                                    {expandedStep === -1 ? 'Collapse all' : 'Expand all'}
+                                </button>
+                            </div>
                         </div>
 
                         {/* Per-step cards */}
