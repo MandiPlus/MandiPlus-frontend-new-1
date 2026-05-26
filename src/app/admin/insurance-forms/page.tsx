@@ -1951,11 +1951,12 @@ export default function InsuranceFormsPage() {
                                     <label className="block text-sm font-medium text-slate-700">
                                         Insured party phone
                                         <input
-                                            value={selectedInsuredUser?.mobileNumber || createInvoiceForm.insuredPartyPhone}
-                                            readOnly
-                                            className="mt-1 block w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                                            disabled={createInvoiceParsing}
+                                            value={createInvoiceForm.insuredPartyPhone}
+                                            onChange={(e) => updateCreateInvoiceForm({ insuredPartyPhone: e.target.value })}
+                                            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
                                         />
-                                        <span className="mt-1 block text-xs text-slate-500">Invoice message will be sent to this verified user's number.</span>
+                                        <span className="mt-1 block text-xs text-slate-500">Invoice message will be sent to this number. You can edit it before creating.</span>
                                     </label>
                                     <label className="block text-sm font-medium text-slate-700">Supplier name<input disabled={createInvoiceParsing} value={createInvoiceForm.supplierName} onChange={(e) => updateCreateInvoiceForm({ supplierName: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
                                     <label className="block text-sm font-medium text-slate-700">Place of supply<input disabled={createInvoiceParsing} value={createInvoiceForm.placeOfSupply} onChange={(e) => updateCreateInvoiceForm({ placeOfSupply: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>

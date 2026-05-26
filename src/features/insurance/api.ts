@@ -161,6 +161,7 @@ export interface HistoricalPartyOption {
   address: string;
   shipToAddress: string;
   placeOfSupply: string;
+  phoneNumber?: string;
   invoiceCount: number;
   lastInvoiceDate: string | null;
 }
