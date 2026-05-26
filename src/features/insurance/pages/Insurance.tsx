@@ -270,6 +270,9 @@ const Insurance = () => {
     // in a ref so submit always includes it when needed.
     const selectedCustomerUserIdRef = useRef<string>('');
 
+    const normalizePhoneInput = (phone?: string | null) =>
+        String(phone || '').replace(/\D/g, '').slice(-10);
+
     const identity = user?.identity || '';
     const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
     const shouldAskCustomerPicker = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
@@ -626,7 +629,8 @@ const Insurance = () => {
 
             if (resolvedFormData.hsn) submitData.append('hsnCode', resolvedFormData.hsn);
             if (resolvedFormData.notes) submitData.append('weighmentSlipNote', sanitizeText(resolvedFormData.notes));
-            if (resolvedFormData.insuredPartyPhone?.trim()) submitData.append('insuredPartyPhone', resolvedFormData.insuredPartyPhone.trim());
+            const insuredPartyPhone = normalizePhoneInput(resolvedFormData.insuredPartyPhone);
+            if (insuredPartyPhone) submitData.append('insuredPartyPhone', insuredPartyPhone);
             if (['CUSTOMER', 'TRANSPORTER'].includes(identity)) {
                 submitData.append('customerUserId', effectiveUserId);
             } else if (shouldShowCustomerMappingQuestion && resolvedFormData.addToCustomerAccount === 'Yes') {
@@ -725,6 +729,25 @@ const Insurance = () => {
         return language ? question.text[language] : question.text.en;
     };
 
+    const getInsuredPartyPhoneDefault = (snapshot: Partial<FormData> = {}) => {
+        const mergedForm = { ...formData, ...snapshot };
+        const isCash = String(mergedForm.notes || '').toLowerCase() === 'cash';
+
+        if (isCash) {
+            const buyerName = String(mergedForm.buyerName || '').trim().toLowerCase();
+            const buyerPhone =
+                historicalParties.find(
+                    (party) => party.name.trim().toLowerCase() === buyerName,
+                )?.phoneNumber || '';
+            return normalizePhoneInput(buyerPhone || mergedForm.insuredPartyPhone);
+        }
+
+        const supplierPhone =
+            verifiedSuppliers.find((supplier) => supplier.id === selectedSupplierId)
+                ?.mobileNumber || '';
+        return normalizePhoneInput(supplierPhone || mergedForm.insuredPartyPhone);
+    };
+
     const validateVehicleNumber = async (vehicleNumber: string): Promise<string | null> => {
         try {
             const truckFlagStatus = await getTruckFlagStatus(vehicleNumber);
@@ -747,6 +770,14 @@ const Insurance = () => {
     const goToNextQuestion = (answerForCurrentQuestion?: string, latestNotes?: string) => {
         const currentQuestion = questions[currentQuestionIndex];
         let nextIndex = currentQuestionIndex + 1;
+        const latestFormPatch: Partial<FormData> = {};
+        if (
+            currentQuestion?.field &&
+            currentQuestion.field !== 'language' &&
+            currentQuestion.field !== 'weightmentSlip'
+        ) {
+            latestFormPatch[currentQuestion.field] = answerForCurrentQuestion as never;
+        }
 
         const nextQuestion = questions[nextIndex];
         if (nextQuestion && nextQuestion.field === 'addToCustomerAccount' && !shouldShowCustomerMappingQuestion) {
@@ -787,6 +818,14 @@ const Insurance = () => {
             const nextQuestion = questions[nextIndex];
             setMessages(prev => [...prev, { text: getQuestionText(nextQuestion, latestNotes), sender: 'bot' }]);
 
+            if (nextQuestion.field === 'insuredPartyPhone') {
+                const defaultPhone = getInsuredPartyPhoneDefault(latestFormPatch);
+                setInputValue(defaultPhone);
+                if (defaultPhone) {
+                    setFormData(prev => ({ ...prev, insuredPartyPhone: defaultPhone }));
+                }
+            }
+
             if (nextQuestion.type === 'file') {
                 setTimeout(() => fileInputRef.current?.click(), 300);
             }
@@ -822,6 +861,10 @@ const Insurance = () => {
             setError(language === 'hi' ? 'यह फ़ील्ड आवश्यक है' : 'This field is required');
             return;
         }
+        if (q.field === 'insuredPartyPhone' && normalizePhoneInput(currentInput).length !== 10) {
+            setError(language === 'hi' ? 'Valid 10 digit WhatsApp number dalein.' : 'Enter a valid 10 digit WhatsApp number.');
+            return;
+        }
         setError('');
 
         const isFormField = (field: keyof FormData | 'language' | 'weightmentSlip'): field is keyof FormData => {
@@ -854,7 +897,10 @@ const Insurance = () => {
         }
 
         if (isFormField(q.field)) {
-            const valueToStore = (q.type === 'number' && currentInput) ? parseFloat(currentInput) : currentInput;
+            const valueToStore =
+                q.field === 'insuredPartyPhone'
+                    ? normalizePhoneInput(currentInput)
+                    : (q.type === 'number' && currentInput) ? parseFloat(currentInput) : currentInput;
 
             if (q.field === 'itemName') {
                 const selectedItem = itemsData.find(item => item.name === currentInput);
@@ -983,6 +1029,10 @@ const Insurance = () => {
             supplierName: matchedSupplier.name,
             supplierAddress: matchedSupplier.address || '',
             placeOfSupply: matchedSupplier.placeOfSupply || '',
+            insuredPartyPhone:
+                String(prev.notes || '').toLowerCase() === 'commission'
+                    ? normalizePhoneInput(matchedSupplier.mobileNumber)
+                    : prev.insuredPartyPhone,
         }));
         void processInput(matchedSupplier.name);
     };
@@ -1012,6 +1062,10 @@ const Insurance = () => {
             ...prev,
             buyerName: matchedParty.name,
             buyerAddress: matchedParty.address || '',
+            insuredPartyPhone:
+                String(prev.notes || '').toLowerCase() === 'cash'
+                    ? normalizePhoneInput(matchedParty.phoneNumber)
+                    : prev.insuredPartyPhone,
         }));
         void processInput(matchedParty.name);
     };
