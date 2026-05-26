@@ -165,7 +165,6 @@ const questions: Question[] = [
     {
         field: 'insuredPartyPhone',
         type: 'text',
-        optional: true,
         text: { en: "WhatsApp Phone Number (Buyer)", hi: "खरीदार का WhatsApp नंबर" }
     },
     { field: 'weightmentSlip', type: 'file', optional: true, text: { en: "Kanta Parchi Photo", hi: "कांटा पर्ची" } },
