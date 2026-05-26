@@ -30,6 +30,7 @@ interface User {
   createdAt: string;
   totalForms?: number;
   walletId?: string | null;
+  walletType?: "PAID" | "UNPAID" | null;
   walletBalance?: number;
   availableBalance?: number;
   holdBalance?: number;
@@ -76,6 +77,7 @@ export interface AdminMasterLedgerRow {
   invoiceId: string;
   invoiceNumber: string;
   invoiceDate: string | null;
+  insuredPersonName?: string | null;
   sourceUserId: string | null;
   sourceUserName: string | null;
   sourceUserMobile: string | null;
@@ -329,6 +331,31 @@ export interface AdminWalletRebuildResult {
   invoiceRowsUpdated: number;
   recomputedTransactionCount: number;
   message: string;
+}
+
+export interface AdminCreateInvoicePayload {
+  userId: string;
+  customerUserId: string;
+  invoiceDate: string;
+  invoiceType: "SUPPLIER_INVOICE" | "BUYER_INVOICE";
+  supplierName: string;
+  supplierAddress: string[];
+  placeOfSupply: string;
+  billToName: string;
+  billToAddress: string[];
+  shipToName: string;
+  shipToAddress: string[];
+  productName: string;
+  hsnCode?: string;
+  quantity: number;
+  rate: number;
+  amount: number;
+  vehicleNumber?: string;
+  truckNumber?: string;
+  weighmentSlipNote?: string;
+  insuredPartyPhone?: string;
+  ownerName?: string;
+  weighmentSlips?: File[];
 }
 
 export interface UpdateInsurancePaymentPayload {
@@ -765,6 +792,16 @@ class AdminApi {
     }
   };
 
+  public exportAdminUserWalletStatement = async (userId: string): Promise<Blob> => {
+    const response = await this.client.get(
+      `/wallet/admin/users/${userId}/statement/export`,
+      {
+        responseType: "blob",
+      },
+    );
+    return response.data;
+  };
+
   public rebuildUserWallet = async (
     userId: string,
     effectiveDate: string,
@@ -933,6 +970,89 @@ class AdminApi {
     }
   };
 
+  public createAdminInvoice = async (
+    payload: AdminCreateInvoicePayload,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const formData = new FormData();
+      formData.append("userId", payload.userId);
+      formData.append("customerUserId", payload.customerUserId);
+      formData.append("invoiceDate", payload.invoiceDate);
+      formData.append("invoiceType", payload.invoiceType);
+      formData.append("supplierName", payload.supplierName);
+      formData.append("supplierAddress", JSON.stringify(payload.supplierAddress));
+      formData.append("placeOfSupply", payload.placeOfSupply);
+      formData.append("billToName", payload.billToName);
+      formData.append("billToAddress", JSON.stringify(payload.billToAddress));
+      formData.append("shipToName", payload.shipToName);
+      formData.append("shipToAddress", JSON.stringify(payload.shipToAddress));
+      formData.append("productName", payload.productName);
+      formData.append("quantity", String(payload.quantity));
+      formData.append("rate", String(payload.rate));
+      formData.append("amount", String(payload.amount));
+      if (payload.hsnCode) formData.append("hsnCode", payload.hsnCode);
+      if (payload.vehicleNumber) formData.append("vehicleNumber", payload.vehicleNumber);
+      if (payload.truckNumber) formData.append("truckNumber", payload.truckNumber);
+      if (payload.weighmentSlipNote) formData.append("weighmentSlipNote", payload.weighmentSlipNote);
+      if (payload.insuredPartyPhone) formData.append("insuredPartyPhone", payload.insuredPartyPhone);
+      if (payload.ownerName) formData.append("ownerName", payload.ownerName);
+      payload.weighmentSlips?.forEach((file) => {
+        formData.append("weighmentSlips", file);
+      });
+
+      const response = await this.client.post<ApiResponse<any>>(
+        "/invoices",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        },
+      );
+      const data = response.data;
+      if (data && typeof data === "object" && "success" in data) {
+        return data;
+      }
+      return { success: true, data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to create invoice",
+        error: error.message,
+      };
+    }
+  };
+
+  public extractInvoiceDocumentText = async (
+    files: File[],
+  ): Promise<ApiResponse<{ text: string; filesProcessed: number; model: string }>> => {
+    try {
+      const formData = new FormData();
+      files.forEach((file) => formData.append("documents", file));
+      const response = await this.client.post(
+        "/invoices/admin/extract-document-text",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        },
+      );
+      return {
+        success: true,
+        data: response.data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to extract text from document",
+        error: error.message,
+      };
+    }
+  };
+
   public exportInvoices = async (body: {
     invoiceType?: string;
     startDate?: string;
@@ -1000,6 +1120,37 @@ class AdminApi {
         message:
           error.response?.data?.message ||
           'Failed to fetch master user ledger',
+        error: error.message,
+      };
+    }
+  };
+
+  public updateLedgerPaymentStatus = async (payload: {
+    invoiceIds: string[];
+    paymentStatus: 'PAID' | 'PENDING';
+    remarks: string;
+  }): Promise<ApiResponse<{ updatedCount: number }>> => {
+    try {
+      const response = await this.client.post<ApiResponse<{ updatedCount: number }>>(
+        '/users/admin/ledger/payment-status',
+        payload,
+      );
+      const data = response.data as any;
+
+      if (data && typeof data === 'object' && 'success' in data) {
+        return data;
+      }
+
+      return {
+        success: true,
+        data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          'Failed to update ledger payment status',
         error: error.message,
       };
     }

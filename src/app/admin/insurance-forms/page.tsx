@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef, Fragment, useMemo } from 'rea
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import { formatCurrency, formatDateOnly, formatTimeOnly } from '@/features/admin/utils/format';
-import { adminApi, InvoiceFilterParams, RegenerateInvoicePayload } from '@/features/admin/api/admin.api';
+import { AdminLedgerUser, adminApi, InvoiceFilterParams, RegenerateInvoicePayload } from '@/features/admin/api/admin.api';
 import { toast } from 'react-toastify';
 import 'cropperjs/dist/cropper.css';
 import Cropper, { ReactCropperElement } from "react-cropper";
@@ -26,6 +26,7 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 const INSURANCE_OVERRIDES_KEY = 'admin_invoice_insurance_overrides';
+const ADMIN_CREATE_INVOICE_SKIP_OCR_KEY = 'admin_create_invoice_skip_ocr';
 const INDIAN_PHONE_REGEX = /^(?:\+91|91)?[6-9]\d{9}$/;
 const getInvoiceKey = (inv: { id?: string; _id?: string; invoiceNumber?: string }) =>
     inv?.id || inv?._id || inv?.invoiceNumber || '';
@@ -84,6 +85,266 @@ interface InsuranceFormFilters extends InvoiceFilterParams {
 }
 
 type SendPhoneMode = 'payment_link' | 'invoice_created_template';
+type AdminInvoiceKind = 'cash' | 'commission';
+
+type AdminCreateInvoiceForm = {
+    invoiceKind: AdminInvoiceKind;
+    insuredUserId: string;
+    otherPartyUserId: string;
+    invoiceDate: string;
+    supplierName: string;
+    supplierAddress: string;
+    placeOfSupply: string;
+    billToName: string;
+    billToAddress: string;
+    shipToName: string;
+    shipToAddress: string;
+    productName: string;
+    hsnCode: string;
+    quantity: string;
+    rate: string;
+    vehicleNumber: string;
+    truckNumber: string;
+    ownerName: string;
+    insuredPartyPhone: string;
+};
+
+const emptyAdminCreateInvoiceForm = (): AdminCreateInvoiceForm => ({
+    invoiceKind: 'cash',
+    insuredUserId: '',
+    otherPartyUserId: '',
+    invoiceDate: new Date().toISOString().slice(0, 10),
+    supplierName: '',
+    supplierAddress: '',
+    placeOfSupply: '',
+    billToName: '',
+    billToAddress: '',
+    shipToName: '',
+    shipToAddress: '',
+    productName: '',
+    hsnCode: '',
+    quantity: '',
+    rate: '',
+    vehicleNumber: '',
+    truckNumber: '',
+    ownerName: '',
+    insuredPartyPhone: '',
+});
+
+const addressFieldsByIdentity: Record<string, string[]> = {
+    CUSTOMER: ['destinationShopAddress', 'officeAddress', 'destinationAddress', 'loadingPoint'],
+    TRANSPORTER: ['officeAddress', 'destinationAddress', 'loadingPoint'],
+    BUYER: ['destinationShopAddress', 'destinationAddress', 'route'],
+    SUPPLIER: ['loadingPoint', 'officeAddress', 'route'],
+    AGENT: ['destinationAddress', 'mandiName', 'officeAddress'],
+    FIELD_AGENT: ['destinationAddress', 'officeAddress'],
+    INTERNAL_TEAM: ['officeAddress', 'destinationAddress'],
+};
+
+const normalizeLines = (value: unknown): string[] => {
+    if (Array.isArray(value)) {
+        return value.map((item) => String(item || '').trim()).filter(Boolean);
+    }
+    if (typeof value === 'string') {
+        return value
+            .split(/\r?\n|,/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+    }
+    return [];
+};
+
+const userAddressText = (user?: Partial<AdminLedgerUser> | null) => {
+    if (!user) return '';
+    const anyUser = user as any;
+    const preferredFields = addressFieldsByIdentity[String(user.identity || '').toUpperCase()] || [];
+    const fields = [...preferredFields, 'destinationShopAddress', 'loadingPoint', 'officeAddress', 'destinationAddress', 'route', 'mandiName'];
+    for (const field of fields) {
+        const lines = normalizeLines(anyUser[field]);
+        if (lines.length > 0) return lines.join('\n');
+    }
+    return String(user.state || '').replace(/_/g, ' ');
+};
+
+const userPlaceOfSupply = (user?: Partial<AdminLedgerUser> | null) =>
+    userAddressText(user).split('\n').find(Boolean) || String(user?.state || '').replace(/_/g, ' ');
+
+const normalizeVehicleText = (value: string) =>
+    value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+const extractVehicleNumber = (text: string) => {
+    const compact = normalizeVehicleText(text);
+    const match = compact.match(/[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{4}/);
+    return match?.[0] || '';
+};
+
+const extractAmountNear = (text: string, labels: string[]) => {
+    for (const label of labels) {
+        const regex = new RegExp(`${label}[^0-9]{0,20}([0-9]+(?:\\.[0-9]+)?)`, 'i');
+        const match = text.match(regex);
+        if (match?.[1]) return match[1];
+    }
+    return '';
+};
+
+const extractStateLikePlace = (text: string) => {
+    const states = [
+        'ANDHRA PRADESH', 'BIHAR', 'DELHI', 'GUJARAT', 'HARYANA', 'KARNATAKA',
+        'MAHARASHTRA', 'PUNJAB', 'RAJASTHAN', 'TAMIL NADU', 'TELANGANA',
+        'UTTAR PRADESH', 'UTTARAKHAND', 'WEST BENGAL',
+    ];
+    const upper = text.toUpperCase().replace(/_/g, ' ');
+    return states.find((state) => upper.includes(state)) || '';
+};
+
+const extractProductGuess = (text: string) => {
+    const products = ['Tender Coconut', 'Pineapple', 'Mosambi', 'Ginger', 'Coconut', 'Banana', 'Mango'];
+    const lower = text.toLowerCase();
+    return products.find((product) => lower.includes(product.toLowerCase())) || '';
+};
+
+const normalizePartyName = (value: string) =>
+    value
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+const cleanExtractedName = (value?: string | null) =>
+    String(value || '')
+        .replace(/\s+/g, ' ')
+        .replace(/^(for|to|bill to|party name)\s*[:\-]?\s*/i, '')
+        .trim();
+
+const getOcrLines = (text: string) =>
+    text
+        .split(/\r?\n/)
+        .map((line) => line.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+
+const extractLineValue = (text: string, patterns: RegExp[]) => {
+    for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match?.[1]) return cleanExtractedName(match[1]);
+    }
+    return '';
+};
+
+const nextUsefulLine = (lines: string[], index: number) => {
+    const blocked = /^(authorized signatory|tax invoice|invoice details|invoice no|date|phone|email|state|description|total|sub total)$/i;
+    for (let cursor = index + 1; cursor < Math.min(lines.length, index + 5); cursor += 1) {
+        const line = lines[cursor];
+        if (!line || blocked.test(line)) continue;
+        return line;
+    }
+    return '';
+};
+
+const extractSupplierName = (text: string) => {
+    const lines = getOcrLines(text);
+    for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        const inlineFor = line.match(/^For\s*:\s*(.+)$/i);
+        if (inlineFor?.[1]) {
+            const value = cleanExtractedName(inlineFor[1]);
+            if (value && !/authorized signatory/i.test(value)) return value;
+        }
+        if (/^For\s*:?\s*$/i.test(line)) {
+            const value = cleanExtractedName(nextUsefulLine(lines, index));
+            if (value) return value;
+        }
+        const labelled = line.match(/^(Seller|Supplier)\s*[:\-]\s*(.+)$/i);
+        if (labelled?.[2]) return cleanExtractedName(labelled[2]);
+    }
+
+    return extractLineValue(text, [
+        /For\s*:\s*([^\n\r]+?)(?=\s{2,}|Authorized|Phone|Email|State|Tax Invoice|$)/i,
+        /Seller\s*[:\-]\s*([^\n\r]+)/i,
+        /Supplier\s*[:\-]\s*([^\n\r]+)/i,
+    ]);
+};
+
+const extractBillToName = (text: string) => {
+    const lines = getOcrLines(text);
+    for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        const inlineBillTo = line.match(/^Bill\s*To\s*:?\s*(.+)$/i);
+        if (inlineBillTo?.[1]) {
+            const value = cleanExtractedName(inlineBillTo[1]);
+            if (value && !/^contact/i.test(value)) return value;
+        }
+        if (/^Bill\s*To\s*:?\s*$/i.test(line)) {
+            const value = cleanExtractedName(nextUsefulLine(lines, index));
+            if (value) return value;
+        }
+        const labelled = line.match(/^(Buyer|Billed\s*To)\s*[:\-]\s*(.+)$/i);
+        if (labelled?.[2]) return cleanExtractedName(labelled[2]);
+    }
+
+    return extractLineValue(text, [
+        /Bill\s*To\s+([^\n\r]+?)(?=\s{2,}|Contact|Invoice Details|Address|$)/i,
+        /Buyer\s*[:\-]\s*([^\n\r]+)/i,
+        /Billed\s*To\s*[:\-]\s*([^\n\r]+)/i,
+    ]);
+};
+
+const extractBillToAddress = (text: string) => {
+    const lines = getOcrLines(text);
+    const billIndex = lines.findIndex((line) => /^Bill\s*To\b/i.test(line));
+    if (billIndex >= 0) {
+        const nameLine = /^Bill\s*To\s*:?\s*.+/i.test(lines[billIndex])
+            ? lines[billIndex]
+            : nextUsefulLine(lines, billIndex);
+        const nameIndex = lines.findIndex((line, index) => index >= billIndex && line === nameLine);
+        const address = nextUsefulLine(lines, nameIndex >= 0 ? nameIndex : billIndex);
+        if (address && !/^Contact/i.test(address) && !/^Invoice Details/i.test(address)) {
+            return address;
+        }
+    }
+
+    return extractLineValue(text, [
+        /Bill\s*To\s+[^\n\r]+?\s{2,}([A-Za-z][A-Za-z\s,.-]+?)(?=\s{2,}|Contact|Invoice Details|$)/i,
+    ]);
+};
+
+const extractPhoneNear = (text: string, labels: string[]) => {
+    for (const label of labels) {
+        const pattern = new RegExp(`${label}[^0-9+]{0,25}((?:\\+?91[\\s-]?)?[6-9][0-9\\s-]{9,14})`, 'i');
+        const match = text.match(pattern);
+        if (match?.[1]) return match[1].replace(/[^\d+]/g, '');
+    }
+    return '';
+};
+
+const extractInvoiceHints = (text: string) => ({
+    vehicleNumber: extractVehicleNumber(text),
+    quantity: extractAmountNear(text, ['quantity', 'qty', 'net weight', 'weight']),
+    rate: extractAmountNear(text, ['rate']),
+    placeOfSupply: extractStateLikePlace(text),
+    productName: extractProductGuess(text),
+    supplierName: extractSupplierName(text),
+    billToName: extractBillToName(text),
+    billToAddress: extractBillToAddress(text),
+    insuredPhone: extractPhoneNear(text, ['Contact No\\.?', 'Mobile', 'Phone no\\.?', 'Phone']),
+});
+
+const extractPdfText = async (file: File): Promise<string> => {
+    if (!file.type.includes('pdf')) return '';
+    try {
+        const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+        const data = new Uint8Array(await file.arrayBuffer());
+        const pdf = await (pdfjs as any).getDocument({ data, disableWorker: true }).promise;
+        const pageTexts: string[] = [];
+        for (let pageNumber = 1; pageNumber <= Math.min(pdf.numPages, 3); pageNumber += 1) {
+            const page = await pdf.getPage(pageNumber);
+            const content = await page.getTextContent();
+            pageTexts.push(content.items.map((item: any) => item.str || '').join(' '));
+        }
+        return pageTexts.join('\n');
+    } catch {
+        return '';
+    }
+};
 
 const EXPORTABLE_INVOICE_COLUMNS = [
     { key: 'invoiceNumber', label: 'Invoice Number' },
@@ -160,6 +421,18 @@ export default function InsuranceFormsPage() {
     );
     const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
     const [invoiceMenuPlacement, setInvoiceMenuPlacement] = useState<Record<string, 'up' | 'down'>>({});
+    const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
+    const [createInvoiceSubmitting, setCreateInvoiceSubmitting] = useState(false);
+    const [createInvoiceParsing, setCreateInvoiceParsing] = useState(false);
+    const [verifiedUsers, setVerifiedUsers] = useState<AdminLedgerUser[]>([]);
+    const [createInvoiceForm, setCreateInvoiceForm] = useState<AdminCreateInvoiceForm>(() => emptyAdminCreateInvoiceForm());
+    const [createWeighmentFiles, setCreateWeighmentFiles] = useState<File[]>([]);
+    const [createPurchaseBillFile, setCreatePurchaseBillFile] = useState<File | null>(null);
+    const [documentExtractText, setDocumentExtractText] = useState('');
+    const [skipCreateInvoiceOcr, setSkipCreateInvoiceOcr] = useState<boolean>(() => {
+        if (typeof window === 'undefined') return false;
+        return window.localStorage.getItem(ADMIN_CREATE_INVOICE_SKIP_OCR_KEY) === '1';
+    });
 
     const [modalOpen, setModalOpen] = useState(false);
     const [modalType, setModalType] = useState<'verify' | 'reject' | 'info' | null>(null);
@@ -370,12 +643,266 @@ export default function InsuranceFormsPage() {
     }, [insuranceOverrides]);
 
     useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (skipCreateInvoiceOcr) {
+            window.localStorage.setItem(ADMIN_CREATE_INVOICE_SKIP_OCR_KEY, '1');
+        } else {
+            window.localStorage.removeItem(ADMIN_CREATE_INVOICE_SKIP_OCR_KEY);
+        }
+    }, [skipCreateInvoiceOcr]);
+
+    useEffect(() => {
         if (!isAuthenticated) {
             router.replace('/admin/login');
             return;
         }
         fetchInvoices();
     }, [isAuthenticated, router, fetchInvoices]);
+
+    useEffect(() => {
+        if (!isAuthenticated) return;
+        const loadVerifiedUsers = async () => {
+            const response = await adminApi.getAdminLedgerUsers();
+            if (!response.success || !Array.isArray(response.data)) return;
+            setVerifiedUsers(
+                response.data
+                    .filter((user) => (
+                        user.isLedgerMasterVerified &&
+                        !user.isMerged &&
+                        user.id === user.canonicalUserId
+                    ))
+                    .sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''))),
+            );
+        };
+        void loadVerifiedUsers();
+    }, [isAuthenticated]);
+
+    const selectedInsuredUser = useMemo(
+        () => verifiedUsers.find((user) => user.id === createInvoiceForm.insuredUserId) || null,
+        [createInvoiceForm.insuredUserId, verifiedUsers],
+    );
+
+    const selectedOtherPartyUser = useMemo(
+        () => verifiedUsers.find((user) => user.id === createInvoiceForm.otherPartyUserId) || null,
+        [createInvoiceForm.otherPartyUserId, verifiedUsers],
+    );
+
+    const applyCreateInvoiceParties = useCallback((
+        insuredUser: AdminLedgerUser | null,
+        otherPartyUser: AdminLedgerUser | null,
+        invoiceKind: AdminInvoiceKind,
+        previous: AdminCreateInvoiceForm,
+    ): AdminCreateInvoiceForm => {
+        const insuredAddress = userAddressText(insuredUser);
+        const otherAddress = userAddressText(otherPartyUser);
+        const next: AdminCreateInvoiceForm = {
+            ...previous,
+            invoiceKind,
+            insuredPartyPhone: insuredUser?.mobileNumber || previous.insuredPartyPhone,
+        };
+
+        if (invoiceKind === 'cash') {
+            next.invoiceKind = 'cash';
+            next.billToName = insuredUser?.name || '';
+            next.billToAddress = insuredAddress;
+            next.shipToName = insuredUser?.name || '';
+            next.shipToAddress = insuredAddress;
+            next.supplierName = otherPartyUser?.name || '';
+            next.supplierAddress = otherAddress;
+            next.placeOfSupply = previous.placeOfSupply || userPlaceOfSupply(otherPartyUser) || userPlaceOfSupply(insuredUser);
+        } else {
+            next.invoiceKind = 'commission';
+            next.supplierName = insuredUser?.name || '';
+            next.supplierAddress = insuredAddress;
+            next.placeOfSupply = previous.placeOfSupply || userPlaceOfSupply(insuredUser);
+            next.billToName = otherPartyUser?.name || '';
+            next.billToAddress = otherAddress;
+            next.shipToName = otherPartyUser?.name || '';
+            next.shipToAddress = otherAddress;
+        }
+
+        if (!next.productName && Array.isArray((insuredUser as any)?.products) && (insuredUser as any).products[0]) {
+            next.productName = (insuredUser as any).products[0];
+        }
+
+        return next;
+    }, []);
+
+    const findVerifiedUserByName = useCallback((name: string) => {
+        const normalizedName = normalizePartyName(name);
+        if (!normalizedName) return null;
+        return (
+            verifiedUsers.find((user) => normalizePartyName(user.name || '') === normalizedName) ||
+            verifiedUsers.find((user) => {
+                const userName = normalizePartyName(user.name || '');
+                return Boolean(userName && (userName.includes(normalizedName) || normalizedName.includes(userName)));
+            }) ||
+            null
+        );
+    }, [verifiedUsers]);
+
+    const updateCreateInvoiceForm = (patch: Partial<AdminCreateInvoiceForm>) => {
+        setCreateInvoiceForm((prev) => ({ ...prev, ...patch }));
+    };
+
+    const openCreateInvoiceModal = () => {
+        setCreateInvoiceForm(emptyAdminCreateInvoiceForm());
+        setCreateWeighmentFiles([]);
+        setCreatePurchaseBillFile(null);
+        setDocumentExtractText('');
+        setCreateInvoiceOpen(true);
+    };
+
+    const closeCreateInvoiceModal = () => {
+        if (createInvoiceSubmitting) return;
+        setCreateInvoiceOpen(false);
+        setCreateInvoiceForm(emptyAdminCreateInvoiceForm());
+        setCreateWeighmentFiles([]);
+        setCreatePurchaseBillFile(null);
+        setDocumentExtractText('');
+    };
+
+    const handleCreateInvoiceDocumentChange = async (
+        weighmentFiles: File[],
+        purchaseBillFile: File | null,
+    ) => {
+        setCreateWeighmentFiles(weighmentFiles);
+        setCreatePurchaseBillFile(purchaseBillFile);
+
+        const filesToParse = [...weighmentFiles, ...(purchaseBillFile ? [purchaseBillFile] : [])];
+        if (filesToParse.length === 0) {
+            setDocumentExtractText('');
+            return;
+        }
+
+        if (skipCreateInvoiceOcr) {
+            setDocumentExtractText('');
+            toast.info('OCR is skipped. Fill invoice details manually.');
+            return;
+        }
+
+        setCreateInvoiceParsing(true);
+        try {
+            let extracted = '';
+            const ocrResponse = await adminApi.extractInvoiceDocumentText(filesToParse);
+            if (ocrResponse.success) {
+                extracted = ocrResponse.data?.text || '';
+            } else {
+                extracted = (await Promise.all(filesToParse.map(extractPdfText))).join('\n');
+                toast.error(ocrResponse.message || 'Gemini OCR failed. PDF text fallback was used where possible.');
+            }
+            setDocumentExtractText(extracted);
+            const hints = extractInvoiceHints(extracted);
+            setCreateInvoiceForm((prev) => {
+                const supplierUser = findVerifiedUserByName(hints.supplierName);
+                const billToUser = findVerifiedUserByName(hints.billToName);
+                const insuredUser = prev.invoiceKind === 'cash' ? billToUser : supplierUser;
+                const otherPartyUser = prev.invoiceKind === 'cash' ? supplierUser : billToUser;
+                const base = applyCreateInvoiceParties(
+                    insuredUser,
+                    otherPartyUser,
+                    prev.invoiceKind,
+                    {
+                        ...prev,
+                        insuredUserId: insuredUser?.id || prev.insuredUserId,
+                        otherPartyUserId: otherPartyUser?.id || prev.otherPartyUserId,
+                    },
+                );
+
+                return {
+                    ...base,
+                    supplierName: base.supplierName || hints.supplierName || prev.supplierName,
+                    billToName: base.billToName || hints.billToName || prev.billToName,
+                    shipToName: base.shipToName || hints.billToName || prev.shipToName,
+                    billToAddress: base.billToAddress || hints.billToAddress || prev.billToAddress,
+                    shipToAddress: base.shipToAddress || hints.billToAddress || prev.shipToAddress,
+                    vehicleNumber: hints.vehicleNumber || prev.vehicleNumber,
+                    truckNumber: hints.vehicleNumber || prev.truckNumber,
+                    quantity: hints.quantity || prev.quantity,
+                    rate: hints.rate || prev.rate,
+                    productName: hints.productName || prev.productName,
+                    placeOfSupply: hints.placeOfSupply || base.placeOfSupply || prev.placeOfSupply,
+                    insuredPartyPhone:
+                        insuredUser?.mobileNumber ||
+                        (prev.invoiceKind === 'cash' ? hints.insuredPhone : supplierUser?.mobileNumber) ||
+                        prev.insuredPartyPhone,
+                };
+            });
+            if (!extracted.trim()) {
+                toast.info('No readable text was extracted. Review and fill fields manually.');
+            }
+        } finally {
+            setCreateInvoiceParsing(false);
+        }
+    };
+
+    const handleCreateInvoiceSubmit = async () => {
+        const insuredUser = selectedInsuredUser;
+        if (!insuredUser) {
+            toast.error('Select a registered verified insured party.');
+            return;
+        }
+        if (createWeighmentFiles.length === 0) {
+            toast.error('Upload at least one weighment slip.');
+            return;
+        }
+
+        const qty = Number(createInvoiceForm.quantity || 0);
+        const rate = Number(createInvoiceForm.rate || 0);
+        const amount = Number((qty * rate).toFixed(2));
+        if (!createInvoiceForm.supplierName.trim() || !createInvoiceForm.billToName.trim()) {
+            toast.error('Supplier and bill-to details are required.');
+            return;
+        }
+        if (!createInvoiceForm.productName.trim() || qty <= 0 || rate <= 0) {
+            toast.error('Fill product, quantity, and rate before creating invoice.');
+            return;
+        }
+        if (!isValidIndianPhone(createInvoiceForm.insuredPartyPhone)) {
+            toast.error('Insured party phone must be a valid Indian mobile number.');
+            return;
+        }
+
+        setCreateInvoiceSubmitting(true);
+        try {
+            const response = await adminApi.createAdminInvoice({
+                userId: insuredUser.id,
+                customerUserId: insuredUser.id,
+                invoiceDate: createInvoiceForm.invoiceDate,
+                invoiceType: createInvoiceForm.invoiceKind === 'cash' ? 'BUYER_INVOICE' : 'SUPPLIER_INVOICE',
+                supplierName: createInvoiceForm.supplierName.trim(),
+                supplierAddress: normalizeLines(createInvoiceForm.supplierAddress),
+                placeOfSupply: createInvoiceForm.placeOfSupply.trim() || userPlaceOfSupply(insuredUser),
+                billToName: createInvoiceForm.billToName.trim(),
+                billToAddress: normalizeLines(createInvoiceForm.billToAddress),
+                shipToName: createInvoiceForm.shipToName.trim(),
+                shipToAddress: normalizeLines(createInvoiceForm.shipToAddress),
+                productName: createInvoiceForm.productName.trim(),
+                hsnCode: createInvoiceForm.hsnCode.trim() || undefined,
+                quantity: qty,
+                rate,
+                amount,
+                vehicleNumber: normalizeVehicleText(createInvoiceForm.vehicleNumber),
+                truckNumber: normalizeVehicleText(createInvoiceForm.truckNumber || createInvoiceForm.vehicleNumber),
+                ownerName: createInvoiceForm.ownerName.trim() || undefined,
+                insuredPartyPhone: normalizePhoneInput(createInvoiceForm.insuredPartyPhone),
+                weighmentSlipNote: createInvoiceForm.invoiceKind === 'cash' ? 'cash' : 'commission',
+                weighmentSlips: createWeighmentFiles,
+            });
+
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to create invoice');
+            }
+
+            toast.success('Invoice created and sent to insured party.');
+            closeCreateInvoiceModal();
+            await fetchInvoices();
+        } catch (error: any) {
+            toast.error(error?.message || 'Failed to create invoice');
+        } finally {
+            setCreateInvoiceSubmitting(false);
+        }
+    };
 
     const productOptions = useMemo(() => {
         const options = invoices
@@ -1292,6 +1819,174 @@ export default function InsuranceFormsPage() {
                 </div>
             )}
 
+            {createInvoiceOpen && (
+                <div className="fixed inset-0 z-[2160] flex items-center justify-center bg-black/40 p-3 sm:p-4">
+                    <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+                        {createInvoiceParsing && (
+                            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/85">
+                                <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-green-600" />
+                                <p className="mt-3 text-sm font-semibold text-slate-800">Extracting document details with Gemini OCR...</p>
+                            </div>
+                        )}
+                        <div className="flex items-start justify-between gap-3 border-b px-5 py-4">
+                            <div>
+                                <h3 className="text-lg font-semibold text-slate-900">Create Invoice</h3>
+                                <p className="text-sm text-slate-500">Choose invoice type first, upload documents, then review and create.</p>
+                            </div>
+                            <button onClick={closeCreateInvoiceModal} disabled={createInvoiceSubmitting} className="rounded-md p-2 text-slate-500 hover:bg-slate-100">
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+                        <div className="overflow-y-auto px-5 py-4">
+                            <div className="grid gap-4 lg:grid-cols-[0.9fr_1.4fr]">
+                                <div className="space-y-4">
+                                    <div className="rounded-lg border border-slate-200 p-4">
+                                        <h4 className="text-sm font-semibold text-slate-900">Invoice type</h4>
+                                        <label className="mt-3 block text-sm font-medium text-slate-700">
+                                            Select before upload
+                                            <select
+                                                value={createInvoiceForm.invoiceKind}
+                                                disabled={createInvoiceParsing}
+                                                onChange={(e) => {
+                                                    const invoiceKind = e.target.value as AdminInvoiceKind;
+                                                    setCreateInvoiceForm((prev) => applyCreateInvoiceParties(selectedInsuredUser, selectedOtherPartyUser, invoiceKind, prev));
+                                                }}
+                                                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                                            >
+                                                <option value="cash">Cash</option>
+                                                <option value="commission">Commission</option>
+                                            </select>
+                                        </label>
+                                    </div>
+
+                                    <div className="rounded-lg border border-slate-200 p-4">
+                                        <h4 className="text-sm font-semibold text-slate-900">Documents</h4>
+                                        <label className="mt-3 flex items-start gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={skipCreateInvoiceOcr}
+                                                onChange={(e) => setSkipCreateInvoiceOcr(e.target.checked)}
+                                                className="mt-1"
+                                            />
+                                            <span>
+                                                <span className="block font-medium text-slate-900">Do not use OCR</span>
+                                                <span className="block text-xs text-slate-500">Uploaded files will be attached, but fields must be filled manually.</span>
+                                            </span>
+                                        </label>
+                                        <label className="mt-3 block text-sm font-medium text-slate-700">
+                                            Weighment slip
+                                            <input
+                                                type="file"
+                                                accept="image/*,application/pdf"
+                                                multiple
+                                                disabled={createInvoiceParsing}
+                                                onChange={(e) => handleCreateInvoiceDocumentChange(Array.from(e.target.files || []), createPurchaseBillFile)}
+                                                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                                            />
+                                        </label>
+                                        <label className="mt-3 block text-sm font-medium text-slate-700">
+                                            Purchase bill / previous invoice
+                                            <input
+                                                type="file"
+                                                accept="image/*,application/pdf"
+                                                disabled={createInvoiceParsing}
+                                                onChange={(e) => handleCreateInvoiceDocumentChange(createWeighmentFiles, e.target.files?.[0] || null)}
+                                                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                                            />
+                                        </label>
+                                        <p className="mt-2 text-xs text-slate-500">
+                                            {skipCreateInvoiceOcr
+                                                ? 'OCR is skipped until you manually uncheck this option.'
+                                                : createInvoiceParsing
+                                                    ? 'Reading document text with Gemini OCR...'
+                                                    : documentExtractText
+                                                        ? 'Text extracted. Review fields.'
+                                                        : 'Upload screenshots, images, or PDFs for OCR.'}
+                                        </p>
+                                    </div>
+
+                                    <div className="rounded-lg border border-slate-200 p-4">
+                                        <h4 className="text-sm font-semibold text-slate-900">Parties</h4>
+                                        <label className="mt-3 block text-sm font-medium text-slate-700">
+                                            Insured party name
+                                            <select
+                                                value={createInvoiceForm.insuredUserId}
+                                                disabled={createInvoiceParsing}
+                                                onChange={(e) => {
+                                                    const insuredUser = verifiedUsers.find((user) => user.id === e.target.value) || null;
+                                                    setCreateInvoiceForm((prev) => applyCreateInvoiceParties(insuredUser, selectedOtherPartyUser, prev.invoiceKind, { ...prev, insuredUserId: e.target.value }));
+                                                }}
+                                                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                                            >
+                                                <option value="">Select registered verified user</option>
+                                                {verifiedUsers.map((user) => (
+                                                    <option key={user.id} value={user.id}>
+                                                        {user.name} - {user.mobileNumber} {user.walletType === 'UNPAID' ? '(Unpaid)' : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </label>
+                                        <label className="mt-3 block text-sm font-medium text-slate-700">
+                                            Select other party
+                                            <select
+                                                value={createInvoiceForm.otherPartyUserId}
+                                                disabled={createInvoiceParsing}
+                                                onChange={(e) => {
+                                                    const otherParty = verifiedUsers.find((user) => user.id === e.target.value) || null;
+                                                    setCreateInvoiceForm((prev) => applyCreateInvoiceParties(selectedInsuredUser, otherParty, prev.invoiceKind, { ...prev, otherPartyUserId: e.target.value }));
+                                                }}
+                                                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                                            >
+                                                <option value="">Select other registered party</option>
+                                                {verifiedUsers.filter((user) => user.id !== createInvoiceForm.insuredUserId).map((user) => (
+                                                    <option key={user.id} value={user.id}>{user.name} - {user.mobileNumber}</option>
+                                                ))}
+                                            </select>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <label className="block text-sm font-medium text-slate-700">Invoice date<input disabled={createInvoiceParsing} type="date" value={createInvoiceForm.invoiceDate} onChange={(e) => updateCreateInvoiceForm({ invoiceDate: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                                    <label className="block text-sm font-medium text-slate-700">
+                                        Insured party phone
+                                        <input
+                                            disabled={createInvoiceParsing}
+                                            value={createInvoiceForm.insuredPartyPhone}
+                                            onChange={(e) => updateCreateInvoiceForm({ insuredPartyPhone: e.target.value })}
+                                            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                                        />
+                                        <span className="mt-1 block text-xs text-slate-500">Invoice message will be sent to this number. You can edit it before creating.</span>
+                                    </label>
+                                    <label className="block text-sm font-medium text-slate-700">Supplier name<input disabled={createInvoiceParsing} value={createInvoiceForm.supplierName} onChange={(e) => updateCreateInvoiceForm({ supplierName: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                                    <label className="block text-sm font-medium text-slate-700">Place of supply<input disabled={createInvoiceParsing} value={createInvoiceForm.placeOfSupply} onChange={(e) => updateCreateInvoiceForm({ placeOfSupply: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">Supplier address<textarea disabled={createInvoiceParsing} value={createInvoiceForm.supplierAddress} onChange={(e) => updateCreateInvoiceForm({ supplierAddress: e.target.value })} rows={2} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                                    <label className="block text-sm font-medium text-slate-700">Bill to name<input disabled={createInvoiceParsing} value={createInvoiceForm.billToName} onChange={(e) => updateCreateInvoiceForm({ billToName: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                                    <label className="block text-sm font-medium text-slate-700">Ship to name<input disabled={createInvoiceParsing} value={createInvoiceForm.shipToName} onChange={(e) => updateCreateInvoiceForm({ shipToName: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                                    <label className="block text-sm font-medium text-slate-700">Bill to address<textarea disabled={createInvoiceParsing} value={createInvoiceForm.billToAddress} onChange={(e) => updateCreateInvoiceForm({ billToAddress: e.target.value })} rows={2} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                                    <label className="block text-sm font-medium text-slate-700">Ship to address<textarea disabled={createInvoiceParsing} value={createInvoiceForm.shipToAddress} onChange={(e) => updateCreateInvoiceForm({ shipToAddress: e.target.value })} rows={2} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                                    <label className="block text-sm font-medium text-slate-700">Product<input disabled={createInvoiceParsing} value={createInvoiceForm.productName} onChange={(e) => updateCreateInvoiceForm({ productName: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                                    <label className="block text-sm font-medium text-slate-700">HSN<input disabled={createInvoiceParsing} value={createInvoiceForm.hsnCode} onChange={(e) => updateCreateInvoiceForm({ hsnCode: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                                    <label className="block text-sm font-medium text-slate-700">Quantity<input disabled={createInvoiceParsing} type="number" step="0.01" value={createInvoiceForm.quantity} onChange={(e) => updateCreateInvoiceForm({ quantity: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                                    <label className="block text-sm font-medium text-slate-700">Rate<input disabled={createInvoiceParsing} type="number" step="0.01" value={createInvoiceForm.rate} onChange={(e) => updateCreateInvoiceForm({ rate: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                                    <label className="block text-sm font-medium text-slate-700">Vehicle number<input disabled={createInvoiceParsing} value={createInvoiceForm.vehicleNumber} onChange={(e) => updateCreateInvoiceForm({ vehicleNumber: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                                    <label className="block text-sm font-medium text-slate-700">Owner name<input disabled={createInvoiceParsing} value={createInvoiceForm.ownerName} onChange={(e) => updateCreateInvoiceForm({ ownerName: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-between border-t px-5 py-4">
+                            <p className="text-sm font-medium text-slate-700">Amount: {formatCurrency((Number(createInvoiceForm.quantity) || 0) * (Number(createInvoiceForm.rate) || 0))}</p>
+                            <div className="flex gap-2">
+                                <button onClick={closeCreateInvoiceModal} disabled={createInvoiceSubmitting} className="rounded-md border px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+                                <button onClick={handleCreateInvoiceSubmit} disabled={createInvoiceSubmitting || createInvoiceParsing} className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-60">
+                                    {createInvoiceSubmitting ? 'Creating...' : 'Create & Send'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="w-full max-w-none px-3 sm:px-4 lg:px-6 xl:px-8 2xl:px-10">
                 {/* Header - Responsive */}
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
@@ -1300,6 +1995,14 @@ export default function InsuranceFormsPage() {
                     </h1>
 
                     <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                        <button
+                            onClick={openCreateInvoiceModal}
+                            disabled={loading}
+                            className="bg-slate-800 hover:bg-slate-900 text-white px-3 sm:px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
+                        >
+                            <FileText className="w-4 h-4" />
+                            Create Invoice
+                        </button>
                         <button
                             onClick={openExportModal}
                             disabled={exporting || loading}
@@ -2796,3 +3499,4 @@ export default function InsuranceFormsPage() {
         </div>
     );
 }
+
