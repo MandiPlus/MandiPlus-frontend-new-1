@@ -16,7 +16,7 @@ import { toast } from 'react-toastify';
 
 type User = AdminLedgerUser;
 
-type UserSection = 'ALL' | 'CUSTOMER' | 'TRANSPORTER' | 'VERIFIED';
+type UserSection = 'ALL' | 'CUSTOMER' | 'TRANSPORTER' | 'VERIFIED' | 'UNPAID_WALLETS';
 type AdminViewSection = UserSection | 'ADMIN_REQUESTS';
 
 const indianStates = [
@@ -165,6 +165,7 @@ export default function UsersPage() {
     const [walletLogsLoading, setWalletLogsLoading] = useState(false);
     const [walletLogUser, setWalletLogUser] = useState<User | null>(null);
     const [walletLogs, setWalletLogs] = useState<AdminWalletStatementItem[]>([]);
+    const [exportingWalletByUser, setExportingWalletByUser] = useState<Record<string, boolean>>({});
     const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
     const [createUserLoading, setCreateUserLoading] = useState(false);
     const [createUserForm, setCreateUserForm] =
@@ -187,9 +188,29 @@ export default function UsersPage() {
     const [mergeTargetByUser, setMergeTargetByUser] = useState<Record<string, string>>({});
     const ITEMS_PER_PAGE = 10;
     const isVerifiedSection = activeSection === 'VERIFIED';
+    const isUnpaidWalletSection = activeSection === 'UNPAID_WALLETS';
+    const showMasterDetailColumns = isVerifiedSection || isUnpaidWalletSection;
     const showWalletColumns =
-        activeSection === 'CUSTOMER' || activeSection === 'TRANSPORTER';
-    const tableColumnCount = showWalletColumns ? 11 : isVerifiedSection ? 13 : 12;
+        activeSection === 'CUSTOMER' ||
+        activeSection === 'TRANSPORTER' ||
+        activeSection === 'VERIFIED' ||
+        activeSection === 'UNPAID_WALLETS';
+    const showIdentityColumn =
+        activeSection !== 'CUSTOMER' && activeSection !== 'TRANSPORTER';
+    const showBillingAndConvertColumns =
+        activeSection !== 'CUSTOMER' &&
+        activeSection !== 'TRANSPORTER' &&
+        activeSection !== 'UNPAID_WALLETS';
+    const showUserManagementColumns =
+        activeSection !== 'CUSTOMER' && activeSection !== 'UNPAID_WALLETS';
+    const tableColumnCount =
+        5 +
+        (showIdentityColumn ? 1 : 0) +
+        (showBillingAndConvertColumns ? 2 : 0) +
+        (showWalletColumns ? 2 : 0) +
+        (showUserManagementColumns ? 3 : 0) +
+        (showMasterDetailColumns ? 1 : 0) +
+        1;
     const sectionTitle =
         activeSection === 'ADMIN_REQUESTS'
             ? 'Admin Requests'
@@ -200,6 +221,8 @@ export default function UsersPage() {
                 ? 'Transporters'
                 : activeSection === 'VERIFIED'
                     ? 'Verified Users'
+                    : activeSection === 'UNPAID_WALLETS'
+                        ? 'Unpaid Wallet Users'
                 : 'Users';
 
     const loadAdminUsers = async () => {
@@ -236,6 +259,8 @@ export default function UsersPage() {
                 duplicateCount: Number(u.duplicateCount || 0),
                 aliasNames: Array.isArray(u.aliasNames) ? u.aliasNames : [],
                 aliasPhones: Array.isArray(u.aliasPhones) ? u.aliasPhones : [],
+                walletId: walletRow?.walletId ?? null,
+                walletType: walletRow?.walletType ?? null,
                 walletBalance: walletRow?.walletBalance ?? 0,
             } as User;
         });
@@ -386,7 +411,18 @@ export default function UsersPage() {
             if (activeSection === 'CUSTOMER') return user.identity === 'CUSTOMER';
             if (activeSection === 'TRANSPORTER') return user.identity === 'TRANSPORTER';
             if (activeSection === 'VERIFIED') {
-                return user.isLedgerMasterVerified && user.id === user.canonicalUserId;
+                return (
+                    user.isLedgerMasterVerified &&
+                    user.id === user.canonicalUserId &&
+                    user.walletType !== 'UNPAID'
+                );
+            }
+            if (activeSection === 'UNPAID_WALLETS') {
+                return (
+                    user.walletType === 'UNPAID' &&
+                    !user.isMerged &&
+                    user.id === user.canonicalUserId
+                );
             }
             return !user.isLedgerMasterVerified;
         });
@@ -549,6 +585,11 @@ export default function UsersPage() {
                     ...u,
                     identity: nextIdentity,
                     billingType: nextIdentity === 'TRANSPORTER' ? (billingType || 'BULK') : null,
+                    walletType:
+                        nextIdentity === 'CUSTOMER' ||
+                        (nextIdentity === 'TRANSPORTER' && (billingType || 'BULK') === 'BULK')
+                            ? 'PAID'
+                            : u.walletType,
                 } : u
             )));
             toast.success('User identity updated');
@@ -704,6 +745,13 @@ export default function UsersPage() {
 
                 createdUser.isLedgerMasterVerified = true;
                 createdUser.canonicalUserId = createdUser.id;
+                if (
+                    createdUser.identity !== 'CUSTOMER' &&
+                    !(createdUser.identity === 'TRANSPORTER' && createdUser.billingType !== 'PER_POLICY')
+                ) {
+                    createdUser.walletType = 'UNPAID';
+                    createdUser.walletBalance = 0;
+                }
             }
 
             if (
@@ -895,6 +943,30 @@ export default function UsersPage() {
             toast.error(err?.message || 'Failed to fetch wallet logs');
         } finally {
             setWalletLogsLoading(false);
+        }
+    };
+
+    const handleExportWalletLogs = async (user: User) => {
+        if (!user?.id || exportingWalletByUser[user.id]) return;
+        setExportingWalletByUser((prev) => ({ ...prev, [user.id]: true }));
+        try {
+            const blob = await adminApi.exportAdminUserWalletStatement(user.id);
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            const safeName =
+                (user.name || 'user').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') ||
+                'user';
+            link.href = url;
+            link.download = `wallet-logs-${safeName}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+            document.body.appendChild(link);
+            link.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(link);
+            toast.success('Wallet logs exported');
+        } catch (err: any) {
+            toast.error(err?.response?.data?.message || err?.message || 'Failed to export wallet logs');
+        } finally {
+            setExportingWalletByUser((prev) => ({ ...prev, [user.id]: false }));
         }
     };
 
@@ -1206,6 +1278,16 @@ export default function UsersPage() {
                     >
                         Verified Users
                     </button>
+                    <button
+                        onClick={() => setActiveSection('UNPAID_WALLETS')}
+                        className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+                            activeSection === 'UNPAID_WALLETS'
+                                ? 'bg-green-600 text-white'
+                                : 'bg-white text-gray-700 border border-gray-300'
+                        }`}
+                    >
+                        Unpaid Wallet Users
+                    </button>
                     {isFullAdmin ? (
                         <button
                             onClick={() => setActiveSection('ADMIN_REQUESTS')}
@@ -1256,17 +1338,17 @@ export default function UsersPage() {
                                             <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                 Registered Date
                                             </th>
-                                            {!showWalletColumns && (
+                                            {showIdentityColumn && (
                                                 <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                     Identity
                                                 </th>
                                             )}
-                                            {!showWalletColumns && (
+                                            {showBillingAndConvertColumns && (
                                                 <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                     Billing Type
                                                 </th>
                                             )}
-                                            {!showWalletColumns && (
+                                            {showBillingAndConvertColumns && (
                                                 <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                     Convert
                                                 </th>
@@ -1281,16 +1363,22 @@ export default function UsersPage() {
                                                     Update Wallet
                                                 </th>
                                             )}
-                                            <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                                                GCA Member
-                                            </th>
-                                            <th scope="col" className="px-2 py-3.5 text-left text-sm font-semibold text-gray-900">
-                                                Verify Master
-                                            </th>
-                                            <th scope="col" className="px-2 py-3.5 text-left text-sm font-semibold text-gray-900">
-                                                Merge Into Master
-                                            </th>
-                                            {isVerifiedSection && (
+                                            {showUserManagementColumns && (
+                                                <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                    GCA Member
+                                                </th>
+                                            )}
+                                            {showUserManagementColumns && (
+                                                <th scope="col" className="px-2 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                    Verify Master
+                                                </th>
+                                            )}
+                                            {showUserManagementColumns && (
+                                                <th scope="col" className="px-2 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                    Merge Into Master
+                                                </th>
+                                            )}
+                                            {showMasterDetailColumns && (
                                                 <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                     Merged Users
                                                 </th>
@@ -1358,19 +1446,19 @@ export default function UsersPage() {
                                                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                         {formatDate(user.createdAt)}
                                                     </td>
-                                                    {!showWalletColumns && (
+                                                    {showIdentityColumn && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-gray-700">
                                                             {user.identity || 'N/A'}
                                                         </td>
                                                     )}
-                                                    {!showWalletColumns && (
+                                                    {showBillingAndConvertColumns && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                             {user.identity === 'TRANSPORTER'
                                                                 ? (user.billingType === 'PER_POLICY' ? 'Per Policy' : 'Bulk')
                                                                 : '-'}
                                                         </td>
                                                     )}
-                                                    {!showWalletColumns && (
+                                                    {showBillingAndConvertColumns && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                             <div className="flex items-center gap-2">
                                                                 <button
@@ -1392,9 +1480,18 @@ export default function UsersPage() {
                                                     )}
                                                     {showWalletColumns && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-gray-700">
-                                                            {user.identity === 'TRANSPORTER' && user.billingType === 'PER_POLICY'
+                                                            {activeSection === 'TRANSPORTER' && user.identity === 'TRANSPORTER' && user.billingType === 'PER_POLICY'
                                                                 ? 'Per Policy'
-                                                                : `Rs ${Number(user.walletBalance || 0).toFixed(2)}`}
+                                                                : (
+                                                                    <div>
+                                                                        <span>Rs {Number(user.walletBalance || 0).toFixed(2)}</span>
+                                                                        {user.walletType === 'UNPAID' ? (
+                                                                            <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-600">
+                                                                                Unpaid
+                                                                            </span>
+                                                                        ) : null}
+                                                                    </div>
+                                                                )}
                                                         </td>
                                                     )}
                                                     {showWalletColumns && (
@@ -1403,12 +1500,12 @@ export default function UsersPage() {
                                                                 <span className="text-xs font-medium text-slate-500">
                                                                     Uses master user ledger
                                                                 </span>
-                                                            ) : user.identity === 'TRANSPORTER' && user.billingType === 'PER_POLICY' ? (
+                                                            ) : activeSection === 'TRANSPORTER' && user.identity === 'TRANSPORTER' && user.billingType === 'PER_POLICY' ? (
                                                                 <span className="text-xs font-medium text-gray-500">
                                                                     Wallet not applicable for per-policy transporter
                                                                 </span>
                                                             ) : (
-                                                                <div className="grid min-w-max grid-cols-[7rem_8.5rem_10rem_max-content_max-content_max-content_max-content] items-center gap-2">
+                                                                <div className="grid min-w-max grid-cols-[7rem_8.5rem_10rem_max-content_max-content_max-content_max-content_max-content] items-center gap-2">
                                                                     <input
                                                                         type="number"
                                                                         step="0.01"
@@ -1481,61 +1578,71 @@ export default function UsersPage() {
                                                                     >
                                                                         Logs
                                                                     </button>
+                                                                    <button
+                                                                        onClick={() => handleExportWalletLogs(user)}
+                                                                        disabled={exportingWalletByUser[user.id]}
+                                                                        className="rounded-md bg-blue-700 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
+                                                                    >
+                                                                        {exportingWalletByUser[user.id] ? 'Exporting...' : 'Export'}
+                                                                    </button>
                                                                 </div>
                                                             )}
                                                         </td>
                                                     )}
-                                                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 align-top">
-                                                        {(() => {
-                                                            const isGcaMember =
-                                                                String(user.unionMember || '').toUpperCase() === 'GCA';
-                                                            const isUpdating = Boolean(updatingUnionByUser[user.id]);
+                                                    {showUserManagementColumns && (
+                                                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 align-top">
+                                                            {(() => {
+                                                                const isGcaMember =
+                                                                    String(user.unionMember || '').toUpperCase() === 'GCA';
+                                                                const isUpdating = Boolean(updatingUnionByUser[user.id]);
 
-                                                            return (
-                                                                <div className="inline-flex items-center gap-2">
-                                                                    <button
-                                                                        type="button"
-                                                                        disabled={isUpdating || isGcaMember}
-                                                                        onClick={() => handleToggleUnionMember(user, true)}
-                                                                        title="Mark as GCA member"
-                                                                        className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-sm font-bold transition-colors ${
-                                                                            isGcaMember
-                                                                                ? 'cursor-not-allowed border-emerald-200 bg-emerald-500 text-white'
-                                                                                : 'border-slate-300 bg-white text-emerald-600 hover:border-emerald-300 hover:bg-emerald-50'
-                                                                        } disabled:opacity-60`}
-                                                                    >
-                                                                        ✓
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        disabled={isUpdating || !isGcaMember}
-                                                                        onClick={() => handleToggleUnionMember(user, false)}
-                                                                        title="Remove GCA membership"
-                                                                        className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-sm font-bold transition-colors ${
-                                                                            isGcaMember
-                                                                                ? 'border-slate-300 bg-white text-rose-600 hover:border-rose-300 hover:bg-rose-50'
-                                                                                : 'cursor-not-allowed border-rose-200 bg-rose-500 text-white'
-                                                                        } disabled:opacity-60`}
-                                                                    >
-                                                                        ✕
-                                                                    </button>
-                                                                    <span
-                                                                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                                                                            isGcaMember
-                                                                                ? 'bg-emerald-50 text-emerald-700'
-                                                                                : 'bg-slate-100 text-slate-500'
-                                                                        }`}
-                                                                    >
-                                                                        {isUpdating
-                                                                            ? 'Saving...'
-                                                                            : isGcaMember
-                                                                                ? 'GCA'
-                                                                                : 'Not set'}
-                                                                    </span>
-                                                                </div>
-                                                            );
-                                                        })()}
-                                                    </td>
+                                                                return (
+                                                                    <div className="inline-flex items-center gap-2">
+                                                                        <button
+                                                                            type="button"
+                                                                            disabled={isUpdating || isGcaMember}
+                                                                            onClick={() => handleToggleUnionMember(user, true)}
+                                                                            title="Mark as GCA member"
+                                                                            className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-bold transition-colors ${
+                                                                                isGcaMember
+                                                                                    ? 'cursor-not-allowed border-emerald-200 bg-emerald-500 text-white'
+                                                                                    : 'border-slate-300 bg-white text-emerald-600 hover:border-emerald-300 hover:bg-emerald-50'
+                                                                            } disabled:opacity-60`}
+                                                                            >
+                                                                                &#10003;
+                                                                            </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            disabled={isUpdating || !isGcaMember}
+                                                                            onClick={() => handleToggleUnionMember(user, false)}
+                                                                            title="Remove GCA membership"
+                                                                            className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-bold transition-colors ${
+                                                                                isGcaMember
+                                                                                    ? 'border-slate-300 bg-white text-rose-600 hover:border-rose-300 hover:bg-rose-50'
+                                                                                    : 'cursor-not-allowed border-rose-200 bg-rose-500 text-white'
+                                                                            } disabled:opacity-60`}
+                                                                            >
+                                                                                &#10005;
+                                                                            </button>
+                                                                        <span
+                                                                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                                                                isGcaMember
+                                                                                    ? 'bg-emerald-50 text-emerald-700'
+                                                                                    : 'bg-slate-100 text-slate-500'
+                                                                            }`}
+                                                                        >
+                                                                            {isUpdating
+                                                                                ? 'Saving...'
+                                                                                : isGcaMember
+                                                                                    ? 'GCA'
+                                                                                    : 'Not set'}
+                                                                        </span>
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                        </td>
+                                                    )}
+                                                    {showUserManagementColumns && (
                                                     <td className="whitespace-nowrap px-2 py-4 text-sm text-gray-500 align-top">
                                                         {user.isMerged ? (
                                                             <span className="text-xs font-medium text-slate-500">Merged child</span>
@@ -1545,7 +1652,7 @@ export default function UsersPage() {
                                                                     <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-[11px] font-bold text-white">✓</span>
                                                                     Verified
                                                                 </span>
-                                                                {isVerifiedSection ? (
+                                                                {showMasterDetailColumns ? (
                                                                     <button
                                                                         onClick={() => handleUnverifyMaster(user)}
                                                                         disabled={unverifyingMasterByUser[user.id] || mergedUsersForMaster.length > 0}
@@ -1570,6 +1677,8 @@ export default function UsersPage() {
                                                             </button>
                                                         )}
                                                     </td>
+                                                    )}
+                                                    {showUserManagementColumns && (
                                                     <td className="px-2 py-4 text-sm text-gray-500 align-top">
                                                         {user.isMerged ? (
                                                             <div className="min-w-[14rem]">
@@ -1640,7 +1749,8 @@ export default function UsersPage() {
                                                             </div>
                                                         )}
                                                     </td>
-                                                    {isVerifiedSection && (
+                                                    )}
+                                                    {showMasterDetailColumns && (
                                                         <td className="px-3 py-4 text-sm text-gray-500">
                                                             <div className="min-w-[12rem]">
                                                                 <p className="mb-2 text-xs font-medium text-slate-600">
@@ -1752,12 +1862,23 @@ export default function UsersPage() {
                                     {walletLogUser?.name || 'User'} ({formatIndianMobile(walletLogUser?.mobileNumber)})
                                 </p>
                             </div>
-                            <button
-                                onClick={() => setWalletLogsOpen(false)}
-                                className="rounded-md border px-3 py-1 text-sm text-gray-600 hover:bg-gray-50"
-                            >
-                                Close
-                            </button>
+                            <div className="flex items-center gap-2">
+                                {walletLogUser ? (
+                                    <button
+                                        onClick={() => handleExportWalletLogs(walletLogUser)}
+                                        disabled={exportingWalletByUser[walletLogUser.id]}
+                                        className="rounded-md bg-blue-700 px-3 py-1 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
+                                    >
+                                        {exportingWalletByUser[walletLogUser.id] ? 'Exporting...' : 'Export Excel'}
+                                    </button>
+                                ) : null}
+                                <button
+                                    onClick={() => setWalletLogsOpen(false)}
+                                    className="rounded-md border px-3 py-1 text-sm text-gray-600 hover:bg-gray-50"
+                                >
+                                    Close
+                                </button>
+                            </div>
                         </div>
 
                         <div className="max-h-[65vh] overflow-auto">
@@ -2507,3 +2628,4 @@ export default function UsersPage() {
         </div>
     );
 }
+
