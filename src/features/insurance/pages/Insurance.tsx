@@ -21,6 +21,7 @@ import {
     getSupplierPartyAssists,
     getSupplierHistoricalParties,
     getTruckFlagStatus,
+    getVehicleRecentInvoiceStatus,
     getVerifiedSuppliers,
     type SupplierPartyAssistProduct,
     type SupplierPartyAssistResponse,
@@ -35,6 +36,7 @@ import AssistPanel from '../components/AssistPanel';
 import LookupDropdown, {
     type LookupDropdownOption,
 } from '../components/LookupDropdown';
+import { itemsData } from '../productCatalog';
 
 // --- Types ---
 interface FormData {
@@ -107,28 +109,6 @@ const resolveCustomerUserId = (account?: InvoiceCustomerAccount | null): string 
     const candidates = [account.customerUserId, account.userId, account.id];
     return candidates.find((candidate) => isUuid(candidate)) || '';
 };
-
-// --- Data ---
-const itemsData = [
-    { name: "Tender Coconut", hsn: "08011910" },
-    { name: "Kiwi", hsn: "08109020" },
-    { name: "Mango", hsn: "08045020" },
-    { name: "Papaya (Papita)", hsn: "08072000" },
-    { name: "Pomegranate (Anar)", hsn: "08109010" },
-    { name: "Oranges", hsn: "08051000" },
-    { name: "Kinnow", hsn: "08052100" },
-    { name: "Guava (Amrood)", hsn: "08045030" },
-    { name: "Muskmelon (Kastoori Tarbooj)", hsn: "08071910" },
-    { name: "Watermelon (Tarbooj)", hsn: "08071100" },
-    { name: "Tomato", hsn: "07020000" },
-    { name: "Onion", hsn: "07031010" },
-    { name: "Potato", hsn: "07019000" },
-    { name: "Ginger (Fresh)", hsn: "07030010" },
-    { name: "Sweet Potato", hsn: "07142000" },
-    { name: "Mosambi", hsn: "08059000" },
-    { name: "Grapes", hsn: "08061000" },
-
-];
 
 // --- Constants ---
 const questions: Question[] = [
@@ -750,14 +730,22 @@ const Insurance = () => {
     const validateVehicleNumber = async (vehicleNumber: string): Promise<string | null> => {
         try {
             const truckFlagStatus = await getTruckFlagStatus(vehicleNumber);
-            if (!truckFlagStatus.isFlagged) {
-                return null;
+            if (truckFlagStatus.isFlagged) {
+                return (
+                    truckFlagStatus.message ||
+                    'This vehicle has been flagged in system. Can not create invoice for this vehicle.'
+                );
             }
 
-            return (
-                truckFlagStatus.message ||
-                'This vehicle has been flagged in system. Can not create invoice for this vehicle.'
-            );
+            const recentInvoiceStatus = await getVehicleRecentInvoiceStatus(vehicleNumber);
+            if (recentInvoiceStatus.hasRecentInvoice) {
+                return (
+                    recentInvoiceStatus.message ||
+                    'An invoice was already created for this vehicle within the last 24 hours. Please try again after 24 hours.'
+                );
+            }
+
+            return null;
         } catch (error: unknown) {
             const apiError = error as { message?: string | string[] };
             return Array.isArray(apiError?.message)

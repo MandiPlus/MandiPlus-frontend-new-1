@@ -37,10 +37,20 @@ export interface InsuranceForm {
   claimDetails?: string;
   pdfUrl?: string;
   pdfURL?: string;
+  insurance?: {
+    fileUrl?: string;
+    url?: string;
+    fileType?: string;
+    uploadedAt?: string;
+  } | string | null;
+  insuranceFileUrl?: string;
+  insuranceUrl?: string;
   createdAt?: string;
   invoiceType?: "SUPPLIER_INVOICE" | "BUYER_INVOICE";
   insuredPersonNameSnapshot?: string;
   insuredPersonUserId?: string;
+  isRejected?: boolean;
+  rejectionReason?: string | null;
 }
 
 // ✅ NEW: Type for regenerating invoice
@@ -145,6 +155,17 @@ export interface TruckFlagStatus {
   exists: boolean;
   isFlagged: boolean;
   flagReason: string | null;
+  message: string | null;
+}
+
+export interface VehicleRecentInvoiceStatus {
+  vehicleNumber: string | null;
+  hasRecentInvoice: boolean;
+  invoice: {
+    id: string;
+    invoiceNumber: string;
+    createdAt: string;
+  } | null;
   message: string | null;
 }
 
@@ -263,6 +284,28 @@ export const getTruckFlagStatus = async (
   } catch (error) {
     const err = error as AxiosError<ApiError>;
     throw err.response?.data || { message: "Failed to check truck flag status" };
+  }
+};
+
+export const getVehicleRecentInvoiceStatus = async (
+  vehicleNumber: string,
+): Promise<VehicleRecentInvoiceStatus> => {
+  try {
+    const token = getStoredAuthToken();
+
+    const response = await axios.get(
+      `${API_BASE_URL}/invoices/vehicle/recent-status/${encodeURIComponent(vehicleNumber)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to check recent vehicle invoice status" };
   }
 };
 

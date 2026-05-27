@@ -13,6 +13,8 @@ import { Menu, Transition } from '@headlessui/react';
 import { FileText, RefreshCw, Upload, Eye, CheckCircle, AlertCircle, X, XCircle, Pencil, ChevronDown, ChevronRight, MoreVertical, Link as LinkIcon, RotateCcw } from 'lucide-react';
 
 import InsuranceUploadModal from '@/features/admin/components/InsuranceUploadModal';
+import { getHsnForProduct, itemsData } from '@/features/insurance/productCatalog';
+import { getVehicleRecentInvoiceStatus } from '@/features/insurance/api';
 
 function useDebounce<T>(value: T, delay: number): T {
     const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -28,6 +30,11 @@ function useDebounce<T>(value: T, delay: number): T {
 const INSURANCE_OVERRIDES_KEY = 'admin_invoice_insurance_overrides';
 const ADMIN_CREATE_INVOICE_SKIP_OCR_KEY = 'admin_create_invoice_skip_ocr';
 const INDIAN_PHONE_REGEX = /^(?:\+91|91)?[6-9]\d{9}$/;
+const createInvoicePanelClass = 'rounded-xl border border-slate-200 bg-white p-3 shadow-sm';
+const createInvoiceFieldClass = 'mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-100 disabled:text-slate-500';
+const createInvoiceFileFieldClass = `${createInvoiceFieldClass} cursor-pointer p-0 text-slate-500 file:mr-3 file:cursor-pointer file:border-0 file:border-r file:border-slate-200 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-800 hover:file:bg-slate-200`;
+const createInvoiceTextareaClass = `${createInvoiceFieldClass} resize-none`;
+const createInvoiceLabelClass = 'block text-xs font-medium text-slate-700';
 const getInvoiceKey = (inv: { id?: string; _id?: string; invoiceNumber?: string }) =>
     inv?.id || inv?._id || inv?.invoiceNumber || '';
 const getInvoiceId = (inv: { id?: string; _id?: string }) => inv?.id || inv?._id || '';
@@ -171,6 +178,9 @@ const userPlaceOfSupply = (user?: Partial<AdminLedgerUser> | null) =>
 
 const normalizeVehicleText = (value: string) =>
     value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+const hasCatalogProduct = (productName: string) =>
+    itemsData.some((item) => item.name === productName);
 
 const extractVehicleNumber = (text: string) => {
     const compact = normalizeVehicleText(text);
@@ -724,6 +734,9 @@ export default function InsuranceFormsPage() {
         if (!next.productName && Array.isArray((insuredUser as any)?.products) && (insuredUser as any).products[0]) {
             next.productName = (insuredUser as any).products[0];
         }
+        if (next.productName && !next.hsnCode) {
+            next.hsnCode = getHsnForProduct(next.productName) || next.hsnCode;
+        }
 
         return next;
     }, []);
@@ -743,6 +756,31 @@ export default function InsuranceFormsPage() {
 
     const updateCreateInvoiceForm = (patch: Partial<AdminCreateInvoiceForm>) => {
         setCreateInvoiceForm((prev) => ({ ...prev, ...patch }));
+    };
+
+    const updateCreateInvoiceProduct = (productName: string) => {
+        setCreateInvoiceForm((prev) => ({
+            ...prev,
+            productName,
+            hsnCode: getHsnForProduct(productName),
+        }));
+    };
+
+    const validateCreateInvoiceVehicle = async (vehicleNumber: string) => {
+        const normalizedVehicle = normalizeVehicleText(vehicleNumber);
+        if (!normalizedVehicle) return;
+
+        try {
+            const status = await getVehicleRecentInvoiceStatus(normalizedVehicle);
+            if (status.hasRecentInvoice) {
+                toast.error(
+                    status.message ||
+                    'An invoice was already created for this vehicle within the last 24 hours. Please try again after 24 hours.',
+                );
+            }
+        } catch (error: any) {
+            toast.error(error?.message || 'Unable to verify recent vehicle invoice status.');
+        }
     };
 
     const openCreateInvoiceModal = () => {
@@ -809,6 +847,10 @@ export default function InsuranceFormsPage() {
                     },
                 );
 
+                const productName = hasCatalogProduct(hints.productName)
+                    ? hints.productName
+                    : prev.productName;
+
                 return {
                     ...base,
                     supplierName: base.supplierName || hints.supplierName || prev.supplierName,
@@ -820,7 +862,8 @@ export default function InsuranceFormsPage() {
                     truckNumber: hints.vehicleNumber || prev.truckNumber,
                     quantity: hints.quantity || prev.quantity,
                     rate: hints.rate || prev.rate,
-                    productName: hints.productName || prev.productName,
+                    productName,
+                    hsnCode: getHsnForProduct(productName) || base.hsnCode || prev.hsnCode,
                     placeOfSupply: hints.placeOfSupply || base.placeOfSupply || prev.placeOfSupply,
                     insuredPartyPhone:
                         insuredUser?.mobileNumber ||
@@ -1820,29 +1863,37 @@ export default function InsuranceFormsPage() {
             )}
 
             {createInvoiceOpen && (
-                <div className="fixed inset-0 z-[2160] flex items-center justify-center bg-black/40 p-3 sm:p-4">
-                    <div className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+                <div className="fixed inset-0 z-[2160] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:p-4">
+                    <div className="relative flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-white/70 bg-slate-50 shadow-2xl">
                         {createInvoiceParsing && (
-                            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/85">
-                                <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-green-600" />
+                            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/85 backdrop-blur-sm">
+                                <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-emerald-600" />
                                 <p className="mt-3 text-sm font-semibold text-slate-800">Extracting document details with Gemini OCR...</p>
                             </div>
                         )}
-                        <div className="flex items-start justify-between gap-3 border-b px-5 py-4">
-                            <div>
-                                <h3 className="text-lg font-semibold text-slate-900">Create Invoice</h3>
-                                <p className="text-sm text-slate-500">Choose invoice type first, upload documents, then review and create.</p>
+                        <div className="relative overflow-hidden border-b border-slate-200 bg-gradient-to-r from-emerald-50 via-white to-sky-50 px-4 py-3">
+                            <div className="absolute right-6 top-4 h-16 w-16 rounded-full bg-emerald-200/35 blur-2xl" />
+                            <div className="relative flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-3">
+                                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-md shadow-emerald-200">
+                                        <FileText className="h-5 w-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-slate-950">Create Invoice</h3>
+                                        <p className="mt-0.5 text-sm text-slate-600">Choose invoice type first, upload documents, then review and create.</p>
+                                    </div>
+                                </div>
+                                <button onClick={closeCreateInvoiceModal} disabled={createInvoiceSubmitting} className="rounded-lg p-2 text-slate-500 transition hover:bg-white hover:text-slate-900">
+                                    <X className="h-5 w-5" />
+                                </button>
                             </div>
-                            <button onClick={closeCreateInvoiceModal} disabled={createInvoiceSubmitting} className="rounded-md p-2 text-slate-500 hover:bg-slate-100">
-                                <X className="h-5 w-5" />
-                            </button>
                         </div>
-                        <div className="overflow-y-auto px-5 py-4">
-                            <div className="grid gap-4 lg:grid-cols-[0.9fr_1.4fr]">
-                                <div className="space-y-4">
-                                    <div className="rounded-lg border border-slate-200 p-4">
-                                        <h4 className="text-sm font-semibold text-slate-900">Invoice type</h4>
-                                        <label className="mt-3 block text-sm font-medium text-slate-700">
+                        <div className="overflow-hidden px-4 py-3">
+                            <div className="grid gap-3 lg:grid-cols-[0.9fr_1.4fr]">
+                                <div className="space-y-3">
+                                    <div className={createInvoicePanelClass}>
+                                        <h4 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><CheckCircle className="h-4 w-4 text-emerald-600" />Invoice type</h4>
+                                        <label className={`mt-2 ${createInvoiceLabelClass}`}>
                                             Select before upload
                                             <select
                                                 value={createInvoiceForm.invoiceKind}
@@ -1851,7 +1902,7 @@ export default function InsuranceFormsPage() {
                                                     const invoiceKind = e.target.value as AdminInvoiceKind;
                                                     setCreateInvoiceForm((prev) => applyCreateInvoiceParties(selectedInsuredUser, selectedOtherPartyUser, invoiceKind, prev));
                                                 }}
-                                                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                                                className={createInvoiceFieldClass}
                                             >
                                                 <option value="cash">Cash</option>
                                                 <option value="commission">Commission</option>
@@ -1859,21 +1910,21 @@ export default function InsuranceFormsPage() {
                                         </label>
                                     </div>
 
-                                    <div className="rounded-lg border border-slate-200 p-4">
-                                        <h4 className="text-sm font-semibold text-slate-900">Documents</h4>
-                                        <label className="mt-3 flex items-start gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                                    <div className={createInvoicePanelClass}>
+                                        <h4 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><Upload className="h-4 w-4 text-sky-600" />Documents</h4>
+                                        <label className="mt-2 flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
                                             <input
                                                 type="checkbox"
                                                 checked={skipCreateInvoiceOcr}
                                                 onChange={(e) => setSkipCreateInvoiceOcr(e.target.checked)}
-                                                className="mt-1"
+                                                className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                                             />
                                             <span>
                                                 <span className="block font-medium text-slate-900">Do not use OCR</span>
                                                 <span className="block text-xs text-slate-500">Uploaded files will be attached, but fields must be filled manually.</span>
                                             </span>
                                         </label>
-                                        <label className="mt-3 block text-sm font-medium text-slate-700">
+                                        <label className={`mt-2 ${createInvoiceLabelClass}`}>
                                             Weighment slip
                                             <input
                                                 type="file"
@@ -1881,20 +1932,20 @@ export default function InsuranceFormsPage() {
                                                 multiple
                                                 disabled={createInvoiceParsing}
                                                 onChange={(e) => handleCreateInvoiceDocumentChange(Array.from(e.target.files || []), createPurchaseBillFile)}
-                                                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                                                className={createInvoiceFileFieldClass}
                                             />
                                         </label>
-                                        <label className="mt-3 block text-sm font-medium text-slate-700">
+                                        <label className={`mt-2 ${createInvoiceLabelClass}`}>
                                             Purchase bill / previous invoice
                                             <input
                                                 type="file"
                                                 accept="image/*,application/pdf"
                                                 disabled={createInvoiceParsing}
                                                 onChange={(e) => handleCreateInvoiceDocumentChange(createWeighmentFiles, e.target.files?.[0] || null)}
-                                                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                                                className={createInvoiceFileFieldClass}
                                             />
                                         </label>
-                                        <p className="mt-2 text-xs text-slate-500">
+                                        <p className="mt-1 text-xs text-slate-500">
                                             {skipCreateInvoiceOcr
                                                 ? 'OCR is skipped until you manually uncheck this option.'
                                                 : createInvoiceParsing
@@ -1905,9 +1956,9 @@ export default function InsuranceFormsPage() {
                                         </p>
                                     </div>
 
-                                    <div className="rounded-lg border border-slate-200 p-4">
-                                        <h4 className="text-sm font-semibold text-slate-900">Parties</h4>
-                                        <label className="mt-3 block text-sm font-medium text-slate-700">
+                                    <div className={createInvoicePanelClass}>
+                                        <h4 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><LinkIcon className="h-4 w-4 text-indigo-600" />Parties</h4>
+                                        <label className={`mt-2 ${createInvoiceLabelClass}`}>
                                             Insured party name
                                             <select
                                                 value={createInvoiceForm.insuredUserId}
@@ -1916,7 +1967,7 @@ export default function InsuranceFormsPage() {
                                                     const insuredUser = verifiedUsers.find((user) => user.id === e.target.value) || null;
                                                     setCreateInvoiceForm((prev) => applyCreateInvoiceParties(insuredUser, selectedOtherPartyUser, prev.invoiceKind, { ...prev, insuredUserId: e.target.value }));
                                                 }}
-                                                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                                                className={createInvoiceFieldClass}
                                             >
                                                 <option value="">Select registered verified user</option>
                                                 {verifiedUsers.map((user) => (
@@ -1926,7 +1977,7 @@ export default function InsuranceFormsPage() {
                                                 ))}
                                             </select>
                                         </label>
-                                        <label className="mt-3 block text-sm font-medium text-slate-700">
+                                        <label className={`mt-2 ${createInvoiceLabelClass}`}>
                                             Select other party
                                             <select
                                                 value={createInvoiceForm.otherPartyUserId}
@@ -1935,7 +1986,7 @@ export default function InsuranceFormsPage() {
                                                     const otherParty = verifiedUsers.find((user) => user.id === e.target.value) || null;
                                                     setCreateInvoiceForm((prev) => applyCreateInvoiceParties(selectedInsuredUser, otherParty, prev.invoiceKind, { ...prev, otherPartyUserId: e.target.value }));
                                                 }}
-                                                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                                                className={createInvoiceFieldClass}
                                             >
                                                 <option value="">Select other registered party</option>
                                                 {verifiedUsers.filter((user) => user.id !== createInvoiceForm.insuredUserId).map((user) => (
@@ -1946,39 +1997,61 @@ export default function InsuranceFormsPage() {
                                     </div>
                                 </div>
 
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                    <label className="block text-sm font-medium text-slate-700">Invoice date<input disabled={createInvoiceParsing} type="date" value={createInvoiceForm.invoiceDate} onChange={(e) => updateCreateInvoiceForm({ invoiceDate: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
-                                    <label className="block text-sm font-medium text-slate-700">
+                                <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                                    <div className="mb-2 flex items-center justify-between gap-3">
+                                        <h4 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><Pencil className="h-4 w-4 text-emerald-600" />Invoice details</h4>
+                                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{createInvoiceForm.invoiceKind === 'cash' ? 'Cash invoice' : 'Commission invoice'}</span>
+                                    </div>
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                    <label className={createInvoiceLabelClass}>Invoice date<input disabled={createInvoiceParsing} type="date" value={createInvoiceForm.invoiceDate} onChange={(e) => updateCreateInvoiceForm({ invoiceDate: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>
                                         Insured party phone
                                         <input
                                             disabled={createInvoiceParsing}
                                             value={createInvoiceForm.insuredPartyPhone}
                                             onChange={(e) => updateCreateInvoiceForm({ insuredPartyPhone: e.target.value })}
-                                            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                                            className={createInvoiceFieldClass}
                                         />
                                         <span className="mt-1 block text-xs text-slate-500">Invoice message will be sent to this number. You can edit it before creating.</span>
                                     </label>
-                                    <label className="block text-sm font-medium text-slate-700">Supplier name<input disabled={createInvoiceParsing} value={createInvoiceForm.supplierName} onChange={(e) => updateCreateInvoiceForm({ supplierName: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
-                                    <label className="block text-sm font-medium text-slate-700">Place of supply<input disabled={createInvoiceParsing} value={createInvoiceForm.placeOfSupply} onChange={(e) => updateCreateInvoiceForm({ placeOfSupply: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
-                                    <label className="block text-sm font-medium text-slate-700 sm:col-span-2">Supplier address<textarea disabled={createInvoiceParsing} value={createInvoiceForm.supplierAddress} onChange={(e) => updateCreateInvoiceForm({ supplierAddress: e.target.value })} rows={2} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
-                                    <label className="block text-sm font-medium text-slate-700">Bill to name<input disabled={createInvoiceParsing} value={createInvoiceForm.billToName} onChange={(e) => updateCreateInvoiceForm({ billToName: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
-                                    <label className="block text-sm font-medium text-slate-700">Ship to name<input disabled={createInvoiceParsing} value={createInvoiceForm.shipToName} onChange={(e) => updateCreateInvoiceForm({ shipToName: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
-                                    <label className="block text-sm font-medium text-slate-700">Bill to address<textarea disabled={createInvoiceParsing} value={createInvoiceForm.billToAddress} onChange={(e) => updateCreateInvoiceForm({ billToAddress: e.target.value })} rows={2} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
-                                    <label className="block text-sm font-medium text-slate-700">Ship to address<textarea disabled={createInvoiceParsing} value={createInvoiceForm.shipToAddress} onChange={(e) => updateCreateInvoiceForm({ shipToAddress: e.target.value })} rows={2} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
-                                    <label className="block text-sm font-medium text-slate-700">Product<input disabled={createInvoiceParsing} value={createInvoiceForm.productName} onChange={(e) => updateCreateInvoiceForm({ productName: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
-                                    <label className="block text-sm font-medium text-slate-700">HSN<input disabled={createInvoiceParsing} value={createInvoiceForm.hsnCode} onChange={(e) => updateCreateInvoiceForm({ hsnCode: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
-                                    <label className="block text-sm font-medium text-slate-700">Quantity<input disabled={createInvoiceParsing} type="number" step="0.01" value={createInvoiceForm.quantity} onChange={(e) => updateCreateInvoiceForm({ quantity: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
-                                    <label className="block text-sm font-medium text-slate-700">Rate<input disabled={createInvoiceParsing} type="number" step="0.01" value={createInvoiceForm.rate} onChange={(e) => updateCreateInvoiceForm({ rate: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
-                                    <label className="block text-sm font-medium text-slate-700">Vehicle number<input disabled={createInvoiceParsing} value={createInvoiceForm.vehicleNumber} onChange={(e) => updateCreateInvoiceForm({ vehicleNumber: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
-                                    <label className="block text-sm font-medium text-slate-700">Owner name<input disabled={createInvoiceParsing} value={createInvoiceForm.ownerName} onChange={(e) => updateCreateInvoiceForm({ ownerName: e.target.value })} className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm" /></label>
+                                    <label className={createInvoiceLabelClass}>Supplier name<input disabled={createInvoiceParsing} value={createInvoiceForm.supplierName} onChange={(e) => updateCreateInvoiceForm({ supplierName: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Place of supply<input disabled={createInvoiceParsing} value={createInvoiceForm.placeOfSupply} onChange={(e) => updateCreateInvoiceForm({ placeOfSupply: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={`${createInvoiceLabelClass} sm:col-span-2`}>Supplier address<textarea disabled={createInvoiceParsing} value={createInvoiceForm.supplierAddress} onChange={(e) => updateCreateInvoiceForm({ supplierAddress: e.target.value })} rows={1} className={createInvoiceTextareaClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Bill to name<input disabled={createInvoiceParsing} value={createInvoiceForm.billToName} onChange={(e) => updateCreateInvoiceForm({ billToName: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Ship to name<input disabled={createInvoiceParsing} value={createInvoiceForm.shipToName} onChange={(e) => updateCreateInvoiceForm({ shipToName: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Bill to address<textarea disabled={createInvoiceParsing} value={createInvoiceForm.billToAddress} onChange={(e) => updateCreateInvoiceForm({ billToAddress: e.target.value })} rows={1} className={createInvoiceTextareaClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Ship to address<textarea disabled={createInvoiceParsing} value={createInvoiceForm.shipToAddress} onChange={(e) => updateCreateInvoiceForm({ shipToAddress: e.target.value })} rows={1} className={createInvoiceTextareaClass} /></label>
+                                    <label className={createInvoiceLabelClass}>
+                                        Product
+                                        <select
+                                            disabled={createInvoiceParsing}
+                                            value={createInvoiceForm.productName}
+                                            onChange={(e) => updateCreateInvoiceProduct(e.target.value)}
+                                            className={createInvoiceFieldClass}
+                                        >
+                                            <option value="">Select product</option>
+                                            {itemsData.map((item) => (
+                                                <option key={item.name} value={item.name}>{item.name}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    <label className={createInvoiceLabelClass}>HSN<input disabled={createInvoiceParsing} value={createInvoiceForm.hsnCode} onChange={(e) => updateCreateInvoiceForm({ hsnCode: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Quantity<input disabled={createInvoiceParsing} type="number" step="0.01" value={createInvoiceForm.quantity} onChange={(e) => updateCreateInvoiceForm({ quantity: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Rate<input disabled={createInvoiceParsing} type="number" step="0.01" value={createInvoiceForm.rate} onChange={(e) => updateCreateInvoiceForm({ rate: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Vehicle number<input disabled={createInvoiceParsing} value={createInvoiceForm.vehicleNumber} onChange={(e) => updateCreateInvoiceForm({ vehicleNumber: e.target.value })} onBlur={(e) => validateCreateInvoiceVehicle(e.target.value)} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Owner name<input disabled={createInvoiceParsing} value={createInvoiceForm.ownerName} onChange={(e) => updateCreateInvoiceForm({ ownerName: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        <div className="flex items-center justify-between border-t px-5 py-4">
-                            <p className="text-sm font-medium text-slate-700">Amount: {formatCurrency((Number(createInvoiceForm.quantity) || 0) * (Number(createInvoiceForm.rate) || 0))}</p>
+                        <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-3">
+                            <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-1.5">
+                                <p className="text-xs font-medium uppercase text-emerald-700">Amount</p>
+                                <p className="text-base font-semibold text-slate-950">{formatCurrency((Number(createInvoiceForm.quantity) || 0) * (Number(createInvoiceForm.rate) || 0))}</p>
+                            </div>
                             <div className="flex gap-2">
-                                <button onClick={closeCreateInvoiceModal} disabled={createInvoiceSubmitting} className="rounded-md border px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
-                                <button onClick={handleCreateInvoiceSubmit} disabled={createInvoiceSubmitting || createInvoiceParsing} className="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-60">
+                                <button onClick={closeCreateInvoiceModal} disabled={createInvoiceSubmitting} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">Cancel</button>
+                                <button onClick={handleCreateInvoiceSubmit} disabled={createInvoiceSubmitting || createInvoiceParsing} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-emerald-200 transition hover:bg-emerald-700 disabled:opacity-60">
                                     {createInvoiceSubmitting ? 'Creating...' : 'Create & Send'}
                                 </button>
                             </div>

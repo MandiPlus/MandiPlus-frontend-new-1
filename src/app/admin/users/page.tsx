@@ -113,6 +113,13 @@ const normalizePhoneForMatch = (value: string | undefined) => {
     return digits;
 };
 
+const escapeExcelCell = (value: unknown) =>
+    String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
 const getSimilarityScore = (leftRaw: string, rightRaw: string) => {
     const left = leftRaw.replace(/\s+/g, '');
     const right = rightRaw.replace(/\s+/g, '');
@@ -239,16 +246,28 @@ export default function UsersPage() {
         );
 
         let usersRaw: any[] = [];
+        const fallbackUsersRes = await adminApi.getUsers(1, 100000);
+        const fallbackUsersRaw = fallbackUsersRes.success
+            ? (Array.isArray(fallbackUsersRes.data?.users) ? fallbackUsersRes.data?.users : [])
+            : [];
+
         if (usersRes.success && Array.isArray(usersRes.data)) {
             usersRaw = usersRes.data;
         } else {
-            const fallbackUsersRes = await adminApi.getUsers(1, 500);
-            usersRaw = fallbackUsersRes.success
-                ? (Array.isArray(fallbackUsersRes.data?.users) ? fallbackUsersRes.data?.users : [])
-                : [];
+            usersRaw = fallbackUsersRaw;
         }
 
-        const processedUsers = usersRaw.map((u: any) => {
+        const usersById = new Map<string, any>();
+        fallbackUsersRaw.forEach((user: any) => {
+            const id = String(user.id || user._id || '');
+            if (id) usersById.set(id, user);
+        });
+        usersRaw.forEach((user: any) => {
+            const id = String(user.id || user._id || '');
+            if (id) usersById.set(id, { ...(usersById.get(id) || {}), ...user });
+        });
+
+        const processedUsers = Array.from(usersById.values()).map((u: any) => {
             const resolvedId = String(u.id || u._id || '');
             const walletRow = walletByUserId.get(String(u.canonicalUserId || resolvedId || ''));
             return {
@@ -413,8 +432,8 @@ export default function UsersPage() {
             if (activeSection === 'VERIFIED') {
                 return (
                     user.isLedgerMasterVerified &&
-                    user.id === user.canonicalUserId &&
-                    user.walletType !== 'UNPAID'
+                    !user.isMerged &&
+                    user.id === user.canonicalUserId
                 );
             }
             if (activeSection === 'UNPAID_WALLETS') {
@@ -424,7 +443,7 @@ export default function UsersPage() {
                     user.id === user.canonicalUserId
                 );
             }
-            return !user.isLedgerMasterVerified;
+            return true;
         });
 
         if (!searchTerm) {
@@ -970,6 +989,72 @@ export default function UsersPage() {
         }
     };
 
+    const handleExportUsers = () => {
+        if (activeSection === 'ADMIN_REQUESTS') return;
+        if (filteredUsers.length === 0) {
+            toast.info('No users to export');
+            return;
+        }
+
+        const rows = filteredUsers.map((user) => ({
+            Name: user.name || '',
+            'Mobile Number': formatIndianMobile(user.mobileNumber),
+            'Alternate Number': user.secondaryMobileNumber
+                ? formatIndianMobile(user.secondaryMobileNumber)
+                : '',
+            State: user.state || '',
+            'Registered Date': formatDate(user.createdAt),
+            Identity: user.identity || '',
+            'Billing Type':
+                user.identity === 'TRANSPORTER'
+                    ? user.billingType === 'PER_POLICY'
+                        ? 'Per Policy'
+                        : 'Bulk'
+                    : '',
+            'Wallet Type': user.walletType || '',
+            'Wallet Balance': Number(user.walletBalance || 0).toFixed(2),
+            'Verified Master': user.isLedgerMasterVerified ? 'Yes' : 'No',
+            'Merged User': user.isMerged ? 'Yes' : 'No',
+            'Master User': user.canonicalMasterName || '',
+            'GCA Member': String(user.unionMember || '').toUpperCase() === 'GCA' ? 'Yes' : 'No',
+        }));
+
+        const headers = Object.keys(rows[0]);
+        const worksheet = `
+            <html>
+                <head><meta charset="utf-8" /></head>
+                <body>
+                    <table>
+                        <thead>
+                            <tr>${headers.map((header) => `<th>${escapeExcelCell(header)}</th>`).join('')}</tr>
+                        </thead>
+                        <tbody>
+                            ${rows
+                                .map(
+                                    (row) =>
+                                        `<tr>${headers
+                                            .map((header) => `<td>${escapeExcelCell(row[header as keyof typeof row])}</td>`)
+                                            .join('')}</tr>`,
+                                )
+                                .join('')}
+                        </tbody>
+                    </table>
+                </body>
+            </html>
+        `;
+        const blob = new Blob([worksheet], {
+            type: 'application/vnd.ms-excel;charset=utf-8;',
+        });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `users-${sectionTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.xls`;
+        document.body.appendChild(link);
+        link.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(link);
+    };
+
     const handleImpersonateUser = async (user: User) => {
         if (!user?.id) return;
         setImpersonatingByUser((prev) => ({ ...prev, [user.id]: true }));
@@ -1226,6 +1311,14 @@ export default function UsersPage() {
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="block min-w-0 flex-1 rounded-md border-gray-300 px-4 py-2 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm md:min-w-[320px] md:max-w-[420px] border"
                         />
+                        {activeSection !== 'ADMIN_REQUESTS' ? (
+                            <button
+                                onClick={handleExportUsers}
+                                className="whitespace-nowrap rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-800"
+                            >
+                                Export Excel
+                            </button>
+                        ) : null}
                         {activeSection !== 'ADMIN_REQUESTS' ? (
                             <button
                                 onClick={() => setCreateUserModalOpen(true)}

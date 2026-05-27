@@ -212,6 +212,23 @@ const HomePage = () => {
     fetchInvoices();
   };
 
+  const closeInvoiceModal = () => {
+    setShowInvoiceModal(false);
+    setSelectedInvoice(null);
+  };
+
+  const getInvoiceInsuranceUrl = (invoice: InsuranceForm) => {
+    const insurance = invoice.insurance;
+    if (typeof insurance === 'string') return insurance;
+    return (
+      insurance?.fileUrl ||
+      insurance?.url ||
+      invoice.insuranceFileUrl ||
+      invoice.insuranceUrl ||
+      ''
+    );
+  };
+
   // --- NEW: Open Claims Modal ---
   const handleOpenClaimsModal = () => {
     setShowClaimsModal(true);
@@ -755,12 +772,21 @@ const HomePage = () => {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
               <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center rounded-t-3xl">
-                <h3 className="text-xl font-bold text-slate-800">My Invoices</h3>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={closeInvoiceModal}
+                    className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    ← Back
+                  </button>
+                  <h3 className="text-xl font-bold text-slate-800">My Invoices</h3>
+                </div>
                 <button
-                  onClick={() => setShowInvoiceModal(false)}
-                  className="text-gray-500 hover:text-gray-700"
+                  onClick={closeInvoiceModal}
+                  className="hidden"
+                  aria-label="Close invoices"
                 >
-                  
+                  ✕
                 </button>
               </div>
 
@@ -771,17 +797,31 @@ const HomePage = () => {
                   <div className="text-center py-8 text-gray-500">No invoices found</div>
                 ) : (
                   <div className="space-y-4">
-                    {invoices.map((invoice) => (
-                      <div key={invoice.id} className="border rounded-2xl p-4 hover:shadow-md transition-shadow">
+                    {invoices.map((invoice) => {
+                      const isRejected = Boolean(invoice.isRejected);
+                      return (
+                      <div key={invoice.id} className={`border rounded-2xl p-4 transition-shadow ${isRejected ? 'border-red-200 bg-red-50/70' : 'hover:shadow-md'}`}>
                         <div className="flex justify-between items-start mb-3">
                           <div>
-                            <h4 className="font-semibold text-slate-800">{invoice.invoiceNumber}</h4>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="font-semibold text-slate-800">{invoice.invoiceNumber}</h4>
+                              {isRejected && (
+                                <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">
+                                  Rejected
+                                </span>
+                              )}
+                            </div>
                             <p className="text-sm text-gray-600">{invoice.supplierName}</p>
                             <p className="text-xs text-gray-500">
                               {invoice.createdAt
                                 ? new Date(invoice.createdAt).toLocaleDateString()
                                 : 'N/A'}
                             </p>
+                            {isRejected && invoice.rejectionReason && (
+                              <p className="mt-1 text-xs font-medium text-red-700">
+                                Reason: {invoice.rejectionReason}
+                              </p>
+                            )}
                           </div>
                           <div className="text-right">
                             <p className="font-bold text-slate-800">₹{invoice.amount?.toLocaleString()}</p>
@@ -799,15 +839,36 @@ const HomePage = () => {
                               📄 View PDF
                             </a>
                           )}
-                          <button
-                            onClick={() => handleEditInvoice(invoice)}
-                            className="flex-1 bg-[#4309ac] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#350889]"
-                          >
-                            ✏️ Edit & Regenerate
-                          </button>
+                          {isRejected ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="flex-1 bg-red-100 text-red-700 px-4 py-2 rounded-xl text-sm font-semibold cursor-not-allowed"
+                            >
+                              Invoice rejected
+                            </button>
+                          ) : getInvoiceInsuranceUrl(invoice) ? (
+                            <a
+                              href={`${getInvoiceInsuranceUrl(invoice)}?t=${Date.now()}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex-1 bg-[#4309ac] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#350889] text-center"
+                            >
+                              🛡️ View Insurance
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              className="flex-1 bg-slate-100 text-slate-400 px-4 py-2 rounded-xl text-sm font-medium cursor-not-allowed"
+                            >
+                              Insurance not uploaded
+                            </button>
+                          )}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
