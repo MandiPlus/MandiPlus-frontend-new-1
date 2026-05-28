@@ -169,8 +169,11 @@ export async function upsertFieldAdminTeamMember(payload: {
 }
 
 export async function getUsersForFieldOperations(): Promise<AdminFieldUser[]> {
-  const response = await axios.get(`${API_BASE_URL}/users`, {
-    headers: getAdminHeaders(),
-  });
+  const response = await axios.get(
+    `${API_BASE_URL}/field-operations/admin/users`,
+    {
+      headers: getAdminHeaders(),
+    },
+  );
   return response.data;
 }
