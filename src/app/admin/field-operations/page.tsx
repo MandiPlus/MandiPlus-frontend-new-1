@@ -8,12 +8,14 @@ import {
   AdminFieldAppointment,
   AdminFieldLead,
   AdminFieldOverview,
+  AdminFieldPriorityLead,
   AdminFieldTeamMember,
   AdminFieldUser,
   createFieldAppointment,
   getFieldAdminAppointments,
   getFieldAdminLeads,
   getFieldAdminOverview,
+  getFieldAdminPriorityLeads,
   getFieldAdminTeamMembers,
   getUsersForFieldOperations,
   sendFieldAppointmentAlert,
@@ -38,6 +40,7 @@ const leadStatuses = [
 
 const tabs = [
   { key: 'leads', label: 'Leads' },
+  { key: 'priority', label: 'Mandi Data' },
   { key: 'appointments', label: 'Appointments' },
   { key: 'schedule', label: 'Schedule appointment' },
   { key: 'agents', label: 'Active field agent' },
@@ -115,10 +118,18 @@ export default function AdminFieldOperationsPage() {
   const [error, setError] = useState('');
   const [overview, setOverview] = useState<AdminFieldOverview | null>(null);
   const [leads, setLeads] = useState<AdminFieldLead[]>([]);
+  const [priorityLeads, setPriorityLeads] = useState<AdminFieldPriorityLead[]>([]);
   const [appointments, setAppointments] = useState<AdminFieldAppointment[]>([]);
   const [teamMembers, setTeamMembers] = useState<AdminFieldTeamMember[]>([]);
   const [users, setUsers] = useState<AdminFieldUser[]>([]);
   const [activeTab, setActiveTab] = useState<TabKey>('leads');
+  const [prioritySearch, setPrioritySearch] = useState('');
+  const [priorityCommodity, setPriorityCommodity] = useState('');
+  const [prioritySort, setPrioritySort] = useState<{
+    key: keyof AdminFieldPriorityLead | 'addedBy';
+    direction: 'asc' | 'desc';
+  }>({ key: 'createdAt', direction: 'desc' });
+  const [priorityPage, setPriorityPage] = useState(1);
   const [sendingAlertId, setSendingAlertId] = useState('');
   const [selectedBoardPhoto, setSelectedBoardPhoto] = useState<{
     url: string;
@@ -165,14 +176,76 @@ export default function AdminFieldOperationsPage() {
     todaysLeadsCount,
   ];
 
+  const priorityCommodityOptions = useMemo(
+    () =>
+      Array.from(new Set(priorityLeads.map((lead) => lead.commodity))).sort(),
+    [priorityLeads],
+  );
+
+  const filteredPriorityLeads = useMemo(() => {
+    const query = prioritySearch.trim().toLowerCase();
+    const filtered = priorityLeads.filter((lead) => {
+      const matchesCommodity =
+        !priorityCommodity || lead.commodity === priorityCommodity;
+      const haystack = [
+        lead.commodity,
+        lead.mandiName,
+        lead.biggestBuyerName,
+        lead.transporterName,
+        lead.regionSourceArea,
+        lead.createdByUser?.name,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return matchesCommodity && (!query || haystack.includes(query));
+    });
+
+    return [...filtered].sort((left, right) => {
+      const direction = prioritySort.direction === 'asc' ? 1 : -1;
+      const leftValue =
+        prioritySort.key === 'addedBy'
+          ? left.createdByUser?.name || ''
+          : left[prioritySort.key];
+      const rightValue =
+        prioritySort.key === 'addedBy'
+          ? right.createdByUser?.name || ''
+          : right[prioritySort.key];
+
+      if (prioritySort.key === 'trucksPerDay' || prioritySort.key === 'todayPrice') {
+        return (Number(leftValue) - Number(rightValue)) * direction;
+      }
+
+      return String(leftValue ?? '').localeCompare(String(rightValue ?? '')) * direction;
+    });
+  }, [priorityCommodity, priorityLeads, prioritySearch, prioritySort]);
+
+  const priorityPageSize = 10;
+  const priorityTotalPages = Math.max(
+    1,
+    Math.ceil(filteredPriorityLeads.length / priorityPageSize),
+  );
+  const pagedPriorityLeads = filteredPriorityLeads.slice(
+    (priorityPage - 1) * priorityPageSize,
+    priorityPage * priorityPageSize,
+  );
+
   const loadAll = async () => {
     try {
       setLoading(true);
       setError('');
-      const [overviewRes, leadsRes, appointmentsRes, teamRes, usersRes] =
+      const [
+        overviewRes,
+        leadsRes,
+        priorityLeadsRes,
+        appointmentsRes,
+        teamRes,
+        usersRes,
+      ] =
         await Promise.all([
           getFieldAdminOverview(),
           getFieldAdminLeads(),
+          getFieldAdminPriorityLeads(),
           getFieldAdminAppointments(),
           getFieldAdminTeamMembers(),
           getUsersForFieldOperations(),
@@ -180,6 +253,7 @@ export default function AdminFieldOperationsPage() {
 
       setOverview(overviewRes);
       setLeads(leadsRes);
+      setPriorityLeads(priorityLeadsRes);
       setAppointments(appointmentsRes);
       setTeamMembers(teamRes);
       setUsers(usersRes);
@@ -193,6 +267,53 @@ export default function AdminFieldOperationsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const setPrioritySortKey = (key: keyof AdminFieldPriorityLead | 'addedBy') => {
+    setPrioritySort((current) => ({
+      key,
+      direction:
+        current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }));
+  };
+
+  const exportPriorityCsv = () => {
+    const headers = [
+      'Commodity',
+      'Mandi',
+      'Biggest Buyer',
+      'Transporter',
+      'Trucks/Day',
+      'Region',
+      'Today Price',
+      'Added By',
+      'Date',
+    ];
+    const rows = filteredPriorityLeads.map((lead) => [
+      lead.commodity,
+      lead.mandiName,
+      lead.biggestBuyerName,
+      lead.transporterName,
+      lead.trucksPerDay,
+      lead.regionSourceArea,
+      lead.todayPrice,
+      lead.createdByUser?.name || 'Field user',
+      new Date(lead.createdAt).toLocaleString('en-IN'),
+    ]);
+    const csv = [headers, ...rows]
+      .map((row) =>
+        row
+          .map((value) => `"${String(value ?? '').replaceAll('"', '""')}"`)
+          .join(','),
+      )
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `mandi-data-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
   useEffect(() => {
@@ -346,8 +467,157 @@ export default function AdminFieldOperationsPage() {
                   <p className="mt-1 text-sm text-slate-500">
                     Review survey submissions and push them forward.
                   </p>
-                  <div className="mt-5 space-y-4">
-                    {leads.map((lead) => (
+                  <div className="mt-5 overflow-hidden rounded-[1.6rem] border border-slate-200/90 bg-white shadow-[0_18px_38px_-28px_rgba(15,23,42,0.18)]">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-[1120px] border-separate border-spacing-0">
+                        <thead>
+                          <tr className="bg-[linear-gradient(180deg,#fffaf0_0%,#ffffff_100%)] text-left">
+                            {[
+                              'Type',
+                              'Name / Commodity',
+                              'Customer / Buyer',
+                              'Phone / Transporter',
+                              'Address / Region',
+                              'Business / Mandi',
+                              'Volume / Price',
+                              'Submitted By',
+                              'Date',
+                              'Status',
+                              'Board',
+                            ].map((label) => (
+                              <th
+                                key={label}
+                                className="px-4 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500"
+                              >
+                                {label}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {leads.map((lead) => {
+                            const isMandiData =
+                              lead.leadSource === 'MANDI_DATA';
+
+                            return (
+                              <tr
+                                key={lead.id}
+                                className="align-top transition hover:bg-slate-50/70"
+                              >
+                                <td className="border-t border-slate-200/80 px-4 py-4">
+                                  <span
+                                    className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
+                                      isMandiData
+                                        ? 'bg-[#fff7ed] text-[#b45309]'
+                                        : 'bg-[#eef2ff] text-[#4338ca]'
+                                    }`}
+                                  >
+                                    {isMandiData ? 'Mandi Data' : 'Lead'}
+                                  </span>
+                                </td>
+                                <td className="border-t border-slate-200/80 px-4 py-4 text-sm font-semibold text-slate-900">
+                                  {isMandiData
+                                    ? lead.mandiData?.commodity
+                                    : lead.businessName}
+                                </td>
+                                <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
+                                  {isMandiData
+                                    ? lead.mandiData?.biggestBuyerName
+                                    : lead.customerName}
+                                </td>
+                                <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
+                                  {isMandiData
+                                    ? lead.mandiData?.transporterName
+                                    : lead.mobileNumber}
+                                </td>
+                                <td className="max-w-[260px] border-t border-slate-200/80 px-4 py-4 text-sm text-slate-600">
+                                  {isMandiData
+                                    ? lead.mandiData?.regionSourceArea
+                                    : lead.businessAddress}
+                                </td>
+                                <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
+                                  {isMandiData
+                                    ? lead.mandiData?.mandiName
+                                    : lead.businessType || '-'}
+                                </td>
+                                <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
+                                  {isMandiData
+                                    ? `${lead.mandiData?.trucksPerDay} trucks/day | Rs ${Number(
+                                        lead.mandiData?.todayPrice || 0,
+                                      ).toLocaleString('en-IN')}`
+                                    : '-'}
+                                </td>
+                                <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
+                                  {lead.createdByUser?.name || 'Field user'}
+                                </td>
+                                <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-500">
+                                  {new Date(lead.createdAt).toLocaleDateString(
+                                    'en-IN',
+                                  )}
+                                </td>
+                                <td className="border-t border-slate-200/80 px-4 py-4">
+                                  {isMandiData ? (
+                                    <span className="inline-flex rounded-xl border border-[#fed7aa] bg-[#fff7ed] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#b45309]">
+                                      Mandi Data
+                                    </span>
+                                  ) : (
+                                    <select
+                                      value={lead.currentStatus}
+                                      onChange={(event) =>
+                                        handleStatusChange(
+                                          lead.id,
+                                          normalizeStatusValue(
+                                            event.target.value,
+                                          ),
+                                        )
+                                      }
+                                      className="min-w-[160px] rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-800 outline-none transition focus:border-slate-900"
+                                    >
+                                      {leadStatuses.map((status) => (
+                                        <option key={status} value={status}>
+                                          {formatStatusLabel(status)}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  )}
+                                </td>
+                                <td className="border-t border-slate-200/80 px-4 py-4">
+                                  {hasBoardPhoto(lead) ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setSelectedBoardPhoto({
+                                          url: lead.boardPhotoUrl ?? '',
+                                          businessName: lead.businessName,
+                                        })
+                                      }
+                                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 transition hover:border-slate-300 hover:bg-white"
+                                    >
+                                      View
+                                    </button>
+                                  ) : (
+                                    <span className="text-xs font-medium text-slate-400">
+                                      -
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {leads.length === 0 ? (
+                      <div className="px-4 py-10 text-center text-sm text-slate-500">
+                        No leads found.
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="mt-5 hidden space-y-4">
+                    {leads.map((lead) => {
+                      const isMandiData = lead.leadSource === 'MANDI_DATA';
+
+                      return (
                       <div
                         key={lead.id}
                         className="rounded-[1.5rem] border border-slate-200/90 bg-white p-4 shadow-[0_14px_36px_-28px_rgba(15,23,42,0.18)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_40px_-28px_rgba(15,23,42,0.24)]"
@@ -376,13 +646,22 @@ export default function AdminFieldOperationsPage() {
                               </button>
                             ) : (
                               <div className="flex h-40 w-full max-w-[220px] items-center justify-center rounded-[1.25rem] border border-dashed border-slate-200 bg-slate-50 px-4 text-center text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
-                                No board photo
+                                {isMandiData ? 'Mandi Data' : 'No board photo'}
                               </div>
                             )}
                             <div className="flex-1">
-                            <p className="text-base font-semibold text-slate-900">
-                              {lead.businessName}
-                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-base font-semibold text-slate-900">
+                                {isMandiData
+                                  ? lead.mandiData?.commodity
+                                  : lead.businessName}
+                              </p>
+                              {isMandiData ? (
+                                <span className="rounded-full bg-[#fff7ed] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#b45309]">
+                                  Mandi Data
+                                </span>
+                              ) : null}
+                            </div>
                             <p className="mt-1 text-sm text-slate-600">
                               {lead.customerName} • {lead.mobileNumber}
                             </p>
@@ -405,6 +684,7 @@ export default function AdminFieldOperationsPage() {
                                 Status
                               </p>
                               <select
+                                disabled={isMandiData}
                                 value={lead.currentStatus}
                                 onChange={(event) =>
                                   handleStatusChange(
@@ -424,7 +704,233 @@ export default function AdminFieldOperationsPage() {
                           </div>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
+                  </div>
+                </>,
+              )
+            : null}
+
+          {activeTab === 'priority'
+            ? sectionShell(
+                <>
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <h2 className="text-xl font-semibold text-slate-900">
+                        Mandi Data
+                      </h2>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Commodity intelligence submitted by field teams.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={exportPriorityCsv}
+                      className="inline-flex justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-slate-50"
+                    >
+                      Export CSV
+                    </button>
+                  </div>
+
+                  <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_220px]">
+                    <input
+                      value={prioritySearch}
+                      onChange={(event) => {
+                        setPrioritySearch(event.target.value);
+                        setPriorityPage(1);
+                      }}
+                      placeholder="Search commodity, mandi, buyer, transporter, region..."
+                      className="rounded-2xl border border-slate-300 bg-slate-50/70 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
+                    />
+                    <select
+                      value={priorityCommodity}
+                      onChange={(event) => {
+                        setPriorityCommodity(event.target.value);
+                        setPriorityPage(1);
+                      }}
+                      className="rounded-2xl border border-slate-300 bg-slate-50/70 px-4 py-3 text-sm outline-none transition focus:border-slate-900 focus:bg-white"
+                    >
+                      <option value="">All commodities</option>
+                      {priorityCommodityOptions.map((commodity) => (
+                        <option key={commodity} value={commodity}>
+                          {commodity}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="mt-5 overflow-hidden rounded-[1.6rem] border border-slate-200/90 bg-white shadow-[0_18px_38px_-28px_rgba(15,23,42,0.18)]">
+                    <div className="hidden overflow-x-auto lg:block">
+                      <table className="min-w-full border-separate border-spacing-0">
+                        <thead>
+                          <tr className="bg-[linear-gradient(180deg,#fffaf0_0%,#ffffff_100%)] text-left">
+                            {[
+                              ['commodity', 'Commodity'],
+                              ['mandiName', 'Mandi'],
+                              ['biggestBuyerName', 'Biggest Buyer'],
+                              ['transporterName', 'Transporter'],
+                              ['trucksPerDay', 'Trucks/Day'],
+                              ['regionSourceArea', 'Region'],
+                              ['todayPrice', 'Today Price'],
+                              ['addedBy', 'Added By'],
+                              ['createdAt', 'Date'],
+                            ].map(([key, label]) => (
+                              <th
+                                key={key}
+                                className="px-4 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPrioritySortKey(
+                                      key as keyof AdminFieldPriorityLead | 'addedBy',
+                                    )
+                                  }
+                                  className="inline-flex items-center gap-1"
+                                >
+                                  {label}
+                                  <span className="text-slate-300">
+                                    {prioritySort.key === key
+                                      ? prioritySort.direction === 'asc'
+                                        ? '↑'
+                                        : '↓'
+                                      : '↕'}
+                                  </span>
+                                </button>
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pagedPriorityLeads.map((lead) => (
+                            <tr key={lead.id} className="align-top hover:bg-slate-50/60">
+                              <td className="border-t border-slate-200/80 px-4 py-4 text-sm font-semibold text-slate-900">
+                                {lead.commodity}
+                              </td>
+                              <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
+                                {lead.mandiName}
+                              </td>
+                              <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
+                                {lead.biggestBuyerName}
+                              </td>
+                              <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
+                                {lead.transporterName}
+                              </td>
+                              <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
+                                {lead.trucksPerDay}
+                              </td>
+                              <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
+                                {lead.regionSourceArea}
+                              </td>
+                              <td className="border-t border-slate-200/80 px-4 py-4 text-sm font-semibold text-slate-900">
+                                ₹{Number(lead.todayPrice).toLocaleString('en-IN')}
+                              </td>
+                              <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
+                                {lead.createdByUser?.name || 'Field user'}
+                              </td>
+                              <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-500">
+                                {new Date(lead.createdAt).toLocaleDateString('en-IN')}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="space-y-3 p-3 lg:hidden">
+                      {pagedPriorityLeads.map((lead) => (
+                        <div
+                          key={lead.id}
+                          className="rounded-[1.4rem] border border-slate-200 bg-white p-4"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-slate-950">
+                                {lead.commodity}
+                              </p>
+                              <p className="mt-1 text-sm text-slate-500">
+                                {lead.mandiName} • {lead.regionSourceArea}
+                              </p>
+                            </div>
+                            <span className="rounded-full bg-[#fff7ed] px-3 py-1 text-xs font-semibold text-[#b45309]">
+                              ₹{Number(lead.todayPrice).toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <p className="text-xs uppercase tracking-wide text-slate-400">
+                                Biggest Buyer
+                              </p>
+                              <p className="mt-1 font-medium text-slate-800">
+                                {lead.biggestBuyerName}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs uppercase tracking-wide text-slate-400">
+                                Transporter
+                              </p>
+                              <p className="mt-1 font-medium text-slate-800">
+                                {lead.transporterName}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs uppercase tracking-wide text-slate-400">
+                                Trucks/Day
+                              </p>
+                              <p className="mt-1 font-medium text-slate-800">
+                                {lead.trucksPerDay}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs uppercase tracking-wide text-slate-400">
+                                Added By
+                              </p>
+                              <p className="mt-1 font-medium text-slate-800">
+                                {lead.createdByUser?.name || 'Field user'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {filteredPriorityLeads.length === 0 ? (
+                      <div className="px-4 py-10 text-center text-sm text-slate-500">
+                        No mandi data found.
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-slate-500">
+                      Showing {pagedPriorityLeads.length} of{' '}
+                      {filteredPriorityLeads.length} mandi data records
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPriorityPage((page) => Math.max(1, page - 1))}
+                        disabled={priorityPage === 1}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:opacity-40"
+                      >
+                        Prev
+                      </button>
+                      <span className="text-sm font-medium text-slate-600">
+                        {priorityPage} / {priorityTotalPages}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPriorityPage((page) =>
+                            Math.min(priorityTotalPages, page + 1),
+                          )
+                        }
+                        disabled={priorityPage === priorityTotalPages}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 disabled:opacity-40"
+                      >
+                        Next
+                      </button>
+                    </div>
                   </div>
                 </>,
               )

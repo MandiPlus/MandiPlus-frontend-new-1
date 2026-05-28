@@ -34,6 +34,32 @@ export interface AdminFieldLead {
   createdByUser?: {
     name?: string;
   };
+  leadSource?: 'FIELD_LEAD' | 'MANDI_DATA';
+  mandiData?: {
+    commodity: string;
+    mandiName: string;
+    biggestBuyerName: string;
+    transporterName: string;
+    trucksPerDay: number;
+    regionSourceArea: string;
+    todayPrice: number | string;
+  };
+}
+
+export interface AdminFieldPriorityLead {
+  id: string;
+  commodity: string;
+  mandiName: string;
+  biggestBuyerName: string;
+  transporterName: string;
+  trucksPerDay: number;
+  regionSourceArea: string;
+  todayPrice: number | string;
+  createdAt: string;
+  createdByUser?: {
+    name?: string;
+    mobileNumber?: string;
+  };
 }
 
 export interface AdminFieldAppointment {
@@ -174,6 +200,16 @@ export async function getUsersForFieldOperations(): Promise<AdminFieldUser[]> {
     {
       headers: getAdminHeaders(),
     },
+  );
+  return response.data;
+}
+
+export async function getFieldAdminPriorityLeads(): Promise<
+  AdminFieldPriorityLead[]
+> {
+  const response = await axios.get(
+    `${API_BASE_URL}/field-operations/admin/priority-leads`,
+    { headers: getAdminHeaders() },
   );
   return response.data;
 }
