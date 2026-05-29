@@ -17,7 +17,9 @@ import Cropper, { ReactCropperElement } from 'react-cropper';
 
 import {
     createInsuranceForm,
+    getBuyerHistoricalSuppliers,
     getInvoiceCustomerAccounts,
+    getPartyAddressSuggestions,
     getSupplierPartyAssists,
     getSupplierHistoricalParties,
     getTruckFlagStatus,
@@ -29,6 +31,7 @@ import {
     type SupplierPartyAssistVehicle,
     type HistoricalPartyOption,
     type InvoiceCustomerAccount,
+    type PartyAddressSuggestion,
     type VerifiedSupplierOption,
 } from '../api';
 import { useAuth } from "@/features/auth/context/AuthContext";
@@ -169,6 +172,28 @@ const questions: Question[] = [
     },
 ];
 
+const getQuestionsForMode = (notes?: string): Question[] => {
+    const byField = (field: Question['field']) => questions.find((question) => question.field === field)!;
+    const isCommission = String(notes || '').toLowerCase() === 'commission';
+    const partyQuestions = isCommission
+        ? ['supplierName', 'supplierAddress', 'placeOfSupply', 'buyerName', 'buyerAddress']
+        : ['buyerName', 'buyerAddress', 'supplierName', 'supplierAddress', 'placeOfSupply'];
+    return [
+        byField('language'),
+        byField('notes'),
+        ...partyQuestions.map((field) => byField(field as Question['field'])),
+        byField('itemName'),
+        byField('quantity'),
+        byField('rate'),
+        byField('vehicleNumber'),
+        byField('ownerName'),
+        byField('insuredPartyPhone'),
+        byField('weightmentSlip'),
+        byField('addToCustomerAccount'),
+        byField('customerUserId'),
+    ];
+};
+
 function useDebounce<T>(value: T, delay: number): T {
     const [debouncedValue, setDebouncedValue] = useState<T>(value);
 
@@ -189,6 +214,8 @@ function getResolvedUserId(user: any): string {
     const runtimeUserId = user?.id || user?._id || user?.userId;
     return runtimeUserId ? String(runtimeUserId) : '';
 }
+
+const OWN_PROFILE_OPTION_ID = '__own_profile__';
 
 const Insurance = () => {
     const router = useRouter();
@@ -234,6 +261,7 @@ const Insurance = () => {
     const [supplierLookupQuery, setSupplierLookupQuery] = useState('');
     const [buyerLookupQuery, setBuyerLookupQuery] = useState('');
     const [selectedSupplierId, setSelectedSupplierId] = useState('');
+    const [selectedBuyerId, setSelectedBuyerId] = useState('');
     const [historicalParties, setHistoricalParties] = useState<HistoricalPartyOption[]>([]);
     const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(false);
     const [isLoadingParties, setIsLoadingParties] = useState(false);
@@ -255,6 +283,33 @@ const Insurance = () => {
     const identity = user?.identity || '';
     const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
     const shouldAskCustomerPicker = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
+    const shouldRequireVerifiedParties = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
+    const shouldUseDynamicQuestionFlow = [
+        'AGENT',
+        'INTERNAL_TEAM',
+        'BUYER',
+        'SUPPLIER',
+        'CUSTOMER',
+        'TRANSPORTER',
+    ].includes(identity);
+    const getActiveQuestions = (notes?: string) =>
+        shouldUseDynamicQuestionFlow ? getQuestionsForMode(notes) : questions;
+    const activeQuestions = getActiveQuestions(formData.notes);
+
+    const ownProfileName = String(user?.name || user?.fullName || user?.businessName || '').trim();
+    const ownProfilePhone = String(user?.mobileNumber || user?.phoneNumber || user?.phone || '').trim();
+    const ownProfileAddress = [
+        user?.loadingPoint,
+        user?.destinationShopAddress,
+        user?.officeAddress,
+        user?.destinationAddress,
+        user?.route,
+        user?.mandiName,
+    ]
+        .flatMap((value) => Array.isArray(value) ? value : [value])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)[0] || '';
+    const ownProfilePlaceOfSupply = String(user?.state || '').replace(/_/g, ' ');
 
     const formatCustomerOption = (account: InvoiceCustomerAccount) => {
         const isPerPolicyTransporter =
@@ -278,6 +333,7 @@ const Insurance = () => {
 
     // --- Address Search State ---
     const [addressSuggestions, setAddressSuggestions] = useState<OSMAddress[]>([]);
+    const [partyAddressSuggestions, setPartyAddressSuggestions] = useState<PartyAddressSuggestion[]>([]);
     const debouncedInputValue = useDebounce(inputValue, 800);
 
     useEffect(() => {
@@ -319,8 +375,10 @@ const Insurance = () => {
     };
 
     useEffect(() => {
-        void loadVerifiedSuppliers();
-    }, []);
+        if (shouldRequireVerifiedParties) {
+            void loadVerifiedSuppliers();
+        }
+    }, [shouldRequireVerifiedParties]);
 
     useEffect(() => {
         const loadCustomers = async () => {
@@ -343,7 +401,7 @@ const Insurance = () => {
     }, [messages, currentQuestionIndex]);
 
     useEffect(() => {
-        const currentField = questions[currentQuestionIndex]?.field;
+        const currentField = activeQuestions[currentQuestionIndex]?.field;
         if (!currentField || editingMessageIndex !== null) {
             return;
         }
@@ -378,14 +436,21 @@ const Insurance = () => {
     ]);
 
     useEffect(() => {
-        const currentField = questions[currentQuestionIndex]?.field;
-        if (currentField !== 'buyerName') {
+        const currentField = activeQuestions[currentQuestionIndex]?.field;
+        const isCash = String(formData.notes || '').toLowerCase() === 'cash';
+        const shouldLoadBuyerParties = false;
+        const shouldLoadCommissionParties =
+            currentField === 'buyerName' && shouldRequireVerifiedParties && !isCash;
+        const shouldLoadCashSuppliers =
+            currentField === 'supplierName' && shouldRequireVerifiedParties && isCash;
+        if (!shouldLoadBuyerParties && !shouldLoadCommissionParties && !shouldLoadCashSuppliers) {
             return;
         }
 
         const loadHistoricalParties = async () => {
             const supplierName = formData.supplierName.trim();
-            if (!supplierName) {
+            const buyerName = formData.buyerName.trim();
+            if ((shouldLoadCashSuppliers && !buyerName) || (!shouldLoadCashSuppliers && !supplierName)) {
                 setHistoricalParties([]);
                 return;
             }
@@ -393,14 +458,21 @@ const Insurance = () => {
             setIsLoadingParties(true);
             setPartyLookupError('');
             try {
-                const parties = await getSupplierHistoricalParties({
-                    supplierId: selectedSupplierId || undefined,
-                    supplierName,
-                });
+                const parties = shouldLoadCashSuppliers
+                    ? await getBuyerHistoricalSuppliers({
+                        buyerId: selectedBuyerId || undefined,
+                        buyerName,
+                    })
+                    : await getSupplierHistoricalParties({
+                        supplierId: selectedSupplierId || undefined,
+                        supplierName,
+                    });
                 setHistoricalParties(parties);
                 if (parties.length === 0) {
                     setPartyLookupError(
-                        'No matching historical parties were found for this supplier yet.',
+                        shouldLoadCashSuppliers
+                            ? 'No matching historical suppliers were found for this buyer yet.'
+                            : 'No matching historical parties were found for this supplier yet.',
                     );
                 }
             } catch (e) {
@@ -415,10 +487,48 @@ const Insurance = () => {
         };
 
         void loadHistoricalParties();
-    }, [currentQuestionIndex, formData.supplierName, selectedSupplierId]);
+    }, [currentQuestionIndex, formData.buyerName, formData.notes, formData.supplierName, selectedBuyerId, selectedSupplierId, shouldRequireVerifiedParties]);
 
     useEffect(() => {
-        const currentField = questions[currentQuestionIndex]?.field;
+        const currentField = activeQuestions[currentQuestionIndex]?.field;
+        const isCash = String(formData.notes || '').toLowerCase() === 'cash';
+        const shouldLoadBuyerAddresses =
+            shouldRequireVerifiedParties && isCash && currentField === 'buyerAddress';
+        const shouldLoadSupplierAddresses =
+            shouldRequireVerifiedParties && !isCash && currentField === 'supplierAddress';
+
+        if (!shouldLoadBuyerAddresses && !shouldLoadSupplierAddresses) {
+            setPartyAddressSuggestions([]);
+            return;
+        }
+
+        const partyId = shouldLoadBuyerAddresses ? selectedBuyerId : selectedSupplierId;
+        const partyName = shouldLoadBuyerAddresses ? formData.buyerName : formData.supplierName;
+        if (!partyId && !partyName.trim()) {
+            setPartyAddressSuggestions([]);
+            return;
+        }
+
+        const loadPartyAddresses = async () => {
+            try {
+                const suggestions = await getPartyAddressSuggestions({
+                    partyId: partyId || undefined,
+                    partyName: partyName.trim() || undefined,
+                    role: shouldLoadBuyerAddresses ? 'buyer' : 'supplier',
+                    search: debouncedInputValue.trim() || undefined,
+                });
+                setPartyAddressSuggestions(suggestions);
+            } catch (e) {
+                console.error('Failed to load party address suggestions', e);
+                setPartyAddressSuggestions([]);
+            }
+        };
+
+        void loadPartyAddresses();
+    }, [currentQuestionIndex, debouncedInputValue, formData.buyerName, formData.notes, formData.supplierName, selectedBuyerId, selectedSupplierId, shouldRequireVerifiedParties]);
+
+    useEffect(() => {
+        const currentField = activeQuestions[currentQuestionIndex]?.field;
         if (!['buyerAddress', 'placeOfSupply', 'itemName', 'vehicleNumber', 'ownerName'].includes(String(currentField))) {
             return;
         }
@@ -461,10 +571,20 @@ const Insurance = () => {
     // --- Address Search Effect ---
     useEffect(() => {
         const fetchAddresses = async () => {
-            const currentQ = questions[currentQuestionIndex];
+            const currentQ = activeQuestions[currentQuestionIndex];
             if (!currentQ) return;
 
             const isAddressField = ['supplierAddress', 'buyerAddress'].includes(currentQ.field as string);
+            const isCash = String(formData.notes || '').toLowerCase() === 'cash';
+            const isInsuredPartyAddressField =
+                shouldRequireVerifiedParties &&
+                ((isCash && currentQ.field === 'buyerAddress') ||
+                    (!isCash && currentQ.field === 'supplierAddress'));
+
+            if (isInsuredPartyAddressField) {
+                setAddressSuggestions([]);
+                return;
+            }
 
             if (isAddressField && debouncedInputValue.length > 2) {
                 try {
@@ -489,7 +609,7 @@ const Insurance = () => {
         };
 
         fetchAddresses();
-    }, [debouncedInputValue, currentQuestionIndex, language]);
+    }, [debouncedInputValue, currentQuestionIndex, formData.notes, language, shouldRequireVerifiedParties]);
 
     // --- Helper: Clean Text to prevent DB Encoding Issues ---
     const sanitizeText = (text: string): string => {
@@ -581,6 +701,25 @@ const Insurance = () => {
 
             const supName = sanitizeText(resolvedFormData.supplierName || 'Unknown Supplier');
             submitData.append('supplierName', supName);
+            // Auto-derive invoiceType: Cash = BUYER_INVOICE (buyer pays), Commission = SUPPLIER_INVOICE
+            const invoiceMode = (resolvedFormData.notes || '').toLowerCase();
+            if (shouldUseDynamicQuestionFlow && !['cash', 'commission'].includes(invoiceMode)) {
+                throw new Error('Please select Cash or Commission before submitting.');
+            }
+            const isCash = invoiceMode === 'cash';
+            if (shouldRequireVerifiedParties) {
+                if (isCash) {
+                    if (!selectedBuyerId) {
+                        throw new Error('Insured party/buyer must be selected from verified users.');
+                    }
+                    submitData.append('buyerUserId', selectedBuyerId);
+                } else {
+                    if (!selectedSupplierId) {
+                        throw new Error('Insured party/supplier must be selected from verified users.');
+                    }
+                    submitData.append('supplierUserId', selectedSupplierId);
+                }
+            }
 
             const buyName = sanitizeText(resolvedFormData.buyerName || 'Unknown Buyer');
             submitData.append('billToName', buyName);
@@ -602,8 +741,6 @@ const Insurance = () => {
 
             const owner = sanitizeText(resolvedFormData.ownerName || 'Unknown Owner');
             submitData.append('ownerName', owner);
-            // Auto-derive invoiceType: Cash = BUYER_INVOICE (buyer pays), Commission = SUPPLIER_INVOICE
-            const isCash = (resolvedFormData.notes || '').toLowerCase() === 'cash';
             submitData.append('invoiceType', isCash ? 'BUYER_INVOICE' : 'SUPPLIER_INVOICE');
 
             if (resolvedFormData.hsn) submitData.append('hsnCode', resolvedFormData.hsn);
@@ -612,6 +749,10 @@ const Insurance = () => {
             if (insuredPartyPhone) submitData.append('insuredPartyPhone', insuredPartyPhone);
             if (['CUSTOMER', 'TRANSPORTER'].includes(identity)) {
                 submitData.append('customerUserId', effectiveUserId);
+            } else if (shouldRequireVerifiedParties) {
+                const insuredUserId =
+                    isCash ? selectedBuyerId : selectedSupplierId;
+                if (insuredUserId) submitData.append('customerUserId', insuredUserId);
             } else if (shouldShowCustomerMappingQuestion && resolvedFormData.addToCustomerAccount === 'Yes') {
                 const customerUserIdForSubmit =
                     resolvedFormData.customerUserId || selectedCustomerUserIdRef.current;
@@ -670,7 +811,7 @@ const Insurance = () => {
     };
 
     const handleEdit = (fieldToEdit: string) => {
-        const questionIndex = questions.findIndex(q => q.field === fieldToEdit);
+        const questionIndex = activeQuestions.findIndex(q => q.field === fieldToEdit);
         const messageIndex = messages.findIndex(m => m.field === fieldToEdit);
         if (questionIndex === -1 || messageIndex === -1) return;
 
@@ -681,6 +822,7 @@ const Insurance = () => {
         setEditingMessageIndex(messageIndex);
         setCurrentQuestionIndex(questionIndex);
         setAddressSuggestions([]);
+        setPartyAddressSuggestions([]);
 
         if (fieldToEdit === 'weightmentSlip') {
             setWeightmentSlip(null);
@@ -697,6 +839,14 @@ const Insurance = () => {
     };
 
     const getQuestionText = (question: Question, latestNotes?: string) => {
+        const modeValue = latestNotes !== undefined ? latestNotes : (formData.notes || '');
+        const isCashModeForQuestion = modeValue.toLowerCase() === 'cash';
+        if (question.field === 'buyerName') {
+            return isCashModeForQuestion ? 'Insured Party / Buyer Name' : 'Party Name';
+        }
+        if (question.field === 'supplierName') {
+            return isCashModeForQuestion ? 'Supplier Name' : 'Insured Party / Supplier Name';
+        }
         if (question.field === 'insuredPartyPhone') {
             const notesValue = latestNotes !== undefined ? latestNotes : (formData.notes || '');
             const isCash = notesValue.toLowerCase() === 'cash';
@@ -715,6 +865,8 @@ const Insurance = () => {
         if (isCash) {
             const buyerName = String(mergedForm.buyerName || '').trim().toLowerCase();
             const buyerPhone =
+                verifiedSuppliers.find((party) => party.id === selectedBuyerId)
+                    ?.mobileNumber ||
                 historicalParties.find(
                     (party) => party.name.trim().toLowerCase() === buyerName,
                 )?.phoneNumber || '';
@@ -755,7 +907,8 @@ const Insurance = () => {
     };
 
     const goToNextQuestion = (answerForCurrentQuestion?: string, latestNotes?: string) => {
-        const currentQuestion = questions[currentQuestionIndex];
+        const questionsForCurrentMode = getActiveQuestions(latestNotes !== undefined ? latestNotes : formData.notes);
+        const currentQuestion = questionsForCurrentMode[currentQuestionIndex];
         let nextIndex = currentQuestionIndex + 1;
         const latestFormPatch: Partial<FormData> = {};
         if (
@@ -766,8 +919,12 @@ const Insurance = () => {
             latestFormPatch[currentQuestion.field] = answerForCurrentQuestion as never;
         }
 
-        const nextQuestion = questions[nextIndex];
-        if (nextQuestion && nextQuestion.field === 'addToCustomerAccount' && !shouldShowCustomerMappingQuestion) {
+        const nextQuestion = questionsForCurrentMode[nextIndex];
+        if (
+            nextQuestion &&
+            nextQuestion.field === 'addToCustomerAccount' &&
+            (!shouldShowCustomerMappingQuestion || shouldRequireVerifiedParties)
+        ) {
             nextIndex += 2;
         }
 
@@ -800,9 +957,9 @@ const Insurance = () => {
             }
         }
 
-        if (nextIndex < questions.length) {
+        if (nextIndex < questionsForCurrentMode.length) {
             setCurrentQuestionIndex(nextIndex);
-            const nextQuestion = questions[nextIndex];
+            const nextQuestion = questionsForCurrentMode[nextIndex];
             setMessages(prev => [...prev, { text: getQuestionText(nextQuestion, latestNotes), sender: 'bot' }]);
 
             if (nextQuestion.field === 'insuredPartyPhone') {
@@ -835,7 +992,8 @@ const Insurance = () => {
 
     const processInput = async (value: string) => {
         setAddressSuggestions([]);
-        const q = questions[currentQuestionIndex];
+        setPartyAddressSuggestions([]);
+        const q = activeQuestions[currentQuestionIndex];
         const currentInput = value.trim();
 
         if (q.field === 'language') {
@@ -850,6 +1008,14 @@ const Insurance = () => {
         }
         if (q.field === 'insuredPartyPhone' && normalizePhoneInput(currentInput).length !== 10) {
             setError(language === 'hi' ? 'Valid 10 digit WhatsApp number dalein.' : 'Enter a valid 10 digit WhatsApp number.');
+            return;
+        }
+        if (
+            q.field === 'notes' &&
+            shouldUseDynamicQuestionFlow &&
+            !['cash', 'commission'].includes(currentInput.toLowerCase())
+        ) {
+            setError(language === 'hi' ? 'Cash ya Commission select karein.' : 'Please select Cash or Commission.');
             return;
         }
         setError('');
@@ -875,7 +1041,7 @@ const Insurance = () => {
                 setMessages(prev => [
                     ...prev,
                     { text: selectedLanguage === 'en' ? 'English' : 'हिंदी', sender: 'user', field: 'language' },
-                    { text: questions[1].text[selectedLanguage], sender: 'bot' }
+                    { text: activeQuestions[1].text[selectedLanguage], sender: 'bot' }
                 ]);
                 setInputValue('');
                 setCurrentQuestionIndex(1);
@@ -990,6 +1156,23 @@ const Insurance = () => {
         if (!value) {
             return;
         }
+        const isCash = String(formData.notes || '').toLowerCase() === 'cash';
+        if (shouldRequireVerifiedParties && !isCash) {
+            const matchedSupplier = verifiedSuppliers.find(
+                (supplier) =>
+                    supplier.name.trim().toLowerCase() === value.toLowerCase() ||
+                    supplier.mobileNumber === value,
+            );
+            if (!matchedSupplier) {
+                setError('Select a verified registered user from the list.');
+                return;
+            }
+            handleSupplierSelect({
+                id: matchedSupplier.id,
+                title: matchedSupplier.name,
+            });
+            return;
+        }
 
         setSelectedSupplierId('');
         setFormData((prev) => ({
@@ -1002,6 +1185,38 @@ const Insurance = () => {
     };
 
     const handleSupplierSelect = (option: LookupDropdownOption) => {
+        const isCash = String(formData.notes || '').toLowerCase() === 'cash';
+        if (!shouldRequireVerifiedParties && option.id === OWN_PROFILE_OPTION_ID) {
+            setSupplierLookupQuery(ownProfileName);
+            setSelectedSupplierId('');
+            setFormData((prev) => ({
+                ...prev,
+                supplierName: ownProfileName,
+                supplierAddress: ownProfileAddress,
+                placeOfSupply: prev.placeOfSupply || ownProfilePlaceOfSupply,
+            }));
+            void processInput(ownProfileName);
+            return;
+        }
+
+        if (shouldRequireVerifiedParties && isCash) {
+            const matchedSupplier = historicalParties.find((party) => party.name === option.id);
+            if (!matchedSupplier) {
+                return;
+            }
+
+            setSupplierLookupQuery(matchedSupplier.name);
+            setSelectedSupplierId('');
+            setFormData((prev) => ({
+                ...prev,
+                supplierName: matchedSupplier.name,
+                supplierAddress: matchedSupplier.address || '',
+                placeOfSupply: prev.placeOfSupply || matchedSupplier.placeOfSupply || '',
+            }));
+            void processInput(matchedSupplier.name);
+            return;
+        }
+
         const matchedSupplier = verifiedSuppliers.find(
             (supplier) => supplier.id === option.id,
         );
@@ -1029,6 +1244,23 @@ const Insurance = () => {
         if (!value) {
             return;
         }
+        const isCash = String(formData.notes || '').toLowerCase() === 'cash';
+        if (shouldRequireVerifiedParties && isCash) {
+            const matchedBuyer = verifiedSuppliers.find(
+                (party) =>
+                    party.name.trim().toLowerCase() === value.toLowerCase() ||
+                    party.mobileNumber === value,
+            );
+            if (!matchedBuyer) {
+                setError('Select a verified registered user from the list.');
+                return;
+            }
+            handleBuyerSelect({
+                id: matchedBuyer.id,
+                title: matchedBuyer.name,
+            });
+            return;
+        }
 
         setFormData((prev) => ({
             ...prev,
@@ -1039,6 +1271,42 @@ const Insurance = () => {
     };
 
     const handleBuyerSelect = (option: LookupDropdownOption) => {
+        const isCash = String(formData.notes || '').toLowerCase() === 'cash';
+        if (!shouldRequireVerifiedParties && option.id === OWN_PROFILE_OPTION_ID) {
+            setBuyerLookupQuery(ownProfileName);
+            setSelectedBuyerId('');
+            setFormData((prev) => ({
+                ...prev,
+                buyerName: ownProfileName,
+                buyerAddress: ownProfileAddress,
+                placeOfSupply: prev.placeOfSupply || ownProfilePlaceOfSupply,
+            }));
+            void processInput(ownProfileName);
+            return;
+        }
+
+        if (shouldRequireVerifiedParties && isCash) {
+            const matchedParty = verifiedSuppliers.find((party) => party.id === option.id);
+            if (!matchedParty) {
+                return;
+            }
+
+            setBuyerLookupQuery(matchedParty.name);
+            setSelectedBuyerId(matchedParty.id);
+            setFormData((prev) => ({
+                ...prev,
+                buyerName: matchedParty.name,
+                buyerAddress: matchedParty.address || '',
+                placeOfSupply: prev.placeOfSupply || matchedParty.placeOfSupply || '',
+                insuredPartyPhone:
+                    String(prev.notes || '').toLowerCase() === 'cash'
+                        ? normalizePhoneInput(matchedParty.mobileNumber)
+                        : prev.insuredPartyPhone,
+            }));
+            void processInput(matchedParty.name);
+            return;
+        }
+
         const matchedParty = historicalParties.find((party) => party.name === option.id);
         if (!matchedParty) {
             return;
@@ -1083,7 +1351,7 @@ const Insurance = () => {
         setInputValue('');
         setError('');
         setCurrentQuestionIndex(
-            questions.findIndex((question) => question.field === 'weightmentSlip'),
+            activeQuestions.findIndex((question) => question.field === 'weightmentSlip'),
         );
         setMessages((prev) => [
             ...prev,
@@ -1120,6 +1388,17 @@ const Insurance = () => {
         const standardizedAddress = formatOSMAddress(address.address);
         setInputValue(standardizedAddress);
         void processInput(standardizedAddress);
+    };
+
+    const handlePartyAddressSelect = (suggestion: PartyAddressSuggestion) => {
+        setInputValue(suggestion.address);
+        if (suggestion.placeOfSupply) {
+            setFormData(prev => ({
+                ...prev,
+                placeOfSupply: prev.placeOfSupply || suggestion.placeOfSupply,
+            }));
+        }
+        void processInput(suggestion.address);
     };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1218,11 +1497,16 @@ const Insurance = () => {
         goToNextQuestion();
     };
 
-    const currentQuestion = questions[currentQuestionIndex] || questions[questions.length - 1];
+    const currentQuestion = activeQuestions[currentQuestionIndex] || activeQuestions[activeQuestions.length - 1];
     const isFileInput = currentQuestion.type === 'file';
     const isSelectInput = currentQuestion.type === 'select';
     const isSupplierLookupQuestion = currentQuestion.field === 'supplierName';
     const isBuyerLookupQuestion = currentQuestion.field === 'buyerName';
+    const currentLookupUsesOwnProfile =
+        !shouldRequireVerifiedParties && (isSupplierLookupQuestion || isBuyerLookupQuestion);
+    const currentLookupUsesVerified =
+        (isSupplierLookupQuestion && shouldRequireVerifiedParties && String(formData.notes || '').toLowerCase() !== 'cash') ||
+        (isBuyerLookupQuestion && shouldRequireVerifiedParties && String(formData.notes || '').toLowerCase() === 'cash');
     const showLookupDropdown =
         (isSupplierLookupQuestion || isBuyerLookupQuestion) && !isSubmitting;
     const showAssistPanel =
@@ -1232,7 +1516,20 @@ const Insurance = () => {
         currentQuestion.field === 'customerUserId'
             ? customerAccounts.map((c) => formatCustomerOption(c))
             : currentQuestion.options || [];
-    const supplierLookupOptions: LookupDropdownOption[] = verifiedSuppliers
+    const isCashMode = String(formData.notes || '').toLowerCase() === 'cash';
+    const ownProfileLookupOptions = ownProfileName
+        ? [{
+            id: OWN_PROFILE_OPTION_ID,
+            title: ownProfileName,
+            subtitle: ownProfileAddress || 'Profile address can be added manually',
+            meta: [identity || 'My profile', ownProfilePhone].filter(Boolean).join(' - '),
+        }].filter((option) => {
+            const needle = (isSupplierLookupQuestion ? supplierLookupQuery : buyerLookupQuery).trim().toLowerCase();
+            if (!needle) return true;
+            return `${option.title} ${option.meta}`.toLowerCase().includes(needle);
+        })
+        : [];
+    const verifiedSupplierLookupOptions: LookupDropdownOption[] = verifiedSuppliers
         .filter((supplier) => {
             const needle = supplierLookupQuery.trim().toLowerCase();
             if (!needle) {
@@ -1245,9 +1542,47 @@ const Insurance = () => {
             id: supplier.id,
             title: supplier.name,
             subtitle: supplier.address || 'Address can be added manually',
-            meta: supplier.mobileNumber,
+            meta: shouldRequireVerifiedParties
+                ? [supplier.identity, supplier.mobileNumber].filter(Boolean).join(' - ')
+                : supplier.mobileNumber,
         }));
-    const buyerLookupOptions: LookupDropdownOption[] = historicalParties
+    const historicalSupplierLookupOptions: LookupDropdownOption[] = historicalParties
+        .filter((party) => {
+            const needle = supplierLookupQuery.trim().toLowerCase();
+            if (!needle) {
+                return true;
+            }
+
+            return `${party.name} ${party.address}`.toLowerCase().includes(needle);
+        })
+        .map((party) => ({
+            id: party.name,
+            title: party.name,
+            subtitle: party.address || 'Address can be added manually',
+            meta: `${party.invoiceCount} invoice${party.invoiceCount === 1 ? '' : 's'}`,
+        }));
+    const supplierLookupOptions: LookupDropdownOption[] =
+        !shouldRequireVerifiedParties
+            ? ownProfileLookupOptions
+            : shouldRequireVerifiedParties && isCashMode
+            ? historicalSupplierLookupOptions
+            : verifiedSupplierLookupOptions;
+    const verifiedBuyerLookupOptions: LookupDropdownOption[] = verifiedSuppliers
+        .filter((party) => {
+            const needle = buyerLookupQuery.trim().toLowerCase();
+            if (!needle) {
+                return true;
+            }
+
+            return `${party.name} ${party.mobileNumber}`.toLowerCase().includes(needle);
+        })
+        .map((party) => ({
+            id: party.id,
+            title: party.name,
+            subtitle: party.address || 'Address can be added manually',
+            meta: [party.identity, party.mobileNumber].filter(Boolean).join(' - '),
+        }));
+    const historicalBuyerLookupOptions: LookupDropdownOption[] = historicalParties
         .filter((party) => {
             const needle = buyerLookupQuery.trim().toLowerCase();
             if (!needle) {
@@ -1262,6 +1597,11 @@ const Insurance = () => {
             subtitle: party.address || 'Address can be added manually',
             meta: `${party.invoiceCount} invoice${party.invoiceCount === 1 ? '' : 's'}`,
         }));
+    const buyerLookupOptions: LookupDropdownOption[] = !shouldRequireVerifiedParties
+        ? ownProfileLookupOptions
+        : shouldRequireVerifiedParties && isCashMode
+            ? verifiedBuyerLookupOptions
+            : historicalBuyerLookupOptions;
 
     return (
         <div
@@ -1454,7 +1794,7 @@ const Insurance = () => {
                     </div>
                 ))}
 
-                {isSelectInput && !isSubmitting && !editingMessageIndex && (
+                {isSelectInput && !isSubmitting && (
                     <div className="flex justify-start w-full animate-fadeIn">
                         <div className="w-[80%] sm:w-[75%] bg-white rounded-2xl p-4 shadow-lg border-2 border-gray-100">
                             <p className="text-xs text-gray-600 mb-2 font-semibold uppercase tracking-wider flex items-center gap-2">
@@ -1488,7 +1828,17 @@ const Insurance = () => {
 
             {showLookupDropdown ? (
                 <LookupDropdown
-                    label={isSupplierLookupQuestion ? 'Verified suppliers' : 'Historical parties'}
+                    label={
+                        currentLookupUsesOwnProfile
+                            ? 'Your profile'
+                            : currentLookupUsesVerified
+                            ? shouldRequireVerifiedParties
+                                ? 'Verified users'
+                                : 'Verified suppliers'
+                            : isSupplierLookupQuestion
+                                ? 'Historical suppliers'
+                                : 'Historical parties'
+                    }
                     query={isSupplierLookupQuestion ? supplierLookupQuery : buyerLookupQuery}
                     onQueryChange={
                         isSupplierLookupQuestion ? setSupplierLookupQuery : setBuyerLookupQuery
@@ -1507,24 +1857,38 @@ const Insurance = () => {
                             : handleBuyerSelect
                     }
                     loading={
-                        isSupplierLookupQuestion ? isLoadingSuppliers : isLoadingParties
+                        currentLookupUsesOwnProfile
+                            ? false
+                            : currentLookupUsesVerified
+                            ? isLoadingSuppliers
+                            : isLoadingParties
                     }
                     errorMessage={
-                        isSupplierLookupQuestion ? supplierLookupError : partyLookupError
+                        currentLookupUsesOwnProfile
+                            ? ''
+                            : currentLookupUsesVerified
+                            ? supplierLookupError
+                            : partyLookupError
                     }
                     onRetry={
-                        isSupplierLookupQuestion
+                        currentLookupUsesVerified
                             ? () => {
                                 void loadVerifiedSuppliers();
                             }
                             : undefined
                     }
                     emptyMessage={
-                        isSupplierLookupQuestion
-                            ? 'No verified suppliers found'
-                            : 'No historical parties found for this supplier'
+                        currentLookupUsesOwnProfile
+                            ? 'No profile name found. You can type the value manually.'
+                            : currentLookupUsesVerified
+                            ? shouldRequireVerifiedParties
+                                ? 'No verified registered users found'
+                                : 'No verified suppliers found'
+                            : isSupplierLookupQuestion
+                                ? 'No historical suppliers found for this buyer'
+                                : 'No historical parties found for this supplier'
                     }
-                    submitLabel="Use typed value"
+                    submitLabel={currentLookupUsesVerified && shouldRequireVerifiedParties ? 'Select matched user' : 'Use typed value'}
                 />
             ) : null}
 
@@ -1551,6 +1915,34 @@ const Insurance = () => {
                 />
             ) : null}
 
+            {partyAddressSuggestions.length > 0 && (
+                <div className="bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-20 max-h-48 overflow-y-auto">
+                    <div className="p-2 space-y-1">
+                        <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                            {language === 'hi' ? 'Saved address suggestions' : 'Saved Address Suggestions'}
+                        </p>
+                        {partyAddressSuggestions.map((suggestion) => (
+                            <button
+                                key={`${suggestion.source}-${suggestion.address}`}
+                                onClick={() => handlePartyAddressSelect(suggestion)}
+                                className="w-full text-left px-3 py-2 hover:bg-gray-100 rounded-lg flex items-start gap-2 transition-colors"
+                            >
+                                <MapPinIcon className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                                <div className="flex flex-col">
+                                    <span className="text-sm font-medium text-gray-800">{suggestion.address}</span>
+                                    <span className="text-xs text-gray-500">
+                                        {suggestion.source === 'profile'
+                                            ? 'Registered profile address'
+                                            : `${suggestion.invoiceCount} previous invoice${suggestion.invoiceCount === 1 ? '' : 's'}`}
+                                        {suggestion.placeOfSupply ? ` - ${suggestion.placeOfSupply}` : ''}
+                                    </span>
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Address Suggestions */}
             {addressSuggestions.length > 0 && (
                 <div className="bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-20 max-h-48 overflow-y-auto">
@@ -1576,7 +1968,7 @@ const Insurance = () => {
             )}
 
             {/* Input Bar */}
-            {(!isSelectInput || editingMessageIndex !== null) && !showLookupDropdown && (
+            {!isSelectInput && !showLookupDropdown && (
                 <div className="bg-gradient-to-t from-[#f0f0f0] to-[#f5f5f5] px-4 py-3 border-t border-gray-300 shadow-lg z-10 shrink-0">
                     {error && (
                         <div className="mb-2 px-3 py-2 bg-red-50 border-l-4 border-red-500 rounded-r-lg">

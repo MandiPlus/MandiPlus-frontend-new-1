@@ -68,6 +68,10 @@ interface Invoice {
     terms?: string;
     insuredPersonNameSnapshot?: string;
     insuredPersonUserId?: string;
+    insuredPersonDisplayName?: string;
+    otherPartyDisplayName?: string;
+    insuredPersonDisplayAddress?: string[];
+    otherPartyDisplayAddress?: string[];
     isVerified?: boolean;
     isRejected?: boolean;
     rejectionReason?: string | null;
@@ -1446,28 +1450,36 @@ export default function InsuranceFormsPage() {
         closeCropper();
     };
 
-    const getInsuredPersonName = (inv: Invoice) => {
-        if (inv.insuredPersonNameSnapshot?.trim()) {
-            return inv.insuredPersonNameSnapshot.trim();
+    const isBuyerInsuredInvoice = (inv: Invoice) => {
+        if (inv.invoiceType) {
+            return inv.invoiceType === 'BUYER_INVOICE';
         }
         const note = (inv.weighmentSlipNote || '').toLowerCase().trim();
-        const isCash =
+        return (
             note.includes('cash') ||
             note.includes('nak') ||
-            note.includes('nag') ||
-            inv.invoiceType === 'BUYER_INVOICE';
-        return isCash ? (inv.billToName || '') : (inv.supplierName || '');
+            note.includes('nag')
+        );
     };
 
-    const getOtherPartyName = (inv: Invoice) => {
-        const note = (inv.weighmentSlipNote || '').toLowerCase().trim();
-        const isCash =
-            note.includes('cash') ||
-            note.includes('nak') ||
-            note.includes('nag') ||
-            inv.invoiceType === 'BUYER_INVOICE';
-        return isCash ? (inv.supplierName || '') : (inv.billToName || '');
+    const getCanonicalPartyNames = (inv: Invoice) => {
+        if (inv.insuredPersonDisplayName || inv.otherPartyDisplayName) {
+            return {
+                insured: inv.insuredPersonDisplayName || '',
+                other: inv.otherPartyDisplayName || '',
+            };
+        }
+
+        const isBuyerInsured = isBuyerInsuredInvoice(inv);
+        return {
+            insured: isBuyerInsured ? (inv.billToName || '') : (inv.supplierName || ''),
+            other: isBuyerInsured ? (inv.supplierName || '') : (inv.billToName || ''),
+        };
     };
+
+    const getInsuredPersonName = (inv: Invoice) => getCanonicalPartyNames(inv).insured;
+
+    const getOtherPartyName = (inv: Invoice) => getCanonicalPartyNames(inv).other;
 
     const getPaymentStatusLabelAndClasses = (inv: Invoice) => {
         const raw = inv.paymentStatus || '';

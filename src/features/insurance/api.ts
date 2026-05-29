@@ -173,6 +173,7 @@ export interface VerifiedSupplierOption {
   id: string;
   name: string;
   mobileNumber: string;
+  identity?: string;
   address: string;
   placeOfSupply: string;
 }
@@ -185,6 +186,14 @@ export interface HistoricalPartyOption {
   phoneNumber?: string;
   invoiceCount: number;
   lastInvoiceDate: string | null;
+}
+
+export interface PartyAddressSuggestion {
+  address: string;
+  placeOfSupply: string;
+  invoiceCount: number;
+  lastInvoiceDate: string | null;
+  source: "profile" | "history";
 }
 
 export interface SupplierPartyAssistProduct {
@@ -349,6 +358,53 @@ export const getSupplierHistoricalParties = async (
   } catch (error) {
     const err = error as AxiosError<ApiError>;
     throw err.response?.data || { message: "Failed to fetch supplier parties" };
+  }
+};
+
+export const getBuyerHistoricalSuppliers = async (
+  params: {
+    buyerId?: string;
+    buyerName?: string;
+    search?: string;
+  },
+): Promise<HistoricalPartyOption[]> => {
+  try {
+    const token = getStoredAuthToken();
+    const response = await axios.get(`${API_BASE_URL}/invoices/buyer-suppliers`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      params,
+    });
+
+    const payload = response.data?.data ?? response.data;
+    return Array.isArray(payload) ? payload : [];
+  } catch (error) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to fetch buyer suppliers" };
+  }
+};
+
+export const getPartyAddressSuggestions = async (
+  params: {
+    partyId?: string;
+    partyName?: string;
+    role?: "buyer" | "supplier";
+    search?: string;
+  },
+): Promise<PartyAddressSuggestion[]> => {
+  try {
+    const token = getStoredAuthToken();
+    const response = await axios.get(`${API_BASE_URL}/invoices/party-addresses`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      params,
+    });
+    return response.data;
+  } catch (error: unknown) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to fetch party addresses" };
   }
 };
 
