@@ -19,9 +19,13 @@ export default function AdminSidebar() {
     const pathname = usePathname();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const { logout, accessProfile } = useAdmin();
-    const navigation = ADMIN_NAV_ITEMS.filter((item) =>
-        accessProfile?.allowedSections?.includes(item.section),
-    );
+    const navigation = ADMIN_NAV_ITEMS.filter((item) => {
+        if (item.section === 'fssai-leads') {
+            return Boolean(accessProfile?.isFullAdmin);
+        }
+
+        return accessProfile?.allowedSections?.includes(item.section);
+    });
 
     return (
         <>

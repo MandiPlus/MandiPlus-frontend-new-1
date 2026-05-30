@@ -34,7 +34,7 @@ export interface AdminFieldLead {
   createdByUser?: {
     name?: string;
   };
-  leadSource?: 'FIELD_LEAD' | 'MANDI_DATA';
+  leadSource?: 'FIELD_LEAD' | 'MANDI_DATA' | 'FSSAI_LEAD';
   mandiData?: {
     commodity: string;
     mandiName: string;
@@ -43,6 +43,17 @@ export interface AdminFieldLead {
     trucksPerDay: number;
     regionSourceArea: string;
     todayPrice: number | string;
+  };
+  fssaiData?: {
+    businessName: string;
+    businessAddress: string;
+    kindOfBusiness: string;
+    companyPhone: string;
+    companyEmail: string;
+    aadharFrontPhotoUrl?: string | null;
+    aadharBackPhotoUrl?: string | null;
+    panCardPhotoUrl?: string | null;
+    clientPhotoUrl?: string | null;
   };
 }
 
@@ -55,6 +66,24 @@ export interface AdminFieldPriorityLead {
   trucksPerDay: number;
   regionSourceArea: string;
   todayPrice: number | string;
+  createdAt: string;
+  createdByUser?: {
+    name?: string;
+    mobileNumber?: string;
+  };
+}
+
+export interface AdminFieldFssaiLead {
+  id: string;
+  businessName: string;
+  businessAddress: string;
+  kindOfBusiness: string;
+  companyPhone: string;
+  companyEmail: string;
+  aadharFrontPhotoUrl?: string | null;
+  aadharBackPhotoUrl?: string | null;
+  panCardPhotoUrl?: string | null;
+  clientPhotoUrl?: string | null;
   createdAt: string;
   createdByUser?: {
     name?: string;
@@ -209,6 +238,14 @@ export async function getFieldAdminPriorityLeads(): Promise<
 > {
   const response = await axios.get(
     `${API_BASE_URL}/field-operations/admin/priority-leads`,
+    { headers: getAdminHeaders() },
+  );
+  return response.data;
+}
+
+export async function getFieldAdminFssaiLeads(): Promise<AdminFieldFssaiLead[]> {
+  const response = await axios.get(
+    `${API_BASE_URL}/field-operations/admin/fssai-leads`,
     { headers: getAdminHeaders() },
   );
   return response.data;

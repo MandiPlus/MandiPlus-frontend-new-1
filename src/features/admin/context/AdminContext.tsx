@@ -197,8 +197,13 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         router.push('/admin/login');
     };
 
-    const canAccessSection = (section: AdminSection) =>
-        Boolean(accessProfile?.allowedSections?.includes(section));
+    const canAccessSection = (section: AdminSection) => {
+        if (section === 'fssai-leads') {
+            return Boolean(accessProfile?.isFullAdmin);
+        }
+
+        return Boolean(accessProfile?.allowedSections?.includes(section));
+    };
 
     return (
         <AdminContext.Provider value={{ isAuthenticated, loading, accessProfile, login, logout, canAccessSection }}>

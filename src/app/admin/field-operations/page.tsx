@@ -498,6 +498,8 @@ export default function AdminFieldOperationsPage() {
                           {leads.map((lead) => {
                             const isMandiData =
                               lead.leadSource === 'MANDI_DATA';
+                            const isFssaiLead =
+                              lead.leadSource === 'FSSAI_LEAD';
 
                             return (
                               <tr
@@ -509,35 +511,51 @@ export default function AdminFieldOperationsPage() {
                                     className={`inline-flex rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
                                       isMandiData
                                         ? 'bg-[#fff7ed] text-[#b45309]'
+                                        : isFssaiLead
+                                          ? 'bg-[#eef2ff] text-[#4338ca]'
                                         : 'bg-[#eef2ff] text-[#4338ca]'
                                     }`}
                                   >
-                                    {isMandiData ? 'Mandi Data' : 'Lead'}
+                                    {isMandiData
+                                      ? 'Mandi Data'
+                                      : isFssaiLead
+                                        ? 'FSSAI Lead'
+                                        : 'Lead'}
                                   </span>
                                 </td>
                                 <td className="border-t border-slate-200/80 px-4 py-4 text-sm font-semibold text-slate-900">
                                   {isMandiData
                                     ? lead.mandiData?.commodity
+                                    : isFssaiLead
+                                      ? lead.fssaiData?.businessName
                                     : lead.businessName}
                                 </td>
                                 <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
                                   {isMandiData
                                     ? lead.mandiData?.biggestBuyerName
+                                    : isFssaiLead
+                                      ? lead.fssaiData?.companyEmail
                                     : lead.customerName}
                                 </td>
                                 <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
                                   {isMandiData
                                     ? lead.mandiData?.transporterName
+                                    : isFssaiLead
+                                      ? lead.fssaiData?.companyPhone
                                     : lead.mobileNumber}
                                 </td>
                                 <td className="max-w-[260px] border-t border-slate-200/80 px-4 py-4 text-sm text-slate-600">
                                   {isMandiData
                                     ? lead.mandiData?.regionSourceArea
+                                    : isFssaiLead
+                                      ? lead.fssaiData?.businessAddress
                                     : lead.businessAddress}
                                 </td>
                                 <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
                                   {isMandiData
                                     ? lead.mandiData?.mandiName
+                                    : isFssaiLead
+                                      ? lead.fssaiData?.kindOfBusiness
                                     : lead.businessType || '-'}
                                 </td>
                                 <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
@@ -545,6 +563,8 @@ export default function AdminFieldOperationsPage() {
                                     ? `${lead.mandiData?.trucksPerDay} trucks/day | Rs ${Number(
                                         lead.mandiData?.todayPrice || 0,
                                       ).toLocaleString('en-IN')}`
+                                    : isFssaiLead
+                                      ? 'Certificate data'
                                     : '-'}
                                 </td>
                                 <td className="border-t border-slate-200/80 px-4 py-4 text-sm text-slate-700">
@@ -556,9 +576,9 @@ export default function AdminFieldOperationsPage() {
                                   )}
                                 </td>
                                 <td className="border-t border-slate-200/80 px-4 py-4">
-                                  {isMandiData ? (
+                                  {isMandiData || isFssaiLead ? (
                                     <span className="inline-flex rounded-xl border border-[#fed7aa] bg-[#fff7ed] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#b45309]">
-                                      Mandi Data
+                                      {isMandiData ? 'Mandi Data' : 'FSSAI Lead'}
                                     </span>
                                   ) : (
                                     <select

@@ -49,6 +49,7 @@ const adminTitles: Record<string, string> = {
     '/admin/insurance-payments': 'Insurance Payments',
     '/admin/arrival-reports': 'Arrival Reports',
     '/admin/field-operations': 'Field Operations',
+    '/admin/fssai-leads': 'FSSAI Leads',
     '/admin/chat-logs': 'WhatsApp Chats',
     '/admin/pdf-editor': 'Edit Insurance PDF',
     '/admin/impersonate': 'Impersonate',

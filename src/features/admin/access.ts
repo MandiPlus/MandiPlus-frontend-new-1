@@ -14,6 +14,7 @@ import {
   ChatBubbleLeftRightIcon,
   DocumentChartBarIcon,
   CalendarIcon,
+  IdentificationIcon,
 } from '@heroicons/react/24/outline';
 
 export const ADMIN_SECTIONS = [
@@ -28,6 +29,7 @@ export const ADMIN_SECTIONS = [
   'insurance-payments',
   'arrival-reports',
   'field-operations',
+  'fssai-leads',
   'chat-logs',
   'pdf-editor',
 ] as const;
@@ -63,6 +65,7 @@ export const ADMIN_NAV_ITEMS: Array<{
   { name: 'Insurance Payments', href: '/admin/insurance-payments', icon: CreditCardIcon, section: 'insurance-payments' },
   { name: 'Arrival Reports', href: '/admin/arrival-reports', icon: DocumentChartBarIcon, section: 'arrival-reports' },
   { name: 'Field Operations', href: '/admin/field-operations', icon: CalendarIcon, section: 'field-operations' },
+  { name: 'FSSAI Leads', href: '/admin/fssai-leads', icon: IdentificationIcon, section: 'fssai-leads' },
   { name: 'WhatsApp Chats', href: '/admin/chat-logs', icon: ChatBubbleLeftRightIcon, section: 'chat-logs' },
   { name: 'Edit Insurance PDF', href: '/admin/pdf-editor', icon: PencilSquareIcon, section: 'pdf-editor' },
 ];
@@ -79,6 +82,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/insurance-payments': 'insurance-payments',
   '/admin/arrival-reports': 'arrival-reports',
   '/admin/field-operations': 'field-operations',
+  '/admin/fssai-leads': 'fssai-leads',
   '/admin/chat-logs': 'chat-logs',
   '/admin/pdf-editor': 'pdf-editor',
   '/admin/impersonate': 'users',
