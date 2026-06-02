@@ -57,6 +57,14 @@ function JsonBlock({ data, title }: { data: unknown; title: string }) {
     );
 }
 
+function getTodayInputDate() {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 export default function TataUatTestPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
@@ -76,7 +84,8 @@ export default function TataUatTestPage() {
         productName: 'Mango',
         quantity: 100,
         rate: 50,
-        vehicleNumber: 'MH04AB1234'
+        vehicleNumber: 'MH04AB1234',
+        shipmentDate: getTodayInputDate()
     });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -118,7 +127,8 @@ export default function TataUatTestPage() {
                     productName: formData.productName,
                     quantity: formData.quantity,
                     rate: formData.rate,
-                    vehicleNumber: formData.vehicleNumber
+                    vehicleNumber: formData.vehicleNumber,
+                    shipmentDate: formData.shipmentDate
                 })
             });
 
@@ -268,6 +278,7 @@ export default function TataUatTestPage() {
                             { label: 'Product Name',     name: 'productName',     type: 'text' },
                             { label: 'Quantity',         name: 'quantity',        type: 'number' },
                             { label: 'Rate',             name: 'rate',            type: 'number' },
+                            { label: 'Shipment / Issue Date', name: 'shipmentDate', type: 'date' },
                         ] as const).map(f => (
                             <div key={f.name}>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">{f.label}</label>
