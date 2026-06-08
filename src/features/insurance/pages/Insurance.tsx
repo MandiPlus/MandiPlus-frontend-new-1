@@ -1075,23 +1075,6 @@ const Insurance = () => {
                 }
 
                 if (account) {
-                    const qty = formData.quantity ? Number(formData.quantity) : 0;
-                    const rate = formData.rate ? Number(formData.rate) : 0;
-                    const amount = qty * rate;
-                    const walletBalance = Number(account.walletBalance || 0);
-                    const requiresWalletCheck =
-                        account.requiresWalletCheck ??
-                        (account.identity !== 'TRANSPORTER' || account.billingType !== 'PER_POLICY');
-
-                    if (requiresWalletCheck && amount > walletBalance) {
-                        setError(
-                            language === 'hi'
-                                ? 'Is customer ke wallet me itna balance nahi hai. Koi aur customer select karein'
-                                : 'This customer does not have enough wallet balance for this invoice. Please choose another customer'
-                        );
-                        return;
-                    }
-
                     // Clear any previous error once a valid customer is selected
                     setError('');
                 }
