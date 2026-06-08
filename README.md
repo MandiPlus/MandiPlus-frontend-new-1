@@ -6,7 +6,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 - npm, yarn, pnpm, or bun package manager
 
 ## Installation  
-
+  
 1. Clone the repository
 2. Install dependencies:
       
