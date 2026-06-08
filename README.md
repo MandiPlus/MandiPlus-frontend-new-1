@@ -8,7 +8,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 ## Installation  
   
 1. Clone the repository
-2. Install dependencies:
+2. Install dependencies:   
       
 ```bash
 npm install
