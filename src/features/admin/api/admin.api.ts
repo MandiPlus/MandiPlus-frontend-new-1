@@ -313,6 +313,10 @@ export interface AdminWalletStatementItem {
   amount: number;
   direction: "CREDIT" | "DEBIT";
   balanceAfter?: number;
+  invoicePremiumAmount?: number;
+  invoicePaymentStatus?: string;
+  invoicePaidAmount?: number;
+  invoicePendingAmount?: number;
   referenceId?: string;
   narration?: string;
   remark?: string;
@@ -562,6 +566,45 @@ class AdminApi {
     }
   };
 
+  public requestAdminPasswordResetOtp = async (
+    username: string,
+  ): Promise<ApiResponse<{ maskedMobileNumber?: string }>> => {
+    try {
+      const response = await this.client.post(
+        "/auth/admin/password-reset/request-otp",
+        { username },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to send password reset OTP",
+        error: error.message,
+      };
+    }
+  };
+
+  public resetAdminPassword = async (payload: {
+    username: string;
+    otp: string;
+    newPassword: string;
+  }): Promise<ApiResponse<null>> => {
+    try {
+      const response = await this.client.post(
+        "/auth/admin/password-reset/confirm",
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to reset password",
+        error: error.message,
+      };
+    }
+  };
+
   public getAdminAccounts = async (): Promise<ApiResponse<AdminAccountRow[]>> => {
     try {
       const response = await this.client.get<ApiResponse<AdminAccountRow[]>>(
@@ -795,6 +838,16 @@ class AdminApi {
   public exportAdminUserWalletStatement = async (userId: string): Promise<Blob> => {
     const response = await this.client.get(
       `/wallet/admin/users/${userId}/statement/export`,
+      {
+        responseType: "blob",
+      },
+    );
+    return response.data;
+  };
+
+  public exportUnpaidWalletPaymentPendingReport = async (): Promise<Blob> => {
+    const response = await this.client.get(
+      "/wallet/admin/unpaid-wallet-payment-pending-report/export",
       {
         responseType: "blob",
       },

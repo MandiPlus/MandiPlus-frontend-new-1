@@ -173,6 +173,12 @@ export default function UsersPage() {
     const [walletLogUser, setWalletLogUser] = useState<User | null>(null);
     const [walletLogs, setWalletLogs] = useState<AdminWalletStatementItem[]>([]);
     const [exportingWalletByUser, setExportingWalletByUser] = useState<Record<string, boolean>>({});
+    const [exportingUnpaidWalletReport, setExportingUnpaidWalletReport] = useState(false);
+    const showUnpaidWalletPaymentColumns = walletLogUser?.walletType === 'UNPAID';
+    const getCleanWalletNarration = (tx: AdminWalletStatementItem) => {
+        const narration = tx.narration || tx.type || '-';
+        return narration.replace(/\s*\|\s*Premium\s*₹?[\d,]+(?:\.\d+)?\s*/gi, '').trim() || '-';
+    };
     const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
     const [createUserLoading, setCreateUserLoading] = useState(false);
     const [createUserForm, setCreateUserForm] =
@@ -989,6 +995,27 @@ export default function UsersPage() {
         }
     };
 
+    const handleExportUnpaidWalletReport = async () => {
+        if (exportingUnpaidWalletReport) return;
+        setExportingUnpaidWalletReport(true);
+        try {
+            const blob = await adminApi.exportUnpaidWalletPaymentPendingReport();
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `unpaid-wallet-payment-pending-report-${new Date().toISOString().slice(0, 10)}.xlsx`;
+            document.body.appendChild(link);
+            link.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(link);
+            toast.success('Unpaid wallet report exported');
+        } catch (err: any) {
+            toast.error(err?.response?.data?.message || err?.message || 'Failed to export unpaid wallet report');
+        } finally {
+            setExportingUnpaidWalletReport(false);
+        }
+    };
+
     const handleExportUsers = () => {
         if (activeSection === 'ADMIN_REQUESTS') return;
         if (filteredUsers.length === 0) {
@@ -1317,6 +1344,15 @@ export default function UsersPage() {
                                 className="whitespace-nowrap rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-800"
                             >
                                 Export Excel
+                            </button>
+                        ) : null}
+                        {activeSection === 'UNPAID_WALLETS' ? (
+                            <button
+                                onClick={handleExportUnpaidWalletReport}
+                                disabled={exportingUnpaidWalletReport}
+                                className="whitespace-nowrap rounded-md bg-slate-800 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {exportingUnpaidWalletReport ? 'Exporting...' : 'Pending Report'}
                             </button>
                         ) : null}
                         {activeSection !== 'ADMIN_REQUESTS' ? (
@@ -1947,7 +1983,7 @@ export default function UsersPage() {
 
             {walletLogsOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-3xl rounded-xl bg-white shadow-2xl">
+                    <div className="flex max-h-[92vh] w-[96vw] max-w-7xl flex-col rounded-xl bg-white shadow-2xl">
                         <div className="flex items-center justify-between border-b px-5 py-4">
                             <div>
                                 <h3 className="text-lg font-semibold text-gray-900">Wallet Logs</h3>
@@ -1974,7 +2010,7 @@ export default function UsersPage() {
                             </div>
                         </div>
 
-                        <div className="max-h-[65vh] overflow-auto">
+                        <div className="flex-1 overflow-auto">
                             {walletLogsLoading ? (
                                 <div className="px-5 py-8 text-sm text-gray-500">Loading wallet logs...</div>
                             ) : walletLogs.length === 0 ? (
@@ -1986,6 +2022,14 @@ export default function UsersPage() {
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Date</th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Narration</th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Type</th>
+                                            <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Premium</th>
+                                            {showUnpaidWalletPaymentColumns ? (
+                                                <>
+                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Status</th>
+                                                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Paid</th>
+                                                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Pending</th>
+                                                </>
+                                            ) : null}
                                             <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Amount</th>
                                             <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Balance After</th>
                                         </tr>
@@ -1995,7 +2039,7 @@ export default function UsersPage() {
                                             <tr key={tx.id}>
                                                 <td className="px-4 py-3 text-xs text-gray-600">{formatDate(tx.createdAt)}</td>
                                                 <td className="px-4 py-3 text-sm text-gray-800">
-                                                    <p>{tx.narration || tx.type || '-'}</p>
+                                                    <p>{getCleanWalletNarration(tx)}</p>
                                                     {tx.remark ? (
                                                         <p className="mt-1 text-xs text-gray-500">{tx.remark}</p>
                                                     ) : null}
@@ -2015,6 +2059,28 @@ export default function UsersPage() {
                                                         {tx.direction}
                                                     </span>
                                                 </td>
+                                                <td className="px-4 py-3 text-right text-sm text-gray-700">
+                                                    {tx.invoicePremiumAmount !== undefined && tx.invoicePremiumAmount !== null
+                                                        ? `₹${Number(tx.invoicePremiumAmount || 0).toFixed(2)}`
+                                                        : '-'}
+                                                </td>
+                                                {showUnpaidWalletPaymentColumns ? (
+                                                    <>
+                                                        <td className="px-4 py-3 text-xs text-gray-700">
+                                                            {tx.invoicePaymentStatus || '-'}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right text-sm text-emerald-700">
+                                                            {tx.invoicePaidAmount !== undefined && tx.invoicePaidAmount !== null
+                                                                ? `₹${Number(tx.invoicePaidAmount || 0).toFixed(2)}`
+                                                                : '-'}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right text-sm text-rose-700">
+                                                            {tx.invoicePendingAmount !== undefined && tx.invoicePendingAmount !== null
+                                                                ? `₹${Number(tx.invoicePendingAmount || 0).toFixed(2)}`
+                                                                : '-'}
+                                                        </td>
+                                                    </>
+                                                ) : null}
                                                 <td className={`px-4 py-3 text-right text-sm font-semibold ${tx.direction === 'CREDIT' ? 'text-emerald-700' : 'text-rose-700'}`}>
                                                     {tx.direction === 'CREDIT' ? '+' : '-'}₹{Number(tx.amount || 0).toFixed(2)}
                                                 </td>
