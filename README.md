@@ -3,7 +3,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 ## Prerequisites
 
 - Node.js 18+ installed  
-- npm, yarn, pnpm, or bun package manager
+- npm, yarn, pnpm, or bun package manager    
 
 ## Installation  
   
