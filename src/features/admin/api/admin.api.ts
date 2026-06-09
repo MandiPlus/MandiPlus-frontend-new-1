@@ -2205,29 +2205,14 @@ class AdminApi {
   // END CLAIM REQUESTS
   // ============================================================
 
-  public sendInsurancePdfViaBot = async (
-    fileUrl: string,
+  public sendInsurancePdfViaBackend = async (
+    invoiceId: string,
     phoneNumber: string,
   ): Promise<ApiResponse<any>> => {
     try {
-      const botBaseUrl =
-        (typeof process !== "undefined" &&
-          process.env.NEXT_PUBLIC_BOT_API_BASE_URL) ||
-        "http://localhost:8000";
-      const adminToken =
-        this.authToken ||
-        (typeof window !== "undefined"
-          ? localStorage.getItem("adminToken")
-          : null);
-
-      const formData = new FormData();
-      formData.append("phone", phoneNumber);
-      formData.append("file_url", fileUrl);
-
-      const response = await axios.post(
-        `${botBaseUrl}/admin/send-insurance-pdf`,
-        formData,
-        { headers: { "x-admin-token": adminToken || "" } },
+      const response = await this.client.post(
+        `/invoices/${invoiceId}/send-insurance-template`,
+        { phoneNumber },
       );
       return { success: true, data: response.data, message: "Insurance PDF sent successfully" };
     } catch (error: any) {

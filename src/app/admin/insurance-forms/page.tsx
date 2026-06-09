@@ -1099,7 +1099,7 @@ export default function InsuranceFormsPage() {
             setSendingPdfInvoiceId(invoiceId);
             toast.loading('Sending insurance PDF...', { toastId: 'send-pdf' });
 
-            const res = await adminApi.sendInsurancePdfViaBot(fileUrl, phoneNumber);
+            const res = await adminApi.sendInsurancePdfViaBackend(invoiceId, phoneNumber);
             if (!res.success) throw new Error(res.message || 'Failed to send insurance PDF');
 
             const updateRes = await adminApi.updateInvoicePhone(invoiceId, phoneNumber);
@@ -3479,7 +3479,7 @@ export default function InsuranceFormsPage() {
                                 />
                             </div>
                             <p className="text-xs text-slate-500">
-                                The insurance PDF will be sent to this WhatsApp number via the bot.
+                                The insurance PDF will be sent to this WhatsApp number via the backend template.
                             </p>
                         </div>
 
