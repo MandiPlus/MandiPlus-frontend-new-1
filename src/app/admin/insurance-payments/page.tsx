@@ -10,11 +10,13 @@ import {
 } from 'lucide-react';
 import { FaWhatsapp } from 'react-icons/fa';
 import {
+  AdminLedgerUser,
   InsurancePaymentRow,
   UpdateInsurancePaymentPayload,
   adminApi,
 } from '@/features/admin/api/admin.api';
 import { useAdmin } from '@/features/admin/context/AdminContext';
+import SearchableSelect from '@/features/admin/components/SearchableSelect';
 
 const PAYMENT_STATUS_OPTIONS = [
   'PENDING',
@@ -262,6 +264,10 @@ export default function AdminInsurancePaymentsPage() {
   const [nameQuery, setNameQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [jumpPageInput, setJumpPageInput] = useState('1');
+  const [allUsers, setAllUsers] = useState<AdminLedgerUser[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [selectedUserInvoiceIds, setSelectedUserInvoiceIds] = useState<Set<string> | null>(null);
+  const [loadingUserLedger, setLoadingUserLedger] = useState(false);
 
   const [editing, setEditing] = useState<InsurancePaymentRow | null>(null);
   const [reminderTarget, setReminderTarget] = useState<InsurancePaymentRow | null>(
@@ -356,11 +362,57 @@ export default function AdminInsurancePaymentsPage() {
       return;
     }
     fetchRows();
+    adminApi.getAdminLedgerUsers().then((res) => {
+      if (res.success && Array.isArray(res.data)) {
+        setAllUsers(
+          res.data.filter((u) => !u.isMerged && u.canonicalUserId === u.id),
+        );
+      }
+    });
   }, [isAuthenticated, router, fetchRows]);
 
+  const userOptions = useMemo(
+    () => [
+      { value: '', label: 'All Users', searchText: '' },
+      ...allUsers.map((u) => ({
+        value: u.id,
+        label: `${u.name || ''} | ${u.mobileNumber || ''}`,
+        searchText: `${u.name || ''} ${u.mobileNumber || ''} ${(u.aliasNames || []).join(' ')}`,
+      })),
+    ],
+    [allUsers],
+  );
+
+  useEffect(() => {
+    if (!selectedUserId) {
+      setSelectedUserInvoiceIds(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingUserLedger(true);
+    adminApi.getMasterUserLedger(selectedUserId).then((res) => {
+      if (cancelled) return;
+      if (res.success && res.data) {
+        const ids = new Set<string>();
+        for (const row of res.data.rows || []) {
+          ids.add(row.invoiceId);
+          for (const dupId of row.duplicateInvoiceIds || []) {
+            ids.add(dupId);
+          }
+        }
+        setSelectedUserInvoiceIds(ids);
+      } else {
+        setSelectedUserInvoiceIds(new Set());
+      }
+      setLoadingUserLedger(false);
+    });
+    return () => { cancelled = true; };
+  }, [selectedUserId]);
+
   const filteredRows = useMemo(() => {
-    return rows;
-  }, [rows]);
+    if (!selectedUserId || !selectedUserInvoiceIds) return rows;
+    return rows.filter((row) => selectedUserInvoiceIds.has(row.invoiceId));
+  }, [rows, selectedUserId, selectedUserInvoiceIds]);
 
   const productOptions = useMemo(() => {
     return [
@@ -392,10 +444,8 @@ export default function AdminInsurancePaymentsPage() {
   const totalPendingPayment = useMemo(
     () =>
       filteredRows.reduce((sum, row) => {
-        if (String(row.paymentStatus || '').toUpperCase() !== 'PENDING') {
-          return sum;
-        }
-        return sum + getEffectiveBalance(row);
+        const balance = getEffectiveBalance(row);
+        return balance > 0 ? sum + balance : sum;
       }, 0),
     [filteredRows],
   );
@@ -654,6 +704,18 @@ export default function AdminInsurancePaymentsPage() {
                 </option>
               ))}
             </select>
+            <SearchableSelect
+              label=""
+              options={userOptions}
+              value={selectedUserId}
+              onChange={(val) => {
+                setSelectedUserId(val);
+                setCurrentPage(1);
+              }}
+              placeholder="Select User"
+              searchPlaceholder="Search by name or phone..."
+              className="min-w-[240px]"
+            />
             <input
               type="text"
               placeholder="Search by name / invoice"
@@ -679,6 +741,7 @@ export default function AdminInsurancePaymentsPage() {
                 setPaymentStatus('');
                 setProductName('');
                 setNameQuery('');
+                setSelectedUserId('');
                 setCurrentPage(1);
               }}
               className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"

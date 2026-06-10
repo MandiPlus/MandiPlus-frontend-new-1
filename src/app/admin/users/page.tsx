@@ -1499,7 +1499,7 @@ export default function UsersPage() {
                                             )}
                                             {showUserManagementColumns && (
                                                 <th scope="col" className="px-2 py-3.5 text-left text-sm font-semibold text-gray-900">
-                                                    Verify Master
+                                                    Status
                                                 </th>
                                             )}
                                             {showUserManagementColumns && (
@@ -1774,36 +1774,11 @@ export default function UsersPage() {
                                                     {showUserManagementColumns && (
                                                     <td className="whitespace-nowrap px-2 py-4 text-sm text-gray-500 align-top">
                                                         {user.isMerged ? (
-                                                            <span className="text-xs font-medium text-slate-500">Merged child</span>
-                                                        ) : user.isLedgerMasterVerified ? (
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
-                                                                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-[11px] font-bold text-white">✓</span>
-                                                                    Verified
-                                                                </span>
-                                                                {showMasterDetailColumns ? (
-                                                                    <button
-                                                                        onClick={() => handleUnverifyMaster(user)}
-                                                                        disabled={unverifyingMasterByUser[user.id] || mergedUsersForMaster.length > 0}
-                                                                        title={
-                                                                            mergedUsersForMaster.length > 0
-                                                                                ? 'Unmerge all linked users before unverifying'
-                                                                                : 'Remove verified master status'
-                                                                        }
-                                                                        className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
-                                                                    >
-                                                                        {unverifyingMasterByUser[user.id] ? 'Unverifying...' : 'Unverify'}
-                                                                    </button>
-                                                                ) : null}
-                                                            </div>
+                                                            <span className="text-xs font-medium text-slate-500">Merged</span>
                                                         ) : (
-                                                            <button
-                                                                onClick={() => handleVerifyMaster(user)}
-                                                                disabled={verifyingMasterByUser[user.id] || user.id !== user.canonicalUserId}
-                                                                className="rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-60"
-                                                            >
-                                                                {verifyingMasterByUser[user.id] ? 'Verifying...' : 'Verify'}
-                                                            </button>
+                                                            <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
+                                                                Active
+                                                            </span>
                                                         )}
                                                     </td>
                                                     )}
@@ -2508,27 +2483,6 @@ export default function UsersPage() {
                                 </label>
                             </div>
 
-                            <div className="sm:col-span-2">
-                                <label className="flex items-start gap-3 rounded-md border px-4 py-3 text-sm text-gray-700">
-                                    <input
-                                        type="checkbox"
-                                        checked={createUserForm.verifyAsMaster}
-                                        onChange={(e) =>
-                                            setCreateUserForm((prev) => ({
-                                                ...prev,
-                                                verifyAsMaster: e.target.checked,
-                                            }))
-                                        }
-                                        className="mt-1"
-                                    />
-                                    <div>
-                                        <p className="font-medium text-gray-900">Verify user</p>
-                                        <p className="text-xs text-gray-500">
-                                            The newly created user will be added as a verified user and will show the blue tick.
-                                        </p>
-                                    </div>
-                                </label>
-                            </div>
                         </div>
 
                         <div className="flex justify-end gap-3 border-t px-5 py-4">
