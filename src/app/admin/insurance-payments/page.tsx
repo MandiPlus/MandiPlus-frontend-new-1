@@ -365,7 +365,7 @@ export default function AdminInsurancePaymentsPage() {
     adminApi.getAdminLedgerUsers().then((res) => {
       if (res.success && Array.isArray(res.data)) {
         setAllUsers(
-          res.data.filter((u) => !u.isMerged && u.canonicalUserId === u.id),
+          res.data.filter((u) => u.isLedgerMasterVerified && !u.isMerged && u.canonicalUserId === u.id),
         );
       }
     });
@@ -645,7 +645,7 @@ export default function AdminInsurancePaymentsPage() {
     <div className="py-6">
       <div className="w-full px-2 sm:px-3 lg:px-4 xl:px-6">
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-7">
+          <div className="flex flex-wrap items-end gap-3">
             <input
               type={fromDateInputType}
               placeholder="DD-MM-YYYY"
@@ -658,7 +658,7 @@ export default function AdminInsurancePaymentsPage() {
                 setFromDate(e.target.value);
                 setCurrentPage(1);
               }}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="w-[140px] rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
             <input
               type={toDateInputType}
@@ -672,7 +672,7 @@ export default function AdminInsurancePaymentsPage() {
                 setToDate(e.target.value);
                 setCurrentPage(1);
               }}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="w-[140px] rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
             <select
               value={paymentStatus}
@@ -712,16 +712,16 @@ export default function AdminInsurancePaymentsPage() {
                 setSelectedUserId(val);
                 setCurrentPage(1);
               }}
-              placeholder="Select User"
+              placeholder="All Users"
               searchPlaceholder="Search by name or phone..."
-              className="min-w-[240px]"
+              className="w-[220px]"
             />
             <input
               type="text"
               placeholder="Search by name / invoice"
               value={nameQuery}
               onChange={(e) => setNameQuery(e.target.value)}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="w-[180px] rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
             <button
               type="button"

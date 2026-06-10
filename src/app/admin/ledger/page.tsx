@@ -265,6 +265,7 @@ export default function AdminLedgerPage() {
         const verifiedMasters = response.data
           .filter(
             (user) =>
+              user.isLedgerMasterVerified &&
               user.canonicalUserId === user.id &&
               !user.isMerged,
           )
