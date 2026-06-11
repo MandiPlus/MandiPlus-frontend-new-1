@@ -1714,6 +1714,26 @@ class AdminApi {
     }
   };
 
+  public generateAccumulatedPaymentLink = async (
+    invoiceIds: string[],
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        "/payment/generate-accumulated-link",
+        { invoiceIds },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to generate accumulated payment link",
+        error: error.message,
+      };
+    }
+  };
+
   public sendPaymentReminderForInvoice = async (
     invoiceId: string,
     phoneNumber?: string,

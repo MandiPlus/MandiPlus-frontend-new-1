@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import {
   FileText,
+  Link2,
   Pencil,
   ReceiptText,
 } from 'lucide-react';
@@ -62,7 +63,11 @@ function getPaymentStatusBadgeClasses(status?: string | null) {
 }
 
 function formatCurrency(value: number) {
-  return `Rs ${Math.round(value || 0).toLocaleString('en-IN')}`;
+  const numericValue = Number(value || 0);
+  return `Rs ${numericValue.toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function formatDate(value?: string | null) {
@@ -251,6 +256,7 @@ export default function AdminInsurancePaymentsPage() {
   const [productOptionRows, setProductOptionRows] = useState<InsurancePaymentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [generatingAccumulatedLink, setGeneratingAccumulatedLink] = useState(false);
   const [error, setError] = useState('');
 
   const [fromDate, setFromDate] = useState('');
@@ -268,6 +274,9 @@ export default function AdminInsurancePaymentsPage() {
   const [selectedUserId, setSelectedUserId] = useState('');
   const [selectedUserInvoiceIds, setSelectedUserInvoiceIds] = useState<Set<string> | null>(null);
   const [loadingUserLedger, setLoadingUserLedger] = useState(false);
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const [editing, setEditing] = useState<InsurancePaymentRow | null>(null);
   const [reminderTarget, setReminderTarget] = useState<InsurancePaymentRow | null>(
@@ -450,6 +459,30 @@ export default function AdminInsurancePaymentsPage() {
   );
   const pageStart = totalRows === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
   const pageEnd = Math.min(currentPage * ITEMS_PER_PAGE, totalRows);
+  const selectedRows = useMemo(
+    () => filteredRows.filter((row) => selectedInvoiceIds.has(row.invoiceId)),
+    [filteredRows, selectedInvoiceIds],
+  );
+  const selectedPendingRows = useMemo(
+    () =>
+      selectedRows.filter(
+        (row) =>
+          String(row.paymentStatus || '').toUpperCase() !== 'PAID' &&
+          Number(row.premiumAmount || 0) > 0,
+      ),
+    [selectedRows],
+  );
+  const selectedPendingTotal = useMemo(
+    () =>
+      selectedPendingRows.reduce(
+        (sum, row) => sum + Number(row.premiumAmount || 0),
+        0,
+      ),
+    [selectedPendingRows],
+  );
+  const allPageRowsSelected =
+    paginatedRows.length > 0 &&
+    paginatedRows.every((row) => selectedInvoiceIds.has(row.invoiceId));
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -464,6 +497,75 @@ export default function AdminInsurancePaymentsPage() {
   useEffect(() => {
     setCurrentPage(1);
   }, [nameQuery]);
+
+  useEffect(() => {
+    setSelectedInvoiceIds((prev) => {
+      const visibleIds = new Set(filteredRows.map((row) => row.invoiceId));
+      const next = new Set(
+        Array.from(prev).filter((invoiceId) => visibleIds.has(invoiceId)),
+      );
+      return next.size === prev.size ? prev : next;
+    });
+  }, [filteredRows]);
+
+  const toggleInvoiceSelection = (invoiceId: string, checked: boolean) => {
+    setSelectedInvoiceIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(invoiceId);
+      } else {
+        next.delete(invoiceId);
+      }
+      return next;
+    });
+  };
+
+  const togglePageSelection = (checked: boolean) => {
+    setSelectedInvoiceIds((prev) => {
+      const next = new Set(prev);
+      paginatedRows.forEach((row) => {
+        if (checked) {
+          next.add(row.invoiceId);
+        } else {
+          next.delete(row.invoiceId);
+        }
+      });
+      return next;
+    });
+  };
+
+  const generateAccumulatedPaymentLink = async () => {
+    if (selectedPendingRows.length === 0) {
+      toast.error('Select at least one unpaid invoice');
+      return;
+    }
+
+    setGeneratingAccumulatedLink(true);
+    try {
+      const response = await adminApi.generateAccumulatedPaymentLink(
+        selectedPendingRows.map((row) => row.invoiceId),
+      );
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to generate payment link');
+      }
+
+      const responsePayload = response as typeof response & { paymentLink?: string };
+      const paymentLink = responsePayload.paymentLink || response.data?.paymentLink;
+      if (paymentLink && typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(paymentLink);
+        toast.success('Accumulated payment link copied');
+      } else {
+        toast.success('Accumulated payment link generated');
+      }
+
+      setSelectedInvoiceIds(new Set());
+      await fetchRows();
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Failed to generate payment link'));
+    } finally {
+      setGeneratingAccumulatedLink(false);
+    }
+  };
 
   const downloadBlob = (blob: Blob, fileName: string) => {
     const url = URL.createObjectURL(blob);
@@ -807,10 +909,53 @@ export default function AdminInsurancePaymentsPage() {
         ) : null}
 
         <div className="mt-5 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-gray-200 bg-gray-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-gray-700">
+              <span className="font-semibold">{selectedPendingRows.length}</span>{' '}
+              unpaid selected
+              {selectedPendingRows.length > 0 ? (
+                <span className="ml-2 text-gray-500">
+                  {formatCurrency(selectedPendingTotal)}
+                </span>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {selectedInvoiceIds.size > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedInvoiceIds(new Set())}
+                  className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Clear
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={generateAccumulatedPaymentLink}
+                disabled={
+                  generatingAccumulatedLink || selectedPendingRows.length === 0
+                }
+                className="inline-flex items-center gap-2 rounded-md bg-[#4309ac] px-3 py-2 text-sm font-semibold text-white hover:bg-[#35088a] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Link2 className="h-4 w-4" strokeWidth={2.2} />
+                {generatingAccumulatedLink
+                  ? 'Generating...'
+                  : 'Generate Accumulated Link'}
+              </button>
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 text-sm">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={allPageRowsSelected}
+                      onChange={(e) => togglePageSelection(e.target.checked)}
+                      aria-label="Select all invoices on this page"
+                    />
+                  </th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">
                     Invoice Number
                   </th>
@@ -847,7 +992,7 @@ export default function AdminInsurancePaymentsPage() {
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={10}
+                      colSpan={11}
                       className="px-4 py-6 text-center text-sm text-gray-500"
                     >
                       Loading insurance payments...
@@ -856,7 +1001,7 @@ export default function AdminInsurancePaymentsPage() {
                 ) : paginatedRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={10}
+                      colSpan={11}
                       className="px-4 py-6 text-center text-sm text-gray-500"
                     >
                       No records found.
@@ -865,6 +1010,16 @@ export default function AdminInsurancePaymentsPage() {
                 ) : (
                   paginatedRows.map((row) => (
                     <tr key={row.id}>
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedInvoiceIds.has(row.invoiceId)}
+                          onChange={(e) =>
+                            toggleInvoiceSelection(row.invoiceId, e.target.checked)
+                          }
+                          aria-label={`Select ${row.invoiceNumber}`}
+                        />
+                      </td>
                       <td className="px-4 py-3 text-gray-900">{row.invoiceNumber}</td>
                       <td className="px-4 py-3 text-gray-700">
                         {formatDate(row.createdAt)}
