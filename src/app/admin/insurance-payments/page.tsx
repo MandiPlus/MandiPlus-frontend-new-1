@@ -281,61 +281,49 @@ export default function AdminInsurancePaymentsPage() {
   const [paymentCompletedInputType, setPaymentCompletedInputType] = useState<'text' | 'datetime-local'>('text');
   const [form, setForm] = useState<UpdateInsurancePaymentPayload>({});
 
-  const fetchAllRowsForFilters = useCallback(async () => {
-    const collected: InsurancePaymentRow[] = [];
-    let page = 1;
-    let pages = 1;
+  const fetchAllPages = useCallback(
+    async (params: Parameters<typeof adminApi.getInsurancePayments>[0]) => {
+      const collected: InsurancePaymentRow[] = [];
+      let page = 1;
+      let pages = 1;
 
-    do {
-      const response = await adminApi.getInsurancePayments({
+      do {
+        const response = await adminApi.getInsurancePayments({ ...params, page, limit: FETCH_LIMIT });
+        if (!response.success) {
+          throw new Error(response.message || 'Failed to load insurance payments');
+        }
+        const chunk = Array.isArray(response.data) ? response.data : [];
+        collected.push(...chunk);
+        pages = Math.max(1, Number(response.totalPages || 1));
+        page += 1;
+      } while (page <= pages);
+
+      return collected;
+    },
+    [],
+  );
+
+  const fetchAllRowsForFilters = useCallback(
+    () =>
+      fetchAllPages({
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
         productName: productName || undefined,
         searchQuery: nameQuery.trim() || undefined,
-        page,
-        limit: FETCH_LIMIT,
-      });
+      }),
+    [fetchAllPages, fromDate, toDate, paymentStatus, productName, nameQuery],
+  );
 
-      if (!response.success) {
-        throw new Error(response.message || 'Failed to load insurance payments');
-      }
-
-      const chunk = Array.isArray(response.data) ? response.data : [];
-      collected.push(...chunk);
-      pages = Math.max(1, Number(response.totalPages || 1));
-      page += 1;
-    } while (page <= pages);
-
-    return collected;
-  }, [fromDate, toDate, paymentStatus, productName, nameQuery]);
-
-  const fetchRowsForProductOptions = useCallback(async () => {
-    const collected: InsurancePaymentRow[] = [];
-    let page = 1;
-    let pages = 1;
-
-    do {
-      const response = await adminApi.getInsurancePayments({
+  const fetchRowsForProductOptions = useCallback(
+    () =>
+      fetchAllPages({
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
-        page,
-        limit: FETCH_LIMIT,
-      });
-
-      if (!response.success) {
-        throw new Error(response.message || 'Failed to load insurance payments');
-      }
-
-      const chunk = Array.isArray(response.data) ? response.data : [];
-      collected.push(...chunk);
-      pages = Math.max(1, Number(response.totalPages || 1));
-      page += 1;
-    } while (page <= pages);
-
-    return collected;
-  }, [fromDate, toDate, paymentStatus]);
+      }),
+    [fetchAllPages, fromDate, toDate, paymentStatus],
+  );
 
   const fetchRows = useCallback(async () => {
     try {
@@ -477,69 +465,57 @@ export default function AdminInsurancePaymentsPage() {
     setCurrentPage(1);
   }, [nameQuery]);
 
-  const exportToExcel = () => {
-    setExporting(true);
+  const downloadBlob = (blob: Blob, fileName: string) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
 
+  const exportWithParams = (
+    params: Parameters<typeof adminApi.exportInsurancePayments>[0],
+    fileName: string,
+  ) => {
+    setExporting(true);
     adminApi
-      .exportInsurancePayments({
+      .exportInsurancePayments(params)
+      .then((blob) => downloadBlob(blob, fileName))
+      .catch((err: unknown) => {
+        alert(getErrorMessage(err, 'Failed to export insurance payments'));
+      })
+      .finally(() => setExporting(false));
+  };
+
+  const exportToExcel = () => {
+    exportWithParams(
+      {
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
         productName: productName || undefined,
         searchQuery: nameQuery.trim() || undefined,
-      })
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = `insurance-payments-${new Date().toISOString().slice(0, 10)}.xlsx`;
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-        URL.revokeObjectURL(url);
-      })
-      .catch((err: unknown) => {
-        alert(getErrorMessage(err, 'Failed to export insurance payments'));
-      })
-      .finally(() => {
-        setExporting(false);
-      });
+      },
+      `insurance-payments-${new Date().toISOString().slice(0, 10)}.xlsx`,
+    );
   };
 
   const exportPresetReport = () => {
     const { fromDate: presetFromDate, toDate: presetToDate } =
       getReportDateRange(reportPeriod);
-
-    setExporting(true);
-
-    adminApi
-      .exportInsurancePayments({
+    exportWithParams(
+      {
         fromDate: presetFromDate,
         toDate: presetToDate,
         paymentStatus: paymentStatus || undefined,
         productName: productName || undefined,
         searchQuery: nameQuery.trim() || undefined,
-      })
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = getPresetReportFileName(
-          reportPeriod,
-          presetFromDate,
-          presetToDate,
-        );
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-        URL.revokeObjectURL(url);
-      })
-      .catch((err: unknown) => {
-        alert(getErrorMessage(err, 'Failed to export insurance payments report'));
-      })
-      .finally(() => {
-        setExporting(false);
-      });
+      },
+      getPresetReportFileName(reportPeriod, presetFromDate, presetToDate),
+    );
   };
 
   const openEditModal = (row: InsurancePaymentRow) => {
