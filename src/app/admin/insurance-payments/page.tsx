@@ -787,12 +787,11 @@ export default function AdminInsurancePaymentsPage() {
               searchPlaceholder="Search by name or phone..."
               className="w-[220px]"
               onSearch={async (q) => {
-                const res = await adminApi.searchUsers(q, 30);
+                const res = await adminApi.searchUsers(q, 100, { verified: true });
                 if (!res.success || !Array.isArray(res.data)) return [];
                 return [
                   { value: '', label: 'All Users' },
                   ...res.data
-                    .filter((u) => u.isLedgerMasterVerified && !u.isMerged)
                     .map((u) => ({ value: u.id, label: `${u.name || ''} | ${u.mobileNumber || ''}` })),
                 ];
               }}

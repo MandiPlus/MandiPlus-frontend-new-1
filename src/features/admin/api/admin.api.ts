@@ -1133,10 +1133,11 @@ class AdminApi {
   public searchUsers = async (
     query: string,
     limit: number = 20,
+    options?: { verified?: boolean },
   ): Promise<ApiResponse<AdminLedgerUser[]>> => {
     try {
       const response = await this.client.get('/users/search', {
-        params: { q: query, limit },
+        params: { q: query, limit, ...(options?.verified ? { verified: 'true' } : {}) },
       });
       const rows = Array.isArray(response.data)
         ? response.data

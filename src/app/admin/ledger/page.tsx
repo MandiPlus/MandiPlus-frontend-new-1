@@ -780,11 +780,10 @@ export default function AdminLedgerPage() {
                   searchPlaceholder="Search verified user by name or mobile"
                   emptyMessage="No users found"
                   onSearch={async (q) => {
-                    const res = await adminApi.searchUsers(q, 30);
+                    const res = await adminApi.searchUsers(q, 100, { verified: true });
                     if (!res.success || !Array.isArray(res.data)) return [];
                     const gcaOption = { value: GCA_LEDGER_OPTION, label: 'GCA | All GCA Members' };
                     const userOptions = res.data
-                      .filter((u) => u.isLedgerMasterVerified && !u.isMerged)
                       .map((u) => ({ value: u.id, label: `${u.name || ''} | ${u.mobileNumber || ''}` }));
                     return [gcaOption, ...userOptions];
                   }}
