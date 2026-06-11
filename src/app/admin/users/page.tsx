@@ -422,20 +422,19 @@ export default function UsersPage() {
     // Search Logic
     useEffect(() => {
         const bySection = allUsers.filter((user) => {
+            if (user.isMerged) return false;
             if (activeSection === 'ADMIN_REQUESTS') return false;
             if (activeSection === 'CUSTOMER') return user.identity === 'CUSTOMER';
             if (activeSection === 'TRANSPORTER') return user.identity === 'TRANSPORTER';
             if (activeSection === 'VERIFIED') {
                 return (
                     user.isLedgerMasterVerified &&
-                    !user.isMerged &&
                     user.id === user.canonicalUserId
                 );
             }
             if (activeSection === 'UNPAID_WALLETS') {
                 return (
                     user.walletType === 'UNPAID' &&
-                    !user.isMerged &&
                     user.id === user.canonicalUserId
                 );
             }
@@ -1487,21 +1486,6 @@ export default function UsersPage() {
                                                     GCA Member
                                                 </th>
                                             )}
-                                            {showUserManagementColumns && (
-                                                <th scope="col" className="px-2 py-3.5 text-left text-sm font-semibold text-gray-900">
-                                                    Status
-                                                </th>
-                                            )}
-                                            {showUserManagementColumns && (
-                                                <th scope="col" className="px-2 py-3.5 text-left text-sm font-semibold text-gray-900">
-                                                    Merge Into Master
-                                                </th>
-                                            )}
-                                            {showMasterDetailColumns && (
-                                                <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                                                    Merged Users
-                                                </th>
-                                            )}
                                             <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                 Access
                                             </th>
@@ -1516,12 +1500,6 @@ export default function UsersPage() {
                                             </tr>
                                         ) : (
                                             paginatedUsers.map((user) => {
-                                                const suggestedMaster = getSuggestedMaster(user);
-                                                const selectedMergeTarget =
-                                                    mergeTargetByUser[user.id] || suggestedMaster?.user.id || '';
-                                                const mergedUsersForMaster =
-                                                    mergedUsersByMasterId.get(user.id) || [];
-
                                                 return (
                                                 <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                                                     {/* Name */}
@@ -1537,16 +1515,6 @@ export default function UsersPage() {
                                                                 </span>
                                                             ) : null}
                                                         </div>
-                                                        {user.duplicateCount > 0 ? (
-                                                            <p className="mt-1 text-xs font-medium text-amber-600">
-                                                                {user.duplicateCount} pending duplicate{user.duplicateCount > 1 ? 's' : ''}
-                                                            </p>
-                                                        ) : null}
-                                                        {user.isMerged ? (
-                                                            <p className="mt-1 text-xs font-medium text-rose-600">
-                                                                Merged into {user.canonicalMasterName || 'master user'}
-                                                            </p>
-                                                        ) : null}
                                                     </td>
                                                     {/* Mobile Number */}
                                                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
@@ -1761,104 +1729,6 @@ export default function UsersPage() {
                                                             })()}
                                                         </td>
                                                     )}
-                                                    {showUserManagementColumns && (
-                                                    <td className="whitespace-nowrap px-2 py-4 text-sm text-gray-500 align-top">
-                                                        {user.isMerged ? (
-                                                            <span className="text-xs font-medium text-slate-500">Merged</span>
-                                                        ) : (
-                                                            <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
-                                                                Active
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                    )}
-                                                    {showUserManagementColumns && (
-                                                    <td className="px-2 py-4 text-sm text-gray-500 align-top">
-                                                        {user.isMerged ? (
-                                                            <div className="min-w-[14rem]">
-                                                                <p className="mb-2 text-xs font-medium text-rose-600">
-                                                                    Linked to {user.canonicalMasterName || 'master user'}.
-                                                                </p>
-                                                                <button
-                                                                    onClick={() => handleUnmergeUser(user)}
-                                                                    disabled={unmergingByUser[user.id]}
-                                                                    className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
-                                                                >
-                                                                    {unmergingByUser[user.id] ? 'Unmerging...' : 'Unmerge'}
-                                                                </button>
-                                                            </div>
-                                                        ) : user.isLedgerMasterVerified ? (
-                                                            <div className="min-w-[12rem]">
-                                                                <p className="mb-2 text-xs font-medium text-slate-500">
-                                                                    Master user
-                                                                </p>
-                                                                <button
-                                                                    onClick={() => openBulkMergeModal(user)}
-                                                                    className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
-                                                                >
-                                                                    Merge Users
-                                                                </button>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="min-w-[14rem]">
-                                                                {suggestedMaster ? (
-                                                                    <p className="mb-2 text-xs font-medium text-amber-700">
-                                                                        Suggested: {suggestedMaster.user.name || 'Master user'} ({suggestedMaster.score}) - {suggestedMaster.reason}
-                                                                    </p>
-                                                                ) : (
-                                                                    <p className="mb-2 text-xs text-slate-400">
-                                                                        No strong suggestion. Select a verified master manually.
-                                                                    </p>
-                                                                )}
-                                                                <div className="flex items-center gap-2">
-                                                                <select
-                                                                    value={selectedMergeTarget}
-                                                                    onChange={(e) =>
-                                                                        setMergeTargetByUser((prev) => ({
-                                                                            ...prev,
-                                                                            [user.id]: e.target.value,
-                                                                        }))
-                                                                    }
-                                                                    className="w-32 rounded-md border border-gray-300 px-2 py-1 text-xs"
-                                                                >
-                                                                    <option value="">Select verified user</option>
-                                                                    {verifiedMasterUsers
-                                                                        .filter((master) => master.id !== user.id)
-                                                                        .map((master) => (
-                                                                            <option key={master.id} value={master.id}>
-                                                                                {master.name || 'User'} ({formatIndianMobile(master.mobileNumber)})
-                                                                            </option>
-                                                                        ))}
-                                                                </select>
-                                                                <button
-                                                                    onClick={() =>
-                                                                        handleManualMerge(user, selectedMergeTarget)
-                                                                    }
-                                                                    disabled={mergingByUser[user.id] || verifiedMasterUsers.length === 0}
-                                                                    className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                                                                >
-                                                                    {mergingByUser[user.id] ? 'Merging...' : 'Merge'}
-                                                                </button>
-                                                            </div>
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    )}
-                                                    {showMasterDetailColumns && (
-                                                        <td className="px-3 py-4 text-sm text-gray-500">
-                                                            <div className="min-w-[12rem]">
-                                                                <p className="mb-2 text-xs font-medium text-slate-600">
-                                                                    {mergedUsersForMaster.length} merged user{mergedUsersForMaster.length === 1 ? '' : 's'}
-                                                                </p>
-                                                                <button
-                                                                    onClick={() => setMergedUsersModalMaster(user)}
-                                                                    className="rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
-                                                                >
-                                                                    View Merged Users
-                                                                </button>
-                                                            </div>
-                                                        </td>
-                                                    )}
                                                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                         <div className="flex items-center gap-2">
                                                             <button
@@ -2055,230 +1925,6 @@ export default function UsersPage() {
                                     </tbody>
                                 </table>
                             )}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {mergedUsersModalMaster && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-4xl rounded-xl bg-white shadow-2xl">
-                        <div className="flex items-center justify-between border-b px-5 py-4">
-                            <div>
-                                <h3 className="text-lg font-semibold text-gray-900">Merged Users</h3>
-                                <p className="text-xs text-gray-500">
-                                    {mergedUsersModalMaster.name || 'Verified user'} ({formatIndianMobile(mergedUsersModalMaster.mobileNumber)})
-                                </p>
-                            </div>
-                            <button
-                                onClick={() => setMergedUsersModalMaster(null)}
-                                className="rounded-md border px-3 py-1 text-sm text-gray-600 hover:bg-gray-50"
-                            >
-                                Close
-                            </button>
-                        </div>
-
-                        <div className="max-h-[65vh] overflow-auto">
-                            {(mergedUsersByMasterId.get(mergedUsersModalMaster.id) || []).length === 0 ? (
-                                <div className="px-5 py-8 text-sm text-gray-500">
-                                    No merged users are linked to this verified user yet.
-                                </div>
-                            ) : (
-                                <table className="min-w-full divide-y divide-gray-200">
-                                    <thead className="bg-gray-50">
-                                        <tr>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Name</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Mobile</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Identity</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">State</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Registered</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Access</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-gray-100 bg-white">
-                                        {(mergedUsersByMasterId.get(mergedUsersModalMaster.id) || []).map((mergedUser) => (
-                                            <tr key={mergedUser.id}>
-                                                <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                                                    {mergedUser.name || 'N/A'}
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-gray-600">
-                                                    {formatIndianMobile(mergedUser.mobileNumber)}
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-gray-600">
-                                                    {mergedUser.identity || 'N/A'}
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-gray-600">
-                                                    {mergedUser.state || 'N/A'}
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-gray-600">
-                                                    {formatDate(mergedUser.createdAt)}
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-gray-600">
-                                                    <button
-                                                        onClick={() => handleImpersonateUser(mergedUser)}
-                                                        disabled={impersonatingByUser[mergedUser.id]}
-                                                        className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-                                                    >
-                                                        {impersonatingByUser[mergedUser.id] ? 'Opening...' : 'Access Account'}
-                                                    </button>
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-gray-600">
-                                                    <button
-                                                        onClick={() => handleUnmergeUser(mergedUser)}
-                                                        disabled={unmergingByUser[mergedUser.id]}
-                                                        className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
-                                                    >
-                                                        {unmergingByUser[mergedUser.id] ? 'Unmerging...' : 'Unmerge'}
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {bulkMergeModalMaster && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-5xl rounded-xl bg-white shadow-2xl">
-                        <div className="flex items-center justify-between border-b px-5 py-4">
-                            <div>
-                                <h3 className="text-lg font-semibold text-gray-900">Merge Into Master</h3>
-                                <p className="text-xs text-gray-500">
-                                    {bulkMergeModalMaster.name || 'Verified user'} ({formatIndianMobile(bulkMergeModalMaster.mobileNumber)})
-                                </p>
-                            </div>
-                            <button
-                                onClick={closeBulkMergeModal}
-                                disabled={bulkMergeLoading}
-                                className="rounded-md border px-3 py-1 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                            >
-                                Close
-                            </button>
-                        </div>
-
-                        <div className="border-b px-5 py-4">
-                            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                                <input
-                                    type="text"
-                                    placeholder="Search users by name, mobile, alternate number, or state"
-                                    value={bulkMergeSearchTerm}
-                                    onChange={(e) => setBulkMergeSearchTerm(e.target.value)}
-                                    className="w-full rounded-md border border-gray-300 px-4 py-2 text-sm md:max-w-md"
-                                />
-                                <div className="flex items-center gap-3">
-                                    <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
-                                        <input
-                                            type="checkbox"
-                                            checked={isAllBulkMergeSelected}
-                                            onChange={toggleSelectAllBulkMergeCandidates}
-                                            className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
-                                        />
-                                        Select all
-                                    </label>
-                                    <span className="text-sm text-gray-500">
-                                        {bulkMergeSelectedUserIds.length} selected
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="max-h-[60vh] overflow-auto">
-                            <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="sticky top-0 bg-gray-50">
-                                    <tr>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Select</th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Name</th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Mobile</th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Alternate</th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">State</th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Identity</th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Suggestion</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100 bg-white">
-                                    {bulkMergeCandidates.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
-                                                No mergeable users found for this search.
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        bulkMergeCandidates.map((candidate) => {
-                                            const suggestedMaster = getSuggestedMaster(candidate);
-                                            const isSuggestedForThisMaster =
-                                                suggestedMaster?.user.id === bulkMergeModalMaster.id;
-
-                                            return (
-                                                <tr key={candidate.id}>
-                                                    <td className="px-4 py-3 text-sm text-gray-700">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={bulkMergeSelectedUserIds.includes(candidate.id)}
-                                                            onChange={() => toggleBulkMergeSelection(candidate.id)}
-                                                            className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
-                                                        />
-                                                    </td>
-                                                    <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                                                        {candidate.name || 'N/A'}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-sm text-gray-600">
-                                                        {formatIndianMobile(candidate.mobileNumber)}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-sm text-gray-600">
-                                                        {candidate.secondaryMobileNumber
-                                                            ? formatIndianMobile(candidate.secondaryMobileNumber)
-                                                            : 'N/A'}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-sm text-gray-600">
-                                                        {candidate.state || 'N/A'}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-sm text-gray-600">
-                                                        {candidate.identity || 'N/A'}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-sm text-gray-600">
-                                                        {isSuggestedForThisMaster ? (
-                                                            <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700">
-                                                                Suggested match
-                                                            </span>
-                                                        ) : (
-                                                            <span className="text-xs text-gray-400">Manual selection</span>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div className="flex items-center justify-between border-t px-5 py-4">
-                            <p className="text-sm text-gray-500">
-                                Selected users will be merged into this verified master user.
-                            </p>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={closeBulkMergeModal}
-                                    disabled={bulkMergeLoading}
-                                    className="rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleBulkMerge}
-                                    disabled={bulkMergeLoading || bulkMergeSelectedUserIds.length === 0}
-                                    className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                                >
-                                    {bulkMergeLoading
-                                        ? 'Merging...'
-                                        : `Merge Selected (${bulkMergeSelectedUserIds.length})`}
-                                </button>
-                            </div>
                         </div>
                     </div>
                 </div>
