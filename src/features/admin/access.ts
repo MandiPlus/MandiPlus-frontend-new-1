@@ -15,6 +15,7 @@ import {
   DocumentChartBarIcon,
   CalendarIcon,
   IdentificationIcon,
+  ShieldCheckIcon,
 } from '@heroicons/react/24/outline';
 
 export const ADMIN_SECTIONS = [
@@ -32,6 +33,7 @@ export const ADMIN_SECTIONS = [
   'fssai-leads',
   'chat-logs',
   'pdf-editor',
+  'access-monitor',
 ] as const;
 
 export type AdminSection = (typeof ADMIN_SECTIONS)[number];
@@ -68,6 +70,7 @@ export const ADMIN_NAV_ITEMS: Array<{
   { name: 'FSSAI Leads', href: '/admin/fssai-leads', icon: IdentificationIcon, section: 'fssai-leads' },
   { name: 'WhatsApp Chats', href: '/admin/chat-logs', icon: ChatBubbleLeftRightIcon, section: 'chat-logs' },
   { name: 'Edit Insurance PDF', href: '/admin/pdf-editor', icon: PencilSquareIcon, section: 'pdf-editor' },
+  { name: 'Access Monitor', href: '/admin/access-monitor', icon: ShieldCheckIcon, section: 'access-monitor' },
 ];
 
 export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
@@ -85,6 +88,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/fssai-leads': 'fssai-leads',
   '/admin/chat-logs': 'chat-logs',
   '/admin/pdf-editor': 'pdf-editor',
+  '/admin/access-monitor': 'access-monitor',
   '/admin/impersonate': 'users',
 };
 
