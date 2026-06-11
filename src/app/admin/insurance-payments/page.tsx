@@ -18,6 +18,7 @@ import {
 } from '@/features/admin/api/admin.api';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import SearchableSelect from '@/features/admin/components/SearchableSelect';
+import AsyncSearchableSelect from '@/features/admin/components/AsyncSearchableSelect';
 
 const PAYMENT_STATUS_OPTIONS = [
   'PENDING',
@@ -359,13 +360,6 @@ export default function AdminInsurancePaymentsPage() {
       return;
     }
     fetchRows();
-    adminApi.getAdminLedgerUsers().then((res) => {
-      if (res.success && Array.isArray(res.data)) {
-        setAllUsers(
-          res.data.filter((u) => u.isLedgerMasterVerified && !u.isMerged && u.canonicalUserId === u.id),
-        );
-      }
-    });
   }, [isAuthenticated, router, fetchRows]);
 
   const userOptions = useMemo(
@@ -782,9 +776,8 @@ export default function AdminInsurancePaymentsPage() {
                 </option>
               ))}
             </select>
-            <SearchableSelect
+            <AsyncSearchableSelect
               label=""
-              options={userOptions}
               value={selectedUserId}
               onChange={(val) => {
                 setSelectedUserId(val);
@@ -793,6 +786,16 @@ export default function AdminInsurancePaymentsPage() {
               placeholder="All Users"
               searchPlaceholder="Search by name or phone..."
               className="w-[220px]"
+              onSearch={async (q) => {
+                const res = await adminApi.searchUsers(q, 30);
+                if (!res.success || !Array.isArray(res.data)) return [];
+                return [
+                  { value: '', label: 'All Users' },
+                  ...res.data
+                    .filter((u) => u.isLedgerMasterVerified && !u.isMerged)
+                    .map((u) => ({ value: u.id, label: `${u.name || ''} | ${u.mobileNumber || ''}` })),
+                ];
+              }}
             />
             <input
               type="text"

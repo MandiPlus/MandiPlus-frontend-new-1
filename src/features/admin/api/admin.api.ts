@@ -1130,6 +1130,27 @@ class AdminApi {
     }
   };
 
+  public searchUsers = async (
+    query: string,
+    limit: number = 20,
+  ): Promise<ApiResponse<AdminLedgerUser[]>> => {
+    try {
+      const response = await this.client.get('/users/search', {
+        params: { q: query, limit },
+      });
+      const rows = Array.isArray(response.data)
+        ? response.data
+        : ((response.data as any)?.data ?? []);
+      return { success: true, data: rows };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to search users',
+        error: error.message,
+      };
+    }
+  };
+
   public getAdminLedgerUsers = async (): Promise<ApiResponse<AdminLedgerUser[]>> => {
     try {
       const response = await this.client.get<AdminLedgerUser[]>('/users/admin/list');
