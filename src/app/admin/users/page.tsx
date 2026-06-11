@@ -239,8 +239,10 @@ export default function UsersPage() {
                 : 'Users';
 
     const loadAdminUsers = async () => {
-        const walletsRes = await adminApi.getAdminCustomerWallets();
-        const usersRes = await adminApi.getAdminLedgerUsers();
+        const [walletsRes, usersRes] = await Promise.all([
+            adminApi.getAdminCustomerWallets(),
+            adminApi.getAdminLedgerUsers(),
+        ]);
 
         const walletsRaw = walletsRes.success && Array.isArray(walletsRes.data)
             ? walletsRes.data
@@ -251,26 +253,14 @@ export default function UsersPage() {
                 .filter(([id]) => Boolean(id))
         );
 
-        let usersRaw: any[] = [];
-        const fallbackUsersRes = await adminApi.getUsers(1, 100000);
-        const fallbackUsersRaw = fallbackUsersRes.success
-            ? (Array.isArray(fallbackUsersRes.data?.users) ? fallbackUsersRes.data?.users : [])
+        const usersRaw = usersRes.success && Array.isArray(usersRes.data)
+            ? usersRes.data
             : [];
 
-        if (usersRes.success && Array.isArray(usersRes.data)) {
-            usersRaw = usersRes.data;
-        } else {
-            usersRaw = fallbackUsersRaw;
-        }
-
         const usersById = new Map<string, any>();
-        fallbackUsersRaw.forEach((user: any) => {
-            const id = String(user.id || user._id || '');
-            if (id) usersById.set(id, user);
-        });
         usersRaw.forEach((user: any) => {
             const id = String(user.id || user._id || '');
-            if (id) usersById.set(id, { ...(usersById.get(id) || {}), ...user });
+            if (id) usersById.set(id, user);
         });
 
         const processedUsers = Array.from(usersById.values()).map((u: any) => {

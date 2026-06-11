@@ -10,6 +10,7 @@ import {
   adminApi,
 } from '@/features/admin/api/admin.api';
 import SearchableSelect from '@/features/admin/components/SearchableSelect';
+import AsyncSearchableSelect from '@/features/admin/components/AsyncSearchableSelect';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 
 const GCA_LEDGER_OPTION = '__GCA__';
@@ -770,15 +771,23 @@ export default function AdminLedgerPage() {
               </div>
 
               <div className="grid w-full gap-3 sm:grid-cols-2 lg:w-auto lg:grid-cols-[320px_220px_220px]">
-                <SearchableSelect
+                <AsyncSearchableSelect
                   label="Select User"
                   value={selectedMasterId}
                   onChange={setSelectedMasterId}
-                  disabled={loadingMasters || masterUsers.length === 0}
+                  disabled={loadingMasters}
                   placeholder="Select verified master user"
                   searchPlaceholder="Search verified user by name or mobile"
                   emptyMessage="No users found"
-                  options={masterUserOptions}
+                  onSearch={async (q) => {
+                    const res = await adminApi.searchUsers(q, 30);
+                    if (!res.success || !Array.isArray(res.data)) return [];
+                    const gcaOption = { value: GCA_LEDGER_OPTION, label: 'GCA | All GCA Members' };
+                    const userOptions = res.data
+                      .filter((u) => u.isLedgerMasterVerified && !u.isMerged)
+                      .map((u) => ({ value: u.id, label: `${u.name || ''} | ${u.mobileNumber || ''}` }));
+                    return [gcaOption, ...userOptions];
+                  }}
                 />
 
                 <label className="text-sm text-slate-600">
