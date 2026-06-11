@@ -765,13 +765,13 @@ export default function AdminLedgerPage() {
               <div>
                 <h1 className="text-2xl font-semibold text-slate-900">Ledger</h1>
                 <p className="mt-1 text-sm text-slate-500">
-                  Combined ledger for verified master users, including merged child users and duplicate-invoice filtering.
+                  Combined ledger for all users, including linked accounts and invoice history.
                 </p>
               </div>
 
               <div className="grid w-full gap-3 sm:grid-cols-2 lg:w-auto lg:grid-cols-[320px_220px_220px]">
                 <SearchableSelect
-                  label="Verified Master User"
+                  label="Select User"
                   value={selectedMasterId}
                   onChange={setSelectedMasterId}
                   disabled={loadingMasters || masterUsers.length === 0}

@@ -11,11 +11,13 @@ import {
 } from 'lucide-react';
 import { FaWhatsapp } from 'react-icons/fa';
 import {
+  AdminLedgerUser,
   InsurancePaymentRow,
   UpdateInsurancePaymentPayload,
   adminApi,
 } from '@/features/admin/api/admin.api';
 import { useAdmin } from '@/features/admin/context/AdminContext';
+import SearchableSelect from '@/features/admin/components/SearchableSelect';
 
 const PAYMENT_STATUS_OPTIONS = [
   'PENDING',
@@ -268,6 +270,10 @@ export default function AdminInsurancePaymentsPage() {
   const [nameQuery, setNameQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [jumpPageInput, setJumpPageInput] = useState('1');
+  const [allUsers, setAllUsers] = useState<AdminLedgerUser[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [selectedUserInvoiceIds, setSelectedUserInvoiceIds] = useState<Set<string> | null>(null);
+  const [loadingUserLedger, setLoadingUserLedger] = useState(false);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -284,61 +290,49 @@ export default function AdminInsurancePaymentsPage() {
   const [paymentCompletedInputType, setPaymentCompletedInputType] = useState<'text' | 'datetime-local'>('text');
   const [form, setForm] = useState<UpdateInsurancePaymentPayload>({});
 
-  const fetchAllRowsForFilters = useCallback(async () => {
-    const collected: InsurancePaymentRow[] = [];
-    let page = 1;
-    let pages = 1;
+  const fetchAllPages = useCallback(
+    async (params: Parameters<typeof adminApi.getInsurancePayments>[0]) => {
+      const collected: InsurancePaymentRow[] = [];
+      let page = 1;
+      let pages = 1;
 
-    do {
-      const response = await adminApi.getInsurancePayments({
+      do {
+        const response = await adminApi.getInsurancePayments({ ...params, page, limit: FETCH_LIMIT });
+        if (!response.success) {
+          throw new Error(response.message || 'Failed to load insurance payments');
+        }
+        const chunk = Array.isArray(response.data) ? response.data : [];
+        collected.push(...chunk);
+        pages = Math.max(1, Number(response.totalPages || 1));
+        page += 1;
+      } while (page <= pages);
+
+      return collected;
+    },
+    [],
+  );
+
+  const fetchAllRowsForFilters = useCallback(
+    () =>
+      fetchAllPages({
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
         productName: productName || undefined,
         searchQuery: nameQuery.trim() || undefined,
-        page,
-        limit: FETCH_LIMIT,
-      });
+      }),
+    [fetchAllPages, fromDate, toDate, paymentStatus, productName, nameQuery],
+  );
 
-      if (!response.success) {
-        throw new Error(response.message || 'Failed to load insurance payments');
-      }
-
-      const chunk = Array.isArray(response.data) ? response.data : [];
-      collected.push(...chunk);
-      pages = Math.max(1, Number(response.totalPages || 1));
-      page += 1;
-    } while (page <= pages);
-
-    return collected;
-  }, [fromDate, toDate, paymentStatus, productName, nameQuery]);
-
-  const fetchRowsForProductOptions = useCallback(async () => {
-    const collected: InsurancePaymentRow[] = [];
-    let page = 1;
-    let pages = 1;
-
-    do {
-      const response = await adminApi.getInsurancePayments({
+  const fetchRowsForProductOptions = useCallback(
+    () =>
+      fetchAllPages({
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
-        page,
-        limit: FETCH_LIMIT,
-      });
-
-      if (!response.success) {
-        throw new Error(response.message || 'Failed to load insurance payments');
-      }
-
-      const chunk = Array.isArray(response.data) ? response.data : [];
-      collected.push(...chunk);
-      pages = Math.max(1, Number(response.totalPages || 1));
-      page += 1;
-    } while (page <= pages);
-
-    return collected;
-  }, [fromDate, toDate, paymentStatus]);
+      }),
+    [fetchAllPages, fromDate, toDate, paymentStatus],
+  );
 
   const fetchRows = useCallback(async () => {
     try {
@@ -365,11 +359,57 @@ export default function AdminInsurancePaymentsPage() {
       return;
     }
     fetchRows();
+    adminApi.getAdminLedgerUsers().then((res) => {
+      if (res.success && Array.isArray(res.data)) {
+        setAllUsers(
+          res.data.filter((u) => u.isLedgerMasterVerified && !u.isMerged && u.canonicalUserId === u.id),
+        );
+      }
+    });
   }, [isAuthenticated, router, fetchRows]);
 
+  const userOptions = useMemo(
+    () => [
+      { value: '', label: 'All Users', searchText: '' },
+      ...allUsers.map((u) => ({
+        value: u.id,
+        label: `${u.name || ''} | ${u.mobileNumber || ''}`,
+        searchText: `${u.name || ''} ${u.mobileNumber || ''} ${(u.aliasNames || []).join(' ')}`,
+      })),
+    ],
+    [allUsers],
+  );
+
+  useEffect(() => {
+    if (!selectedUserId) {
+      setSelectedUserInvoiceIds(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingUserLedger(true);
+    adminApi.getMasterUserLedger(selectedUserId).then((res) => {
+      if (cancelled) return;
+      if (res.success && res.data) {
+        const ids = new Set<string>();
+        for (const row of res.data.rows || []) {
+          ids.add(row.invoiceId);
+          for (const dupId of row.duplicateInvoiceIds || []) {
+            ids.add(dupId);
+          }
+        }
+        setSelectedUserInvoiceIds(ids);
+      } else {
+        setSelectedUserInvoiceIds(new Set());
+      }
+      setLoadingUserLedger(false);
+    });
+    return () => { cancelled = true; };
+  }, [selectedUserId]);
+
   const filteredRows = useMemo(() => {
-    return rows;
-  }, [rows]);
+    if (!selectedUserId || !selectedUserInvoiceIds) return rows;
+    return rows.filter((row) => selectedUserInvoiceIds.has(row.invoiceId));
+  }, [rows, selectedUserId, selectedUserInvoiceIds]);
 
   const productOptions = useMemo(() => {
     return [
@@ -401,10 +441,8 @@ export default function AdminInsurancePaymentsPage() {
   const totalPendingPayment = useMemo(
     () =>
       filteredRows.reduce((sum, row) => {
-        if (String(row.paymentStatus || '').toUpperCase() !== 'PENDING') {
-          return sum;
-        }
-        return sum + getEffectiveBalance(row);
+        const balance = getEffectiveBalance(row);
+        return balance > 0 ? sum + balance : sum;
       }, 0),
     [filteredRows],
   );
@@ -529,69 +567,57 @@ export default function AdminInsurancePaymentsPage() {
     }
   };
 
-  const exportToExcel = () => {
-    setExporting(true);
+  const downloadBlob = (blob: Blob, fileName: string) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
 
+  const exportWithParams = (
+    params: Parameters<typeof adminApi.exportInsurancePayments>[0],
+    fileName: string,
+  ) => {
+    setExporting(true);
     adminApi
-      .exportInsurancePayments({
+      .exportInsurancePayments(params)
+      .then((blob) => downloadBlob(blob, fileName))
+      .catch((err: unknown) => {
+        alert(getErrorMessage(err, 'Failed to export insurance payments'));
+      })
+      .finally(() => setExporting(false));
+  };
+
+  const exportToExcel = () => {
+    exportWithParams(
+      {
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
         productName: productName || undefined,
         searchQuery: nameQuery.trim() || undefined,
-      })
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = `insurance-payments-${new Date().toISOString().slice(0, 10)}.xlsx`;
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-        URL.revokeObjectURL(url);
-      })
-      .catch((err: unknown) => {
-        alert(getErrorMessage(err, 'Failed to export insurance payments'));
-      })
-      .finally(() => {
-        setExporting(false);
-      });
+      },
+      `insurance-payments-${new Date().toISOString().slice(0, 10)}.xlsx`,
+    );
   };
 
   const exportPresetReport = () => {
     const { fromDate: presetFromDate, toDate: presetToDate } =
       getReportDateRange(reportPeriod);
-
-    setExporting(true);
-
-    adminApi
-      .exportInsurancePayments({
+    exportWithParams(
+      {
         fromDate: presetFromDate,
         toDate: presetToDate,
         paymentStatus: paymentStatus || undefined,
         productName: productName || undefined,
         searchQuery: nameQuery.trim() || undefined,
-      })
-      .then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = getPresetReportFileName(
-          reportPeriod,
-          presetFromDate,
-          presetToDate,
-        );
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-        URL.revokeObjectURL(url);
-      })
-      .catch((err: unknown) => {
-        alert(getErrorMessage(err, 'Failed to export insurance payments report'));
-      })
-      .finally(() => {
-        setExporting(false);
-      });
+      },
+      getPresetReportFileName(reportPeriod, presetFromDate, presetToDate),
+    );
   };
 
   const openEditModal = (row: InsurancePaymentRow) => {
@@ -697,7 +723,7 @@ export default function AdminInsurancePaymentsPage() {
     <div className="py-6">
       <div className="w-full px-2 sm:px-3 lg:px-4 xl:px-6">
         <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-7">
+          <div className="flex flex-wrap items-end gap-3">
             <input
               type={fromDateInputType}
               placeholder="DD-MM-YYYY"
@@ -710,7 +736,7 @@ export default function AdminInsurancePaymentsPage() {
                 setFromDate(e.target.value);
                 setCurrentPage(1);
               }}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="w-[140px] rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
             <input
               type={toDateInputType}
@@ -724,7 +750,7 @@ export default function AdminInsurancePaymentsPage() {
                 setToDate(e.target.value);
                 setCurrentPage(1);
               }}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="w-[140px] rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
             <select
               value={paymentStatus}
@@ -756,12 +782,24 @@ export default function AdminInsurancePaymentsPage() {
                 </option>
               ))}
             </select>
+            <SearchableSelect
+              label=""
+              options={userOptions}
+              value={selectedUserId}
+              onChange={(val) => {
+                setSelectedUserId(val);
+                setCurrentPage(1);
+              }}
+              placeholder="All Users"
+              searchPlaceholder="Search by name or phone..."
+              className="w-[220px]"
+            />
             <input
               type="text"
               placeholder="Search by name / invoice"
               value={nameQuery}
               onChange={(e) => setNameQuery(e.target.value)}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+              className="w-[180px] rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
             <button
               type="button"
@@ -781,6 +819,7 @@ export default function AdminInsurancePaymentsPage() {
                 setPaymentStatus('');
                 setProductName('');
                 setNameQuery('');
+                setSelectedUserId('');
                 setCurrentPage(1);
               }}
               className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
