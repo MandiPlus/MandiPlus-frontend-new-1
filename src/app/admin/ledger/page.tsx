@@ -766,7 +766,7 @@ export default function AdminLedgerPage() {
               <div>
                 <h1 className="text-2xl font-semibold text-slate-900">Ledger</h1>
                 <p className="mt-1 text-sm text-slate-500">
-                  Combined ledger for all users, including linked accounts and invoice history.
+                  View ledger and invoice history for verified users.
                 </p>
               </div>
 
@@ -873,9 +873,9 @@ export default function AdminLedgerPage() {
                     {selectedMaster.mobileNumber} | {formatState(selectedMaster.state)}
                   </p>
                 </div>
-                <p className="text-sm text-slate-500">
+                {/* <p className="text-sm text-slate-500">
                   Linked users: <span className="font-semibold text-slate-800">{ledger?.linkedUsers.length || 0}</span>
-                </p>
+                </p> */}
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
@@ -927,6 +927,7 @@ export default function AdminLedgerPage() {
                 ) : null}
               </div>
 
+              {/* Linked users chips hidden — merge UI removed
               <div className="mt-4 flex flex-wrap gap-2">
                 {(ledger?.linkedUsers || []).map((user) => (
                   <span
@@ -942,6 +943,7 @@ export default function AdminLedgerPage() {
                   </span>
                 ))}
               </div>
+              */}
             </div>
           ) : null}
 
