@@ -8,6 +8,8 @@ import {
   Link2,
   Pencil,
   ReceiptText,
+  QrCode,
+  CreditCard,
 } from 'lucide-react';
 import { FaWhatsapp } from 'react-icons/fa';
 import {
@@ -262,6 +264,11 @@ export default function AdminInsurancePaymentsPage() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [generatingAccumulatedLink, setGeneratingAccumulatedLink] = useState(false);
+  const [razorpayModalOpen, setRazorpayModalOpen] = useState(false);
+  const [razorpayModalInvoiceId, setRazorpayModalInvoiceId] = useState<string | null>(null);
+  const [razorpayLoading, setRazorpayLoading] = useState(false);
+  const [razorpayQrResult, setRazorpayQrResult] = useState<{ qrImageUrl: string; invoiceNumber: string } | null>(null);
+  const [razorpayExistingLink, setRazorpayExistingLink] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const [fromDate, setFromDate] = useState('');
@@ -565,6 +572,72 @@ export default function AdminInsurancePaymentsPage() {
       toast.error(getErrorMessage(err, 'Failed to generate payment link'));
     } finally {
       setGeneratingAccumulatedLink(false);
+    }
+  };
+
+  const openRazorpayModal = async (invoiceId: string) => {
+    setRazorpayModalInvoiceId(invoiceId);
+    setRazorpayModalOpen(true);
+    setRazorpayQrResult(null);
+    setRazorpayExistingLink(null);
+    setRazorpayLoading(true);
+    try {
+      const res = await adminApi.getRazorpayPaymentStatus(invoiceId);
+      const data = res.data || res;
+      const invoice = (data as any).invoice;
+      if (invoice?.razorpayQrImageUrl) {
+        setRazorpayQrResult({ qrImageUrl: invoice.razorpayQrImageUrl, invoiceNumber: invoice.invoiceNumber || '' });
+      }
+      if (invoice?.paymentGateway === 'RAZORPAY' && invoice?.paymentLinkUrl) {
+        setRazorpayExistingLink(invoice.paymentLinkUrl);
+      }
+    } catch {
+      // no existing data, show create options
+    } finally {
+      setRazorpayLoading(false);
+    }
+  };
+
+  const closeRazorpayModal = () => {
+    setRazorpayModalOpen(false);
+    setRazorpayModalInvoiceId(null);
+    setRazorpayQrResult(null);
+    setRazorpayExistingLink(null);
+  };
+
+  const handleRazorpayGenerateLink = async (invoiceId: string) => {
+    setRazorpayLoading(true);
+    try {
+      const response = await adminApi.generateRazorpayPaymentLink(invoiceId);
+      const paymentLink = (response as any).paymentLink || response.data?.paymentLink;
+      if (!paymentLink) throw new Error(response.message || 'Failed to generate Razorpay link');
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(paymentLink);
+        toast.success('Razorpay payment link copied to clipboard');
+      }
+      setRazorpayExistingLink(paymentLink);
+      await fetchRows();
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Failed to generate Razorpay link'));
+    } finally {
+      setRazorpayLoading(false);
+    }
+  };
+
+  const handleRazorpayGenerateQR = async (invoiceId: string) => {
+    setRazorpayLoading(true);
+    try {
+      const response = await adminApi.generateRazorpayQRCode(invoiceId);
+      const qrImageUrl = (response as any).qrImageUrl || response.data?.qrImageUrl;
+      if (!qrImageUrl) throw new Error(response.message || 'Failed to generate QR code');
+      const invoiceNumber = (response as any).invoice?.invoiceNumber || '';
+      setRazorpayQrResult({ qrImageUrl, invoiceNumber });
+      toast.success('QR code generated');
+      await fetchRows();
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Failed to generate QR code'));
+    } finally {
+      setRazorpayLoading(false);
     }
   };
 
@@ -1108,20 +1181,31 @@ export default function AdminInsurancePaymentsPage() {
                           ) : null}
                           {Boolean(row.isPaymentRequired) &&
                           String(row.paymentStatus || '').toUpperCase() === 'PENDING' ? (
-                            <button
-                              type="button"
-                              onClick={() => openReminderModal(row)}
-                              disabled={Boolean(remindingInvoiceIds[row.invoiceId])}
-                              title="Send WhatsApp Reminder"
-                              aria-label={`Send WhatsApp reminder for ${row.invoiceNumber}`}
-                              className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border shadow-sm transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60 ${getActionButtonClasses('reminder')}`}
-                            >
-                              {remindingInvoiceIds[row.invoiceId] ? (
-                                <span className="text-sm font-bold">...</span>
-                              ) : (
-                                <FaWhatsapp className="h-4 w-4" />
-                              )}
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openReminderModal(row)}
+                                disabled={Boolean(remindingInvoiceIds[row.invoiceId])}
+                                title="Send WhatsApp Reminder"
+                                aria-label={`Send WhatsApp reminder for ${row.invoiceNumber}`}
+                                className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border shadow-sm transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60 ${getActionButtonClasses('reminder')}`}
+                              >
+                                {remindingInvoiceIds[row.invoiceId] ? (
+                                  <span className="text-sm font-bold">...</span>
+                                ) : (
+                                  <FaWhatsapp className="h-4 w-4" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openRazorpayModal(row.invoiceId)}
+                                title="Razorpay Payment"
+                                aria-label={`Razorpay payment for ${row.invoiceNumber}`}
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-700 shadow-sm transition-all duration-200 hover:bg-blue-100"
+                              >
+                                <CreditCard className="h-4 w-4" strokeWidth={2.2} />
+                              </button>
+                            </>
                           ) : null}
                           <button
                             type="button"
@@ -1409,6 +1493,170 @@ export default function AdminInsurancePaymentsPage() {
           </div>
         </div>
       ) : null}
+
+      {razorpayModalOpen && razorpayModalInvoiceId && (
+        <div className="fixed inset-0 z-[2200] flex items-center justify-center p-3 sm:p-4">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={closeRazorpayModal}
+          />
+          <div className="relative w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-black/10">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-slate-900">Razorpay Payment</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  {razorpayQrResult || razorpayExistingLink ? 'Payment method ready' : 'Choose payment method'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeRazorpayModal}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="px-5 py-5">
+              {razorpayLoading && !razorpayQrResult && !razorpayExistingLink ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+                  <span className="ml-3 text-sm text-slate-500">Loading...</span>
+                </div>
+              ) : (
+                <>
+                  {razorpayExistingLink && (
+                    <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Link2 className="h-4 w-4 text-green-700" />
+                        <span className="text-sm font-semibold text-green-800">Payment Link</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={razorpayExistingLink}
+                          className="flex-1 rounded-lg border border-green-200 bg-white px-3 py-2 text-xs text-slate-700 select-all"
+                          onClick={(e) => (e.target as HTMLInputElement).select()}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(razorpayExistingLink);
+                            toast.success('Link copied');
+                          }}
+                          className="shrink-0 rounded-lg bg-green-600 px-3 py-2 text-xs font-semibold text-white hover:bg-green-700"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {razorpayQrResult && (
+                    <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4 flex flex-col items-center">
+                      <div className="flex items-center gap-2 mb-3 self-start">
+                        <QrCode className="h-4 w-4 text-blue-700" />
+                        <span className="text-sm font-semibold text-blue-800">
+                          QR Code{razorpayQrResult.invoiceNumber ? ` — ${razorpayQrResult.invoiceNumber}` : ''}
+                        </span>
+                      </div>
+                      <div className="bg-white rounded-xl p-3 shadow-sm border border-blue-100">
+                        <img
+                          src={razorpayQrResult.qrImageUrl}
+                          alt="Payment QR Code — right-click to copy or save"
+                          className="w-56 h-56 object-contain"
+                          style={{ imageRendering: 'pixelated' }}
+                        />
+                      </div>
+                      <p className="mt-2 text-xs text-slate-500">Right-click the QR to copy or save image</p>
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(razorpayQrResult.qrImageUrl);
+                            toast.success('QR image URL copied');
+                          }}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          Copy URL
+                        </button>
+                        <a
+                          href={razorpayQrResult.qrImageUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50"
+                        >
+                          Open Full Size
+                        </a>
+                      </div>
+                    </div>
+                  )}
+
+                  {!razorpayQrResult && !razorpayExistingLink && (
+                    <div className="space-y-3">
+                      <button
+                        type="button"
+                        onClick={() => handleRazorpayGenerateLink(razorpayModalInvoiceId)}
+                        disabled={razorpayLoading}
+                        className="w-full flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 hover:border-blue-300 disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+                      >
+                        <Link2 className="h-5 w-5 text-blue-600 shrink-0" />
+                        <div>
+                          <div className="font-semibold">Generate Payment Link</div>
+                          <div className="text-xs text-slate-500 mt-0.5">Shareable link via WhatsApp/SMS</div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRazorpayGenerateQR(razorpayModalInvoiceId)}
+                        disabled={razorpayLoading}
+                        className="w-full flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm font-medium text-slate-800 hover:bg-slate-50 hover:border-blue-300 disabled:opacity-60 disabled:cursor-not-allowed transition-all"
+                      >
+                        <QrCode className="h-5 w-5 text-blue-600 shrink-0" />
+                        <div>
+                          <div className="font-semibold">Create QR Code</div>
+                          <div className="text-xs text-slate-500 mt-0.5">UPI QR for scan-to-pay (single use)</div>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+
+                  {(razorpayQrResult || razorpayExistingLink) && (
+                    <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
+                      <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Generate new</p>
+                      <div className="flex gap-2">
+                        {!razorpayExistingLink && (
+                          <button
+                            type="button"
+                            onClick={() => handleRazorpayGenerateLink(razorpayModalInvoiceId)}
+                            disabled={razorpayLoading}
+                            className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                          >
+                            <Link2 className="h-3.5 w-3.5" />
+                            Payment Link
+                          </button>
+                        )}
+                        {!razorpayQrResult && (
+                          <button
+                            type="button"
+                            onClick={() => handleRazorpayGenerateQR(razorpayModalInvoiceId)}
+                            disabled={razorpayLoading}
+                            className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                          >
+                            <QrCode className="h-3.5 w-3.5" />
+                            QR Code
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
