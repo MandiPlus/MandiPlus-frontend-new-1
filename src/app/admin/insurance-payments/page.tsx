@@ -11,18 +11,17 @@ import {
 } from 'lucide-react';
 import { FaWhatsapp } from 'react-icons/fa';
 import {
-  AdminLedgerUser,
   InsurancePaymentRow,
   UpdateInsurancePaymentPayload,
   adminApi,
 } from '@/features/admin/api/admin.api';
 import { useAdmin } from '@/features/admin/context/AdminContext';
-import SearchableSelect from '@/features/admin/components/SearchableSelect';
 import AsyncSearchableSelect from '@/features/admin/components/AsyncSearchableSelect';
 
 const PAYMENT_STATUS_OPTIONS = [
   'PENDING',
   'PAID',
+  'PARTIAL',
   'FAILED',
   'REFUNDED',
 ];
@@ -275,10 +274,7 @@ export default function AdminInsurancePaymentsPage() {
   const [debouncedNameQuery, setDebouncedNameQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [jumpPageInput, setJumpPageInput] = useState('1');
-  const [allUsers, setAllUsers] = useState<AdminLedgerUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState('');
-  const [selectedUserInvoiceIds, setSelectedUserInvoiceIds] = useState<Set<string> | null>(null);
-  const [loadingUserLedger, setLoadingUserLedger] = useState(false);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -308,6 +304,7 @@ export default function AdminInsurancePaymentsPage() {
         paymentMethod: paymentMethodFilter || undefined,
         productName: productName || undefined,
         searchQuery: debouncedNameQuery.trim() || undefined,
+        userId: selectedUserId || undefined,
         page: pageNum,
         limit: ITEMS_PER_PAGE,
       });
@@ -316,7 +313,7 @@ export default function AdminInsurancePaymentsPage() {
       }
       return response;
     },
-    [fromDate, toDate, paymentStatus, paymentMethodFilter, productName, debouncedNameQuery],
+    [fromDate, toDate, paymentStatus, paymentMethodFilter, productName, debouncedNameQuery, selectedUserId],
   );
 
   const fetchRows = useCallback(async () => {
@@ -332,6 +329,7 @@ export default function AdminInsurancePaymentsPage() {
           paymentStatus: paymentStatus || undefined,
           paymentMethod: paymentMethodFilter || undefined,
           searchQuery: debouncedNameQuery.trim() || undefined,
+          userId: selectedUserId || undefined,
         }),
       ]);
       setRows(Array.isArray(pageResponse.data) ? pageResponse.data : []);
@@ -351,7 +349,7 @@ export default function AdminInsurancePaymentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [fetchPage, currentPage, fromDate, toDate, productName, paymentStatus, paymentMethodFilter, debouncedNameQuery]);
+  }, [fetchPage, currentPage, fromDate, toDate, productName, paymentStatus, paymentMethodFilter, debouncedNameQuery, selectedUserId]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -361,48 +359,8 @@ export default function AdminInsurancePaymentsPage() {
     fetchRows();
   }, [isAuthenticated, router, fetchRows]);
 
-  const userOptions = useMemo(
-    () => [
-      { value: '', label: 'All Users', searchText: '' },
-      ...allUsers.map((u) => ({
-        value: u.id,
-        label: `${u.name || ''} | ${u.mobileNumber || ''}`,
-        searchText: `${u.name || ''} ${u.mobileNumber || ''} ${(u.aliasNames || []).join(' ')}`,
-      })),
-    ],
-    [allUsers],
-  );
 
-  useEffect(() => {
-    if (!selectedUserId) {
-      setSelectedUserInvoiceIds(null);
-      return;
-    }
-    let cancelled = false;
-    setLoadingUserLedger(true);
-    adminApi.getMasterUserLedger(selectedUserId).then((res) => {
-      if (cancelled) return;
-      if (res.success && res.data) {
-        const ids = new Set<string>();
-        for (const row of res.data.rows || []) {
-          ids.add(row.invoiceId);
-          for (const dupId of row.duplicateInvoiceIds || []) {
-            ids.add(dupId);
-          }
-        }
-        setSelectedUserInvoiceIds(ids);
-      } else {
-        setSelectedUserInvoiceIds(new Set());
-      }
-      setLoadingUserLedger(false);
-    });
-    return () => { cancelled = true; };
-  }, [selectedUserId]);
-
-  const filteredRows = useMemo(() => {
-    if (!selectedUserId || !selectedUserInvoiceIds) return rows;
-    return rows.filter((row) => selectedUserInvoiceIds.has(row.invoiceId));
-  }, [rows, selectedUserId, selectedUserInvoiceIds]);
+  const filteredRows = rows;
 
   const productOptions = useMemo(() => {
     return [
@@ -414,17 +372,9 @@ export default function AdminInsurancePaymentsPage() {
     ].sort((a, b) => a.localeCompare(b));
   }, [rows]);
 
-  const totalRows = selectedUserId && selectedUserInvoiceIds ? filteredRows.length : serverTotal;
-  const totalPages = selectedUserId && selectedUserInvoiceIds
-    ? Math.max(1, Math.ceil(filteredRows.length / ITEMS_PER_PAGE))
-    : serverTotalPages;
-  const paginatedRows = useMemo(() => {
-    if (selectedUserId && selectedUserInvoiceIds) {
-      const start = (currentPage - 1) * ITEMS_PER_PAGE;
-      return filteredRows.slice(start, start + ITEMS_PER_PAGE);
-    }
-    return filteredRows;
-  }, [filteredRows, currentPage, selectedUserId, selectedUserInvoiceIds]);
+  const totalRows = serverTotal;
+  const totalPages = serverTotalPages;
+  const paginatedRows = filteredRows;
 
   const totalPremium = summaryStats.totalPremium;
   const totalPayment = summaryStats.totalPaid;

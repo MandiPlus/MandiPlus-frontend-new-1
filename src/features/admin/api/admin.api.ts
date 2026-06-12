@@ -1904,6 +1904,7 @@ class AdminApi {
     paymentMethod?: string;
     productName?: string;
     searchQuery?: string;
+    userId?: string;
     page?: number;
     limit?: number;
   }): Promise<ApiResponse<InsurancePaymentRow[]>> => {
@@ -1963,6 +1964,7 @@ class AdminApi {
     paymentStatus?: string;
     paymentMethod?: string;
     searchQuery?: string;
+    userId?: string;
   }): Promise<{
     success: boolean;
     totalRows?: number;
