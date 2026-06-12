@@ -435,8 +435,9 @@ export default function AdminInsurancePaymentsPage() {
   const totalPendingPayment = useMemo(
     () =>
       filteredRows.reduce((sum, row) => {
-        const balance = getEffectiveBalance(row);
-        return balance > 0 ? sum + balance : sum;
+        if (String(row.paymentStatus || '').toUpperCase() !== 'PENDING') return sum;
+        const balance = Math.max(Number(row.premiumAmount || 0) - Number(row.paymentAmount || 0), 0);
+        return sum + balance;
       }, 0),
     [filteredRows],
   );
