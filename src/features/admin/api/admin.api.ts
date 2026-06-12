@@ -1756,6 +1756,63 @@ class AdminApi {
     }
   };
 
+  public generateRazorpayPaymentLink = async (
+    invoiceId: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/payment/razorpay/generate-link/${invoiceId}`,
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to generate Razorpay payment link",
+        error: error.message,
+      };
+    }
+  };
+
+  public generateRazorpayQRCode = async (
+    invoiceId: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/payment/razorpay/generate-qr/${invoiceId}`,
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to generate Razorpay QR code",
+        error: error.message,
+      };
+    }
+  };
+
+  public getRazorpayPaymentStatus = async (
+    invoiceId: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.get<ApiResponse<any>>(
+        `/payment/razorpay/status/${invoiceId}`,
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to fetch Razorpay payment status",
+        error: error.message,
+      };
+    }
+  };
+
   public sendPaymentReminderForInvoice = async (
     invoiceId: string,
     phoneNumber?: string,
@@ -1844,6 +1901,7 @@ class AdminApi {
     fromDate?: string;
     toDate?: string;
     paymentStatus?: string;
+    paymentMethod?: string;
     productName?: string;
     searchQuery?: string;
     page?: number;
@@ -1902,6 +1960,7 @@ class AdminApi {
     fromDate?: string;
     toDate?: string;
     paymentStatus?: string;
+    paymentMethod?: string;
     productName?: string;
     searchQuery?: string;
   }): Promise<Blob> => {
