@@ -1960,6 +1960,9 @@ class AdminApi {
     fromDate?: string;
     toDate?: string;
     productName?: string;
+    paymentStatus?: string;
+    paymentMethod?: string;
+    searchQuery?: string;
   }): Promise<{
     success: boolean;
     totalRows?: number;
@@ -1969,8 +1972,14 @@ class AdminApi {
     paidToday?: number;
   }> => {
     try {
+      const params: Record<string, string> = {};
+      if (filters) {
+        for (const [k, v] of Object.entries(filters)) {
+          if (v) params[k] = v;
+        }
+      }
       const response = await this.client.get("/insurance-payments/admin/summary", {
-        params: filters,
+        params,
       });
       return { success: true, ...response.data };
     } catch (error: any) {

@@ -329,6 +329,9 @@ export default function AdminInsurancePaymentsPage() {
           fromDate: fromDate || undefined,
           toDate: toDate || undefined,
           productName: productName || undefined,
+          paymentStatus: paymentStatus || undefined,
+          paymentMethod: paymentMethodFilter || undefined,
+          searchQuery: debouncedNameQuery.trim() || undefined,
         }),
       ]);
       setRows(Array.isArray(pageResponse.data) ? pageResponse.data : []);
@@ -348,7 +351,7 @@ export default function AdminInsurancePaymentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [fetchPage, currentPage, fromDate, toDate, productName]);
+  }, [fetchPage, currentPage, fromDate, toDate, productName, paymentStatus, paymentMethodFilter, debouncedNameQuery]);
 
   useEffect(() => {
     if (!isAuthenticated) {
