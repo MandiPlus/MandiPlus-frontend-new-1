@@ -87,7 +87,7 @@ const emptyCreateUserForm: AdminCreateUserForm = {
     identity: 'BUYER',
     billingType: 'BULK',
     initialWalletAmount: '',
-    verifyAsMaster: false,
+    verifyAsMaster: true,
     unionMember: false,
 };
 
@@ -1744,6 +1744,23 @@ export default function UsersPage() {
                                                             >
                                                                 {impersonatingByUser[user.id] ? 'Opening...' : 'Access Account'}
                                                             </button>
+                                                            {user.isLedgerMasterVerified ? (
+                                                                <button
+                                                                    onClick={() => handleUnverifyMaster(user)}
+                                                                    disabled={unverifyingMasterByUser[user.id]}
+                                                                    className="rounded-md bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                                                                >
+                                                                    {unverifyingMasterByUser[user.id] ? 'Removing...' : 'Unverify'}
+                                                                </button>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => handleVerifyMaster(user)}
+                                                                    disabled={verifyingMasterByUser[user.id]}
+                                                                    className="rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-60"
+                                                                >
+                                                                    {verifyingMasterByUser[user.id] ? 'Verifying...' : 'Verify'}
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     </td>
                                                 </tr>
