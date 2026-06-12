@@ -1956,6 +1956,28 @@ class AdminApi {
     }
   };
 
+  public getInsurancePaymentsSummary = async (filters?: {
+    fromDate?: string;
+    toDate?: string;
+    productName?: string;
+  }): Promise<{
+    success: boolean;
+    totalRows?: number;
+    totalPremium?: number;
+    totalPaid?: number;
+    totalPending?: number;
+    paidToday?: number;
+  }> => {
+    try {
+      const response = await this.client.get("/insurance-payments/admin/summary", {
+        params: filters,
+      });
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return { success: false };
+    }
+  };
+
   public exportInsurancePayments = async (filters?: {
     fromDate?: string;
     toDate?: string;

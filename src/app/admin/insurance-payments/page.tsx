@@ -42,7 +42,6 @@ const REPORT_PERIOD_OPTIONS = [
   { value: 'annual', label: 'Annual Report' },
 ] as const;
 const ITEMS_PER_PAGE = 20;
-const FETCH_LIMIT = 500;
 
 function getPaymentStatusBadgeClasses(status?: string | null) {
   const normalized = String(status || '').toUpperCase();
@@ -258,7 +257,6 @@ export default function AdminInsurancePaymentsPage() {
   const router = useRouter();
   const { isAuthenticated } = useAdmin();
   const [rows, setRows] = useState<InsurancePaymentRow[]>([]);
-  const [productOptionRows, setProductOptionRows] = useState<InsurancePaymentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [generatingAccumulatedLink, setGeneratingAccumulatedLink] = useState(false);
@@ -274,6 +272,7 @@ export default function AdminInsurancePaymentsPage() {
   const [reportPeriod, setReportPeriod] =
     useState<(typeof REPORT_PERIOD_OPTIONS)[number]['value']>('daily');
   const [nameQuery, setNameQuery] = useState('');
+  const [debouncedNameQuery, setDebouncedNameQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [jumpPageInput, setJumpPageInput] = useState('1');
   const [allUsers, setAllUsers] = useState<AdminLedgerUser[]>([]);
@@ -296,69 +295,60 @@ export default function AdminInsurancePaymentsPage() {
   const [paymentCompletedInputType, setPaymentCompletedInputType] = useState<'text' | 'datetime-local'>('text');
   const [form, setForm] = useState<UpdateInsurancePaymentPayload>({});
 
-  const fetchAllPages = useCallback(
-    async (params: Parameters<typeof adminApi.getInsurancePayments>[0]) => {
-      const collected: InsurancePaymentRow[] = [];
-      let page = 1;
-      let pages = 1;
+  const [serverTotal, setServerTotal] = useState(0);
+  const [serverTotalPages, setServerTotalPages] = useState(1);
+  const [summaryStats, setSummaryStats] = useState({ totalPremium: 0, totalPaid: 0, totalPending: 0, paidToday: 0 });
 
-      do {
-        const response = await adminApi.getInsurancePayments({ ...params, page, limit: FETCH_LIMIT });
-        if (!response.success) {
-          throw new Error(response.message || 'Failed to load insurance payments');
-        }
-        const chunk = Array.isArray(response.data) ? response.data : [];
-        collected.push(...chunk);
-        pages = Math.max(1, Number(response.totalPages || 1));
-        page += 1;
-      } while (page <= pages);
-
-      return collected;
-    },
-    [],
-  );
-
-  const fetchAllRowsForFilters = useCallback(
-    () =>
-      fetchAllPages({
+  const fetchPage = useCallback(
+    async (pageNum: number) => {
+      const response = await adminApi.getInsurancePayments({
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
         paymentMethod: paymentMethodFilter || undefined,
         productName: productName || undefined,
-        searchQuery: nameQuery.trim() || undefined,
-      }),
-    [fetchAllPages, fromDate, toDate, paymentStatus, paymentMethodFilter, productName, nameQuery],
-  );
-
-  const fetchRowsForProductOptions = useCallback(
-    () =>
-      fetchAllPages({
-        fromDate: fromDate || undefined,
-        toDate: toDate || undefined,
-        paymentStatus: paymentStatus || undefined,
-      }),
-    [fetchAllPages, fromDate, toDate, paymentStatus],
+        searchQuery: debouncedNameQuery.trim() || undefined,
+        page: pageNum,
+        limit: ITEMS_PER_PAGE,
+      });
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to load insurance payments');
+      }
+      return response;
+    },
+    [fromDate, toDate, paymentStatus, paymentMethodFilter, productName, debouncedNameQuery],
   );
 
   const fetchRows = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
-      const [allRows, allProductRows] = await Promise.all([
-        fetchAllRowsForFilters(),
-        fetchRowsForProductOptions(),
+      const [pageResponse, summaryResponse] = await Promise.all([
+        fetchPage(currentPage),
+        adminApi.getInsurancePaymentsSummary({
+          fromDate: fromDate || undefined,
+          toDate: toDate || undefined,
+          productName: productName || undefined,
+        }),
       ]);
-      setRows(allRows);
-      setProductOptionRows(allProductRows);
+      setRows(Array.isArray(pageResponse.data) ? pageResponse.data : []);
+      setServerTotal(Number(pageResponse.total) || 0);
+      setServerTotalPages(Math.max(1, Number(pageResponse.totalPages) || 1));
+      if (summaryResponse.success) {
+        setSummaryStats({
+          totalPremium: summaryResponse.totalPremium || 0,
+          totalPaid: summaryResponse.totalPaid || 0,
+          totalPending: summaryResponse.totalPending || 0,
+          paidToday: summaryResponse.paidToday || 0,
+        });
+      }
     } catch (err: unknown) {
       setError(getErrorMessage(err, 'Failed to load insurance payments'));
       setRows([]);
-      setProductOptionRows([]);
     } finally {
       setLoading(false);
     }
-  }, [fetchAllRowsForFilters, fetchRowsForProductOptions]);
+  }, [fetchPage, currentPage, fromDate, toDate, productName]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -414,50 +404,29 @@ export default function AdminInsurancePaymentsPage() {
   const productOptions = useMemo(() => {
     return [
       ...new Set(
-        productOptionRows
+        rows
           .map((row) => String(row.productName || '').trim())
           .filter(Boolean),
       ),
     ].sort((a, b) => a.localeCompare(b));
-  }, [productOptionRows]);
+  }, [rows]);
 
-  const totalRows = filteredRows.length;
-  const totalPages = Math.max(1, Math.ceil(totalRows / ITEMS_PER_PAGE));
+  const totalRows = selectedUserId && selectedUserInvoiceIds ? filteredRows.length : serverTotal;
+  const totalPages = selectedUserId && selectedUserInvoiceIds
+    ? Math.max(1, Math.ceil(filteredRows.length / ITEMS_PER_PAGE))
+    : serverTotalPages;
   const paginatedRows = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return filteredRows.slice(start, start + ITEMS_PER_PAGE);
-  }, [filteredRows, currentPage]);
+    if (selectedUserId && selectedUserInvoiceIds) {
+      const start = (currentPage - 1) * ITEMS_PER_PAGE;
+      return filteredRows.slice(start, start + ITEMS_PER_PAGE);
+    }
+    return filteredRows;
+  }, [filteredRows, currentPage, selectedUserId, selectedUserInvoiceIds]);
 
-  const totalPremium = useMemo(
-    () => filteredRows.reduce((sum, row) => sum + Number(row.premiumAmount || 0), 0),
-    [filteredRows],
-  );
-
-  const totalPayment = useMemo(
-    () => filteredRows.reduce((sum, row) => sum + getEffectivePaidAmount(row), 0),
-    [filteredRows],
-  );
-
-  const totalPendingPayment = useMemo(
-    () =>
-      filteredRows.reduce((sum, row) => {
-        if (String(row.paymentStatus || '').toUpperCase() !== 'PENDING') return sum;
-        const balance = Math.max(Number(row.premiumAmount || 0) - Number(row.paymentAmount || 0), 0);
-        return sum + balance;
-      }, 0),
-    [filteredRows],
-  );
-
-  const paymentReceivedToday = useMemo(
-    () =>
-      filteredRows.reduce((sum, row) => {
-        if (!wasPaymentMarkedPaidToday(row)) {
-          return sum;
-        }
-        return sum + getEffectivePaidAmount(row);
-      }, 0),
-    [filteredRows],
-  );
+  const totalPremium = summaryStats.totalPremium;
+  const totalPayment = summaryStats.totalPaid;
+  const totalPendingPayment = summaryStats.totalPending;
+  const paymentReceivedToday = summaryStats.paidToday;
   const pageStart = totalRows === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
   const pageEnd = Math.min(currentPage * ITEMS_PER_PAGE, totalRows);
   const selectedRows = useMemo(
@@ -497,6 +466,8 @@ export default function AdminInsurancePaymentsPage() {
 
   useEffect(() => {
     setCurrentPage(1);
+    const timer = setTimeout(() => setDebouncedNameQuery(nameQuery), 400);
+    return () => clearTimeout(timer);
   }, [nameQuery]);
 
   useEffect(() => {
