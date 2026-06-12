@@ -548,6 +548,14 @@ export default function AdminInsurancePaymentsPage() {
       return;
     }
 
+    const insuredPersons = new Set(
+      selectedPendingRows.map((row) => (row.insuredPerson || '').trim().toLowerCase()).filter(Boolean),
+    );
+    if (insuredPersons.size > 1) {
+      toast.error('All selected invoices must belong to the same insured person');
+      return;
+    }
+
     setGeneratingAccumulatedLink(true);
     try {
       const response = await adminApi.generateAccumulatedPaymentLink(
