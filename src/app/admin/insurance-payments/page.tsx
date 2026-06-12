@@ -118,7 +118,10 @@ function wasPaymentMarkedPaidToday(row: InsurancePaymentRow, referenceDate = new
 }
 
 function getEffectivePaidAmount(row: InsurancePaymentRow): number {
-  return row.paymentStatus === 'PAID' ? Number(row.paymentAmount || 0) : 0;
+  if (row.paymentStatus !== 'PAID') return 0;
+  const paymentAmount = Number(row.paymentAmount || 0);
+  const premiumAmount = Number(row.premiumAmount || 0);
+  return paymentAmount > 0 ? paymentAmount : premiumAmount;
 }
 
 function getEffectiveBalance(row: InsurancePaymentRow): number {
