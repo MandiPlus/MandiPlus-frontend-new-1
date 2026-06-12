@@ -7,7 +7,7 @@ import { useAdmin } from '@/features/admin/context/AdminContext';
 
 const ITEMS_PER_PAGE = 25;
 
-type WhatsAppStatus = 'NOT_SENT' | 'SENT' | 'ALL';
+type TemplateStatusFilter = 'ALL' | 'SENT' | 'NOT_SENT';
 type PaymentStatusFilter = 'ALL' | 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED' | 'NOT_REQUIRED';
 
 function formatDate(value?: string | null) {
@@ -60,9 +60,9 @@ function getPaymentBadge(status?: string | null) {
   return badge;
 }
 
-function getWhatsAppBadge(sent: boolean) {
-  if (sent) return { label: 'Sent', classes: 'bg-green-50 text-green-700 border-green-200' };
-  return { label: 'Not Sent', classes: 'bg-gray-50 text-gray-500 border-gray-200' };
+function getTemplateBadge(sentAt: string | null | undefined) {
+  if (sentAt) return { label: 'Sent', classes: 'bg-green-50 text-green-700 border-green-200' };
+  return { label: '—', classes: 'bg-gray-50 text-gray-400 border-gray-200' };
 }
 
 export default function InvoiceTrackingPage() {
@@ -77,7 +77,9 @@ export default function InvoiceTrackingPage() {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [paymentFilter, setPaymentFilter] = useState<PaymentStatusFilter>('ALL');
-  const [whatsappFilter, setWhatsappFilter] = useState<WhatsAppStatus>('ALL');
+  const [insuranceFilter, setInsuranceFilter] = useState<TemplateStatusFilter>('ALL');
+  const [invoicePdfFilter, setInvoicePdfFilter] = useState<TemplateStatusFilter>('ALL');
+  const [paymentLinkFilter, setPaymentLinkFilter] = useState<TemplateStatusFilter>('ALL');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
@@ -111,14 +113,26 @@ export default function InvoiceTrackingPage() {
     fetchInvoices();
   }, [isAuthenticated, router, fetchInvoices]);
 
-  // Client-side filtering for search and WhatsApp status
+  // Client-side filtering for search and template status
   const filteredInvoices = useMemo(() => {
     let result = invoices;
 
-    if (whatsappFilter === 'SENT') {
-      result = result.filter((inv) => inv.whatsappSent === true);
-    } else if (whatsappFilter === 'NOT_SENT') {
-      result = result.filter((inv) => !inv.whatsappSent);
+    if (insuranceFilter === 'SENT') {
+      result = result.filter((inv) => !!inv.insurancePdfSentAt);
+    } else if (insuranceFilter === 'NOT_SENT') {
+      result = result.filter((inv) => !inv.insurancePdfSentAt);
+    }
+
+    if (invoicePdfFilter === 'SENT') {
+      result = result.filter((inv) => !!inv.invoicePdfSentAt);
+    } else if (invoicePdfFilter === 'NOT_SENT') {
+      result = result.filter((inv) => !inv.invoicePdfSentAt);
+    }
+
+    if (paymentLinkFilter === 'SENT') {
+      result = result.filter((inv) => !!inv.paymentLinkSentAt);
+    } else if (paymentLinkFilter === 'NOT_SENT') {
+      result = result.filter((inv) => !inv.paymentLinkSentAt);
     }
 
     if (searchQuery.trim()) {
@@ -134,16 +148,16 @@ export default function InvoiceTrackingPage() {
     }
 
     return result;
-  }, [invoices, whatsappFilter, searchQuery]);
+  }, [invoices, insuranceFilter, invoicePdfFilter, paymentLinkFilter, searchQuery]);
 
   // Summary stats
   const stats = useMemo(() => {
     const total = filteredInvoices.length;
-    const sent = filteredInvoices.filter((i) => i.whatsappSent).length;
-    const notSent = total - sent;
+    const insuranceSent = filteredInvoices.filter((i) => !!i.insurancePdfSentAt).length;
+    const invoicePdfSent = filteredInvoices.filter((i) => !!i.invoicePdfSentAt).length;
+    const paymentLinkSent = filteredInvoices.filter((i) => !!i.paymentLinkSentAt).length;
     const paid = filteredInvoices.filter((i) => i.paymentStatus === 'PAID').length;
-    const pending = filteredInvoices.filter((i) => i.paymentStatus === 'PENDING').length;
-    return { total, sent, notSent, paid, pending };
+    return { total, insuranceSent, invoicePdfSent, paymentLinkSent, paid };
   }, [filteredInvoices]);
 
   // Pagination
@@ -160,7 +174,7 @@ export default function InvoiceTrackingPage() {
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-gray-900">Invoice Tracking</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Track WhatsApp delivery and payment status for all verified invoices
+            Track per-template delivery status and payments for all verified invoices
           </p>
         </div>
 
@@ -170,21 +184,21 @@ export default function InvoiceTrackingPage() {
             <p className="text-xs font-medium text-gray-500 uppercase">Total</p>
             <p className="mt-1 text-2xl font-bold text-gray-900">{stats.total}</p>
           </div>
-          <div className="rounded-xl border border-green-200 bg-green-50 p-4 shadow-sm">
-            <p className="text-xs font-medium text-green-600 uppercase">WA Sent</p>
-            <p className="mt-1 text-2xl font-bold text-green-700">{stats.sent}</p>
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
+            <p className="text-xs font-medium text-blue-600 uppercase">Insurance Sent</p>
+            <p className="mt-1 text-2xl font-bold text-blue-700">{stats.insuranceSent}</p>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 shadow-sm">
-            <p className="text-xs font-medium text-gray-500 uppercase">Not Sent</p>
-            <p className="mt-1 text-2xl font-bold text-gray-700">{stats.notSent}</p>
+          <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 shadow-sm">
+            <p className="text-xs font-medium text-violet-600 uppercase">Invoice Sent</p>
+            <p className="mt-1 text-2xl font-bold text-violet-700">{stats.invoicePdfSent}</p>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+            <p className="text-xs font-medium text-amber-600 uppercase">Payment Link</p>
+            <p className="mt-1 text-2xl font-bold text-amber-700">{stats.paymentLinkSent}</p>
           </div>
           <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
             <p className="text-xs font-medium text-emerald-600 uppercase">Paid</p>
             <p className="mt-1 text-2xl font-bold text-emerald-700">{stats.paid}</p>
-          </div>
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-            <p className="text-xs font-medium text-amber-600 uppercase">Pending</p>
-            <p className="mt-1 text-2xl font-bold text-amber-700">{stats.pending}</p>
           </div>
         </div>
 
@@ -205,11 +219,41 @@ export default function InvoiceTrackingPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">WhatsApp</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Insurance</label>
               <select
-                value={whatsappFilter}
+                value={insuranceFilter}
                 onChange={(e) => {
-                  setWhatsappFilter(e.target.value as WhatsAppStatus);
+                  setInsuranceFilter(e.target.value as TemplateStatusFilter);
+                  setCurrentPage(1);
+                }}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
+              >
+                <option value="ALL">All</option>
+                <option value="SENT">Sent</option>
+                <option value="NOT_SENT">Not Sent</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Invoice PDF</label>
+              <select
+                value={invoicePdfFilter}
+                onChange={(e) => {
+                  setInvoicePdfFilter(e.target.value as TemplateStatusFilter);
+                  setCurrentPage(1);
+                }}
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
+              >
+                <option value="ALL">All</option>
+                <option value="SENT">Sent</option>
+                <option value="NOT_SENT">Not Sent</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Payment Link</label>
+              <select
+                value={paymentLinkFilter}
+                onChange={(e) => {
+                  setPaymentLinkFilter(e.target.value as TemplateStatusFilter);
                   setCurrentPage(1);
                 }}
                 className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
@@ -265,7 +309,9 @@ export default function InvoiceTrackingPage() {
               onClick={() => {
                 setSearchQuery('');
                 setPaymentFilter('ALL');
-                setWhatsappFilter('ALL');
+                setInsuranceFilter('ALL');
+                setInvoicePdfFilter('ALL');
+                setPaymentLinkFilter('ALL');
                 setDateFrom('');
                 setDateTo('');
                 setCurrentPage(1);
@@ -296,9 +342,9 @@ export default function InvoiceTrackingPage() {
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Buyer</th>
                   <th className="px-4 py-3 text-right font-semibold text-gray-700">Amount</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Sent To</th>
-                  <th className="px-4 py-3 text-center font-semibold text-gray-700">WhatsApp</th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-700">Sent At</th>
-                  <th className="px-4 py-3 text-center font-semibold text-gray-700">Resends</th>
+                  <th className="px-4 py-3 text-center font-semibold text-gray-700">Insurance</th>
+                  <th className="px-4 py-3 text-center font-semibold text-gray-700">Invoice PDF</th>
+                  <th className="px-4 py-3 text-center font-semibold text-gray-700">Payment Link</th>
                   <th className="px-4 py-3 text-center font-semibold text-gray-700">Payment</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Paid At</th>
                 </tr>
@@ -321,7 +367,9 @@ export default function InvoiceTrackingPage() {
                   </tr>
                 ) : (
                   paginatedInvoices.map((inv) => {
-                    const waBadge = getWhatsAppBadge(inv.whatsappSent);
+                    const insuranceBadge = getTemplateBadge(inv.insurancePdfSentAt);
+                    const invoicePdfBadge = getTemplateBadge(inv.invoicePdfSentAt);
+                    const paymentLinkBadge = getTemplateBadge(inv.paymentLinkSentAt);
                     const payBadge = getPaymentBadge(inv.paymentStatus);
                     return (
                       <tr key={inv.id} className="hover:bg-gray-50 transition">
@@ -343,24 +391,26 @@ export default function InvoiceTrackingPage() {
                         <td className="px-4 py-3 text-gray-600 whitespace-nowrap font-mono text-xs">
                           {formatPhone(inv.insuredPartyPhone)}
                         </td>
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-4 py-3 text-center" title={inv.insurancePdfSentAt ? formatDate(inv.insurancePdfSentAt) : 'Not sent'}>
                           <span
-                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${waBadge.classes}`}
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${insuranceBadge.classes}`}
                           >
-                            {waBadge.label}
+                            {insuranceBadge.label}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">
-                          {formatDate(inv.whatsappSentAt)}
+                        <td className="px-4 py-3 text-center" title={inv.invoicePdfSentAt ? formatDate(inv.invoicePdfSentAt) : 'Not sent'}>
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${invoicePdfBadge.classes}`}
+                          >
+                            {invoicePdfBadge.label}
+                          </span>
                         </td>
-                        <td className="px-4 py-3 text-center">
-                          {inv.paymentLinkSentCount != null && inv.paymentLinkSentCount > 0 ? (
-                            <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-violet-100 text-violet-700 text-xs font-bold">
-                              {inv.paymentLinkSentCount}
-                            </span>
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
+                        <td className="px-4 py-3 text-center" title={inv.paymentLinkSentAt ? formatDate(inv.paymentLinkSentAt) : 'Not sent'}>
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${paymentLinkBadge.classes}`}
+                          >
+                            {paymentLinkBadge.label}
+                          </span>
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span
