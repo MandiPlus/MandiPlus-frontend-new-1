@@ -93,6 +93,11 @@ const HomePage = () => {
   const [weightmentSlip, setWeightmentSlip] = useState<File | null>(null);
 
   // Regenerate form states
+  const defaultInvoiceType = (() => {
+    const identity = user?.identity?.toUpperCase();
+    if (identity === 'AGENT' || identity === 'SUPPLIER') return 'SUPPLIER_INVOICE';
+    return 'BUYER_INVOICE';
+  })();
   const [formData, setFormData] = useState<RegenerateInvoicePayload>({
     invoiceId: '',
     supplierName: '',
@@ -110,7 +115,7 @@ const HomePage = () => {
     vehicleNumber: '',
     truckNumber: '',
     weighmentSlipNote: '',
-    invoiceType: 'BUYER_INVOICE',
+    invoiceType: defaultInvoiceType as 'BUYER_INVOICE' | 'SUPPLIER_INVOICE',
     invoiceDate: new Date().toISOString().split('T')[0],
   });
   const [regenerating, setRegenerating] = useState(false);
@@ -420,7 +425,7 @@ const HomePage = () => {
       vehicleNumber: invoice.vehicleNumber || '',
       truckNumber: invoice.truckNumber || '',
       weighmentSlipNote: invoice.weighmentSlipNote || '',
-      invoiceType: 'BUYER_INVOICE', // Default to BUYER_INVOICE since invoiceType doesn't exist on InsuranceForm
+      invoiceType: defaultInvoiceType as 'BUYER_INVOICE' | 'SUPPLIER_INVOICE',
       invoiceDate: invoice.createdAt
         ? new Date(invoice.createdAt).toISOString().split('T')[0]
         : new Date().toISOString().split('T')[0],

@@ -32,6 +32,7 @@ const PAYMENT_METHOD_OPTIONS = [
   'PER_POLICY',
   'CASH',
   'GCA',
+  'WALLET',
 ] as const;
 const REPORT_PERIOD_OPTIONS = [
   { value: 'daily', label: 'Daily Report' },
@@ -118,7 +119,10 @@ function wasPaymentMarkedPaidToday(row: InsurancePaymentRow, referenceDate = new
 }
 
 function getEffectivePaidAmount(row: InsurancePaymentRow): number {
-  return row.paymentStatus === 'PAID' ? Number(row.paymentAmount || 0) : 0;
+  if (row.paymentStatus !== 'PAID') return 0;
+  const paymentAmount = Number(row.paymentAmount || 0);
+  const premiumAmount = Number(row.premiumAmount || 0);
+  return paymentAmount > 0 ? paymentAmount : premiumAmount;
 }
 
 function getEffectiveBalance(row: InsurancePaymentRow): number {
@@ -265,6 +269,7 @@ export default function AdminInsurancePaymentsPage() {
   const [fromDateInputType, setFromDateInputType] = useState<'text' | 'date'>('text');
   const [toDateInputType, setToDateInputType] = useState<'text' | 'date'>('text');
   const [paymentStatus, setPaymentStatus] = useState('');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState('');
   const [productName, setProductName] = useState('');
   const [reportPeriod, setReportPeriod] =
     useState<(typeof REPORT_PERIOD_OPTIONS)[number]['value']>('daily');
@@ -319,10 +324,11 @@ export default function AdminInsurancePaymentsPage() {
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
+        paymentMethod: paymentMethodFilter || undefined,
         productName: productName || undefined,
         searchQuery: nameQuery.trim() || undefined,
       }),
-    [fetchAllPages, fromDate, toDate, paymentStatus, productName, nameQuery],
+    [fetchAllPages, fromDate, toDate, paymentStatus, paymentMethodFilter, productName, nameQuery],
   );
 
   const fetchRowsForProductOptions = useCallback(
@@ -435,8 +441,9 @@ export default function AdminInsurancePaymentsPage() {
   const totalPendingPayment = useMemo(
     () =>
       filteredRows.reduce((sum, row) => {
-        const balance = getEffectiveBalance(row);
-        return balance > 0 ? sum + balance : sum;
+        if (String(row.paymentStatus || '').toUpperCase() !== 'PENDING') return sum;
+        const balance = Math.max(Number(row.premiumAmount || 0) - Number(row.paymentAmount || 0), 0);
+        return sum + balance;
       }, 0),
     [filteredRows],
   );
@@ -592,6 +599,7 @@ export default function AdminInsurancePaymentsPage() {
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
+        paymentMethod: paymentMethodFilter || undefined,
         productName: productName || undefined,
         searchQuery: nameQuery.trim() || undefined,
       },
@@ -607,6 +615,7 @@ export default function AdminInsurancePaymentsPage() {
         fromDate: presetFromDate,
         toDate: presetToDate,
         paymentStatus: paymentStatus || undefined,
+        paymentMethod: paymentMethodFilter || undefined,
         productName: productName || undefined,
         searchQuery: nameQuery.trim() || undefined,
       },
@@ -762,6 +771,21 @@ export default function AdminInsurancePaymentsPage() {
               ))}
             </select>
             <select
+              value={paymentMethodFilter}
+              onChange={(e) => {
+                setPaymentMethodFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+            >
+              <option value="">All Methods</option>
+              {PAYMENT_METHOD_OPTIONS.map((method) => (
+                <option key={method} value={method}>
+                  {method}
+                </option>
+              ))}
+            </select>
+            <select
               value={productName}
               onChange={(e) => {
                 setProductName(e.target.value);
@@ -819,6 +843,7 @@ export default function AdminInsurancePaymentsPage() {
                 setFromDateInputType('text');
                 setToDateInputType('text');
                 setPaymentStatus('');
+                setPaymentMethodFilter('');
                 setProductName('');
                 setNameQuery('');
                 setSelectedUserId('');
@@ -1046,7 +1071,13 @@ export default function AdminInsurancePaymentsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-gray-700">
-                        {row.paymentMethod || '-'}
+                        {row.paymentMethod === 'WALLET' ? (
+                          <span className="inline-flex items-center rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">
+                            WALLET
+                          </span>
+                        ) : (
+                          row.paymentMethod || '-'
+                        )}
                       </td>
                       <td className="px-4 py-3 text-gray-700">
                         {formatDate(row.updatedAt)}
