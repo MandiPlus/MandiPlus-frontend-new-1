@@ -2033,6 +2033,30 @@ class AdminApi {
     }
   };
 
+  public bulkMarkInsurancePaymentsPaid = async (
+    invoiceIds: string[],
+    options?: { paymentMethod?: string | null; remarks?: string | null },
+  ): Promise<ApiResponse<{ invoiceId: string; success: boolean; error?: string }[]>> => {
+    try {
+      const response = await this.client.post(
+        "/insurance-payments/admin/bulk-mark-paid",
+        { invoiceIds, ...options },
+      );
+      const data = response.data;
+      if (data && typeof data === "object" && "success" in data) {
+        return data as ApiResponse<{ invoiceId: string; success: boolean; error?: string }[]>;
+      }
+      return { success: true, data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to bulk mark payments as paid",
+        error: error.message,
+      };
+    }
+  };
+
   // ============================================================
   // ✅ AGENT COMMISSIONS (ADMIN)
   // ============================================================

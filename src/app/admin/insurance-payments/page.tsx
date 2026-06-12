@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import {
+  CheckCheck,
   FileText,
   Link2,
   Pencil,
@@ -259,6 +260,7 @@ export default function AdminInsurancePaymentsPage() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [generatingAccumulatedLink, setGeneratingAccumulatedLink] = useState(false);
+  const [bulkMarkingPaid, setBulkMarkingPaid] = useState(false);
   const [error, setError] = useState('');
 
   const [fromDate, setFromDate] = useState('');
@@ -489,6 +491,46 @@ export default function AdminInsurancePaymentsPage() {
       toast.error(getErrorMessage(err, 'Failed to generate payment link'));
     } finally {
       setGeneratingAccumulatedLink(false);
+    }
+  };
+
+  const bulkMarkAsPaid = async () => {
+    if (selectedPendingRows.length === 0) {
+      toast.error('Select at least one unpaid invoice');
+      return;
+    }
+
+    const count = selectedPendingRows.length;
+    const confirmed = window.confirm(
+      `Mark ${count} selected payment${count > 1 ? 's' : ''} as PAID (${formatCurrency(selectedPendingTotal)})?`,
+    );
+    if (!confirmed) return;
+
+    setBulkMarkingPaid(true);
+    try {
+      const response = await adminApi.bulkMarkInsurancePaymentsPaid(
+        selectedPendingRows.map((row) => row.invoiceId),
+      );
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to mark payments as paid');
+      }
+
+      const results = response.data || [];
+      const successCount = results.filter((r) => r.success).length;
+      const failCount = results.filter((r) => !r.success).length;
+
+      if (failCount > 0) {
+        toast.warn(`${successCount} marked paid, ${failCount} failed`);
+      } else {
+        toast.success(`${successCount} payment${successCount > 1 ? 's' : ''} marked as paid`);
+      }
+
+      setSelectedInvoiceIds(new Set());
+      await fetchRows();
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Failed to mark payments as paid'));
+    } finally {
+      setBulkMarkingPaid(false);
     }
   };
 
@@ -880,6 +922,19 @@ export default function AdminInsurancePaymentsPage() {
                   Clear
                 </button>
               ) : null}
+              <button
+                type="button"
+                onClick={bulkMarkAsPaid}
+                disabled={
+                  bulkMarkingPaid || selectedPendingRows.length === 0
+                }
+                className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <CheckCheck className="h-4 w-4" strokeWidth={2.2} />
+                {bulkMarkingPaid
+                  ? 'Marking...'
+                  : `Mark All Paid${selectedPendingRows.length > 0 ? ` (${selectedPendingRows.length})` : ''}`}
+              </button>
               <button
                 type="button"
                 onClick={generateAccumulatedPaymentLink}
