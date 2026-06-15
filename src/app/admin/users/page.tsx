@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import { formatDate } from '@/features/admin/utils/format';
@@ -238,7 +238,37 @@ export default function UsersPage() {
                         ? 'Unpaid Wallet Users'
                 : 'Users';
 
-    const loadAdminUsers = async () => {
+    const [serverTotal, setServerTotal] = useState(0);
+    const [serverTotalPages, setServerTotalPages] = useState(1);
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const fetchPaginatedUsers = useCallback(async (pageNum: number, search: string, section: string) => {
+        const response = await adminApi.getAdminUsersPaginated({
+            page: pageNum,
+            limit: ITEMS_PER_PAGE,
+            search,
+            section: section === 'ADMIN_REQUESTS' ? 'ALL' : section,
+        });
+        if (!response.success) {
+            throw new Error(response.message || 'Failed to load users');
+        }
+        const users = (response.data || []).map((u: any) => ({
+            ...u,
+            id: String(u.id || u._id || ''),
+            canonicalUserId: String(u.canonicalUserId || u.id || ''),
+            isLedgerMasterVerified: Boolean(u.isLedgerMasterVerified),
+            duplicateCount: Number(u.duplicateCount || 0),
+            aliasNames: Array.isArray(u.aliasNames) ? u.aliasNames : [],
+            aliasPhones: Array.isArray(u.aliasPhones) ? u.aliasPhones : [],
+        })) as User[];
+        setFilteredUsers(users);
+        setServerTotal(Number(response.total) || 0);
+        setServerTotalPages(Math.max(1, Number(response.totalPages) || 1));
+        return users;
+    }, []);
+
+    const loadAllUsersBackground = useCallback(async () => {
         const [walletsRes, usersRes] = await Promise.all([
             adminApi.getAdminCustomerWallets(),
             adminApi.getAdminLedgerUsers(),
@@ -257,13 +287,7 @@ export default function UsersPage() {
             ? usersRes.data
             : [];
 
-        const usersById = new Map<string, any>();
-        usersRaw.forEach((user: any) => {
-            const id = String(user.id || user._id || '');
-            if (id) usersById.set(id, user);
-        });
-
-        const processedUsers = Array.from(usersById.values()).map((u: any) => {
+        const processedUsers = usersRaw.map((u: any) => {
             const resolvedId = String(u.id || u._id || '');
             const walletRow = walletByUserId.get(String(u.canonicalUserId || resolvedId || ''));
             return {
@@ -280,13 +304,8 @@ export default function UsersPage() {
             } as User;
         });
 
-        const sortedData = processedUsers.sort((a: User, b: User) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-
-        setAllUsers(sortedData);
-                setFilteredUsers(sortedData);
-    };
+        setAllUsers(processedUsers);
+    }, []);
 
     const verifiedMasterUsers = allUsers.filter(
         (user) => user.isLedgerMasterVerified && user.id === user.canonicalUserId,
@@ -399,7 +418,8 @@ export default function UsersPage() {
             try {
                 setLoading(true);
                 setError('');
-                await loadAdminUsers();
+                await fetchPaginatedUsers(1, '', activeSection);
+                loadAllUsersBackground();
             } catch (err: any) {
                 console.error('Failed to fetch data:', err);
                 const message = err.response?.data?.message || 'Failed to load data';
@@ -419,47 +439,49 @@ export default function UsersPage() {
         }
     }, [activeSection, isFullAdmin]);
 
-    // Search Logic
     useEffect(() => {
-        const bySection = allUsers.filter((user) => {
-            if (user.isMerged) return false;
-            if (activeSection === 'ADMIN_REQUESTS') return false;
-            if (activeSection === 'CUSTOMER') return user.identity === 'CUSTOMER';
-            if (activeSection === 'TRANSPORTER') return user.identity === 'TRANSPORTER';
-            if (activeSection === 'VERIFIED') {
-                return (
-                    user.isLedgerMasterVerified &&
-                    user.id === user.canonicalUserId
-                );
-            }
-            if (activeSection === 'UNPAID_WALLETS') {
-                return (
-                    user.walletType === 'UNPAID' &&
-                    user.id === user.canonicalUserId
-                );
-            }
-            return true;
-        });
-
-        if (!searchTerm) {
-            setFilteredUsers(bySection);
-        } else {
-            const lowerTerm = searchTerm.toLowerCase();
-            const filtered = bySection.filter(user =>
-                (user.name && user.name.toLowerCase().includes(lowerTerm)) ||
-                user.mobileNumber.includes(lowerTerm) ||
-                (user.state && user.state.toLowerCase().includes(lowerTerm))
-            );
-            setFilteredUsers(filtered);
-        }
-    }, [searchTerm, allUsers, activeSection]);
+        if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+        searchTimerRef.current = setTimeout(() => {
+            setDebouncedSearch(searchTerm);
+        }, 400);
+        return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+    }, [searchTerm]);
 
     useEffect(() => {
+        if (!isAuthenticated) return;
+        if (activeSection === 'ADMIN_REQUESTS') return;
         setCurrentPage(1);
-    }, [searchTerm, activeSection]);
+        const loadPage = async () => {
+            try {
+                setLoading(true);
+                setError('');
+                await fetchPaginatedUsers(1, debouncedSearch, activeSection);
+            } catch (err: any) {
+                setError(err?.message || 'Failed to load users');
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadPage();
+    }, [debouncedSearch, activeSection, isAuthenticated, fetchPaginatedUsers]);
 
-    // Pagination Logic
-    const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
+    useEffect(() => {
+        if (!isAuthenticated || currentPage === 1) return;
+        if (activeSection === 'ADMIN_REQUESTS') return;
+        const loadPage = async () => {
+            try {
+                setLoading(true);
+                await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+            } catch (err: any) {
+                setError(err?.message || 'Failed to load users');
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadPage();
+    }, [currentPage]);
+
+    const totalPages = serverTotalPages;
     useEffect(() => {
         if (totalPages === 0) {
             if (currentPage !== 1) {
@@ -473,10 +495,7 @@ export default function UsersPage() {
         }
     }, [currentPage, totalPages]);
 
-    const paginatedUsers = filteredUsers.slice(
-        (currentPage - 1) * ITEMS_PER_PAGE,
-        currentPage * ITEMS_PER_PAGE
-    );
+    const paginatedUsers = filteredUsers;
 
     const handleWalletAdjust = async (user: User) => {
         const rawAmount = creditAmounts[user.id];
@@ -1132,7 +1151,8 @@ export default function UsersPage() {
             if (!response.success) {
                 throw new Error(response.message || 'Failed to verify master user');
             }
-            await loadAdminUsers();
+            await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+            loadAllUsersBackground();
             toast.success(`${user.name || 'User'} is now a verified master user`);
         } catch (err: any) {
             toast.error(err?.message || 'Failed to verify master user');
@@ -1152,7 +1172,8 @@ export default function UsersPage() {
             if (!response.success) {
                 throw new Error(response.message || 'Failed to unverify master user');
             }
-            await loadAdminUsers();
+            await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+            loadAllUsersBackground();
             toast.success(`${user.name || 'User'} is no longer a verified master user`);
         } catch (err: any) {
             toast.error(err?.message || 'Failed to unverify master user');
@@ -1192,7 +1213,8 @@ export default function UsersPage() {
             }
 
             setMergeTargetByUser((prev) => ({ ...prev, [user.id]: '' }));
-            await loadAdminUsers();
+            await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+            loadAllUsersBackground();
             toast.success(`${user.name || 'User'} merged into ${targetUser.name || 'verified master'}`);
         } catch (err: any) {
             toast.error(err?.message || 'Failed to merge user');
@@ -1212,7 +1234,8 @@ export default function UsersPage() {
             if (!response.success) {
                 throw new Error(response.message || 'Failed to unmerge user');
             }
-            await loadAdminUsers();
+            await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+            loadAllUsersBackground();
             toast.success(`${user.name || 'User'} was unmerged successfully`);
         } catch (err: any) {
             toast.error(err?.message || 'Failed to unmerge user');
@@ -1294,7 +1317,8 @@ export default function UsersPage() {
                 mergedCount += 1;
             }
 
-            await loadAdminUsers();
+            await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+            loadAllUsersBackground();
             toast.success(
                 `${mergedCount} user${mergedCount === 1 ? '' : 's'} merged into ${bulkMergeModalMaster.name || 'verified master'}`,
             );
@@ -1799,9 +1823,9 @@ export default function UsersPage() {
                                 <p className="text-sm text-gray-700">
                                     Showing <span className="font-medium">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to{' '}
                                     <span className="font-medium">
-                                        {Math.min(currentPage * ITEMS_PER_PAGE, filteredUsers.length)}
+                                        {Math.min(currentPage * ITEMS_PER_PAGE, serverTotal)}
                                     </span>{' '}
-                                    of <span className="font-medium">{filteredUsers.length}</span> results
+                                    of <span className="font-medium">{serverTotal}</span> results
                                 </p>
                             </div>
                             <div>

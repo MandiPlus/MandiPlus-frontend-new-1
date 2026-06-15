@@ -303,50 +303,24 @@ export default function AdminLedgerPage() {
         setGcaAggregateRows([]);
 
         if (selectedMasterId === GCA_LEDGER_OPTION) {
-          const gcaMasterUsers = masterUsers.filter(
-            (user) => String(user.unionMember || '').toUpperCase() === 'GCA',
-          );
-
-          if (gcaMasterUsers.length === 0) {
+          const summaryResponse = await adminApi.getGcaLedgerSummary();
+          if (!summaryResponse.success || !Array.isArray(summaryResponse.data)) {
+            setError(summaryResponse.message || 'Failed to load GCA ledger summary');
             setGcaAggregateRows([]);
             return;
           }
 
-          const results = await Promise.allSettled(
-            gcaMasterUsers.map(async (user) => {
-              const response = await adminApi.getMasterUserLedger(user.id);
-              if (!response.success || !response.data) {
-                throw new Error(
-                  response.message || `Failed to load ledger for ${user.name || 'user'}`,
-                );
-              }
-
-              const payload = response.data;
-              return {
-                userId: user.id,
-                name: payload.masterUser.name || user.name || 'User',
-                mobileNumber: payload.masterUser.mobileNumber || user.mobileNumber || '-',
-                state: payload.masterUser.state || user.state || null,
-                totalInvoices: payload.summary.totalInvoices || 0,
-                totalPremiumAmount: payload.summary.totalPremiumAmount || 0,
-                totalPaidAmount: payload.summary.totalPaidAmount || 0,
-                totalPendingAmount: payload.summary.totalPendingAmount || 0,
-                ledger: payload,
-              };
-            }),
-          );
-
-          const successfulRows = results
-            .filter((result) => result.status === 'fulfilled')
-            .map((result) => (result as PromiseFulfilledResult<GcaAggregateLedgerRow>).value)
-            .sort((left, right) =>
-              String(left.name || '').localeCompare(String(right.name || '')),
-            );
-
-          const failedCount = results.filter((result) => result.status === 'rejected').length;
-          if (failedCount > 0) {
-            setError(`Failed to load ${failedCount} GCA member ledger${failedCount > 1 ? 's' : ''}.`);
-          }
+          const successfulRows: GcaAggregateLedgerRow[] = summaryResponse.data.map((row) => ({
+            userId: row.userId,
+            name: row.name,
+            mobileNumber: row.mobileNumber,
+            state: row.state || null,
+            totalInvoices: row.totalInvoices,
+            totalPremiumAmount: row.totalPremiumAmount,
+            totalPaidAmount: row.totalPaidAmount,
+            totalPendingAmount: row.totalPendingAmount,
+            ledger: null as any,
+          }));
 
           setGcaAggregateRows(successfulRows);
           return;
@@ -368,7 +342,7 @@ export default function AdminLedgerPage() {
     };
 
     void loadLedger();
-  }, [masterUsers, selectedMasterId, ledgerReloadKey]);
+  }, [selectedMasterId, ledgerReloadKey]);
 
   const filteredRows = useMemo(() => {
     const rows = ledger?.rows || [];
@@ -1035,7 +1009,12 @@ export default function AdminLedgerPage() {
                           <td className="px-4 py-3">
                             <button
                               type="button"
-                              onClick={() => setGcaLedgerModal(row.ledger)}
+                              onClick={async () => {
+                                const response = await adminApi.getMasterUserLedger(row.userId);
+                                if (response.success && response.data) {
+                                  setGcaLedgerModal(response.data);
+                                }
+                              }}
                               className="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700"
                             >
                               View
