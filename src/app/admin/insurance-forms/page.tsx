@@ -489,7 +489,10 @@ export default function InsuranceFormsPage() {
         verificationStatus: '',
     });
     const [currentPage, setCurrentPage] = useState(1);
-    const ITEMS_PER_PAGE = 10;
+    const ITEMS_PER_PAGE = 20;
+    const [serverTotal, setServerTotal] = useState(0);
+    const [serverTotalPages, setServerTotalPages] = useState(1);
+    const [summaryStats, setSummaryStats] = useState({ totalRows: 0, verifiedCount: 0, rejectedCount: 0, pendingPaymentCount: 0, paidCount: 0, totalPremium: 0, totalPaidAmount: 0 });
     const debouncedFilters = useDebounce(filters, 500);
 
     const buildActiveFilters = useCallback((sourceFilters: InsuranceFormFilters): InvoiceFilterParams => {
@@ -542,11 +545,7 @@ export default function InsuranceFormsPage() {
     }, []);
 
     const normalizeInvoices = useCallback((rawInvoices: any[]) => {
-        const sortedData = rawInvoices.sort((a: any, b: any) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-
-        const merged = sortedData.map((raw: any) => {
+        return rawInvoices.map((raw: any) => {
             const inv = {
                 ...raw,
                 id: getInvoiceId(raw),
@@ -563,18 +562,7 @@ export default function InsuranceFormsPage() {
                 },
             };
         });
-
-        const invoiceNumberQuery = debouncedFilters.invoiceNumber?.trim().toLowerCase() || '';
-        const vehicleNumberQuery = debouncedFilters.vehicleNumber?.trim().toLowerCase() || '';
-        return merged.filter((inv) => {
-            const matchesInvoice = !invoiceNumberQuery
-                || String(inv.invoiceNumber || '').toLowerCase().includes(invoiceNumberQuery);
-            const matchesVehicle = !vehicleNumberQuery
-                || String(inv.vehicleNumber || '').toLowerCase().includes(vehicleNumberQuery);
-
-            return matchesInvoice && matchesVehicle;
-        });
-    }, [debouncedFilters.invoiceNumber, debouncedFilters.vehicleNumber, insuranceOverrides]);
+    }, [insuranceOverrides]);
 
     const fetchInvoices = useCallback(async () => {
         setLoading(true);
@@ -583,18 +571,31 @@ export default function InsuranceFormsPage() {
         try {
             const activeFilters = buildActiveFilters(debouncedFilters);
 
-            const response = await adminApi.filterInvoices(activeFilters);
+            const [pageResponse, summaryResponse] = await Promise.all([
+                adminApi.filterInvoicesPaginated({ ...activeFilters, page: currentPage, limit: ITEMS_PER_PAGE }),
+                adminApi.filterInvoicesSummary(activeFilters),
+            ]);
 
             let data: Invoice[] = [];
-            if (Array.isArray(response.data)) {
-                data = response.data;
-            } else if (response.success && Array.isArray(response.data)) {
-                data = response.data;
-            } else if (Array.isArray(response)) {
-                data = response as any;
+            if (pageResponse.success && Array.isArray(pageResponse.data)) {
+                data = pageResponse.data;
             }
 
             setInvoices(normalizeInvoices(data));
+            setServerTotal(Number(pageResponse.total) || 0);
+            setServerTotalPages(Math.max(1, Number(pageResponse.totalPages) || 1));
+
+            if (summaryResponse.success) {
+                setSummaryStats({
+                    totalRows: summaryResponse.totalRows || 0,
+                    verifiedCount: summaryResponse.verifiedCount || 0,
+                    rejectedCount: summaryResponse.rejectedCount || 0,
+                    pendingPaymentCount: summaryResponse.pendingPaymentCount || 0,
+                    paidCount: summaryResponse.paidCount || 0,
+                    totalPremium: summaryResponse.totalPremium || 0,
+                    totalPaidAmount: summaryResponse.totalPaidAmount || 0,
+                });
+            }
 
         } catch (err: any) {
             console.error("Fetch error:", err);
@@ -602,22 +603,18 @@ export default function InsuranceFormsPage() {
         } finally {
             setLoading(false);
         }
-    }, [buildActiveFilters, debouncedFilters, normalizeInvoices]);
+    }, [buildActiveFilters, debouncedFilters, normalizeInvoices, currentPage]);
 
     const refreshInvoiceAfterRegenerate = useCallback(async (invoiceId: string) => {
         const activeFilters = buildActiveFilters(debouncedFilters);
 
         for (let attempt = 0; attempt < 8; attempt += 1) {
             try {
-                const response = await adminApi.filterInvoices(activeFilters);
+                const response = await adminApi.filterInvoicesPaginated({ ...activeFilters, page: currentPage, limit: ITEMS_PER_PAGE });
                 let data: Invoice[] = [];
 
-                if (Array.isArray(response.data)) {
+                if (response.success && Array.isArray(response.data)) {
                     data = response.data;
-                } else if (response.success && Array.isArray(response.data)) {
-                    data = response.data;
-                } else if (Array.isArray(response)) {
-                    data = response as any;
                 }
 
                 const normalized = normalizeInvoices(data);
@@ -642,7 +639,7 @@ export default function InsuranceFormsPage() {
 
         await fetchInvoices();
         setPdfRefreshKeys((prev) => ({ ...prev, [invoiceId]: Date.now() }));
-    }, [buildActiveFilters, debouncedFilters, fetchInvoices, normalizeInvoices]);
+    }, [buildActiveFilters, debouncedFilters, fetchInvoices, normalizeInvoices, currentPage]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -1640,14 +1637,11 @@ export default function InsuranceFormsPage() {
         setInvoiceMenuPlacement((prev) => (prev[invoiceId] === placement ? prev : { ...prev, [invoiceId]: placement }));
     };
 
-    const totalPages = Math.max(1, Math.ceil(invoices.length / ITEMS_PER_PAGE));
-    const paginatedInvoices = invoices.slice(
-        (currentPage - 1) * ITEMS_PER_PAGE,
-        currentPage * ITEMS_PER_PAGE
-    );
+    const totalPages = serverTotalPages;
+    const paginatedInvoices = invoices;
 
     useEffect(() => {
-        if (currentPage > totalPages) {
+        if (currentPage > totalPages && totalPages > 0) {
             setCurrentPage(totalPages);
         }
     }, [currentPage, totalPages]);
@@ -3094,17 +3088,18 @@ export default function InsuranceFormsPage() {
                     <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-0">
                         <button
                             onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                            disabled={currentPage === 1}
+                            disabled={currentPage === 1 || loading}
                             className="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Previous
                         </button>
                         <span className="text-sm text-gray-700">
                             Page <span className="font-medium">{currentPage}</span> of <span className="font-medium">{totalPages}</span>
+                            {serverTotal > 0 && <span className="text-gray-500 ml-2">({serverTotal} total)</span>}
                         </span>
                         <button
                             onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                            disabled={currentPage === totalPages}
+                            disabled={currentPage === totalPages || loading}
                             className="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Next

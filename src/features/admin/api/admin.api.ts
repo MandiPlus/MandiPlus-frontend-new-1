@@ -1023,6 +1023,58 @@ class AdminApi {
     }
   };
 
+  public filterInvoicesPaginated = async (
+    filters: InvoiceFilterParams & { page?: number; limit?: number },
+  ): Promise<{
+    success: boolean;
+    data?: any[];
+    total?: number;
+    page?: number;
+    limit?: number;
+    totalPages?: number;
+    message?: string;
+  }> => {
+    try {
+      const response = await this.client.get("/invoices/admin/filter", {
+        params: filters,
+      });
+      if (response.data && !Array.isArray(response.data) && response.data.data) {
+        return { success: true, ...response.data };
+      }
+      if (Array.isArray(response.data)) {
+        return { success: true, data: response.data, total: response.data.length, page: 1, totalPages: 1 };
+      }
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to filter invoices",
+      };
+    }
+  };
+
+  public filterInvoicesSummary = async (
+    filters: InvoiceFilterParams,
+  ): Promise<{
+    success: boolean;
+    totalRows?: number;
+    verifiedCount?: number;
+    rejectedCount?: number;
+    pendingPaymentCount?: number;
+    paidCount?: number;
+    totalPremium?: number;
+    totalPaidAmount?: number;
+  }> => {
+    try {
+      const response = await this.client.get("/invoices/admin/filter/summary", {
+        params: filters,
+      });
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return { success: false };
+    }
+  };
+
   public createAdminInvoice = async (
     payload: AdminCreateInvoicePayload,
   ): Promise<ApiResponse<any>> => {
@@ -1172,6 +1224,31 @@ class AdminApi {
     }
   };
 
+  public getAdminUsersPaginated = async (params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    section?: string;
+  }): Promise<{
+    success: boolean;
+    data?: AdminLedgerUser[];
+    total?: number;
+    page?: number;
+    limit?: number;
+    totalPages?: number;
+    message?: string;
+  }> => {
+    try {
+      const response = await this.client.get('/users/admin/list/paginated', { params });
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to fetch users',
+      };
+    }
+  };
+
   public getMasterUserLedger = async (
     userId: string,
   ): Promise<ApiResponse<AdminMasterLedgerPayload>> => {
@@ -1196,6 +1273,35 @@ class AdminApi {
           error.response?.data?.message ||
           'Failed to fetch master user ledger',
         error: error.message,
+      };
+    }
+  };
+
+  public getGcaLedgerSummary = async (): Promise<{
+    success: boolean;
+    data?: Array<{
+      userId: string;
+      name: string;
+      mobileNumber: string;
+      state?: string | null;
+      totalInvoices: number;
+      totalPremiumAmount: number;
+      totalPaidAmount: number;
+      totalPendingAmount: number;
+      paidCount: number;
+      pendingCount: number;
+    }>;
+    totalMembers?: number;
+    loadedMembers?: number;
+    message?: string;
+  }> => {
+    try {
+      const response = await this.client.get('/users/admin/gca-ledger-summary');
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to fetch GCA ledger summary',
       };
     }
   };
