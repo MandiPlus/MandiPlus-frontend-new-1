@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Button from "@/shared/components/Button";
@@ -18,6 +18,24 @@ const LoginPage = () => {
     const [step, setStep] = useState<'PHONE' | 'OTP'>('PHONE');
     const [mobileNumber, setMobileNumber] = useState("");
     const [otp, setOtp] = useState("");
+    const [resendCooldown, setResendCooldown] = useState(0);
+
+    useEffect(() => {
+        if (resendCooldown <= 0) return;
+        const timer = window.setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+        return () => window.clearTimeout(timer);
+    }, [resendCooldown]);
+
+    const handleResendOtp = useCallback(async () => {
+        if (resendCooldown > 0 || !mobileNumber) return;
+        try {
+            await sendOtp({ mobileNumber });
+            setResendCooldown(30);
+            toast.success("OTP resent successfully");
+        } catch (error: any) {
+            toast.error(error.message || "Failed to resend OTP");
+        }
+    }, [resendCooldown, mobileNumber]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -41,6 +59,7 @@ const LoginPage = () => {
 
                 await sendOtp({ mobileNumber });
                 setStep('OTP');
+                setResendCooldown(30);
                 toast.success(`OTP sent to ${mobileNumber}`);
 
             } else {
@@ -129,13 +148,20 @@ const LoginPage = () => {
                     </div>
 
                     {step === 'OTP' && (
-                        <>
-                            <div className="text-center text-sm">
-                                <button type="button" onClick={() => { setStep('PHONE'); }} className="text-[#4309ac]">
-                                    Change Mobile Number
-                                </button>
-                            </div>
-                        </>
+                        <div className="flex items-center justify-center gap-4 text-sm">
+                            <button type="button" onClick={() => { setStep('PHONE'); setOtp(''); }} className="text-[#4309ac]">
+                                Change Mobile Number
+                            </button>
+                            <span className="text-gray-300">|</span>
+                            <button
+                                type="button"
+                                onClick={handleResendOtp}
+                                disabled={resendCooldown > 0}
+                                className={resendCooldown > 0 ? "text-gray-400 cursor-not-allowed" : "text-[#4309ac]"}
+                            >
+                                {resendCooldown > 0 ? `Resend OTP (${resendCooldown}s)` : "Resend OTP"}
+                            </button>
+                        </div>
                     )}
                 </form>
 
