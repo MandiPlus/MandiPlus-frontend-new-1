@@ -1585,21 +1585,42 @@ const InsuranceIOS = () => {
                 ? [supplier.identity, supplier.mobileNumber].filter(Boolean).join(' - ')
                 : supplier.mobileNumber,
         }));
-    const historicalSupplierLookupOptions: LookupDropdownOption[] = historicalParties
-        .filter((party) => {
-            const needle = supplierLookupQuery.trim().toLowerCase();
-            if (!needle) {
-                return true;
+    const historicalSupplierLookupOptions: LookupDropdownOption[] = (() => {
+        const needle = supplierLookupQuery.trim().toLowerCase();
+        const byName = new Map<string, { totalInvoices: number; addresses: string[] }>();
+        for (const party of historicalParties) {
+            const key = party.name.trim().toLowerCase();
+            if (needle && !`${party.name} ${party.address}`.toLowerCase().includes(needle)) continue;
+            const existing = byName.get(key);
+            if (existing) {
+                existing.totalInvoices += party.invoiceCount;
+                if (party.address && !existing.addresses.includes(party.address)) existing.addresses.push(party.address);
+            } else {
+                byName.set(key, { totalInvoices: party.invoiceCount, addresses: party.address ? [party.address] : [] });
             }
-
-            return `${party.name} ${party.address}`.toLowerCase().includes(needle);
-        })
-        .map((party) => ({
-            id: party.name,
-            title: party.name,
-            subtitle: party.address || 'Address can be added manually',
-            meta: `${party.invoiceCount} invoice${party.invoiceCount === 1 ? '' : 's'}`,
-        }));
+        }
+        const seen = new Set<string>();
+        return historicalParties
+            .filter((party) => {
+                if (needle && !`${party.name} ${party.address}`.toLowerCase().includes(needle)) return false;
+                const key = party.name.trim().toLowerCase();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .map((party) => {
+                const agg = byName.get(party.name.trim().toLowerCase())!;
+                const subtitle = agg.addresses.length > 1
+                    ? `${agg.addresses[0]} (+${agg.addresses.length - 1} more)`
+                    : agg.addresses[0] || 'Address can be added manually';
+                return {
+                    id: party.name,
+                    title: party.name,
+                    subtitle,
+                    meta: `${agg.totalInvoices} invoice${agg.totalInvoices === 1 ? '' : 's'}`,
+                };
+            });
+    })();
     const supplierLookupOptions: LookupDropdownOption[] =
         !shouldRequireVerifiedParties
             ? ownProfileLookupOptions
@@ -1621,21 +1642,42 @@ const InsuranceIOS = () => {
             subtitle: party.address || 'Address can be added manually',
             meta: [party.identity, party.mobileNumber].filter(Boolean).join(' - '),
         }));
-    const historicalBuyerLookupOptions: LookupDropdownOption[] = historicalParties
-        .filter((party) => {
-            const needle = buyerLookupQuery.trim().toLowerCase();
-            if (!needle) {
-                return true;
+    const historicalBuyerLookupOptions: LookupDropdownOption[] = (() => {
+        const needle = buyerLookupQuery.trim().toLowerCase();
+        const byName = new Map<string, { totalInvoices: number; addresses: string[] }>();
+        for (const party of historicalParties) {
+            const key = party.name.trim().toLowerCase();
+            if (needle && !`${party.name} ${party.address}`.toLowerCase().includes(needle)) continue;
+            const existing = byName.get(key);
+            if (existing) {
+                existing.totalInvoices += party.invoiceCount;
+                if (party.address && !existing.addresses.includes(party.address)) existing.addresses.push(party.address);
+            } else {
+                byName.set(key, { totalInvoices: party.invoiceCount, addresses: party.address ? [party.address] : [] });
             }
-
-            return `${party.name} ${party.address}`.toLowerCase().includes(needle);
-        })
-        .map((party) => ({
-            id: party.name,
-            title: party.name,
-            subtitle: party.address || 'Address can be added manually',
-            meta: `${party.invoiceCount} invoice${party.invoiceCount === 1 ? '' : 's'}`,
-        }));
+        }
+        const seen = new Set<string>();
+        return historicalParties
+            .filter((party) => {
+                if (needle && !`${party.name} ${party.address}`.toLowerCase().includes(needle)) return false;
+                const key = party.name.trim().toLowerCase();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .map((party) => {
+                const agg = byName.get(party.name.trim().toLowerCase())!;
+                const subtitle = agg.addresses.length > 1
+                    ? `${agg.addresses[0]} (+${agg.addresses.length - 1} more)`
+                    : agg.addresses[0] || 'Address can be added manually';
+                return {
+                    id: party.name,
+                    title: party.name,
+                    subtitle,
+                    meta: `${agg.totalInvoices} invoice${agg.totalInvoices === 1 ? '' : 's'}`,
+                };
+            });
+    })();
     const buyerLookupOptions: LookupDropdownOption[] = !shouldRequireVerifiedParties
         ? ownProfileLookupOptions
         : shouldRequireVerifiedParties && isCashMode
