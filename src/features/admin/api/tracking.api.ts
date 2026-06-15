@@ -86,6 +86,14 @@ export interface AdminTripRow {
     lastEvaluatedAt?: string | null;
     lastEta?: string | null;
   } | null;
+  lastLocation?: {
+    address?: string | null;
+    timeRecorded?: string | null;
+    distanceRemained?: number | null;
+    timeRemained?: string | null;
+    distanceTravel?: number | null;
+    totalDistance?: number | null;
+  } | null;
 }
 
 export interface ManualTripAlertPayload {

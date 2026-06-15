@@ -504,6 +504,7 @@ export default function AdminTripsPage() {
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Truck</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Driver</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Status</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-700">Completion</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">WhatsApp</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Alerts</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Route</th>
@@ -514,7 +515,7 @@ export default function AdminTripsPage() {
             <tbody className="divide-y divide-gray-100 bg-white">
               {filteredTrips.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-4 text-center text-gray-500">
+                  <td colSpan={9} className="px-3 py-4 text-center text-gray-500">
                     {trips.length === 0 ? 'No trips found.' : 'No trips match the current search.'}
                   </td>
                 </tr>
@@ -544,6 +545,46 @@ export default function AdminTripsPage() {
                       >
                         {trip.status}
                       </span>
+                    </td>
+                    <td className="px-3 py-3 align-top text-gray-700">
+                      {(() => {
+                        const traveled = trip.lastLocation?.distanceTravel;
+                        const total = trip.lastLocation?.totalDistance;
+                        const pct =
+                          typeof traveled === 'number' && typeof total === 'number' && total > 0
+                            ? Math.min(Math.round((traveled / total) * 100), 100)
+                            : null;
+
+                        if (trip.status === 'ENDED') {
+                          return (
+                            <div className="flex flex-col gap-1">
+                              <span className="text-xs font-semibold text-emerald-700">100%</span>
+                              <div className="h-1.5 w-16 rounded-full bg-gray-200">
+                                <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: '100%' }} />
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        if (pct === null) {
+                          return <span className="text-xs text-slate-400">-</span>;
+                        }
+
+                        return (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-semibold text-slate-900">{pct}%</span>
+                            <div className="h-1.5 w-16 rounded-full bg-gray-200">
+                              <div
+                                className={`h-1.5 rounded-full ${pct >= 90 ? 'bg-emerald-500' : pct >= 50 ? 'bg-sky-500' : 'bg-amber-500'}`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] text-slate-500">
+                              {traveled} / {total} KM
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-3 align-top text-gray-700">
                       <div className="flex min-w-[230px] max-w-[260px] flex-col gap-2">
