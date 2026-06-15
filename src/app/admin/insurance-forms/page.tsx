@@ -2325,13 +2325,13 @@ export default function InsuranceFormsPage() {
                 )}
 
                 {/* Desktop Table View */}
-                <div className="hidden lg:block overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg bg-white">
+                <div className="hidden lg:block overflow-visible shadow ring-1 ring-black ring-opacity-5 rounded-lg bg-white pb-16">
                     {loading && invoices.length === 0 ? (
                         <div className="flex justify-center items-center h-64">
                             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
                         </div>
                     ) : (
-                        <div className="relative isolate overflow-x-auto overflow-y-hidden">
+                        <div className="relative isolate overflow-x-auto overflow-y-visible">
                             <table className="w-full min-w-[1400px] table-fixed divide-y divide-gray-200 border-separate border-spacing-0">
                                 <thead className="bg-slate-50">
                                     <tr>
