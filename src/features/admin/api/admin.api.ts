@@ -2008,6 +2008,8 @@ class AdminApi {
     toDate?: string;
     paymentStatus?: string;
     paymentMethod?: string;
+    excludePaymentMethod?: string;
+    paymentMethods?: string;
     productName?: string;
     searchQuery?: string;
     userId?: string;
@@ -2069,6 +2071,8 @@ class AdminApi {
     productName?: string;
     paymentStatus?: string;
     paymentMethod?: string;
+    excludePaymentMethod?: string;
+    paymentMethods?: string;
     searchQuery?: string;
     userId?: string;
   }): Promise<{

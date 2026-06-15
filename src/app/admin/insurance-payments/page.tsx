@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import {
@@ -33,7 +33,18 @@ const PAYMENT_METHOD_OPTIONS = [
   'CASH',
   'GCA',
   'WALLET',
+  'NONE',
 ] as const;
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  BULK: 'Bulk',
+  CREDIT: 'Credit',
+  PER_POLICY: 'Per Policy',
+  CASH: 'Cash',
+  GCA: 'GCA',
+  WALLET: 'Wallet',
+  NONE: '- (No Method)',
+};
 const REPORT_PERIOD_OPTIONS = [
   { value: 'daily', label: 'Daily Report' },
   { value: 'weekly', label: 'Weekly Report' },
@@ -268,7 +279,9 @@ export default function AdminInsurancePaymentsPage() {
   const [fromDateInputType, setFromDateInputType] = useState<'text' | 'date'>('text');
   const [toDateInputType, setToDateInputType] = useState<'text' | 'date'>('text');
   const [paymentStatus, setPaymentStatus] = useState('');
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState('');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<Set<string>>(() => new Set());
+  const [methodDropdownOpen, setMethodDropdownOpen] = useState(false);
+  const methodDropdownRef = useRef<HTMLDivElement>(null);
   const [productName, setProductName] = useState('');
   const [reportPeriod, setReportPeriod] =
     useState<(typeof REPORT_PERIOD_OPTIONS)[number]['value']>('daily');
@@ -297,13 +310,29 @@ export default function AdminInsurancePaymentsPage() {
   const [serverTotalPages, setServerTotalPages] = useState(1);
   const [summaryStats, setSummaryStats] = useState({ totalPremium: 0, totalPaid: 0, totalPending: 0, paidToday: 0 });
 
+  const paymentMethodFilterKey = Array.from(paymentMethodFilter).sort().join(',');
+  const paymentMethodParams = useMemo(() => {
+    if (paymentMethodFilter.size === 0) return {};
+    if (paymentMethodFilter.size === PAYMENT_METHOD_OPTIONS.length) return {};
+    const selected = Array.from(paymentMethodFilter);
+    const excluded = PAYMENT_METHOD_OPTIONS.filter((m) => !paymentMethodFilter.has(m));
+    if (selected.length === 1 && selected[0] !== 'NONE') {
+      return { paymentMethod: selected[0] };
+    }
+    if (excluded.length === 1 && excluded[0] !== 'NONE') {
+      return { excludePaymentMethod: excluded[0] };
+    }
+    return { paymentMethods: selected.join(',') };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentMethodFilterKey]);
+
   const fetchPage = useCallback(
     async (pageNum: number) => {
       const response = await adminApi.getInsurancePayments({
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
-        paymentMethod: paymentMethodFilter || undefined,
+        ...paymentMethodParams,
         productName: productName || undefined,
         searchQuery: debouncedNameQuery.trim() || undefined,
         userId: selectedUserId || undefined,
@@ -315,7 +344,7 @@ export default function AdminInsurancePaymentsPage() {
       }
       return response;
     },
-    [fromDate, toDate, paymentStatus, paymentMethodFilter, productName, debouncedNameQuery, selectedUserId],
+    [fromDate, toDate, paymentStatus, paymentMethodParams, productName, debouncedNameQuery, selectedUserId],
   );
 
   const fetchRows = useCallback(async () => {
@@ -329,7 +358,7 @@ export default function AdminInsurancePaymentsPage() {
           toDate: toDate || undefined,
           productName: productName || undefined,
           paymentStatus: paymentStatus || undefined,
-          paymentMethod: paymentMethodFilter || undefined,
+          ...paymentMethodParams,
           searchQuery: debouncedNameQuery.trim() || undefined,
           userId: selectedUserId || undefined,
         }),
@@ -351,7 +380,8 @@ export default function AdminInsurancePaymentsPage() {
     } finally {
       setLoading(false);
     }
-  }, [fetchPage, currentPage, fromDate, toDate, productName, paymentStatus, paymentMethodFilter, debouncedNameQuery, selectedUserId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchPage, currentPage, fromDate, toDate, productName, paymentStatus, paymentMethodFilterKey, debouncedNameQuery, selectedUserId]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -360,6 +390,16 @@ export default function AdminInsurancePaymentsPage() {
     }
     fetchRows();
   }, [isAuthenticated, router, fetchRows]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (methodDropdownRef.current && !methodDropdownRef.current.contains(e.target as Node)) {
+        setMethodDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
 
   const filteredRows = rows;
@@ -565,7 +605,7 @@ export default function AdminInsurancePaymentsPage() {
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
         paymentStatus: paymentStatus || undefined,
-        paymentMethod: paymentMethodFilter || undefined,
+        ...paymentMethodParams,
         productName: productName || undefined,
         searchQuery: nameQuery.trim() || undefined,
       },
@@ -581,7 +621,7 @@ export default function AdminInsurancePaymentsPage() {
         fromDate: presetFromDate,
         toDate: presetToDate,
         paymentStatus: paymentStatus || undefined,
-        paymentMethod: paymentMethodFilter || undefined,
+        ...paymentMethodParams,
         productName: productName || undefined,
         searchQuery: nameQuery.trim() || undefined,
       },
@@ -736,21 +776,61 @@ export default function AdminInsurancePaymentsPage() {
                 </option>
               ))}
             </select>
-            <select
-              value={paymentMethodFilter}
-              onChange={(e) => {
-                setPaymentMethodFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-            >
-              <option value="">All Methods</option>
-              {PAYMENT_METHOD_OPTIONS.map((method) => (
-                <option key={method} value={method}>
-                  {method}
-                </option>
-              ))}
-            </select>
+            <div className="relative" ref={methodDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setMethodDropdownOpen((o) => !o)}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm min-w-[140px] text-left flex items-center justify-between gap-1 text-gray-900"
+              >
+                <span className="truncate">
+                  {paymentMethodFilter.size === 0 || paymentMethodFilter.size === PAYMENT_METHOD_OPTIONS.length
+                    ? 'All Methods'
+                    : `${paymentMethodFilter.size} selected`}
+                </span>
+                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {methodDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-48 bg-white border border-gray-200 rounded-md shadow-lg py-1 text-gray-900">
+                  <label className="flex items-center px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm font-medium border-b border-gray-100">
+                    <input
+                      type="checkbox"
+                      className="mr-2"
+                      checked={paymentMethodFilter.size === 0 || paymentMethodFilter.size === PAYMENT_METHOD_OPTIONS.length}
+                      onChange={() => {
+                        setPaymentMethodFilter(new Set());
+                        setCurrentPage(1);
+                      }}
+                    />
+                    All Methods
+                  </label>
+                  {PAYMENT_METHOD_OPTIONS.map((method) => (
+                    <label key={method} className="flex items-center px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm">
+                      <input
+                        type="checkbox"
+                        className="mr-2"
+                        checked={paymentMethodFilter.has(method)}
+                        onChange={() => {
+                          setPaymentMethodFilter((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(method)) {
+                              next.delete(method);
+                            } else {
+                              next.add(method);
+                            }
+                            if (next.size === PAYMENT_METHOD_OPTIONS.length) return new Set();
+                            return next;
+                          });
+                          setCurrentPage(1);
+                        }}
+                      />
+                      {PAYMENT_METHOD_LABELS[method] || method}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
             <select
               value={productName}
               onChange={(e) => {
@@ -809,7 +889,7 @@ export default function AdminInsurancePaymentsPage() {
                 setFromDateInputType('text');
                 setToDateInputType('text');
                 setPaymentStatus('');
-                setPaymentMethodFilter('');
+                setPaymentMethodFilter(new Set());
                 setProductName('');
                 setNameQuery('');
                 setSelectedUserId('');
