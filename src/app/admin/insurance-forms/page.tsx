@@ -13,8 +13,10 @@ import { Menu, Transition } from '@headlessui/react';
 import { FileText, RefreshCw, Upload, Eye, CheckCircle, AlertCircle, X, XCircle, Pencil, ChevronDown, ChevronRight, MoreVertical, Link as LinkIcon, RotateCcw } from 'lucide-react';
 
 import InsuranceUploadModal from '@/features/admin/components/InsuranceUploadModal';
+import PartyCombobox, { type PartyComboboxOption } from '@/features/admin/components/PartyCombobox';
 import { getHsnForProduct, itemsData } from '@/features/insurance/productCatalog';
-import { getVehicleRecentInvoiceStatus } from '@/features/insurance/api';
+import { getVehicleRecentInvoiceStatus, getSupplierHistoricalParties, getBuyerHistoricalSuppliers } from '@/features/insurance/api';
+import type { HistoricalPartyOption } from '@/features/insurance/api';
 
 function useDebounce<T>(value: T, delay: number): T {
     const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -439,6 +441,8 @@ export default function InsuranceFormsPage() {
     const [createInvoiceSubmitting, setCreateInvoiceSubmitting] = useState(false);
     const [createInvoiceParsing, setCreateInvoiceParsing] = useState(false);
     const [verifiedUsers, setVerifiedUsers] = useState<AdminLedgerUser[]>([]);
+    const [otherPartyHistorical, setOtherPartyHistorical] = useState<HistoricalPartyOption[]>([]);
+    const [otherPartyHistoricalLoading, setOtherPartyHistoricalLoading] = useState(false);
     const [createInvoiceForm, setCreateInvoiceForm] = useState<AdminCreateInvoiceForm>(() => emptyAdminCreateInvoiceForm());
     const [createWeighmentFiles, setCreateWeighmentFiles] = useState<File[]>([]);
     const [createPurchaseBillFile, setCreatePurchaseBillFile] = useState<File | null>(null);
@@ -698,6 +702,75 @@ export default function InsuranceFormsPage() {
         [createInvoiceForm.otherPartyUserId, verifiedUsers],
     );
 
+    useEffect(() => {
+        const insuredId = createInvoiceForm.insuredUserId;
+        if (!insuredId) {
+            setOtherPartyHistorical([]);
+            return;
+        }
+        let cancelled = false;
+        const fetchHistorical = async () => {
+            setOtherPartyHistoricalLoading(true);
+            try {
+                const isCash = createInvoiceForm.invoiceKind === 'cash';
+                const parties = isCash
+                    ? await getBuyerHistoricalSuppliers({ buyerId: insuredId })
+                    : await getSupplierHistoricalParties({ supplierId: insuredId });
+                if (!cancelled) setOtherPartyHistorical(parties);
+            } catch {
+                if (!cancelled) setOtherPartyHistorical([]);
+            } finally {
+                if (!cancelled) setOtherPartyHistoricalLoading(false);
+            }
+        };
+        void fetchHistorical();
+        return () => { cancelled = true; };
+    }, [createInvoiceForm.insuredUserId, createInvoiceForm.invoiceKind]);
+
+    const otherPartyComboboxOptions: PartyComboboxOption[] = useMemo(() => {
+        const byName = new Map<string, { totalInvoices: number; addresses: string[]; phone?: string }>();
+        for (const party of otherPartyHistorical) {
+            const key = party.name.trim().toLowerCase();
+            const existing = byName.get(key);
+            if (existing) {
+                existing.totalInvoices += party.invoiceCount;
+                if (party.address && !existing.addresses.includes(party.address)) {
+                    existing.addresses.push(party.address);
+                }
+                if (!existing.phone && party.phoneNumber) existing.phone = party.phoneNumber;
+            } else {
+                byName.set(key, {
+                    totalInvoices: party.invoiceCount,
+                    addresses: party.address ? [party.address] : [],
+                    phone: party.phoneNumber || undefined,
+                });
+            }
+        }
+
+        const seen = new Set<string>();
+        return otherPartyHistorical
+            .filter((party) => {
+                const key = party.name.trim().toLowerCase();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .map((party) => {
+                const key = party.name.trim().toLowerCase();
+                const agg = byName.get(key)!;
+                const subtitle = agg.addresses.length > 1
+                    ? `${agg.addresses[0]} (+${agg.addresses.length - 1} more)`
+                    : agg.addresses[0] || undefined;
+                return {
+                    value: party.name,
+                    label: party.name,
+                    subtitle,
+                    meta: `${agg.totalInvoices} invoice${agg.totalInvoices === 1 ? '' : 's'}`,
+                    searchText: `${party.name} ${agg.addresses.join(' ')} ${agg.phone || ''}`,
+                };
+            });
+    }, [otherPartyHistorical]);
+
     const applyCreateInvoiceParties = useCallback((
         insuredUser: AdminLedgerUser | null,
         otherPartyUser: AdminLedgerUser | null,
@@ -741,6 +814,45 @@ export default function InsuranceFormsPage() {
 
         return next;
     }, []);
+
+    const handleOtherPartyComboboxChange = useCallback((value: string, isCustom: boolean) => {
+        const matchedHistorical = otherPartyHistorical.find(
+            (p) => p.name === value,
+        );
+        const matchedVerified = verifiedUsers.find(
+            (u) => u.name?.trim().toLowerCase() === value.trim().toLowerCase(),
+        );
+
+        const otherPartyUser = matchedVerified || null;
+        const otherPartyUserId = otherPartyUser?.id || '';
+
+        setCreateInvoiceForm((prev) => {
+            const updated = applyCreateInvoiceParties(
+                selectedInsuredUser,
+                otherPartyUser,
+                prev.invoiceKind,
+                { ...prev, otherPartyUserId },
+            );
+
+            if (isCustom || (!otherPartyUser && matchedHistorical)) {
+                if (prev.invoiceKind === 'cash') {
+                    updated.supplierName = value;
+                    updated.supplierAddress = matchedHistorical?.address || '';
+                } else {
+                    updated.billToName = value;
+                    updated.billToAddress = matchedHistorical?.address || '';
+                    updated.shipToName = value;
+                    updated.shipToAddress = matchedHistorical?.shipToAddress || matchedHistorical?.address || '';
+                }
+            }
+
+            if (matchedHistorical?.phoneNumber && prev.invoiceKind === 'cash') {
+                updated.insuredPartyPhone = matchedHistorical.phoneNumber;
+            }
+
+            return updated;
+        });
+    }, [otherPartyHistorical, verifiedUsers, selectedInsuredUser, applyCreateInvoiceParties]);
 
     const findVerifiedUserByName = useCallback((name: string) => {
         const normalizedName = normalizePartyName(name);
@@ -1991,23 +2103,18 @@ export default function InsuranceFormsPage() {
                                                 ))}
                                             </select>
                                         </label>
-                                        <label className={`mt-2 ${createInvoiceLabelClass}`}>
-                                            Select other party
-                                            <select
-                                                value={createInvoiceForm.otherPartyUserId}
+                                        <div className="mt-2">
+                                            <PartyCombobox
+                                                label="Select other party"
+                                                options={otherPartyComboboxOptions}
+                                                value={createInvoiceForm.invoiceKind === 'cash' ? createInvoiceForm.supplierName : createInvoiceForm.billToName}
+                                                onChange={handleOtherPartyComboboxChange}
                                                 disabled={createInvoiceParsing}
-                                                onChange={(e) => {
-                                                    const otherParty = verifiedUsers.find((user) => user.id === e.target.value) || null;
-                                                    setCreateInvoiceForm((prev) => applyCreateInvoiceParties(selectedInsuredUser, otherParty, prev.invoiceKind, { ...prev, otherPartyUserId: e.target.value }));
-                                                }}
-                                                className={createInvoiceFieldClass}
-                                            >
-                                                <option value="">Select other registered party</option>
-                                                {verifiedUsers.filter((user) => user.id !== createInvoiceForm.insuredUserId).map((user) => (
-                                                    <option key={user.id} value={user.id}>{user.name} - {user.mobileNumber}</option>
-                                                ))}
-                                            </select>
-                                        </label>
+                                                loading={otherPartyHistoricalLoading}
+                                                placeholder={createInvoiceForm.insuredUserId ? 'Search or type party name...' : 'Select insured party first'}
+                                                emptyMessage={createInvoiceForm.insuredUserId ? 'No historical parties found — type a name above' : 'Select insured party first'}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 
