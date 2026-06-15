@@ -987,23 +987,31 @@ export default function InsuranceFormsPage() {
 
         setExporting(true);
         try {
-            const invoiceIds = invoices
-                .map((invoice) => getInvoiceId(invoice))
-                .filter((id): id is string => Boolean(id));
+            const activeFilters = buildActiveFilters(debouncedFilters);
 
             const body: any = {
                 selectedColumns: selectedExportColumns,
             };
 
-            // Prefer exact export of the currently filtered rows shown in the list.
-            if (invoiceIds.length > 0) {
-                body.invoiceIds = Array.from(new Set(invoiceIds));
+            if (activeFilters.startDate && activeFilters.endDate) {
+                body.startDate = activeFilters.startDate;
+                body.endDate = activeFilters.endDate;
+                if (activeFilters.invoiceType) body.invoiceType = activeFilters.invoiceType;
+                if (activeFilters.supplierName) body.supplierName = activeFilters.supplierName;
+                if (activeFilters.buyerName) body.buyerName = activeFilters.buyerName;
             } else {
-                toast.error('No filtered invoices available to export.');
-                return;
+                const allResponse = await adminApi.filterInvoices(activeFilters);
+                const allInvoices = Array.isArray(allResponse.data) ? allResponse.data : [];
+                const invoiceIds = allInvoices
+                    .map((inv: any) => inv.id || inv._id)
+                    .filter(Boolean);
+                if (invoiceIds.length === 0) {
+                    toast.error('No invoices found matching current filters.');
+                    setExporting(false);
+                    return;
+                }
+                body.invoiceIds = invoiceIds;
             }
-
-            console.log("📤 Export payload:", body);
 
             const blob = await adminApi.exportInvoices(body);
 
