@@ -2167,6 +2167,36 @@ class AdminApi {
     }
   };
 
+  public bulkUpdateInsurancePayments = async (
+    payload: {
+      invoiceIds: string[];
+      paymentStatus?: string;
+      paymentMethod?: string | null;
+      paymentCompletedAt?: string | null;
+      remarks?: string | null;
+      isPaymentRequired?: boolean;
+    },
+  ): Promise<ApiResponse<{ invoiceId: string; success: boolean; error?: string }[]>> => {
+    try {
+      const response = await this.client.post(
+        "/insurance-payments/admin/bulk-update",
+        payload,
+      );
+      const data = response.data;
+      if (data && typeof data === "object" && "success" in data) {
+        return data as ApiResponse<{ invoiceId: string; success: boolean; error?: string }[]>;
+      }
+      return { success: true, data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to bulk update payments",
+        error: error.message,
+      };
+    }
+  };
+
   // ============================================================
   // ✅ AGENT COMMISSIONS (ADMIN)
   // ============================================================

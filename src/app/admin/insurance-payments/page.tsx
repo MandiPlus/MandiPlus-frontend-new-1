@@ -298,6 +298,16 @@ export default function AdminInsurancePaymentsPage() {
   );
 
   const [editing, setEditing] = useState<InsurancePaymentRow | null>(null);
+  const [bulkEditing, setBulkEditing] = useState(false);
+  const [bulkForm, setBulkForm] = useState<{
+    paymentStatus?: string;
+    paymentMethod?: string | null;
+    paymentCompletedAt?: string | null;
+    remarks?: string | null;
+    isPaymentRequired?: boolean;
+  }>({});
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkPaymentCompletedInputType, setBulkPaymentCompletedInputType] = useState<'text' | 'datetime-local'>('text');
   const [reminderTarget, setReminderTarget] = useState<InsurancePaymentRow | null>(
     null,
   );
@@ -574,6 +584,68 @@ export default function AdminInsurancePaymentsPage() {
       toast.error(getErrorMessage(err, 'Failed to mark payments as paid'));
     } finally {
       setBulkMarkingPaid(false);
+    }
+  };
+
+  const openBulkEditModal = () => {
+    setBulkForm({});
+    setBulkPaymentCompletedInputType('text');
+    setBulkEditing(true);
+  };
+
+  const closeBulkEditModal = () => {
+    setBulkEditing(false);
+    setBulkForm({});
+    setBulkPaymentCompletedInputType('text');
+  };
+
+  const submitBulkEdit = async () => {
+    if (selectedInvoiceIds.size === 0) return;
+
+    const payload: Record<string, unknown> = {
+      invoiceIds: Array.from(selectedInvoiceIds),
+    };
+    if (bulkForm.paymentStatus) payload.paymentStatus = bulkForm.paymentStatus;
+    if (bulkForm.paymentMethod !== undefined) payload.paymentMethod = bulkForm.paymentMethod || null;
+    if (bulkForm.paymentCompletedAt !== undefined) payload.paymentCompletedAt = bulkForm.paymentCompletedAt || null;
+    if (bulkForm.remarks !== undefined) payload.remarks = bulkForm.remarks || null;
+    if (bulkForm.isPaymentRequired !== undefined) payload.isPaymentRequired = bulkForm.isPaymentRequired;
+
+    if (Object.keys(payload).length <= 1) {
+      toast.error('Select at least one field to update');
+      return;
+    }
+
+    const count = selectedInvoiceIds.size;
+    const confirmed = window.confirm(
+      `Apply changes to ${count} payment${count > 1 ? 's' : ''}?`,
+    );
+    if (!confirmed) return;
+
+    setBulkSaving(true);
+    try {
+      const response = await adminApi.bulkUpdateInsurancePayments(payload as any);
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to bulk update payments');
+      }
+
+      const results = response.data || [];
+      const successCount = results.filter((r) => r.success).length;
+      const failCount = results.filter((r) => !r.success).length;
+
+      if (failCount > 0) {
+        toast.warn(`${successCount} updated, ${failCount} failed`);
+      } else {
+        toast.success(`${successCount} payment${successCount > 1 ? 's' : ''} updated`);
+      }
+
+      closeBulkEditModal();
+      setSelectedInvoiceIds(new Set());
+      await fetchRows();
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Failed to bulk update payments'));
+    } finally {
+      setBulkSaving(false);
     }
   };
 
@@ -1020,6 +1092,15 @@ export default function AdminInsurancePaymentsPage() {
               </button>
               <button
                 type="button"
+                onClick={openBulkEditModal}
+                disabled={selectedInvoiceIds.size === 0}
+                className="inline-flex items-center gap-2 rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Pencil className="h-4 w-4" strokeWidth={2.2} />
+                {`Bulk Edit${selectedInvoiceIds.size > 0 ? ` (${selectedInvoiceIds.size})` : ''}`}
+              </button>
+              <button
+                type="button"
                 onClick={generateAccumulatedPaymentLink}
                 disabled={
                   generatingAccumulatedLink || selectedPendingRows.length === 0
@@ -1349,9 +1430,9 @@ export default function AdminInsurancePaymentsPage() {
                   className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
                 >
                   <option value="">Select payment method</option>
-                  {PAYMENT_METHOD_OPTIONS.map((method) => (
+                  {PAYMENT_METHOD_OPTIONS.filter((m) => m !== 'NONE').map((method) => (
                     <option key={method} value={method}>
-                      {method}
+                      {PAYMENT_METHOD_LABELS[method] || method}
                     </option>
                   ))}
                 </select>
@@ -1420,6 +1501,121 @@ export default function AdminInsurancePaymentsPage() {
                 className="rounded-md bg-[#4309ac] px-4 py-2 text-sm font-semibold text-white hover:bg-[#35088a] disabled:opacity-60"
               >
                 {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {bulkEditing ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Bulk Edit ({selectedInvoiceIds.size} payment{selectedInvoiceIds.size > 1 ? 's' : ''})
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Only fields you change will be applied. Leave fields empty to keep their current values.
+            </p>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="text-sm text-gray-700">
+                Payment Status
+                <select
+                  value={bulkForm.paymentStatus || ''}
+                  onChange={(e) =>
+                    setBulkForm((prev) => ({ ...prev, paymentStatus: e.target.value || undefined }))
+                  }
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                >
+                  <option value="">— No change —</option>
+                  {PAYMENT_STATUS_OPTIONS.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm text-gray-700">
+                Payment Method
+                <select
+                  value={bulkForm.paymentMethod === undefined ? '__unchanged__' : (bulkForm.paymentMethod || '__clear__')}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '__unchanged__') {
+                      setBulkForm((prev) => {
+                        const next = { ...prev };
+                        delete next.paymentMethod;
+                        return next;
+                      });
+                    } else if (val === '__clear__') {
+                      setBulkForm((prev) => ({ ...prev, paymentMethod: null }));
+                    } else {
+                      setBulkForm((prev) => ({ ...prev, paymentMethod: val }));
+                    }
+                  }}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                >
+                  <option value="__unchanged__">— No change —</option>
+                  <option value="__clear__">— Clear method —</option>
+                  {PAYMENT_METHOD_OPTIONS.filter((m) => m !== 'NONE').map((method) => (
+                    <option key={method} value={method}>
+                      {PAYMENT_METHOD_LABELS[method] || method}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm text-gray-700">
+                Payment Completed At
+                <input
+                  type={bulkPaymentCompletedInputType}
+                  placeholder="— No change —"
+                  value={bulkForm.paymentCompletedAt || ''}
+                  onFocus={() => setBulkPaymentCompletedInputType('datetime-local')}
+                  onBlur={() => {
+                    if (!bulkForm.paymentCompletedAt) setBulkPaymentCompletedInputType('text');
+                  }}
+                  onChange={(e) =>
+                    setBulkForm((prev) => ({
+                      ...prev,
+                      paymentCompletedAt: e.target.value || null,
+                    }))
+                  }
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                />
+              </label>
+            </div>
+
+            <label className="mt-3 block text-sm text-gray-700">
+              Remarks
+              <textarea
+                rows={2}
+                placeholder="— No change —"
+                value={bulkForm.remarks === undefined ? '' : (bulkForm.remarks || '')}
+                onChange={(e) =>
+                  setBulkForm((prev) => ({ ...prev, remarks: e.target.value || null }))
+                }
+                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+              />
+            </label>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeBulkEditModal}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                disabled={bulkSaving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitBulkEdit}
+                disabled={bulkSaving}
+                className="rounded-md bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
+              >
+                {bulkSaving ? 'Applying...' : `Apply to ${selectedInvoiceIds.size}`}
               </button>
             </div>
           </div>
