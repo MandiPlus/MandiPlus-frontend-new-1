@@ -9,6 +9,7 @@ import {
   AdminTripRow,
   TruckTrackingResponse,
   closeTrip,
+  editTrip,
   getTruckTracking,
   listTrips,
   sendCurrentPositionAlertsForActiveTrips,
@@ -83,6 +84,9 @@ export default function AdminTripsPage() {
   const [phoneOverrides, setPhoneOverrides] = useState<Record<string, string>>({});
   const [routeLabels, setRouteLabels] = useState<Record<string, string>>({});
   const [trackModal, setTrackModal] = useState<TrackModalState | null>(null);
+  const [editingTrip, setEditingTrip] = useState<AdminTripRow | null>(null);
+  const [editForm, setEditForm] = useState({ truck_number: '', tel: '', srcname: '', destname: '' });
+  const [editSaving, setEditSaving] = useState(false);
   const [busy, setBusy] = useState({
     fetchTrips: false,
     closeTrip: false,
@@ -210,6 +214,45 @@ export default function AdminTripsPage() {
       });
     }
     setBusyFlag('track', false);
+  };
+
+  const openEditModal = (trip: AdminTripRow) => {
+    setEditForm({
+      truck_number: trip.truck?.truckNumber || trip.vehicleNumber || '',
+      tel: trip.tel || '',
+      srcname: '',
+      destname: '',
+    });
+    setEditingTrip(trip);
+  };
+
+  const submitEdit = async () => {
+    if (!editingTrip) return;
+    const updates: Record<string, string> = {};
+    if (editForm.truck_number && editForm.truck_number !== (editingTrip.truck?.truckNumber || editingTrip.vehicleNumber || '')) {
+      updates.truck_number = editForm.truck_number;
+    }
+    if (editForm.tel && editForm.tel !== editingTrip.tel) {
+      updates.tel = editForm.tel;
+    }
+    if (editForm.srcname) updates.srcname = editForm.srcname;
+    if (editForm.destname) updates.destname = editForm.destname;
+
+    if (Object.keys(updates).length === 0) {
+      toast.error('No changes to save');
+      return;
+    }
+
+    setEditSaving(true);
+    const response = await editTrip(editingTrip.id, updates);
+    if (!response.success) {
+      toast.error(response.message || 'Failed to edit trip');
+    } else {
+      toast.success('Trip updated successfully');
+      setEditingTrip(null);
+      await fetchTrips();
+    }
+    setEditSaving(false);
   };
 
   const handleClose = async (trip: AdminTripRow) => {
@@ -524,7 +567,7 @@ export default function AdminTripsPage() {
                   <tr key={trip.id}>
                     <td className="px-3 py-3 align-top font-medium text-gray-900">
                       <div className="flex flex-col gap-1">
-                        <span>{trip.truck?.truckNumber || '-'}</span>
+                        <span>{trip.truck?.truckNumber || trip.vehicleNumber || '-'}</span>
                         {trip.invoice?.invoiceNumber ? (
                           <span className="text-[11px] text-gray-500">
                             Invoice: {trip.invoice.invoiceNumber}
@@ -720,6 +763,14 @@ export default function AdminTripsPage() {
                         </button>
                         <button
                           type="button"
+                          onClick={() => openEditModal(trip)}
+                          disabled={trip.status === 'ENDED'}
+                          className="rounded-md border border-violet-300 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 disabled:opacity-50"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => void handleClose(trip)}
                           disabled={trip.status === 'ENDED' || busy.closeTrip}
                           className="rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-50"
@@ -909,6 +960,79 @@ export default function AdminTripsPage() {
                   End Trip
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {editingTrip ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Edit Trip
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Changes sync with Traqo. Only fill fields you want to update.
+            </p>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="text-sm text-gray-700">
+                Vehicle Number
+                <input
+                  type="text"
+                  value={editForm.truck_number}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, truck_number: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                />
+              </label>
+              <label className="text-sm text-gray-700">
+                Driver Phone
+                <input
+                  type="text"
+                  value={editForm.tel}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, tel: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                />
+              </label>
+              <label className="text-sm text-gray-700">
+                New Source (city/address)
+                <input
+                  type="text"
+                  placeholder="Leave empty to keep current"
+                  value={editForm.srcname}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, srcname: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                />
+              </label>
+              <label className="text-sm text-gray-700">
+                New Destination (city/address)
+                <input
+                  type="text"
+                  placeholder="Leave empty to keep current"
+                  value={editForm.destname}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, destname: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                />
+              </label>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingTrip(null)}
+                disabled={editSaving}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitEdit()}
+                disabled={editSaving}
+                className="rounded-md bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
+              >
+                {editSaving ? 'Saving...' : 'Save & Sync'}
+              </button>
             </div>
           </div>
         </div>

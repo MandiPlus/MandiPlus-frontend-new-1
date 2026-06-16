@@ -74,6 +74,7 @@ export interface AdminTripRow {
     id: string;
     truckNumber: string;
   } | null;
+  vehicleNumber?: string | null;
   invoice: {
     id: string;
     invoiceNumber?: string;
@@ -269,6 +270,25 @@ export async function closeTrip(
     return {
       success: false,
       message: getErrorMessage(error, "Failed to close trip"),
+    };
+  }
+}
+
+export async function editTrip(
+  tripId: string,
+  updates: { truck_number?: string; tel?: string; src?: string; dest?: string; srcname?: string; destname?: string },
+): Promise<AdminTrackingApiResponse<GenericPayload>> {
+  try {
+    const res = await axios.patch(
+      `${API_BASE_URL}/traqo/trips/${tripId}`,
+      updates,
+      { headers: getAuthHeaders() },
+    );
+    return { success: true, data: res.data };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to edit trip"),
     };
   }
 }
