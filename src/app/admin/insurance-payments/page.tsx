@@ -62,6 +62,9 @@ function getPaymentStatusBadgeClasses(status?: string | null) {
   if (normalized === 'PENDING') {
     return 'border-red-200 bg-red-50 text-red-700';
   }
+  if (normalized === 'PARTIAL') {
+    return 'border-amber-200 bg-amber-50 text-amber-700';
+  }
   if (normalized === 'FAILED') {
     return 'border-rose-200 bg-rose-50 text-rose-700';
   }
@@ -129,7 +132,7 @@ function wasPaymentMarkedPaidToday(row: InsurancePaymentRow, referenceDate = new
 }
 
 function getEffectivePaidAmount(row: InsurancePaymentRow): number {
-  if (row.paymentStatus !== 'PAID') return 0;
+  if (row.paymentStatus !== 'PAID' && row.paymentStatus !== 'PARTIAL') return 0;
   const paymentAmount = Number(row.paymentAmount || 0);
   const premiumAmount = Number(row.premiumAmount || 0);
   return paymentAmount > 0 ? paymentAmount : premiumAmount;
@@ -1166,7 +1169,7 @@ export default function AdminInsurancePaymentsPage() {
                             </button>
                           ) : null}
                           {Boolean(row.isPaymentRequired) &&
-                          String(row.paymentStatus || '').toUpperCase() === 'PENDING' ? (
+                          ['PENDING', 'PARTIAL'].includes(String(row.paymentStatus || '').toUpperCase()) ? (
                             <button
                               type="button"
                               onClick={() => openReminderModal(row)}

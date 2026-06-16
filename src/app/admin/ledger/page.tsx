@@ -55,6 +55,9 @@ function getPaymentBadgeClasses(status?: string | null) {
   if (normalized === 'PAID') {
     return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   }
+  if (normalized === 'PARTIAL') {
+    return 'border-orange-200 bg-orange-50 text-orange-700';
+  }
   if (normalized === 'PENDING') {
     return 'border-amber-200 bg-amber-50 text-amber-700';
   }
