@@ -2012,6 +2012,7 @@ class AdminApi {
     paymentMethods?: string;
     productName?: string;
     searchQuery?: string;
+    supplierQuery?: string;
     userId?: string;
     page?: number;
     limit?: number;
@@ -2074,6 +2075,7 @@ class AdminApi {
     excludePaymentMethod?: string;
     paymentMethods?: string;
     searchQuery?: string;
+    supplierQuery?: string;
     userId?: string;
   }): Promise<{
     success: boolean;
@@ -2106,6 +2108,7 @@ class AdminApi {
     paymentMethod?: string;
     productName?: string;
     searchQuery?: string;
+    supplierQuery?: string;
   }): Promise<Blob> => {
     const response = await this.client.get('/insurance-payments/admin/export', {
       params: filters,

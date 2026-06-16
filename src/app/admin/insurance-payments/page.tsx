@@ -290,6 +290,8 @@ export default function AdminInsurancePaymentsPage() {
     useState<(typeof REPORT_PERIOD_OPTIONS)[number]['value']>('daily');
   const [nameQuery, setNameQuery] = useState('');
   const [debouncedNameQuery, setDebouncedNameQuery] = useState('');
+  const [supplierQuery, setSupplierQuery] = useState('');
+  const [debouncedSupplierQuery, setDebouncedSupplierQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [jumpPageInput, setJumpPageInput] = useState('1');
   const [selectedUserId, setSelectedUserId] = useState('');
@@ -348,6 +350,7 @@ export default function AdminInsurancePaymentsPage() {
         ...paymentMethodParams,
         productName: productName || undefined,
         searchQuery: debouncedNameQuery.trim() || undefined,
+        supplierQuery: debouncedSupplierQuery.trim() || undefined,
         userId: selectedUserId || undefined,
         page: pageNum,
         limit: ITEMS_PER_PAGE,
@@ -357,7 +360,7 @@ export default function AdminInsurancePaymentsPage() {
       }
       return response;
     },
-    [fromDate, toDate, paymentStatus, paymentMethodParams, productName, debouncedNameQuery, selectedUserId],
+    [fromDate, toDate, paymentStatus, paymentMethodParams, productName, debouncedNameQuery, debouncedSupplierQuery, selectedUserId],
   );
 
   const fetchRows = useCallback(async () => {
@@ -373,6 +376,7 @@ export default function AdminInsurancePaymentsPage() {
           paymentStatus: paymentStatus || undefined,
           ...paymentMethodParams,
           searchQuery: debouncedNameQuery.trim() || undefined,
+          supplierQuery: debouncedSupplierQuery.trim() || undefined,
           userId: selectedUserId || undefined,
         }),
       ]);
@@ -394,7 +398,7 @@ export default function AdminInsurancePaymentsPage() {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchPage, currentPage, fromDate, toDate, productName, paymentStatus, paymentMethodFilterKey, debouncedNameQuery, selectedUserId]);
+  }, [fetchPage, currentPage, fromDate, toDate, productName, paymentStatus, paymentMethodFilterKey, debouncedNameQuery, debouncedSupplierQuery, selectedUserId]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -477,6 +481,12 @@ export default function AdminInsurancePaymentsPage() {
     const timer = setTimeout(() => setDebouncedNameQuery(nameQuery), 400);
     return () => clearTimeout(timer);
   }, [nameQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    const timer = setTimeout(() => setDebouncedSupplierQuery(supplierQuery), 400);
+    return () => clearTimeout(timer);
+  }, [supplierQuery]);
 
   useEffect(() => {
     setSelectedInvoiceIds((prev) => {
@@ -683,6 +693,7 @@ export default function AdminInsurancePaymentsPage() {
         ...paymentMethodParams,
         productName: productName || undefined,
         searchQuery: nameQuery.trim() || undefined,
+        supplierQuery: supplierQuery.trim() || undefined,
       },
       `insurance-payments-${new Date().toISOString().slice(0, 10)}.xlsx`,
     );
@@ -943,10 +954,17 @@ export default function AdminInsurancePaymentsPage() {
             />
             <input
               type="text"
-              placeholder="Search by name / invoice"
+              placeholder="Insured person / invoice"
               value={nameQuery}
               onChange={(e) => setNameQuery(e.target.value)}
               className="w-[180px] rounded-md border border-gray-300 px-3 py-2 text-sm"
+            />
+            <input
+              type="text"
+              placeholder="Supplier name"
+              value={supplierQuery}
+              onChange={(e) => setSupplierQuery(e.target.value)}
+              className="w-[160px] rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
             <button
               type="button"
@@ -967,6 +985,7 @@ export default function AdminInsurancePaymentsPage() {
                 setPaymentMethodFilter(new Set());
                 setProductName('');
                 setNameQuery('');
+                setSupplierQuery('');
                 setSelectedUserId('');
                 setCurrentPage(1);
               }}
