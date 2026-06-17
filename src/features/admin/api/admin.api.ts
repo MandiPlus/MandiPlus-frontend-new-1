@@ -2084,6 +2084,7 @@ class AdminApi {
     totalPaid?: number;
     totalPending?: number;
     paidToday?: number;
+    paidFromWallet?: number;
   }> => {
     try {
       const params: Record<string, string> = {};
@@ -2106,6 +2107,8 @@ class AdminApi {
     toDate?: string;
     paymentStatus?: string;
     paymentMethod?: string;
+    excludePaymentMethod?: string;
+    paymentMethods?: string;
     productName?: string;
     searchQuery?: string;
     supplierQuery?: string;

@@ -356,7 +356,7 @@ export default function AdminInsurancePaymentsPage() {
 
   const [serverTotal, setServerTotal] = useState(0);
   const [serverTotalPages, setServerTotalPages] = useState(1);
-  const [summaryStats, setSummaryStats] = useState({ totalPremium: 0, totalPaid: 0, totalPending: 0, paidToday: 0 });
+  const [summaryStats, setSummaryStats] = useState({ totalPremium: 0, totalPaid: 0, totalPending: 0, paidToday: 0, paidFromWallet: 0 });
 
   const paymentMethodFilterKey = Array.from(paymentMethodFilter).sort().join(',');
   const paymentMethodParams = useMemo(() => {
@@ -439,6 +439,7 @@ export default function AdminInsurancePaymentsPage() {
           totalPaid: summaryResponse.totalPaid || 0,
           totalPending: summaryResponse.totalPending || 0,
           paidToday: summaryResponse.paidToday || 0,
+          paidFromWallet: summaryResponse.paidFromWallet || 0,
         });
       }
     } catch (err: unknown) {
@@ -493,6 +494,7 @@ export default function AdminInsurancePaymentsPage() {
   const totalPayment = summaryStats.totalPaid;
   const totalPendingPayment = summaryStats.totalPending;
   const paymentReceivedToday = summaryStats.paidToday;
+  const paidFromWallet = summaryStats.paidFromWallet;
   const pageStart = totalRows === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
   const pageEnd = Math.min(currentPage * ITEMS_PER_PAGE, totalRows);
   const selectedRows = useMemo(
@@ -754,8 +756,8 @@ export default function AdminInsurancePaymentsPage() {
     exportWithParams(
       {
         fromDate: fromDate || undefined,
-        toDate: toDate || undefined,
-        paymentStatus: paymentStatus || undefined,
+        toDate: effectiveToDate || undefined,
+        paymentStatus: effectivePaymentStatus || undefined,
         ...paymentMethodParams,
         productName: productName || undefined,
         searchQuery: nameQuery.trim() || undefined,
@@ -1139,7 +1141,7 @@ export default function AdminInsurancePaymentsPage() {
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
             <p className="text-xs uppercase tracking-wide text-slate-600">Rows</p>
             <p className="mt-1 text-2xl font-bold text-slate-900">{totalRows}</p>
@@ -1174,6 +1176,14 @@ export default function AdminInsurancePaymentsPage() {
             </p>
             <p className="mt-1 text-2xl font-bold text-emerald-900">
               {formatCurrency(paymentReceivedToday)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
+            <p className="text-xs uppercase tracking-wide text-indigo-700">
+              Received from Wallet
+            </p>
+            <p className="mt-1 text-2xl font-bold text-indigo-900">
+              {formatCurrency(paidFromWallet)}
             </p>
           </div>
         </div>
