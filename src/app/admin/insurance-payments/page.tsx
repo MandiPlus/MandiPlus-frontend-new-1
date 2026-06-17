@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import {
   CheckCheck,
+  CircleCheck,
   FileText,
   Link2,
   Pencil,
@@ -162,6 +163,32 @@ function openPdfInNewTab(url?: string | null) {
   if (typeof window === 'undefined') return;
   window.open(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`, '_blank', 'noopener,noreferrer');
 }
+
+function getDaysOverdue(row: InsurancePaymentRow): number | null {
+  const status = String(row.paymentStatus || '').toUpperCase();
+  if (status === 'PAID' || status === 'NOT_REQUIRED' || status === 'REFUNDED') return null;
+  const created = new Date(row.createdAt);
+  if (Number.isNaN(created.getTime())) return null;
+  const now = new Date();
+  const diffMs = now.getTime() - created.getTime();
+  return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+}
+
+function getDaysOverdueClasses(days: number | null): string {
+  if (days === null) return '';
+  if (days >= 60) return 'text-red-700 bg-red-50 border-red-200';
+  if (days >= 30) return 'text-orange-700 bg-orange-50 border-orange-200';
+  if (days >= 15) return 'text-amber-700 bg-amber-50 border-amber-200';
+  return 'text-slate-600 bg-slate-50 border-slate-200';
+}
+
+function getDaysOverdueLabel(days: number | null): string {
+  if (days === null) return '-';
+  if (days === 0) return 'Today';
+  if (days === 1) return '1 day';
+  return `${days} days`;
+}
+
 
 function normalizePhoneInput(value?: string | null) {
   return String(value || '').replace(/\D/g, '');
@@ -321,6 +348,12 @@ export default function AdminInsurancePaymentsPage() {
   const [paymentCompletedInputType, setPaymentCompletedInputType] = useState<'text' | 'datetime-local'>('text');
   const [form, setForm] = useState<UpdateInsurancePaymentPayload>({});
 
+  const [overdueDaysInput, setOverdueDaysInput] = useState('');
+  const [minAmountInput, setMinAmountInput] = useState('');
+  const [debouncedOverdueDays, setDebouncedOverdueDays] = useState('');
+  const [debouncedMinAmount, setDebouncedMinAmount] = useState('');
+  const [markingPaidInlineIds, setMarkingPaidInlineIds] = useState<Record<string, boolean>>({});
+
   const [serverTotal, setServerTotal] = useState(0);
   const [serverTotalPages, setServerTotalPages] = useState(1);
   const [summaryStats, setSummaryStats] = useState({ totalPremium: 0, totalPaid: 0, totalPending: 0, paidToday: 0 });
@@ -341,12 +374,29 @@ export default function AdminInsurancePaymentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paymentMethodFilterKey]);
 
+  const effectivePaymentStatus = useMemo(() => {
+    if (paymentStatus) return paymentStatus;
+    if (Number(debouncedOverdueDays) > 0 || Number(debouncedMinAmount) > 0) return 'PENDING';
+    return '';
+  }, [paymentStatus, debouncedOverdueDays, debouncedMinAmount]);
+
+  const effectiveToDate = useMemo(() => {
+    if (toDate) return toDate;
+    const days = Number(debouncedOverdueDays);
+    if (days > 0) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - days);
+      return formatDateForInput(cutoff);
+    }
+    return '';
+  }, [toDate, debouncedOverdueDays]);
+
   const fetchPage = useCallback(
     async (pageNum: number) => {
       const response = await adminApi.getInsurancePayments({
         fromDate: fromDate || undefined,
-        toDate: toDate || undefined,
-        paymentStatus: paymentStatus || undefined,
+        toDate: effectiveToDate || undefined,
+        paymentStatus: effectivePaymentStatus || undefined,
         ...paymentMethodParams,
         productName: productName || undefined,
         searchQuery: debouncedNameQuery.trim() || undefined,
@@ -360,7 +410,7 @@ export default function AdminInsurancePaymentsPage() {
       }
       return response;
     },
-    [fromDate, toDate, paymentStatus, paymentMethodParams, productName, debouncedNameQuery, debouncedSupplierQuery, selectedUserId],
+    [fromDate, effectiveToDate, effectivePaymentStatus, paymentMethodParams, productName, debouncedNameQuery, debouncedSupplierQuery, selectedUserId],
   );
 
   const fetchRows = useCallback(async () => {
@@ -371,9 +421,9 @@ export default function AdminInsurancePaymentsPage() {
         fetchPage(currentPage),
         adminApi.getInsurancePaymentsSummary({
           fromDate: fromDate || undefined,
-          toDate: toDate || undefined,
+          toDate: effectiveToDate || undefined,
           productName: productName || undefined,
-          paymentStatus: paymentStatus || undefined,
+          paymentStatus: effectivePaymentStatus || undefined,
           ...paymentMethodParams,
           searchQuery: debouncedNameQuery.trim() || undefined,
           supplierQuery: debouncedSupplierQuery.trim() || undefined,
@@ -398,7 +448,7 @@ export default function AdminInsurancePaymentsPage() {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchPage, currentPage, fromDate, toDate, productName, paymentStatus, paymentMethodFilterKey, debouncedNameQuery, debouncedSupplierQuery, selectedUserId]);
+  }, [fetchPage, currentPage, fromDate, toDate, productName, paymentStatus, paymentMethodFilterKey, debouncedNameQuery, debouncedSupplierQuery, selectedUserId, debouncedOverdueDays, debouncedMinAmount]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -419,7 +469,11 @@ export default function AdminInsurancePaymentsPage() {
   }, []);
 
 
-  const filteredRows = rows;
+  const filteredRows = useMemo(() => {
+    const minAmt = Number(debouncedMinAmount) || 0;
+    if (minAmt <= 0) return rows;
+    return rows.filter((row) => Number(row.premiumAmount || 0) >= minAmt);
+  }, [rows, debouncedMinAmount]);
 
   const productOptions = useMemo(() => {
     return [
@@ -487,6 +541,18 @@ export default function AdminInsurancePaymentsPage() {
     const timer = setTimeout(() => setDebouncedSupplierQuery(supplierQuery), 400);
     return () => clearTimeout(timer);
   }, [supplierQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    const timer = setTimeout(() => setDebouncedOverdueDays(overdueDaysInput), 500);
+    return () => clearTimeout(timer);
+  }, [overdueDaysInput]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    const timer = setTimeout(() => setDebouncedMinAmount(minAmountInput), 500);
+    return () => clearTimeout(timer);
+  }, [minAmountInput]);
 
   useEffect(() => {
     setSelectedInvoiceIds((prev) => {
@@ -814,6 +880,31 @@ export default function AdminInsurancePaymentsPage() {
     }
   };
 
+  const markPaidInline = async (row: InsurancePaymentRow) => {
+    const confirmed = window.confirm(
+      `Mark ${row.invoiceNumber} as PAID (${formatCurrency(Number(row.premiumAmount || 0))})?`,
+    );
+    if (!confirmed) return;
+
+    setMarkingPaidInlineIds((prev) => ({ ...prev, [row.invoiceId]: true }));
+    try {
+      const response = await adminApi.updateInsurancePayment(row.invoiceId, {
+        paymentStatus: 'PAID',
+        paymentAmount: Number(row.premiumAmount || 0),
+        paymentCompletedAt: new Date().toISOString(),
+      });
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to mark as paid');
+      }
+      toast.success(`${row.invoiceNumber} marked as paid`);
+      await fetchRows();
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Failed to mark as paid'));
+    } finally {
+      setMarkingPaidInlineIds((prev) => ({ ...prev, [row.invoiceId]: false }));
+    }
+  };
+
   return (
     <div className="py-6">
       <div className="w-full px-2 sm:px-3 lg:px-4 xl:px-6">
@@ -987,12 +1078,30 @@ export default function AdminInsurancePaymentsPage() {
                 setNameQuery('');
                 setSupplierQuery('');
                 setSelectedUserId('');
+                setOverdueDaysInput('');
+                setMinAmountInput('');
                 setCurrentPage(1);
               }}
               className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               Reset Filters
             </button>
+            <input
+              type="number"
+              min="0"
+              placeholder="Overdue by days"
+              value={overdueDaysInput}
+              onChange={(e) => setOverdueDaysInput(e.target.value)}
+              className="w-[130px] rounded-md border border-gray-300 px-3 py-2 text-sm"
+            />
+            <input
+              type="number"
+              min="0"
+              placeholder="Amount ≥"
+              value={minAmountInput}
+              onChange={(e) => setMinAmountInput(e.target.value)}
+              className="w-[120px] rounded-md border border-gray-300 px-3 py-2 text-sm"
+            />
           </div>
           <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 p-3">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-sky-700">
@@ -1068,6 +1177,7 @@ export default function AdminInsurancePaymentsPage() {
             </p>
           </div>
         </div>
+
 
         {error ? (
           <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -1166,6 +1276,9 @@ export default function AdminInsurancePaymentsPage() {
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">
                     Status
                   </th>
+                  <th className="px-4 py-3 text-center font-semibold text-gray-700">
+                    Days Overdue
+                  </th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">
                     Payment Method
                   </th>
@@ -1181,7 +1294,7 @@ export default function AdminInsurancePaymentsPage() {
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={11}
+                      colSpan={12}
                       className="px-4 py-6 text-center text-sm text-gray-500"
                     >
                       Loading insurance payments...
@@ -1190,7 +1303,7 @@ export default function AdminInsurancePaymentsPage() {
                 ) : paginatedRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={11}
+                      colSpan={12}
                       className="px-4 py-6 text-center text-sm text-gray-500"
                     >
                       No records found.
@@ -1231,6 +1344,17 @@ export default function AdminInsurancePaymentsPage() {
                         >
                           {row.paymentStatus || 'PENDING'}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {(() => {
+                          const days = getDaysOverdue(row);
+                          if (days === null) return <span className="text-gray-400">-</span>;
+                          return (
+                            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold ${getDaysOverdueClasses(days)}`}>
+                              {getDaysOverdueLabel(days)}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-gray-700">
                         {row.paymentMethod === 'WALLET' ? (
@@ -1282,6 +1406,25 @@ export default function AdminInsurancePaymentsPage() {
                                 <span className="text-sm font-bold">...</span>
                               ) : (
                                 <FaWhatsapp className="h-4 w-4" />
+                              )}
+                            </button>
+                          ) : null}
+                          {['PENDING', 'PARTIAL'].includes(String(row.paymentStatus || '').toUpperCase()) ? (
+                            <button
+                              type="button"
+                              onClick={() => markPaidInline(row)}
+                              disabled={Boolean(markingPaidInlineIds[row.invoiceId])}
+                              title="Mark as Paid"
+                              aria-label={`Mark ${row.invoiceNumber} as paid`}
+                              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-emerald-300 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {markingPaidInlineIds[row.invoiceId] ? (
+                                <span className="text-sm font-bold">...</span>
+                              ) : (
+                                <>
+                                  <CircleCheck className="h-3.5 w-3.5" strokeWidth={2.2} />
+                                  Paid
+                                </>
                               )}
                             </button>
                           ) : null}
