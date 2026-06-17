@@ -164,7 +164,7 @@ export default function AdminTripsPage() {
   }, [trips, routeLabels]);
 
   const handleTrack = async (trip: AdminTripRow) => {
-    const truckNumber = trip.truck?.truckNumber;
+    const truckNumber = trip.truck?.truckNumber || trip.vehicleNumber;
     if (!truckNumber) {
       toast.error('Truck number is missing for this trip.');
       return;
@@ -912,6 +912,28 @@ export default function AdminTripsPage() {
                       ? 'Enroute To Destination'
                       : 'Not Tracking'}
                   </div>
+                  {(() => {
+                    const traveled = trackModal.tracking.location?.distanceTravel;
+                    const total = trackModal.tracking.location?.totalDistance;
+                    const pct = typeof traveled === 'number' && typeof total === 'number' && total > 0
+                      ? Math.min(Math.round((traveled / total) * 100), 100)
+                      : null;
+                    if (pct === null) return null;
+                    return (
+                      <div className="mt-3">
+                        <div className="flex items-center justify-between text-xs text-emerald-700 mb-1">
+                          <span>{pct}% complete</span>
+                          <span>{traveled} / {total} KM</span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-emerald-200">
+                          <div
+                            className="h-2 rounded-full bg-emerald-500 transition-all"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="rounded-xl border border-sky-100 bg-sky-50 p-4">
                   <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">

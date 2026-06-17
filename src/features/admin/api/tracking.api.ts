@@ -53,6 +53,8 @@ export interface TruckTrackingResponse {
     timeRecorded: string | null;
     distanceRemained: string | null;
     timeRemained: string | null;
+    distanceTravel?: number | null;
+    totalDistance?: number | null;
   } | null;
   origin: { lat: number; lng: number } | null;
   destination: { lat: number; lng: number } | null;
