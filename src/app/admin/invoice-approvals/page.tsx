@@ -314,20 +314,51 @@ export default function InvoiceApprovalsPage() {
     }
   };
 
+  const [postSendStatus, setPostSendStatus] = useState<{ invoiceNumber?: string; pdfGenerated?: boolean; whatsappSent?: boolean; paymentLink?: boolean } | null>(null);
+
   const approveCollection = async () => {
     if (!selectedId) return;
     setApproving(true);
+    setPostSendStatus(null);
     try {
+      // Step 1: Create invoice via bot
       const res = await axios.post(
         `${BOT_BASE_URL}/admin/invoice-collections/${selectedId}/approve`,
         { approved_by: 'admin_dashboard' },
         { headers: botHeaders() }
       );
       const invoiceData = res.data?.invoice;
+      const invoiceId = invoiceData?.id;
       if (invoiceData?.pdfUrl) {
         setApprovedPdfUrl(invoiceData.pdfUrl);
       }
-      toast.success('Invoice created & approved!');
+
+      let status: any = { invoiceNumber: invoiceData?.invoiceNumber, pdfGenerated: !!invoiceData?.pdfUrl };
+
+      // Step 2: Upload weighment slip if present
+      if (invoiceId && editDraft?._weighment_slip_file instanceof File) {
+        try {
+          await adminApi.uploadWeighmentSlips(invoiceId, [editDraft._weighment_slip_file]);
+        } catch { /* non-blocking */ }
+      }
+
+      // Step 3: Verify + send payment link + WhatsApp to customer
+      if (invoiceId) {
+        try {
+          const verifyRes = await adminApi.verifyAndSendPaymentForInvoice(invoiceId);
+          status.whatsappSent = true;
+          status.paymentLink = true;
+        } catch {
+          // Fallback: just verify without payment
+          try {
+            await adminApi.verifyInvoice(invoiceId);
+            status.whatsappSent = true;
+          } catch { /* best effort */ }
+        }
+      }
+
+      setPostSendStatus(status);
+      toast.success('Invoice sent to customer!');
       fetchCollections();
     } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Approval failed');
@@ -391,6 +422,10 @@ export default function InvoiceApprovalsPage() {
   }, [filteredCollections, selectedId, selectCollection]);
 
   const pendingCount = collections.filter((c) => c.status === 'pending').length;
+  const today = new Date().toISOString().split('T')[0];
+  const todayCollections = collections.filter((c) => c.window_closed_at?.startsWith(today));
+  const todayHighConf = todayCollections.filter((c) => c.ai_draft?.confidence === 'high').length;
+  const todayNeedsReview = todayCollections.filter((c) => c.ai_draft?.confidence === 'low' || c.ai_draft?.confidence === 'medium').length;
 
   if (loading) {
     return (
@@ -402,7 +437,7 @@ export default function InvoiceApprovalsPage() {
 
   return (
     <div className="flex h-[calc(100vh-64px)] flex-col">
-      {/* Header + Filter bar (matching Insurance Payments style) */}
+      {/* Header + Insights + Filter bar */}
       <div className="shrink-0 border-b border-gray-200 bg-white px-6 py-4">
         <div className="flex items-center justify-between mb-3">
           <div>
@@ -413,11 +448,36 @@ export default function InvoiceApprovalsPage() {
           </div>
           <div className="flex items-center gap-3">
             <button
+              onClick={() => { setDateFrom(today); setDateTo(today); }}
+              className="rounded-md bg-indigo-50 border border-indigo-200 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+            >
+              Today
+            </button>
+            <button
               onClick={fetchCollections}
               className="rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-200"
             >
               Refresh
             </button>
+          </div>
+        </div>
+        {/* Insight cards */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 mb-3">
+          <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Total Pending</div>
+            <div className="mt-1 text-xl font-semibold text-slate-900">{pendingCount}</div>
+          </div>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 shadow-sm">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-600">Today&apos;s Invoices</div>
+            <div className="mt-1 text-xl font-semibold text-emerald-700">{todayCollections.length}</div>
+          </div>
+          <div className="rounded-xl border border-green-200 bg-white p-3 shadow-sm">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-green-600">High Confidence</div>
+            <div className="mt-1 text-xl font-semibold text-green-700">{todayHighConf}</div>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-white p-3 shadow-sm">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-amber-600">Needs Review</div>
+            <div className="mt-1 text-xl font-semibold text-amber-700">{todayNeedsReview}</div>
           </div>
         </div>
         {/* Horizontal filter bar */}
@@ -591,6 +651,7 @@ export default function InvoiceApprovalsPage() {
                     rejectCollection={rejectCollection}
                     rejecting={rejecting}
                     approvedPdfUrl={approvedPdfUrl}
+                    postSendStatus={postSendStatus}
                     handleDownload={async () => {
                       if (!editDraft) return;
                       try {
@@ -637,12 +698,13 @@ export default function InvoiceApprovalsPage() {
 
 function ReviewTab({
   selectedCollection, messages, messagesLoading, editDraft, handleDraftChange,
-  saveDraft, saving, approveCollection, approving, rejectCollection, rejecting, approvedPdfUrl, handleDownload,
+  saveDraft, saving, approveCollection, approving, rejectCollection, rejecting, approvedPdfUrl, handleDownload, postSendStatus,
 }: {
   selectedCollection: InvoiceCollection; messages: CollectionMessage[]; messagesLoading: boolean;
   editDraft: AiDraft | null; handleDraftChange: (field: string, value: any) => void;
   saveDraft: () => void; saving: boolean; approveCollection: () => void; approving: boolean;
   rejectCollection: () => void; rejecting: boolean; approvedPdfUrl: string | null; handleDownload: () => void;
+  postSendStatus: { invoiceNumber?: string; pdfGenerated?: boolean; whatsappSent?: boolean; paymentLink?: boolean } | null;
 }) {
   return (
     <div className="mx-auto max-w-4xl p-6">
@@ -847,6 +909,20 @@ function ReviewTab({
           <p className="text-sm text-gray-500">
             This collection was <span className="font-medium">{selectedCollection.status === 'done' ? 'approved' : 'rejected'}</span> by {selectedCollection.completed_by || 'unknown'} on {formatTime(selectedCollection.completed_at)}
           </p>
+        </div>
+      )}
+
+      {/* Post-send status tracker */}
+      {postSendStatus && (
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-sm font-semibold text-emerald-800 mb-2">Invoice Sent Successfully</p>
+          <div className="space-y-1 text-sm">
+            {postSendStatus.invoiceNumber && <p className="text-emerald-700">✓ Invoice created: {postSendStatus.invoiceNumber}</p>}
+            {postSendStatus.pdfGenerated && <p className="text-emerald-700">✓ PDF generated</p>}
+            {postSendStatus.whatsappSent && <p className="text-emerald-700">✓ WhatsApp sent to customer</p>}
+            {postSendStatus.paymentLink && <p className="text-emerald-700">✓ Payment link created</p>}
+            {!postSendStatus.paymentLink && <p className="text-amber-600">⚠ Payment link not created (manual step needed)</p>}
+          </div>
         </div>
       )}
     </div>
