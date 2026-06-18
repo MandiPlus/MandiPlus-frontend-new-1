@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { useAdmin } from '@/features/admin/context/AdminContext';
+import { MoreVertical } from 'lucide-react';
 
 type Conversation = {
   phone: string;
@@ -1740,12 +1741,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               </div>
             </div>
 
-            <div className={`mt-auto px-4 py-4 ${isDark ? 'border-t border-[#25323a]' : 'border-t border-slate-200'}`}>
-              <div className={`rounded-2xl px-3 py-3 ${isDark ? 'bg-[#1a262d]' : 'bg-slate-50'}`}>
-                <p className={`text-xs font-medium ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>Live sync</p>
-                <p className={`mt-1 text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>New messages flow in automatically.</p>
-              </div>
-            </div>
+            <div className="mt-auto" />
           </aside>
         ) : null}
         <aside className={`flex h-full flex-col overflow-hidden rounded-[24px] border ${standalone ? (isDark ? 'border-[#25323a] bg-[#111b21] shadow-sm' : 'border-slate-200 bg-white shadow-sm') : `border-slate-200 ${currentTheme.panel}`}`}>
@@ -2084,48 +2080,68 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               </div>
             </div>
             {!standalone ? (
-              <div className="hidden items-center gap-2 sm:flex">
+              <div className="relative hidden items-center sm:flex">
                 <button
                   type="button"
-                  onClick={() => {
-                    window.open('/whatsapp-chats', '_blank', 'noopener,noreferrer');
-                  }}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
+                  onClick={() => setShowActionMenu((v) => !v)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100"
                 >
-                  Open in new tab
+                  <MoreVertical className="h-5 w-5" />
                 </button>
-                {selectedConversation ? (
-                  <button
-                    type="button"
-                    onClick={openDeleteConversationModal}
-                    disabled={deletingConversation}
-                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${deletePillClass} disabled:cursor-not-allowed disabled:opacity-60`}
-                  >
-                    {deletingConversation ? 'Deleting...' : 'Delete conversation'}
-                  </button>
-                ) : null}
+                {showActionMenu && (
+                  <div className="absolute right-0 top-11 z-20 w-48 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => { setShowActionMenu(false); window.open('/whatsapp-chats', '_blank', 'noopener,noreferrer'); }}
+                      className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+                    >
+                      Open in new tab
+                    </button>
+                    {selectedConversation && (
+                      <button
+                        type="button"
+                        onClick={() => { setShowActionMenu(false); openDeleteConversationModal(); }}
+                        disabled={deletingConversation}
+                        className="w-full rounded-lg px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-60"
+                      >
+                        Delete conversation
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ) : null}
             {standalone && selectedConversation ? (
-              <div className="flex items-center gap-2">
+              <div className="relative">
                 <button
                   type="button"
-                  onClick={openProfileModal}
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${isDark
-                    ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]'
-                    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  onClick={() => setShowActionMenu((v) => !v)}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full transition ${isDark
+                    ? 'text-slate-300 hover:bg-[#1f2c33]'
+                    : 'text-slate-600 hover:bg-slate-100'
                     }`}
                 >
-                  Edit profile
+                  <MoreVertical className="h-5 w-5" />
                 </button>
-                <button
-                  type="button"
-                  onClick={openDeleteConversationModal}
-                  disabled={deletingConversation}
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${deletePillClass} disabled:cursor-not-allowed disabled:opacity-60`}
-                >
-                  {deletingConversation ? 'Deleting...' : 'Delete conversation'}
-                </button>
+                {showActionMenu && (
+                  <div className={`absolute right-0 top-11 z-20 w-48 rounded-xl border p-1 shadow-lg ${isDark ? 'border-[#31424c] bg-[#111b21]' : 'border-slate-200 bg-white'}`}>
+                    <button
+                      type="button"
+                      onClick={() => { setShowActionMenu(false); openProfileModal(); }}
+                      className={`w-full rounded-lg px-3 py-2 text-left text-sm ${isDark ? 'text-slate-200 hover:bg-[#1f2c33]' : 'text-slate-700 hover:bg-slate-100'}`}
+                    >
+                      Edit profile
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowActionMenu(false); openDeleteConversationModal(); }}
+                      disabled={deletingConversation}
+                      className={`w-full rounded-lg px-3 py-2 text-left text-sm ${isDark ? 'text-rose-300 hover:bg-[#2a1f22]' : 'text-rose-600 hover:bg-rose-50'} disabled:opacity-60`}
+                    >
+                      Delete conversation
+                    </button>
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
@@ -2180,25 +2196,22 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                     return (
                       <div
                         key={message.id}
-                        className={`mb-3 flex ${incoming || system ? 'justify-start' : 'justify-end'}`}
+                        className={`group/msg mb-1.5 flex ${incoming || system ? 'justify-start' : 'justify-end'}`}
                       >
                         <div
-                          className={`max-w-[86%] rounded-2xl px-3 py-2 shadow-sm ${system ? 'border border-amber-200' : 'border border-black/5'
+                          className={`relative max-w-[75%] rounded-lg px-2.5 py-1.5 shadow-sm ${system ? 'border border-amber-200' : ''
                             } ${bubbleClass}`}
                         >
-                          <div className="mb-2 flex items-start justify-between gap-3">
-                            <div className={`text-[11px] font-medium ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>
-                              {messageMetaLabel(message)}
-                            </div>
+                          {/* Three-dot menu on hover */}
+                          {!system && (
                             <button
                               type="button"
                               onClick={() => openDeleteMessageModal(message)}
-                              disabled={deletingMessageId === message.id}
-                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold shadow-sm transition ${deletePillClass} disabled:cursor-not-allowed disabled:opacity-60`}
+                              className={`absolute top-1 ${incoming ? 'right-1' : 'left-1'} hidden h-6 w-6 items-center justify-center rounded-full group-hover/msg:flex ${isDark && standalone ? 'bg-black/20 text-white/70 hover:bg-black/30' : 'bg-black/5 text-slate-500 hover:bg-black/10'}`}
                             >
-                              {deletingMessageId === message.id ? 'Deleting...' : 'Delete'}
+                              <MoreVertical className="h-3.5 w-3.5" />
                             </button>
-                          </div>
+                          )}
                           {media ? (
                             <div className="mb-2">
                               {media.kind === 'image' || media.kind === 'sticker' ? (
@@ -2496,34 +2509,15 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                     </div>
                   </div>
 
-                  {latestMessage ? (
-                    <div className={`mt-5 rounded-2xl border p-4 ${isDark ? 'border-[#25323a]' : 'border-slate-200'}`}>
-                      <p className={`text-xs font-medium uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Latest message</p>
-                      <p className={`mt-2 text-sm leading-6 ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>
-                        {previewText(
-                          latestMessage.text_content,
-                          latestMessage.message_type,
-                          latestMessage.payload,
-                          templatesByName
-                        )}
-                      </p>
-                    </div>
-                  ) : null}
-
-                  <div className={`mt-5 rounded-2xl border p-4 ${isDark ? 'border-[#25323a]' : 'border-slate-200'}`}>
-                    <p className={`text-xs font-medium uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Metadata</p>
-                    {contactMetadata.length === 0 ? (
-                      <p className={`mt-2 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>No extra metadata available for this chat yet.</p>
-                    ) : (
-                      <div className="mt-3 space-y-3">
-                        {contactMetadata.map((row, index) => (
-                          <div key={`${row.key}:${row.value}:${index}`} className="flex items-start justify-between gap-3 text-sm">
-                            <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>{row.key}</span>
-                            <span className={`max-w-[55%] break-words text-right font-medium ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{row.value}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                  {/* Quick actions */}
+                  <div className="mt-5 space-y-2">
+                    <button
+                      type="button"
+                      onClick={openProfileModal}
+                      className={`w-full rounded-xl px-4 py-2.5 text-left text-sm font-medium transition ${isDark ? 'bg-[#1a262d] text-slate-200 hover:bg-[#22323b]' : 'bg-slate-50 text-slate-700 hover:bg-slate-100'}`}
+                    >
+                      Edit contact info
+                    </button>
                   </div>
                 </>
               ) : (
