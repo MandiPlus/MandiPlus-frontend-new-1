@@ -77,6 +77,8 @@ export default function CallRoutingPage() {
   const [loading, setLoading] = useState(true);
   const [outboundPhone, setOutboundPhone] = useState('');
   const [calling, setCalling] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [playingCallSid, setPlayingCallSid] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -115,6 +117,37 @@ export default function CallRoutingPage() {
       fetchData();
     } catch (err) {
       console.error('Failed to toggle agent status:', err);
+    }
+  };
+
+  const syncRecordings = async () => {
+    setSyncing(true);
+    try {
+      await fetch(`${API_BASE}/exotel/sync-recordings`, { method: 'POST' });
+      await fetchData();
+    } catch (err) {
+      console.error('Failed to sync recordings:', err);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const playRecording = async (log: CallLog) => {
+    if (log.recordingUrl) {
+      setPlayingCallSid(playingCallSid === log.callSid ? null : log.callSid);
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE}/exotel/call-recording/${log.callSid}`);
+      const data = await res.json();
+      if (data.recordingUrl) {
+        setCallLogs((prev) =>
+          prev.map((l) => (l.callSid === log.callSid ? { ...l, recordingUrl: data.recordingUrl } : l)),
+        );
+        setPlayingCallSid(log.callSid);
+      }
+    } catch (err) {
+      console.error('Failed to fetch recording:', err);
     }
   };
 
@@ -218,8 +251,15 @@ export default function CallRoutingPage() {
 
         {/* Call Logs */}
         <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="px-5 py-4 border-b border-gray-200">
+          <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-800">Recent Call Logs</h2>
+            <button
+              onClick={syncRecordings}
+              disabled={syncing}
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition"
+            >
+              {syncing ? 'Syncing...' : 'Sync Recordings'}
+            </button>
           </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -232,12 +272,13 @@ export default function CallRoutingPage() {
                   <th className="px-4 py-3 text-center font-semibold text-gray-700">Status</th>
                   <th className="px-4 py-3 text-right font-semibold text-gray-700">Duration</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Direction</th>
+                  <th className="px-4 py-3 text-center font-semibold text-gray-700">Recording</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
+                    <td colSpan={8} className="px-4 py-12 text-center text-gray-500">
                       <div className="flex flex-col items-center gap-2">
                         <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet-500 border-t-transparent"></div>
                         <span>Loading call logs...</span>
@@ -246,7 +287,7 @@ export default function CallRoutingPage() {
                   </tr>
                 ) : callLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
+                    <td colSpan={8} className="px-4 py-12 text-center text-gray-500">
                       No call logs yet. Make a test call to see data here.
                     </td>
                   </tr>
@@ -283,7 +324,28 @@ export default function CallRoutingPage() {
                         <td className="px-4 py-3 text-gray-600 text-xs">
                           {log.direction === 'inbound' ? '📞 Inbound' : '📤 Outbound'}
                         </td>
+                        <td className="px-4 py-3 text-center">
+                          {log.status === 'completed' ? (
+                            <button
+                              onClick={() => playRecording(log)}
+                              className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 transition"
+                            >
+                              {playingCallSid === log.callSid ? '⏹ Stop' : '▶ Play'}
+                            </button>
+                          ) : (
+                            <span className="text-gray-300 text-xs">-</span>
+                          )}
+                        </td>
                       </tr>
+                      {playingCallSid === log.callSid && log.recordingUrl && (
+                        <tr>
+                          <td colSpan={8} className="px-4 py-2 bg-gray-50">
+                            <audio controls autoPlay src={log.recordingUrl} className="w-full max-w-md h-8">
+                              Your browser does not support the audio element.
+                            </audio>
+                          </td>
+                        </tr>
+                      )}
                     );
                   })
                 )}
