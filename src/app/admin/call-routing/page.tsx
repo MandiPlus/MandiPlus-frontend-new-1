@@ -132,23 +132,8 @@ export default function CallRoutingPage() {
     }
   };
 
-  const playRecording = async (log: CallLog) => {
-    if (log.recordingUrl) {
-      setPlayingCallSid(playingCallSid === log.callSid ? null : log.callSid);
-      return;
-    }
-    try {
-      const res = await fetch(`${API_BASE}/exotel/call-recording/${log.callSid}`);
-      const data = await res.json();
-      if (data.recordingUrl) {
-        setCallLogs((prev) =>
-          prev.map((l) => (l.callSid === log.callSid ? { ...l, recordingUrl: data.recordingUrl } : l)),
-        );
-        setPlayingCallSid(log.callSid);
-      }
-    } catch (err) {
-      console.error('Failed to fetch recording:', err);
-    }
+  const playRecording = (log: CallLog) => {
+    setPlayingCallSid(playingCallSid === log.callSid ? null : log.callSid);
   };
 
   const makeOutboundCall = async () => {
@@ -338,10 +323,10 @@ export default function CallRoutingPage() {
                             )}
                           </td>
                         </tr>
-                        {playingCallSid === log.callSid && log.recordingUrl && (
+                        {playingCallSid === log.callSid && (
                           <tr>
                             <td colSpan={8} className="px-4 py-2 bg-gray-50">
-                              <audio controls autoPlay src={log.recordingUrl} className="w-full max-w-md h-8">
+                              <audio controls autoPlay src={`${API_BASE}/exotel/recording-proxy/${log.callSid}`} className="w-full max-w-md h-8">
                                 Your browser does not support the audio element.
                               </audio>
                             </td>
