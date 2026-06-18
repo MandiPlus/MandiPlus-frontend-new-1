@@ -28,7 +28,8 @@ const STUN_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-const ALLOWED_USERS = ['admin@mandiplus.com'];
+const ALLOWED_USERS = ['admin@mandiplus.com', 'admin'];
+
 
 function formatCallDuration(seconds: number) {
   const mins = Math.floor(seconds / 60);
@@ -72,7 +73,7 @@ export function WhatsAppCallHandler() {
   const wsUrl = botBaseUrl.replace(/^http/, 'ws') + '/ws/calls';
 
   const currentUser = accessProfile?.account?.username || '';
-  const isAllowed = ALLOWED_USERS.includes(currentUser);
+  const isAllowed = accessProfile?.isFullAdmin || ALLOWED_USERS.includes(currentUser);
 
   const connectWebSocket = useCallback(() => {
     if (!isAllowed) return;
