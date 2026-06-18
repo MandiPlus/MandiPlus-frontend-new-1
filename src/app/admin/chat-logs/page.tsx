@@ -2208,7 +2208,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                         >
                           {/* Three-dot menu on hover */}
                           {!system && (
-                            <div className={`absolute top-1 ${incoming ? 'right-1' : 'left-1'} hidden group-hover/msg:block`}>
+                            <div className="absolute top-1 right-1 hidden group-hover/msg:block">
                               <button
                                 type="button"
                                 onClick={() => setMsgMenuId(msgMenuId === message.id ? null : message.id)}
@@ -2217,7 +2217,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                                 <MoreVertical className="h-3.5 w-3.5" />
                               </button>
                               {msgMenuId === message.id && (
-                                <div className={`absolute ${incoming ? 'right-0' : 'left-0'} top-7 z-30 w-36 rounded-lg border p-1 shadow-lg ${isDark && standalone ? 'border-[#31424c] bg-[#111b21]' : 'border-slate-200 bg-white'}`}>
+                                <div className={`absolute right-0 top-7 z-30 w-36 rounded-lg border p-1 shadow-lg ${isDark && standalone ? 'border-[#31424c] bg-[#111b21]' : 'border-slate-200 bg-white'}`}>
                                   <button
                                     type="button"
                                     onClick={() => { setMsgMenuId(null); openDeleteMessageModal(message); }}
