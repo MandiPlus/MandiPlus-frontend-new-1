@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 
@@ -295,57 +295,59 @@ export default function CallRoutingPage() {
                   callLogs.map((log) => {
                     const badge = getStatusBadge(log.status);
                     return (
-                      <tr key={log.id} className="hover:bg-gray-50 transition">
-                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">
-                          {timeAgo(log.createdAt)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-gray-900">{log.callerName || formatPhone(log.callerPhone)}</div>
-                          {log.callerName && <div className="text-xs text-gray-500">{formatPhone(log.callerPhone)}</div>}
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">{log.agentName || '-'}</td>
-                        <td className="px-4 py-3">
-                          {log.productCategory ? (
-                            <span className="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 border border-violet-200">
-                              {log.productCategory}
+                      <React.Fragment key={log.id}>
+                        <tr className="hover:bg-gray-50 transition">
+                          <td className="px-4 py-3 text-gray-600 whitespace-nowrap text-xs">
+                            {timeAgo(log.createdAt)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-gray-900">{log.callerName || formatPhone(log.callerPhone)}</div>
+                            {log.callerName && <div className="text-xs text-gray-500">{formatPhone(log.callerPhone)}</div>}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">{log.agentName || '-'}</td>
+                          <td className="px-4 py-3">
+                            {log.productCategory ? (
+                              <span className="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 border border-violet-200">
+                                {log.productCategory}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${badge.classes}`}>
+                              {badge.label}
                             </span>
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${badge.classes}`}>
-                            {badge.label}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right text-gray-700 font-mono text-xs">
-                          {formatDuration(log.conversationSeconds || log.durationSeconds)}
-                        </td>
-                        <td className="px-4 py-3 text-gray-600 text-xs">
-                          {log.direction === 'inbound' ? '📞 Inbound' : '📤 Outbound'}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          {log.status === 'completed' ? (
-                            <button
-                              onClick={() => playRecording(log)}
-                              className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 transition"
-                            >
-                              {playingCallSid === log.callSid ? '⏹ Stop' : '▶ Play'}
-                            </button>
-                          ) : (
-                            <span className="text-gray-300 text-xs">-</span>
-                          )}
-                        </td>
-                      </tr>
-                      {playingCallSid === log.callSid && log.recordingUrl && (
-                        <tr>
-                          <td colSpan={8} className="px-4 py-2 bg-gray-50">
-                            <audio controls autoPlay src={log.recordingUrl} className="w-full max-w-md h-8">
-                              Your browser does not support the audio element.
-                            </audio>
+                          </td>
+                          <td className="px-4 py-3 text-right text-gray-700 font-mono text-xs">
+                            {formatDuration(log.conversationSeconds || log.durationSeconds)}
+                          </td>
+                          <td className="px-4 py-3 text-gray-600 text-xs">
+                            {log.direction === 'inbound' ? '📞 Inbound' : '📤 Outbound'}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {log.status === 'completed' ? (
+                              <button
+                                onClick={() => playRecording(log)}
+                                className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 transition"
+                              >
+                                {playingCallSid === log.callSid ? '⏹ Stop' : '▶ Play'}
+                              </button>
+                            ) : (
+                              <span className="text-gray-300 text-xs">-</span>
+                            )}
                           </td>
                         </tr>
-                      )}
+                        {playingCallSid === log.callSid && log.recordingUrl && (
+                          <tr>
+                            <td colSpan={8} className="px-4 py-2 bg-gray-50">
+                              <audio controls autoPlay src={log.recordingUrl} className="w-full max-w-md h-8">
+                                Your browser does not support the audio element.
+                              </audio>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })
                 )}
