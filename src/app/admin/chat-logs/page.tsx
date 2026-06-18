@@ -721,10 +721,21 @@ const themeOptions: Array<{
     },
   ];
 
+function isMobileViewport() {
+  if (typeof window === 'undefined') return false;
+  return window.innerWidth < 1024;
+}
+
 export function AdminChatLogsView({ standalone = false }: { standalone?: boolean }) {
   const router = useRouter();
   const { isAuthenticated } = useAdmin();
-  const [contactDirectory, setContactDirectory] = useState<Record<string, { name: string }>>({});
+  const [contactDirectory, setContactDirectory] = useState<Record<string, { name: string }>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const stored = localStorage.getItem('chatContactDirectory');
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
+  });
 
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -736,7 +747,13 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   const [mediaFailures, setMediaFailures] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState('');
   const [chatFilter, setChatFilter] = useState<ChatFilter>('all');
-  const [chatTheme, setChatTheme] = useState<ChatTheme>('light');
+  const [chatTheme, setChatTheme] = useState<ChatTheme>(() => {
+    if (typeof window === 'undefined') return 'light';
+    try {
+      const stored = localStorage.getItem('chatLogsTheme');
+      return (stored === 'light' || stored === 'dark') ? stored : 'light';
+    } catch { return 'light'; }
+  });
   const [refreshTick, setRefreshTick] = useState(0);
   const [draftMessage, setDraftMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
@@ -788,10 +805,15 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
 
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const hasLoadedConversationsRef = useRef(false);
   const hasLoadedMessagesRef = useRef(false);
+  const mobileBackRef = useRef(false);
+  const phoneChangedRef = useRef(false);
   const scrollSnapshotRef = useRef<{
     scrollTop: number;
     scrollHeight: number;
@@ -848,19 +870,6 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     ? 'border border-rose-400/30 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20'
     : 'border border-rose-200 bg-white/85 text-rose-600 hover:bg-rose-50';
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const storedContacts = localStorage.getItem('chatContactDirectory');
-      if (storedContacts) {
-        setContactDirectory(JSON.parse(storedContacts));
-      }
-      const storedTheme = localStorage.getItem('chatLogsTheme');
-      if (storedTheme === 'light' || storedTheme === 'dark') {
-        setChatTheme(storedTheme);
-      }
-    } catch { }
-  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -946,14 +955,20 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
 
         if (items.length === 0) {
           setSelectedPhone('');
-        } else if (!selectedPhone && items.length > 0) {
-          setSelectedPhone(items[0].phone);
+        } else if (!selectedPhone && items.length > 0 && !mobileBackRef.current) {
+          if (!isMobileViewport()) {
+            setSelectedPhone(items[0].phone);
+          }
         } else if (
           selectedPhone &&
           !items.find((item) => item.phone === selectedPhone) &&
           items.length > 0
         ) {
-          setSelectedPhone(items[0].phone);
+          if (!isMobileViewport()) {
+            setSelectedPhone(items[0].phone);
+          } else {
+            setSelectedPhone('');
+          }
         }
       } catch {
         if (!hasLoadedConversationsRef.current) {
@@ -1059,7 +1074,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
           };
         }
         const res = await axios.get<MessageResponse>(
-          `${botBaseUrl}/admin/chat/conversations/${selectedPhone}/messages?limit=30`,
+          `${botBaseUrl}/admin/chat/conversations/${selectedPhone}/messages?limit=10`,
           axiosConfig
         );
         const nextItems = Array.isArray(res.data?.items) ? res.data.items : [];
@@ -1091,6 +1106,45 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
 
     fetchMessages();
   }, [isAuthenticated, selectedPhone, botBaseUrl, axiosConfig, refreshTick]);
+
+  const olderLoadFailedRef = useRef(false);
+
+  const loadOlderMessages = async () => {
+    if (!selectedPhone || loadingOlder || !hasMoreMessages || messages.length === 0 || olderLoadFailedRef.current) return;
+    setLoadingOlder(true);
+    try {
+      const oldestMessage = messages[0];
+      const oldestDate = oldestMessage?.created_at;
+      const res = await axios.get<MessageResponse>(
+        `${botBaseUrl}/admin/chat/conversations/${selectedPhone}/messages?limit=10&before=${encodeURIComponent(oldestDate)}`,
+        axiosConfig
+      );
+      const olderItems = Array.isArray(res.data?.items) ? res.data.items : [];
+      if (olderItems.length === 0) {
+        setHasMoreMessages(false);
+      } else {
+        const container = messagesContainerRef.current;
+        const prevHeight = container?.scrollHeight || 0;
+        setMessages((prev) => [...olderItems, ...prev]);
+        requestAnimationFrame(() => {
+          if (container) {
+            container.scrollTop = container.scrollHeight - prevHeight;
+          }
+        });
+      }
+    } catch {
+      olderLoadFailedRef.current = true;
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
+  const handleMessagesScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    if (target.scrollTop < 50 && hasMoreMessages && !loadingOlder) {
+      loadOlderMessages();
+    }
+  };
 
   useEffect(() => {
     if (!selectedPhone || !selectedConversation || !selectedConversation.unread_count) return;
@@ -1129,9 +1183,21 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   }, [selectedPhone, selectedConversation?.unread_count, botBaseUrl, axiosConfig]);
 
   useLayoutEffect(() => {
-    const snapshot = scrollSnapshotRef.current;
     const container = messagesContainerRef.current;
-    if (!snapshot || !container) return;
+    if (!container) return;
+
+    if (phoneChangedRef.current) {
+      phoneChangedRef.current = false;
+      scrollSnapshotRef.current = null;
+      container.scrollTop = container.scrollHeight;
+      return;
+    }
+
+    const snapshot = scrollSnapshotRef.current;
+    if (!snapshot) {
+      container.scrollTop = container.scrollHeight;
+      return;
+    }
 
     const distanceFromBottom =
       snapshot.scrollHeight - (snapshot.scrollTop + snapshot.clientHeight);
@@ -1147,6 +1213,8 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   }, [messages]);
 
   useEffect(() => {
+    phoneChangedRef.current = true;
+    olderLoadFailedRef.current = false;
     setMediaUrls((prev) => {
       Object.values(prev).forEach((url) => {
         try {
@@ -1156,8 +1224,12 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
       return {};
     });
     setMediaFailures({});
+    setHasMoreMessages(true);
     hasLoadedMessagesRef.current = false;
   }, [selectedPhone]);
+
+  const mediaUrlsRef = useRef(mediaUrls);
+  mediaUrlsRef.current = mediaUrls;
 
   useEffect(() => {
     if (!selectedPhone || messages.length === 0) return;
@@ -1165,9 +1237,12 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     let cancelled = false;
 
     const resolveMedia = async () => {
+      const currentUrls = mediaUrlsRef.current;
       const targets = messages
         .map((message) => ({ message, media: extractMessageMedia(message) }))
-        .filter((item) => item.media && !mediaUrls[item.message.id]);
+        .filter((item) => item.media && !currentUrls[item.message.id] && !mediaFailures[item.message.id]);
+
+      if (targets.length === 0) return;
 
       await Promise.all(
         targets.map(async (item) => {
@@ -1216,7 +1291,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     return () => {
       cancelled = true;
     };
-  }, [messages, selectedPhone, botBaseUrl, axiosConfig, mediaUrls]);
+  }, [messages, selectedPhone, botBaseUrl, axiosConfig, mediaFailures]);
 
   useEffect(() => {
     const id = setInterval(() => setRefreshTick((x) => x + 1), 120000);
@@ -1298,15 +1373,17 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     return [...byPhone.values()];
   }, [conversations]);
 
-  const filterCountsSafe = useMemo(
-    () => ({
-      all: uniqueConversations.length,
-      unread: uniqueConversations.filter(isUnreadConversation).length,
-      delivered: uniqueConversations.filter(isDeliveredConversation).length,
-      failed: uniqueConversations.filter(isFailedConversation).length,
-    }),
-    [uniqueConversations]
-  );
+  const filterCountsSafe = useMemo(() => {
+    let unread = 0;
+    let delivered = 0;
+    let failed = 0;
+    for (const conv of uniqueConversations) {
+      if (isUnreadConversation(conv)) unread++;
+      if (isDeliveredConversation(conv)) delivered++;
+      if (isFailedConversation(conv)) failed++;
+    }
+    return { all: uniqueConversations.length, unread, delivered, failed };
+  }, [uniqueConversations]);
 
   const filteredConversations = useMemo(() => {
     const key = search.trim().toLowerCase();
@@ -1674,7 +1751,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     ];
 
   return (
-    <div className={standalone ? `${isDark ? 'h-screen bg-[#0b141a] p-3 text-slate-100' : 'h-screen bg-[#edf1f5] p-3'}` : 'h-[calc(100vh-7.5rem)] py-5'}>
+    <div className={standalone ? `${isDark ? 'h-dvh bg-[#0b141a] p-0 lg:p-3 text-slate-100' : 'h-dvh bg-[#edf1f5] p-0 lg:p-3'}` : 'h-dvh lg:h-[calc(100vh-7.5rem)] py-0 lg:py-5'}>
 
       {error ? (
         <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -1683,10 +1760,10 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
       ) : null}
 
       <div
-        className={`grid h-full grid-cols-1 gap-3 ${standalone ? 'xl:grid-cols-[210px_360px_minmax(0,1fr)_300px]' : 'rounded-[28px] border border-slate-200 p-3 shadow-sm lg:grid-cols-[380px_1fr]'} ${currentTheme.shell}`}
+        className={`flex h-full gap-0 lg:gap-3 ${standalone ? 'lg:grid lg:grid-cols-[210px_360px_minmax(0,1fr)_300px]' : 'lg:rounded-[28px] lg:border lg:border-slate-200 lg:p-3 lg:shadow-sm lg:grid lg:grid-cols-[380px_1fr]'} ${currentTheme.shell}`}
       >
         {standalone ? (
-          <aside className={`flex h-full flex-col rounded-[24px] border shadow-sm ${isDark ? 'border-[#25323a] bg-[#111b21] text-slate-100' : 'border-slate-200 bg-white'}`}>
+          <aside className={`hidden lg:flex h-full flex-col rounded-[24px] border shadow-sm ${isDark ? 'border-[#25323a] bg-[#111b21] text-slate-100' : 'border-slate-200 bg-white'}`}>
             <div className={`px-4 py-5 ${isDark ? 'border-b border-[#25323a]' : 'border-b border-slate-200'}`}>
               <div className="flex items-center gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#25D366]">
@@ -1748,7 +1825,31 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
             <div className="mt-auto" />
           </aside>
         ) : null}
-        <aside className={`flex h-full flex-col overflow-hidden rounded-[24px] border ${standalone ? (isDark ? 'border-[#25323a] bg-[#111b21] shadow-sm' : 'border-slate-200 bg-white shadow-sm') : `border-slate-200 ${currentTheme.panel}`}`}>
+        <aside className={`${selectedPhone ? 'hidden lg:flex' : 'flex'} h-full w-full lg:w-auto flex-col overflow-hidden lg:rounded-[24px] lg:border ${standalone ? (isDark ? 'lg:border-[#25323a] bg-[#111b21] lg:shadow-sm' : 'lg:border-slate-200 bg-white lg:shadow-sm') : `lg:border-slate-200 ${currentTheme.panel}`}`}>
+          {/* ── Mobile header (standalone only, visible on small screens) ── */}
+          {standalone && (
+            <div className={`flex lg:hidden items-center gap-3 px-4 py-3 ${isDark ? 'border-b border-[#25323a] bg-[#111b21]' : 'border-b border-slate-200 bg-white'}`} style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#25D366]">
+                <svg className="h-5 w-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className={`text-base font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>MandiPlus</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNewContactModal(true)}
+                className={`flex h-9 w-9 items-center justify-center rounded-full ${isDark ? 'text-slate-300 hover:bg-[#1f2c33]' : 'text-slate-600 hover:bg-slate-100'}`}
+                aria-label="New chat"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+              </button>
+            </div>
+          )}
+
           {/* ── Main tab switcher ── */}
           <div className={`flex border-b ${isDark && standalone ? 'border-[#25323a]' : 'border-slate-200'}`}>
             <button
@@ -1778,10 +1879,10 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
             </button>
           </div>
 
-          <div className={`px-4 py-4 ${isDark && standalone ? 'border-b border-[#25323a]' : 'border-b border-slate-200'}`}>
+          <div className={`px-3 lg:px-4 py-3 lg:py-4 ${isDark && standalone ? 'border-b border-[#25323a]' : 'border-b border-slate-200'}`}>
             {mainTab === 'chats' ? (
               <>
-                <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="mb-2 lg:mb-3 hidden lg:flex items-center justify-between gap-3">
                   <div>
                     <p className={`text-lg font-semibold ${isDark && standalone ? 'text-slate-100' : 'text-slate-900'}`}>Chats</p>
                     <p className={`text-xs ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>Search by number, name, or preview</p>
@@ -1802,17 +1903,40 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search name, number, or message"
-                  className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition focus:border-emerald-500 ${isDark && standalone ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500 focus:bg-[#1f2c33]' : 'border-slate-200 bg-slate-50 focus:bg-white'}`}
+                  placeholder="Search..."
+                  className={`w-full rounded-full lg:rounded-2xl border px-4 py-2.5 lg:py-3 text-sm outline-none transition focus:border-emerald-500 ${isDark && standalone ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500 focus:bg-[#1f2c33]' : 'border-slate-200 bg-slate-50 focus:bg-white'}`}
                 />
 
+                <div className={`mt-2 lg:mt-3 flex gap-1.5 lg:gap-2 overflow-x-auto no-scrollbar ${standalone ? 'lg:hidden' : ''}`}>
+                  {filterButtons.map((filter) => {
+                    const active = chatFilter === filter.key;
+                    return (
+                      <button
+                        key={filter.key}
+                        type="button"
+                        onClick={() => setChatFilter(filter.key)}
+                        className={`inline-flex shrink-0 items-center gap-1.5 lg:gap-2 rounded-full border px-2.5 lg:px-3 py-1.5 lg:py-2 text-xs font-medium transition ${active
+                          ? `${filter.activeTone} border-transparent shadow-sm`
+                          : standalone && isDark
+                            ? `border-[#31424c] bg-[#1a262d] ${filter.tone === 'text-slate-600' ? 'text-slate-300' : filter.tone}`
+                            : `border-slate-200 bg-white hover:bg-slate-50 ${filter.tone}`
+                          }`}
+                      >
+                        <span>{filter.label}</span>
+                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] lg:text-xs ${active ? 'bg-white/20 text-white' : standalone && isDark ? 'bg-[#233138] text-slate-400' : 'bg-slate-100 text-slate-700'}`}>
+                          {filter.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
                 {!standalone ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-3 hidden lg:flex flex-wrap gap-2">
                     {filterButtons.map((filter) => {
                       const active = chatFilter === filter.key;
                       return (
                         <button
-                          key={filter.key}
+                          key={`desktop-${filter.key}`}
                           type="button"
                           onClick={() => setChatFilter(filter.key)}
                           className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium transition ${active
@@ -1982,8 +2106,8 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                   <button
                     type="button"
                     key={conv.phone}
-                    onClick={() => setSelectedPhone(conv.phone)}
-                    className={`flex w-full items-start gap-3 border-b px-4 py-3 text-left transition ${standalone && isDark
+                    onClick={() => { mobileBackRef.current = false; setSelectedPhone(conv.phone); }}
+                    className={`flex w-full items-center gap-3 border-b px-3 lg:px-4 py-3 text-left transition active:scale-[0.98] ${standalone && isDark
                       ? active
                         ? 'border-[#25323a] bg-[#1a262d]'
                         : 'border-[#1a262d] bg-[#111b21] hover:bg-[#162229]'
@@ -2044,10 +2168,20 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
           </div>
         </aside>
 
-        <section className={`flex h-full flex-col overflow-hidden rounded-[24px] border ${standalone ? (isDark ? 'border-[#25323a] bg-[#111b21] shadow-sm' : 'border-slate-200 bg-white shadow-sm') : `border-slate-200 ${currentTheme.panel}`}`}>
-          <div className={`flex items-center justify-between px-4 py-3 ${standalone ? (isDark ? 'border-b border-[#25323a] bg-[#111b21]' : 'border-b border-slate-200 bg-white') : `border-b border-slate-200 ${currentTheme.topbar}`}`}>
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#d9fdd3] text-sm font-semibold text-emerald-900">
+        <section className={`${selectedPhone ? 'flex' : 'hidden lg:flex'} h-full w-full lg:w-auto flex-col overflow-hidden lg:rounded-[24px] lg:border ${standalone ? (isDark ? 'lg:border-[#25323a] bg-[#111b21] lg:shadow-sm' : 'lg:border-slate-200 bg-white lg:shadow-sm') : `lg:border-slate-200 ${currentTheme.panel}`}`}>
+          <div className={`flex items-center justify-between px-2 lg:px-4 py-3 ${standalone ? (isDark ? 'border-b border-[#25323a] bg-[#111b21]' : 'border-b border-slate-200 bg-white') : `border-b border-slate-200 ${currentTheme.topbar}`}`}>
+            <div className="flex min-w-0 items-center gap-2 lg:gap-3">
+              <button
+                type="button"
+                onClick={() => { mobileBackRef.current = true; setSelectedPhone(''); }}
+                className={`flex lg:hidden h-10 w-10 items-center justify-center rounded-full shrink-0 ${isDark && standalone ? 'text-slate-200 hover:bg-[#1f2c33]' : 'text-slate-600 hover:bg-slate-100'}`}
+                aria-label="Back to chats"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+              </button>
+              <div className={`flex h-10 w-10 lg:h-11 lg:w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${standalone && isDark ? 'bg-[#233138] text-slate-100' : 'bg-[#d9fdd3] text-emerald-900'}`}>
                 {selectedConversation
                   ? getConversationInitials({
                     ...selectedConversation,
@@ -2078,13 +2212,13 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                       ) : null}
                     </>
                   ) : (
-                    <span>Choose a chat from the left panel</span>
+                    <span className="hidden lg:inline">Choose a chat from the left panel</span>
                   )}
                 </div>
               </div>
             </div>
             {!standalone ? (
-              <div className="relative hidden items-center sm:flex">
+              <div className="relative flex items-center">
                 <button
                   type="button"
                   onClick={() => setShowHeaderMenu((v) => !v)}
@@ -2152,15 +2286,21 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
 
           <div
             ref={messagesContainerRef}
-            className="flex-1 overflow-y-auto px-4 py-4"
+            onScroll={handleMessagesScroll}
+            className="flex-1 overflow-y-auto px-2 lg:px-4 py-3 lg:py-4 overscroll-contain"
             style={{
               backgroundColor: currentTheme.pane,
               backgroundImage: currentTheme.wallpaper,
               backgroundRepeat: 'repeat',
             }}
           >
+            {loadingOlder && (
+              <div className="mb-3 flex justify-center">
+                <div className="rounded-full bg-white/90 px-3 py-1.5 text-xs text-slate-500 shadow-sm">Loading older messages...</div>
+              </div>
+            )}
             {!selectedPhone ? (
-              <p className="text-sm text-slate-500">Choose a chat from the left panel.</p>
+              <p className="hidden lg:block text-sm text-slate-500">Choose a chat from the left panel.</p>
             ) : loadingMessages && messages.length === 0 ? (
               <p className="text-sm text-slate-500">Loading messages...</p>
             ) : messages.length === 0 ? (
@@ -2203,7 +2343,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                         className={`group/msg mb-1.5 flex ${incoming || system ? 'justify-start' : 'justify-end'}`}
                       >
                         <div
-                          className={`relative max-w-[75%] rounded-lg px-2.5 py-1.5 shadow-sm ${system ? 'border border-amber-200' : ''
+                          className={`relative max-w-[85%] lg:max-w-[65%] rounded-lg px-2.5 py-1.5 shadow-sm ${system ? 'border border-amber-200' : ''
                             } ${bubbleClass}`}
                         >
                           {/* Three-dot menu on hover */}
@@ -2410,8 +2550,8 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
             )}
           </div>
 
-          <form onSubmit={handleSendMessage} className={`border-t p-3 ${standalone ? (isDark ? 'border-[#25323a] bg-[#111b21]' : 'border-slate-200 bg-white') : `border-slate-200 ${currentTheme.topbar}`}`}>
-            <div className="flex items-center gap-2">
+          <form onSubmit={handleSendMessage} className={`border-t px-2 py-2 lg:p-3 ${standalone ? (isDark ? 'border-[#25323a] bg-[#111b21]' : 'border-slate-200 bg-white') : `border-slate-200 ${currentTheme.topbar}`}`} style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
+            <div className="flex items-center gap-1.5 lg:gap-2">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -2429,14 +2569,14 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                 onChange={(e) => setDraftMessage(e.target.value)}
                 placeholder={selectedPhone ? 'Type a message' : 'Select a conversation first'}
                 disabled={!selectedPhone || sendingMessage || sendingMedia}
-                className={`w-full rounded-full border px-4 py-3 text-sm outline-none focus:border-emerald-500 disabled:bg-slate-100 ${standalone && isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500 focus:bg-[#22323b]' : 'border-slate-200 bg-white'}`}
+                className={`min-w-0 flex-1 rounded-full border px-3 lg:px-4 py-2.5 lg:py-3 text-sm outline-none focus:border-emerald-500 disabled:bg-slate-100 ${standalone && isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500 focus:bg-[#22323b]' : 'border-slate-200 bg-white'}`}
               />
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setShowActionMenu((v) => !v)}
                   disabled={!selectedPhone}
-                  className={`flex h-11 w-11 items-center justify-center rounded-full border text-lg leading-none disabled:cursor-not-allowed disabled:bg-slate-100 ${standalone && isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                  className={`flex h-10 w-10 lg:h-11 lg:w-11 shrink-0 items-center justify-center rounded-full border text-lg leading-none disabled:cursor-not-allowed disabled:bg-slate-100 ${standalone && isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
                 >
                   +
                 </button>
@@ -2480,16 +2620,19 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               <button
                 type="submit"
                 disabled={!selectedPhone || !draftMessage.trim() || sendingMessage || sendingMedia}
-                className="rounded-full bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                className="flex h-10 w-10 lg:h-11 lg:w-auto shrink-0 items-center justify-center rounded-full bg-emerald-600 lg:px-5 lg:py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
               >
-                {sendingMessage || sendingMedia ? 'Sending...' : 'Send'}
+                <svg className="h-5 w-5 lg:hidden" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                </svg>
+                <span className="hidden lg:inline">{sendingMessage || sendingMedia ? 'Sending...' : 'Send'}</span>
               </button>
             </div>
           </form>
         </section>
 
         {standalone ? (
-          <aside className={`flex h-full flex-col overflow-hidden rounded-[24px] border shadow-sm ${isDark ? 'border-[#25323a] bg-[#111b21] text-slate-100' : 'border-slate-200 bg-white'}`}>
+          <aside className={`hidden lg:flex h-full flex-col overflow-hidden rounded-[24px] border shadow-sm ${isDark ? 'border-[#25323a] bg-[#111b21] text-slate-100' : 'border-slate-200 bg-white'}`}>
             <div className={`px-5 py-5 text-center ${isDark ? 'border-b border-[#25323a]' : 'border-b border-slate-200'}`}>
               <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-slate-200 text-2xl font-semibold text-slate-600">
                 {selectedConversation
