@@ -202,6 +202,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             return Boolean(accessProfile?.isFullAdmin);
         }
 
+        if (section === 'team-logs') {
+            return true;
+        }
+
         return Boolean(accessProfile?.allowedSections?.includes(section));
     };
 

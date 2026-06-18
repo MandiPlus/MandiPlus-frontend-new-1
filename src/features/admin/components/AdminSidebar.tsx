@@ -24,6 +24,10 @@ export default function AdminSidebar() {
             return Boolean(accessProfile?.isFullAdmin);
         }
 
+        if (item.section === 'team-logs') {
+            return true;
+        }
+
         return accessProfile?.allowedSections?.includes(item.section);
     });
 
