@@ -1912,7 +1912,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                   className={`w-full rounded-full lg:rounded-2xl border px-4 py-2.5 lg:py-3 text-sm outline-none transition focus:border-emerald-500 ${isDark && standalone ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500 focus:bg-[#1f2c33]' : 'border-slate-200 bg-slate-50 focus:bg-white'}`}
                 />
 
-                <div className={`mt-2 lg:mt-3 flex gap-1.5 lg:gap-2 overflow-x-auto no-scrollbar ${standalone ? 'lg:hidden' : ''}`}>
+                <div className={`mt-2 mt-3 flex flex-wrap gap-1.5 gap-2 ${standalone ? 'lg:hidden' : ''}`}>
                   {filterButtons.map((filter) => {
                     const active = chatFilter === filter.key;
                     return (
@@ -1920,7 +1920,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                         key={filter.key}
                         type="button"
                         onClick={() => setChatFilter(filter.key)}
-                        className={`inline-flex shrink-0 items-center gap-1.5 lg:gap-2 rounded-full border px-2.5 lg:px-3 py-1.5 lg:py-2 text-xs font-medium transition ${active
+                        className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition ${active
                           ? `${filter.activeTone} border-transparent shadow-sm`
                           : standalone && isDark
                             ? `border-[#31424c] bg-[#1a262d] ${filter.tone === 'text-slate-600' ? 'text-slate-300' : filter.tone}`
@@ -1928,36 +1928,13 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                           }`}
                       >
                         <span>{filter.label}</span>
-                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] lg:text-xs ${active ? 'bg-white/20 text-white' : standalone && isDark ? 'bg-[#233138] text-slate-400' : 'bg-slate-100 text-slate-700'}`}>
+                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? 'bg-white/20 text-white' : standalone && isDark ? 'bg-[#233138] text-slate-400' : 'bg-slate-100 text-slate-700'}`}>
                           {filter.count}
                         </span>
                       </button>
                     );
                   })}
                 </div>
-                {!standalone ? (
-                  <div className="mt-3 hidden lg:flex flex-wrap gap-2">
-                    {filterButtons.map((filter) => {
-                      const active = chatFilter === filter.key;
-                      return (
-                        <button
-                          key={`desktop-${filter.key}`}
-                          type="button"
-                          onClick={() => setChatFilter(filter.key)}
-                          className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium transition ${active
-                            ? `${filter.activeTone} border-transparent shadow-sm`
-                            : `border-slate-200 bg-white hover:bg-slate-50 ${filter.tone}`
-                            }`}
-                        >
-                          <span>{filter.label}</span>
-                          <span className={`rounded-full px-2 py-0.5 ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>
-                            {filter.count}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
               </>
             ) : (
               /* Invoice Details header */
