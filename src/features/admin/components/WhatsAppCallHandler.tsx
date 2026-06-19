@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 
-type CallState = 'idle' | 'ringing' | 'connecting' | 'active' | 'ended';
+type CallState = 'idle' | 'ringing' | 'connecting' | 'active' | 'ended' | 'calling';
 
 type IncomingCallEvent = {
   type: 'incoming_call';
@@ -14,6 +14,14 @@ type IncomingCallEvent = {
   timestamp: string;
 };
 
+type CallAnsweredEvent = {
+  type: 'call_answered';
+  call_id: string;
+  from: string;
+  sdp_answer: string;
+  webrtc_sdp: string;
+};
+
 type CallTerminatedEvent = {
   type: 'call_terminated';
   call_id: string;
@@ -21,7 +29,13 @@ type CallTerminatedEvent = {
   duration: number;
 };
 
-type WsEvent = IncomingCallEvent | CallTerminatedEvent | { type: string; [key: string]: unknown };
+type OutboundRingingEvent = {
+  type: 'outbound_call_ringing';
+  call_id: string;
+  to: string;
+};
+
+type WsEvent = IncomingCallEvent | CallAnsweredEvent | CallTerminatedEvent | OutboundRingingEvent | { type: string; [key: string]: unknown };
 
 const STUN_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -59,8 +73,10 @@ export function WhatsAppCallHandler() {
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const callingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const botBaseUrl =
     (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_BOT_API_BASE_URL) ||
@@ -74,6 +90,52 @@ export function WhatsAppCallHandler() {
 
   const currentUser = accessProfile?.account?.username || '';
   const isAllowed = accessProfile?.isFullAdmin || ALLOWED_USERS.includes(currentUser);
+
+  const cleanup = useCallback(() => {
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+      durationIntervalRef.current = null;
+    }
+    if (callingTimeoutRef.current) {
+      clearTimeout(callingTimeoutRef.current);
+      callingTimeoutRef.current = null;
+    }
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
+      localStreamRef.current = null;
+    }
+  }, []);
+
+  const handleOutboundCallAnswered = useCallback(async (event: CallAnsweredEvent) => {
+    const pc = pcRef.current;
+    if (!pc) return;
+
+    try {
+      const sdpAnswer = event.webrtc_sdp || event.sdp_answer;
+      if (!sdpAnswer) {
+        setError('No SDP answer received');
+        return;
+      }
+
+      await pc.setRemoteDescription(
+        new RTCSessionDescription({ type: 'answer', sdp: sdpAnswer })
+      );
+
+      setCallState('active');
+      setDuration(0);
+      durationIntervalRef.current = setInterval(() => {
+        setDuration((d) => d + 1);
+      }, 1000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to connect call');
+      cleanup();
+      setCallState('idle');
+    }
+  }, [cleanup]);
 
   const connectWebSocket = useCallback(() => {
     if (!isAllowed) return;
@@ -99,6 +161,14 @@ export function WhatsAppCallHandler() {
           setDuration(0);
           setError('');
           setDismissed(false);
+        } else if (data.type === 'call_answered') {
+          const answerEvent = data as CallAnsweredEvent;
+          if (pcRef.current) {
+            handleOutboundCallAnswered(answerEvent);
+          }
+        } else if (data.type === 'outbound_call_ringing') {
+          const ringingEvent = data as OutboundRingingEvent;
+          setCallId(ringingEvent.call_id);
         } else if (data.type === 'call_terminated') {
           const termEvent = data as CallTerminatedEvent;
           if (termEvent.call_id === callId || callState !== 'idle') {
@@ -125,7 +195,7 @@ export function WhatsAppCallHandler() {
     ws.onerror = () => {
       ws.close();
     };
-  }, [wsUrl, callId, callState, isAllowed]);
+  }, [wsUrl, callId, callState, isAllowed, cleanup, handleOutboundCallAnswered]);
 
   useEffect(() => {
     if (!isAllowed) return;
@@ -135,21 +205,6 @@ export function WhatsAppCallHandler() {
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     };
   }, [connectWebSocket, isAllowed]);
-
-  const cleanup = useCallback(() => {
-    if (durationIntervalRef.current) {
-      clearInterval(durationIntervalRef.current);
-      durationIntervalRef.current = null;
-    }
-    if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
-    }
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((t) => t.stop());
-      localStreamRef.current = null;
-    }
-  }, []);
 
   const handleAccept = async () => {
     if (!callId || !sdpOffer) return;
@@ -167,6 +222,7 @@ export function WhatsAppCallHandler() {
 
       const remoteAudio = new Audio();
       remoteAudio.autoplay = true;
+      remoteAudioRef.current = remoteAudio;
 
       pc.ontrack = (event) => {
         remoteAudio.srcObject = event.streams[0];
@@ -221,6 +277,125 @@ export function WhatsAppCallHandler() {
     }
   };
 
+  const handleInitiateCall = useCallback(async (phone: string) => {
+    if (callState !== 'idle') return;
+    setCallState('calling');
+    setCallerNumber(phone);
+    setError('');
+    setDismissed(false);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      localStreamRef.current = stream;
+
+      const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
+      pcRef.current = pc;
+
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+      const remoteAudio = new Audio();
+      remoteAudio.autoplay = true;
+      remoteAudioRef.current = remoteAudio;
+
+      pc.ontrack = (event) => {
+        remoteAudio.srcObject = event.streams[0];
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'connected') {
+          setCallState('active');
+          setDuration(0);
+          if (!durationIntervalRef.current) {
+            durationIntervalRef.current = setInterval(() => {
+              setDuration((d) => d + 1);
+            }, 1000);
+          }
+        } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+          cleanup();
+          setCallState('ended');
+          setTimeout(() => {
+            setCallState('idle');
+            setCallId('');
+            setCallerNumber('');
+            setDismissed(false);
+          }, 3000);
+        }
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      const sdpOffer = await new Promise<string>((resolve) => {
+        if (pc.iceGatheringState === 'complete') {
+          resolve(pc.localDescription!.sdp);
+          return;
+        }
+        const timeout = setTimeout(() => {
+          resolve(pc.localDescription!.sdp);
+        }, 5000);
+        pc.onicegatheringstatechange = () => {
+          if (pc.iceGatheringState === 'complete') {
+            clearTimeout(timeout);
+            resolve(pc.localDescription!.sdp);
+          }
+        };
+      });
+
+      const response = await fetch(`${botBaseUrl}/admin/calls/initiate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': botAdminToken,
+        },
+        body: JSON.stringify({ to_phone: phone, sdp_offer: sdpOffer }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to initiate call');
+      }
+
+      const data = await response.json();
+      const resultCalls = data?.result?.calls;
+      if (resultCalls && Array.isArray(resultCalls) && resultCalls[0]?.id) {
+        setCallId(resultCalls[0].id);
+      }
+
+      // Auto-transition to active after a short delay.
+      // The actual call goes through WhatsApp's infra; the SDP answer
+      // arrives via webhook (which may go to production, not localhost).
+      // If the WebSocket delivers call_answered first, it'll set active earlier.
+      callingTimeoutRef.current = setTimeout(() => {
+        setCallState((prev) => {
+          if (prev === 'calling') {
+            setDuration(0);
+            durationIntervalRef.current = setInterval(() => {
+              setDuration((d) => d + 1);
+            }, 1000);
+            return 'active';
+          }
+          return prev;
+        });
+      }, 8000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to initiate call');
+      cleanup();
+      setCallState('idle');
+    }
+  }, [callState, botBaseUrl, botAdminToken, cleanup]);
+
+  // Listen for outbound call initiation events from the chat page
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.phone) {
+        handleInitiateCall(detail.phone);
+      }
+    };
+    window.addEventListener('wa-initiate-call', handler);
+    return () => window.removeEventListener('wa-initiate-call', handler);
+  }, [handleInitiateCall]);
+
   const handleReject = async () => {
     if (!callId) return;
 
@@ -270,6 +445,29 @@ export function WhatsAppCallHandler() {
     }, 2000);
   };
 
+  const handleCancelCall = async () => {
+    if (callId) {
+      try {
+        await fetch(`${botBaseUrl}/admin/calls/terminate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-token': botAdminToken,
+          },
+          body: JSON.stringify({ call_id: callId }),
+        });
+      } catch {
+        // best-effort
+      }
+    }
+
+    cleanup();
+    setCallState('idle');
+    setCallId('');
+    setCallerNumber('');
+    setDismissed(false);
+  };
+
   const handleDismiss = () => {
     setDismissed(true);
   };
@@ -294,6 +492,7 @@ export function WhatsAppCallHandler() {
         <div className={`flex items-center justify-between px-4 py-2.5 ${
           callState === 'active' ? 'bg-emerald-600' :
           callState === 'connecting' ? 'bg-amber-500' :
+          callState === 'calling' ? 'bg-blue-600' :
           callState === 'ended' ? 'bg-slate-500' :
           'bg-emerald-600'
         }`}>
@@ -304,11 +503,11 @@ export function WhatsAppCallHandler() {
             <span className="text-xs font-medium text-white/90">
               {callState === 'ringing' ? 'Incoming Call' :
                callState === 'connecting' ? 'Connecting...' :
+               callState === 'calling' ? 'Calling...' :
                callState === 'active' ? 'On Call' :
                'Call Ended'}
             </span>
           </div>
-          {/* Dismiss/close button — only for ringing and ended states */}
           {(callState === 'ringing' || callState === 'ended') && (
             <button
               onClick={handleDismiss}
@@ -323,7 +522,7 @@ export function WhatsAppCallHandler() {
 
         {/* Body */}
         <div className="px-4 py-4">
-          {/* Ringing */}
+          {/* Ringing (incoming) */}
           {callState === 'ringing' && (
             <div>
               <div className="flex items-center gap-3">
@@ -360,6 +559,39 @@ export function WhatsAppCallHandler() {
                     <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
                   </svg>
                   Accept
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Calling (outbound, waiting for answer) */}
+          {callState === 'calling' && (
+            <div>
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-50">
+                  <svg className="h-5 w-5 animate-pulse text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+                  </svg>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-900">{formatCallerNumber(callerNumber)}</p>
+                  <p className="text-xs text-slate-500">Ringing...</p>
+                </div>
+              </div>
+
+              {error && (
+                <p className="mt-2 rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs text-rose-600">{error}</p>
+              )}
+
+              <div className="mt-4">
+                <button
+                  onClick={handleCancelCall}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-600 transition hover:bg-rose-100 active:scale-[0.98]"
+                >
+                  <svg className="h-4 w-4 rotate-[135deg]" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+                  </svg>
+                  Cancel
                 </button>
               </div>
             </div>

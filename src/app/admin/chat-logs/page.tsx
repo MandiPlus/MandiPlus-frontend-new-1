@@ -1713,6 +1713,11 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     }
   };
 
+  const handleCallButtonClick = () => {
+    if (!selectedPhone) return;
+    window.dispatchEvent(new CustomEvent('wa-initiate-call', { detail: { phone: selectedPhone } }));
+  };
+
   const filterButtons: Array<{
     key: ChatFilter;
     label: string;
@@ -2218,7 +2223,19 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               </div>
             </div>
             {!standalone ? (
-              <div className="relative flex items-center">
+              <div className="relative flex items-center gap-1">
+                {selectedConversation && (
+                  <button
+                    type="button"
+                    onClick={handleCallButtonClick}
+                    className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition hover:bg-emerald-50 hover:text-emerald-600"
+                    title="Call customer"
+                  >
+                    <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+                    </svg>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowHeaderMenu((v) => !v)}
@@ -2250,7 +2267,20 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               </div>
             ) : null}
             {standalone && selectedConversation ? (
-              <div className="relative">
+              <div className="relative flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handleCallButtonClick}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full transition ${isDark
+                    ? 'text-slate-300 hover:bg-emerald-900/30 hover:text-emerald-400'
+                    : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-600'
+                    }`}
+                  title="Call customer"
+                >
+                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+                  </svg>
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowHeaderMenu((v) => !v)}
