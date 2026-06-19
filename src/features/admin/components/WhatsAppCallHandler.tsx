@@ -116,6 +116,11 @@ export function WhatsAppCallHandler() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const ringIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const notifRef = useRef<Notification | null>(null);
+  // Stable refs for values read inside the WS callback — avoids stale closures
+  // and prevents the WS from being torn down on every call-state change.
+  const connectWebSocketRef = useRef<() => void>(() => {});
+  const callIdRef = useRef(callId);
+  const callStateRef = useRef(callState);
 
   const botBaseUrl =
     (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_BOT_API_BASE_URL) ||
@@ -131,6 +136,10 @@ export function WhatsAppCallHandler() {
     || (accessProfile?.isFullAdmin ? '__full_admin__' : '');
   const isAllowed = !!accessProfile && !!currentUser;
   const wsUrl = botBaseUrl.replace(/^http/, 'ws') + '/ws/calls' + (currentUser ? `?username=${encodeURIComponent(currentUser)}` : '');
+
+  // Keep call-state refs in sync so the stable WS callback always sees fresh values
+  useEffect(() => { callIdRef.current = callId; }, [callId]);
+  useEffect(() => { callStateRef.current = callState; }, [callState]);
 
   // Read current notification permission on mount
   useEffect(() => {
@@ -319,7 +328,7 @@ export function WhatsAppCallHandler() {
           setCallId(ev.call_id);
         } else if (data.type === 'call_terminated') {
           const ev = data as CallTerminatedEvent;
-          if (ev.call_id === callId || callState !== 'idle') {
+          if (ev.call_id === callIdRef.current || callStateRef.current !== 'idle') {
             cleanup();
             setCallState('ended');
             setDuration(ev.duration || 0);
@@ -333,9 +342,12 @@ export function WhatsAppCallHandler() {
       } catch {}
     };
 
-    ws.onclose = () => { reconnectTimeoutRef.current = setTimeout(connectWebSocket, 5000); };
+    ws.onclose = () => { reconnectTimeoutRef.current = setTimeout(() => connectWebSocketRef.current(), 5000); };
     ws.onerror = () => { ws.close(); };
-  }, [wsUrl, callId, callState, isAllowed, cleanup, handleOutboundCallAnswered, startRing, showCallNotification]);
+  }, [wsUrl, isAllowed, cleanup, handleOutboundCallAnswered, startRing, showCallNotification]);
+
+  // Always keep the ref pointing to the latest callback so onclose reconnects correctly
+  useEffect(() => { connectWebSocketRef.current = connectWebSocket; });
 
   useEffect(() => {
     if (!isAllowed) return;
