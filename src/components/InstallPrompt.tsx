@@ -25,8 +25,9 @@ export default function InstallPrompt() {
     const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
     setIsIOS(ios);
 
-    const dismissed = sessionStorage.getItem("pwa-install-dismissed");
-    if (dismissed) return;
+    // Check localStorage for permanent dismissal
+    const dismissed = localStorage.getItem("pwa-install-dismissed");
+    if (dismissed === "true") return;
 
     if (ios) {
       const timer = setTimeout(() => setShowPrompt(true), 5000);
@@ -49,13 +50,14 @@ export default function InstallPrompt() {
     const { outcome } = await deferredPrompt.userChoice;
     if (outcome === "accepted") {
       setShowPrompt(false);
+      localStorage.setItem("pwa-install-dismissed", "true");
     }
     setDeferredPrompt(null);
   };
 
   const handleDismiss = () => {
     setShowPrompt(false);
-    sessionStorage.setItem("pwa-install-dismissed", "1");
+    localStorage.setItem("pwa-install-dismissed", "true");
   };
 
   if (isStandalone || !showPrompt) return null;
