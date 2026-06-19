@@ -47,7 +47,8 @@ const STUN_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-const ALLOWED_USERS = ['admin@mandiplus.com', 'admin'];
+// Routing is controlled server-side via CALL_ROUTING env var on the bot.
+// Any authenticated admin is allowed to connect; the backend filters which calls they see.
 
 function formatCallDuration(seconds: number) {
   const mins = Math.floor(seconds / 60);
@@ -124,9 +125,11 @@ export function WhatsAppCallHandler() {
     process.env.NEXT_PUBLIC_BOT_CHAT_ADMIN_TOKEN ||
     '';
 
-  const currentUser = accessProfile?.account?.username || '';
-  const isAllowed = accessProfile?.isFullAdmin || ALLOWED_USERS.includes(currentUser);
-  // Pass logged-in username so backend resolves correct phone_number_id from CALL_ROUTING config
+  // Limited admins have account.username; full admins have isFullAdmin=true but no account field.
+  // Use '__full_admin__' as sentinel for full admin — not in CALL_ROUTING so they get no calls.
+  const currentUser = accessProfile?.account?.username
+    || (accessProfile?.isFullAdmin ? '__full_admin__' : '');
+  const isAllowed = !!accessProfile && !!currentUser;
   const wsUrl = botBaseUrl.replace(/^http/, 'ws') + '/ws/calls' + (currentUser ? `?username=${encodeURIComponent(currentUser)}` : '');
 
   // Read current notification permission on mount
