@@ -124,10 +124,10 @@ export function WhatsAppCallHandler() {
     process.env.NEXT_PUBLIC_BOT_CHAT_ADMIN_TOKEN ||
     '';
 
-  const phoneNumberId = process.env.NEXT_PUBLIC_WHATSAPP_PHONE_NUMBER_ID || '';
-  const wsUrl = botBaseUrl.replace(/^http/, 'ws') + '/ws/calls' + (phoneNumberId ? `?phone_number_id=${encodeURIComponent(phoneNumberId)}` : '');
   const currentUser = accessProfile?.account?.username || '';
   const isAllowed = accessProfile?.isFullAdmin || ALLOWED_USERS.includes(currentUser);
+  // Pass logged-in username so backend resolves correct phone_number_id from CALL_ROUTING config
+  const wsUrl = botBaseUrl.replace(/^http/, 'ws') + '/ws/calls' + (currentUser ? `?username=${encodeURIComponent(currentUser)}` : '');
 
   // Read current notification permission on mount
   useEffect(() => {
@@ -168,13 +168,13 @@ export function WhatsAppCallHandler() {
             'Content-Type': 'application/json',
             ...(botAdminToken ? { 'x-admin-token': botAdminToken } : {}),
           },
-          body: JSON.stringify({ ...subJson, phone_number_id: phoneNumberId || null }),
+          body: JSON.stringify({ ...subJson, username: currentUser || null }),
         });
       } catch {}
     };
 
     setupPush();
-  }, [botBaseUrl, botAdminToken]);
+  }, [botBaseUrl, botAdminToken, currentUser]);
 
   // Listen for messages from the service worker (push notification click actions)
   useEffect(() => {
