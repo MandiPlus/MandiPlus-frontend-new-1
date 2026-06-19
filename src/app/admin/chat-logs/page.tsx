@@ -776,7 +776,7 @@ function isMobileViewport() {
 
 export function AdminChatLogsView({ standalone = false }: { standalone?: boolean }) {
   const router = useRouter();
-  const { isAuthenticated } = useAdmin();
+  const { isAuthenticated, accessProfile } = useAdmin();
   const [contactDirectory, setContactDirectory] = useState<Record<string, { name: string }>>(() => {
     if (typeof window === 'undefined') return {};
     try {
@@ -871,6 +871,8 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     (typeof window !== 'undefined' && localStorage.getItem('botChatAdminToken')) ||
     process.env.NEXT_PUBLIC_BOT_CHAT_ADMIN_TOKEN ||
     '';
+  const currentUser = accessProfile?.account?.username
+    || (accessProfile?.isFullAdmin ? '__full_admin__' : '');
 
   const axiosConfig = useMemo(
     () =>
@@ -940,11 +942,14 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   useEffect(() => {
     if (!isAuthenticated || mainTab !== 'calls') return;
     setLoadingCalls(true);
-    axios.get(`${botBaseUrl}/admin/calls/history?limit=100`, axiosConfig)
+    const query = currentUser
+      ? `limit=100&username=${encodeURIComponent(currentUser)}`
+      : 'limit=100';
+    axios.get(`${botBaseUrl}/admin/calls/history?${query}`, axiosConfig)
       .then((res) => setCallHistory(res.data?.items ?? []))
       .catch((err) => console.error('calls/history fetch error:', err))
       .finally(() => setLoadingCalls(false));
-  }, [isAuthenticated, botBaseUrl, axiosConfig, mainTab, refreshTick]);
+  }, [isAuthenticated, botBaseUrl, axiosConfig, mainTab, refreshTick, currentUser]);
 
 
   useEffect(() => {

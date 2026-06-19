@@ -47,8 +47,8 @@ const STUN_SERVERS = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-// Routing is controlled server-side via CALL_ROUTING env var on the bot.
-// Any authenticated admin is allowed to connect; the backend filters which calls they see.
+// Routing is controlled server-side via WHATSAPP_CALL_AGENT_ROUTING on the bot.
+// Any authenticated admin can connect; the backend filters which calls they see.
 
 function formatCallDuration(seconds: number) {
   const mins = Math.floor(seconds / 60);
@@ -130,8 +130,8 @@ export function WhatsAppCallHandler() {
     process.env.NEXT_PUBLIC_BOT_CHAT_ADMIN_TOKEN ||
     '';
 
-  // Limited admins have account.username; full admins have isFullAdmin=true but no account field.
-  // Use '__full_admin__' as sentinel for full admin — not in CALL_ROUTING so they get no calls.
+  // Dashboard accounts expose account.username; legacy master-admin tokens use a
+  // sentinel and are intentionally outside the WhatsApp routing map.
   const currentUser = accessProfile?.account?.username
     || (accessProfile?.isFullAdmin ? '__full_admin__' : '');
   const isAllowed = !!accessProfile && !!currentUser;
@@ -460,7 +460,7 @@ export function WhatsAppCallHandler() {
       const response = await fetch(`${botBaseUrl}/admin/calls/initiate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-token': botAdminToken },
-        body: JSON.stringify({ to_phone: phone, sdp_offer: sdpOffer }),
+        body: JSON.stringify({ to_phone: phone, sdp_offer: sdpOffer, username: currentUser || null }),
       });
 
       if (!response.ok) {
@@ -490,7 +490,7 @@ export function WhatsAppCallHandler() {
       cleanup();
       setCallState('idle');
     }
-  }, [callState, botBaseUrl, botAdminToken, cleanup]);
+  }, [callState, botBaseUrl, botAdminToken, cleanup, currentUser]);
 
   useEffect(() => {
     const handler = (e: Event) => {
