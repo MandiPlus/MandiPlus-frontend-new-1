@@ -55,6 +55,7 @@ export type AdminAccessProfile = {
     fullName: string;
     username: string;
     status: string;
+    isSuperAdmin?: boolean;
   };
 };
 

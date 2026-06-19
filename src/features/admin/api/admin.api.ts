@@ -188,6 +188,7 @@ export interface AdminAccountRow {
   requestedRole: string;
   status: string;
   assignedSections: string[];
+  isSuperAdmin?: boolean;
   approvedBy?: string | null;
   approvedAt?: string | null;
   rejectionReason?: string | null;
