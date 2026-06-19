@@ -103,6 +103,7 @@ export function WhatsAppCallHandler() {
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState('');
   const [isExpanded, setIsExpanded] = useState(true);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -123,9 +124,16 @@ export function WhatsAppCallHandler() {
     process.env.NEXT_PUBLIC_BOT_CHAT_ADMIN_TOKEN ||
     '';
 
-  const wsUrl = botBaseUrl.replace(/^http/, 'ws') + '/ws/calls';
+  const phoneNumberId = process.env.NEXT_PUBLIC_WHATSAPP_PHONE_NUMBER_ID || '';
+  const wsUrl = botBaseUrl.replace(/^http/, 'ws') + '/ws/calls' + (phoneNumberId ? `?phone_number_id=${encodeURIComponent(phoneNumberId)}` : '');
   const currentUser = accessProfile?.account?.username || '';
   const isAllowed = accessProfile?.isFullAdmin || ALLOWED_USERS.includes(currentUser);
+
+  // Read current notification permission on mount
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    setNotifPermission(Notification.permission);
+  }, []);
 
   // Request notification permission + register push subscription
   useEffect(() => {
@@ -134,6 +142,7 @@ export function WhatsAppCallHandler() {
     const setupPush = async () => {
       try {
         const permission = await Notification.requestPermission();
+        setNotifPermission(permission);
         if (permission !== 'granted') return;
         if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
 
@@ -152,13 +161,14 @@ export function WhatsAppCallHandler() {
           applicationServerKey,
         });
 
+        const subJson = sub.toJSON() as Record<string, unknown>;
         await fetch(`${botBaseUrl}/admin/push/subscribe`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             ...(botAdminToken ? { 'x-admin-token': botAdminToken } : {}),
           },
-          body: JSON.stringify(sub.toJSON()),
+          body: JSON.stringify({ ...subJson, phone_number_id: phoneNumberId || null }),
         });
       } catch {}
     };
@@ -528,6 +538,31 @@ export function WhatsAppCallHandler() {
     const track = localStreamRef.current.getAudioTracks()[0];
     if (track) { track.enabled = !track.enabled; setIsMuted(!track.enabled); }
   };
+
+  // Notification permission banner (shown when idle and permission not granted)
+  if (isAllowed && callState === 'idle' && notifPermission === 'default') {
+    return (
+      <div className="fixed bottom-4 right-4 z-[9990] flex max-w-sm items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-lg">
+        <svg className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+        </svg>
+        <div className="flex-1">
+          <p className="text-sm font-semibold text-amber-800">Enable call notifications</p>
+          <p className="mt-0.5 text-xs text-amber-700">Allow notifications so you receive alerts even when this tab is in the background.</p>
+          <button
+            type="button"
+            className="mt-2 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600"
+            onClick={() => Notification.requestPermission().then((p) => setNotifPermission(p))}
+          >
+            Enable Notifications
+          </button>
+        </div>
+        <button type="button" onClick={() => setNotifPermission('denied')} className="text-amber-400 hover:text-amber-600">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+    );
+  }
 
   if (!isAllowed || callState === 'idle') return null;
 
