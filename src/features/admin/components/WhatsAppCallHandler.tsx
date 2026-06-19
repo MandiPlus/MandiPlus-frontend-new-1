@@ -63,8 +63,22 @@ function formatCallerNumber(phone: string) {
   return phone;
 }
 
+function getContactName(phone: string): string | null {
+  if (typeof window === 'undefined' || !phone) return null;
+  try {
+    const dir = JSON.parse(localStorage.getItem('chatContactDirectory') || '{}');
+    return dir[phone]?.name || null;
+  } catch {
+    return null;
+  }
+}
+
 function getInitials(phone: string) {
   if (!phone) return 'WA';
+  const name = getContactName(phone);
+  if (name) {
+    return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p: string) => p[0]?.toUpperCase() || '').join('') || 'WA';
+  }
   return phone.slice(-2).toUpperCase();
 }
 
@@ -113,54 +127,87 @@ export function WhatsAppCallHandler() {
   const currentUser = accessProfile?.account?.username || '';
   const isAllowed = accessProfile?.isFullAdmin || ALLOWED_USERS.includes(currentUser);
 
-  // Request notification permission proactively
+  // Request notification permission + register push subscription
   useEffect(() => {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
-    if (Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {});
-    }
-  }, []);
+
+    const setupPush = async () => {
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') return;
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+
+        const reg = await navigator.serviceWorker.ready;
+
+        // Fetch VAPID application server key
+        const keyRes = await fetch(`${botBaseUrl}/admin/push/vapid-key`, {
+          headers: botAdminToken ? { 'x-admin-token': botAdminToken } : {},
+        });
+        if (!keyRes.ok) return;
+        const { applicationServerKey } = await keyRes.json();
+        if (!applicationServerKey) return;
+
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey,
+        });
+
+        await fetch(`${botBaseUrl}/admin/push/subscribe`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(botAdminToken ? { 'x-admin-token': botAdminToken } : {}),
+          },
+          body: JSON.stringify(sub.toJSON()),
+        });
+      } catch {}
+    };
+
+    setupPush();
+  }, [botBaseUrl, botAdminToken]);
+
+  // Listen for messages from the service worker (push notification click actions)
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'wa-push-call-action') {
+        const { action, callId: pushedCallId } = event.data;
+        if (action === 'decline') {
+          handleReject();
+        } else {
+          // Answer — if already in ringing state, accept; otherwise UI will show when WS reconnects
+          setIsExpanded(true);
+          if (callState === 'ringing') handleAccept();
+        }
+      }
+    };
+    navigator.serviceWorker?.addEventListener('message', handler);
+    return () => navigator.serviceWorker?.removeEventListener('message', handler);
+  }, [callState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startRing = useCallback(() => {
     try {
-      const ACtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!ACtx) return;
-      const ctx = new ACtx() as AudioContext;
-      audioCtxRef.current = ctx;
-
-      const playTone = () => {
-        if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') return;
-        const now = ctx.currentTime;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = 'sine';
-        // Two-frequency ring like WhatsApp
-        osc.frequency.setValueAtTime(440, now);
-        osc.frequency.setValueAtTime(520, now + 0.2);
-        osc.frequency.setValueAtTime(440, now + 0.4);
-        gain.gain.setValueAtTime(0, now);
-        gain.gain.linearRampToValueAtTime(0.35, now + 0.05);
-        gain.gain.setValueAtTime(0.35, now + 0.5);
-        gain.gain.linearRampToValueAtTime(0, now + 0.65);
-        osc.start(now);
-        osc.stop(now + 0.65);
-      };
-
-      playTone();
-      ringIntervalRef.current = setInterval(playTone, 1500);
+      const audio = new Audio('/sounds/incoming_call.mp3');
+      audio.loop = true;
+      audio.volume = 0.85;
+      audio.play().catch(() => {
+        // Autoplay blocked — will play on next user gesture; fallback silent
+      });
+      audioCtxRef.current = audio as any;
     } catch {}
   }, []);
 
   const stopRing = useCallback(() => {
+    if (audioCtxRef.current) {
+      try {
+        const audio = audioCtxRef.current as any;
+        audio.pause();
+        audio.currentTime = 0;
+      } catch {}
+      audioCtxRef.current = null;
+    }
     if (ringIntervalRef.current) {
       clearInterval(ringIntervalRef.current);
       ringIntervalRef.current = null;
-    }
-    if (audioCtxRef.current) {
-      audioCtxRef.current.close().catch(() => {});
-      audioCtxRef.current = null;
     }
   }, []);
 
@@ -502,7 +549,7 @@ export function WhatsAppCallHandler() {
           className={`h-4 w-4 shrink-0 text-white ${callState === 'ringing' || callState === 'calling' ? 'animate-pulse' : ''}`}
         />
         <span className="flex-1 truncate text-sm font-semibold text-white">
-          {formatCallerNumber(callerNumber)}
+          {getContactName(callerNumber) || formatCallerNumber(callerNumber)}
         </span>
         <span className="shrink-0 font-mono text-xs text-white/80">
           {callState === 'active' ? formatCallDuration(duration) :
@@ -580,7 +627,10 @@ export function WhatsAppCallHandler() {
 
         {/* Name + status */}
         <div className="text-center">
-          <p className="text-2xl font-semibold text-white">{formatCallerNumber(callerNumber)}</p>
+          <p className="text-2xl font-semibold text-white">{getContactName(callerNumber) || formatCallerNumber(callerNumber)}</p>
+          {getContactName(callerNumber) && (
+            <p className="text-sm text-white/60">{formatCallerNumber(callerNumber)}</p>
+          )}
           <p className="mt-1.5 text-sm text-white/70">
             {callState === 'ringing' ? 'Incoming call' :
              callState === 'calling' ? 'Ringing...' :

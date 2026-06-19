@@ -128,35 +128,16 @@ type MetaSenderProfileResponse = {
 };
 
 type ChatFilter = 'all' | 'unread' | 'delivered' | 'failed';
-type MainTab = 'chats' | 'invoice-details';
+type MainTab = 'chats' | 'calls';
 
-type InvoiceCollection = {
-  id: string;
-  phone: string;
-  display_name: string | null;
-  status: 'pending' | 'done';
-  window_started_at: string | null;
-  window_closed_at: string;
-  message_count: number;
-  completed_by: string | null;
-  completed_at: string | null;
-  created_at: string;
-  ai_draft?: {
-    commodity?: string | null;
-    quantity?: number | null;
-    unit?: string | null;
-    rate?: number | null;
-    total_amount?: number | null;
-    buyer_name?: string | null;
-    seller_name?: string | null;
-    invoice_date?: string | null;
-    vehicle_number?: string | null;
-    notes?: string | null;
-    confidence?: 'high' | 'medium' | 'low';
-    missing_fields?: string[];
-    ai_note?: string;
-    error?: string;
-  } | null;
+type CallRecord = {
+  call_id: string;
+  from: string;
+  to: string;
+  direction: 'inbound' | 'outbound';
+  status: 'answered' | 'missed';
+  started_at: number;
+  duration: number;
 };
 
 type ChatTheme = 'light' | 'dark';
@@ -356,7 +337,16 @@ function previewText(
     const rendered = renderTemplateText(templatesByName[templateNameFromText], payload);
     if (rendered && rendered.trim()) return rendered.trim();
   }
-  if (text && text.trim()) return text.trim();
+  if (text && text.trim()) {
+    const raw = text.trim();
+    if (/\{\{\d+\}\}/.test(raw) && payload) {
+      const params = extractTemplateBodyParameters(payload);
+      if (params.length > 0) {
+        return raw.replace(/\{\{(\d+)\}\}/g, (_m, idx) => params[Number(idx) - 1] ?? `{{${idx}}}`);
+      }
+    }
+    return raw;
+  }
   const templateName = getTemplateNameFromPayload(payload);
   if (templateName && templatesByName) {
     const rendered = renderTemplateText(templatesByName[templateName], payload);
@@ -797,13 +787,10 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   const [templateVars, setTemplateVars] = useState<string[]>([]);
   const [sendingTemplate, setSendingTemplate] = useState(false);
 
-  // Invoice Details tab
+  // Calls tab
   const [mainTab, setMainTab] = useState<MainTab>('chats');
-  const [invoiceCollections, setInvoiceCollections] = useState<InvoiceCollection[]>([]);
-  const [loadingCollections, setLoadingCollections] = useState(false);
-  const [collectionFilter, setCollectionFilter] = useState<'all' | 'pending' | 'done'>('pending');
-  const [completingId, setCompletingId] = useState<string | null>(null);
-  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
+  const [callHistory, setCallHistory] = useState<CallRecord[]>([]);
+  const [loadingCalls, setLoadingCalls] = useState(false);
 
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
@@ -891,35 +878,15 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     }
   }, [isAuthenticated, router]);
 
-  // Fetch invoice collections whenever the tab is active or refreshTick changes
+  // Fetch call history whenever the calls tab is active or refreshTick changes
   useEffect(() => {
-    if (!isAuthenticated) return;
-    setLoadingCollections(true);
-    const url = collectionFilter === 'all'
-      ? `${botBaseUrl}/admin/invoice-collections?limit=200`
-      : `${botBaseUrl}/admin/invoice-collections?status=${collectionFilter}&limit=200`;
-    axios.get(url, axiosConfig)
-      .then((res) => setInvoiceCollections(res.data?.items ?? []))
-      .catch((err) => console.error('invoice-collections fetch error:', err))
-      .finally(() => setLoadingCollections(false));
-  }, [isAuthenticated, botBaseUrl, axiosConfig, collectionFilter, refreshTick]);
-
-  const markCollectionDone = async (id: string) => {
-    if (completingId) return;
-    setCompletingId(id);
-    try {
-      await axios.post(
-        `${botBaseUrl}/admin/invoice-collections/${id}/complete`,
-        null,
-        axiosConfig,
-      );
-      setInvoiceCollections((prev) =>
-        prev.map((c) => c.id === id ? { ...c, status: 'done' } : c)
-      );
-    } catch { } finally {
-      setCompletingId(null);
-    }
-  };
+    if (!isAuthenticated || mainTab !== 'calls') return;
+    setLoadingCalls(true);
+    axios.get(`${botBaseUrl}/admin/calls/history?limit=100`, axiosConfig)
+      .then((res) => setCallHistory(res.data?.items ?? []))
+      .catch((err) => console.error('calls/history fetch error:', err))
+      .finally(() => setLoadingCalls(false));
+  }, [isAuthenticated, botBaseUrl, axiosConfig, mainTab, refreshTick]);
 
 
   useEffect(() => {
@@ -1869,18 +1836,13 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
             </button>
             <button
               type="button"
-              onClick={() => setMainTab('invoice-details')}
-              className={`relative flex-1 py-3 text-sm font-medium transition ${mainTab === 'invoice-details'
+              onClick={() => setMainTab('calls')}
+              className={`relative flex-1 py-3 text-sm font-medium transition ${mainTab === 'calls'
                 ? (isDark && standalone ? 'border-b-2 border-emerald-500 text-emerald-400' : 'border-b-2 border-emerald-600 text-emerald-700')
                 : (isDark && standalone ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700')
                 }`}
             >
-              Invoice Details
-              {invoiceCollections.filter((c) => c.status === 'pending').length > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">
-                  {invoiceCollections.filter((c) => c.status === 'pending').length}
-                </span>
-              )}
+              Calls
             </button>
           </div>
 
@@ -1937,139 +1899,81 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                 </div>
               </>
             ) : (
-              /* Invoice Details header */
-              <>
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <p className={`text-lg font-semibold ${isDark && standalone ? 'text-slate-100' : 'text-slate-900'}`}>Invoice Details</p>
-                    <p className={`text-xs ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>Collected from WhatsApp</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setRefreshTick((x) => x + 1)}
-                    className={`rounded-xl px-3 py-2 text-xs font-medium transition ${isDark && standalone ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
-                  >
-                    Refresh
-                  </button>
+              /* Calls header */
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className={`text-lg font-semibold ${isDark && standalone ? 'text-slate-100' : 'text-slate-900'}`}>Calls</p>
+                  <p className={`text-xs ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>Recent call history</p>
                 </div>
-                <div className="flex gap-2">
-                  {(['pending', 'done', 'all'] as const).map((f) => (
-                    <button
-                      key={f}
-                      type="button"
-                      onClick={() => setCollectionFilter(f)}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-medium capitalize transition ${collectionFilter === f
-                        ? 'border-transparent bg-emerald-600 text-white shadow-sm'
-                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                        }`}
-                    >
-                      {f}
-                    </button>
-                  ))}
-                </div>
-              </>
+                <button
+                  type="button"
+                  onClick={() => setRefreshTick((x) => x + 1)}
+                  className={`rounded-xl px-3 py-2 text-xs font-medium transition ${isDark && standalone ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                >
+                  Refresh
+                </button>
+              </div>
             )}
           </div>
 
           <div className={`flex-1 overflow-y-auto ${standalone ? (isDark ? 'bg-[#111b21]' : 'bg-white') : 'bg-[#fcfdfd]'}`}>
-            {mainTab === 'invoice-details' ? (
-              /* ── Invoice Details card list ── */
-              loadingCollections ? (
-                <p className="p-4 text-sm text-slate-500">Loading...</p>
-              ) : invoiceCollections.length === 0 ? (
-                <p className="p-4 text-sm text-slate-400">No invoice details found.</p>
+            {mainTab === 'calls' ? (
+              /* ── Call history list ── */
+              loadingCalls ? (
+                <p className={`p-4 text-sm ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>Loading calls...</p>
+              ) : callHistory.length === 0 ? (
+                <p className={`p-4 text-sm ${isDark && standalone ? 'text-slate-400' : 'text-slate-400'}`}>No calls yet.</p>
               ) : (
-                <div className="divide-y">
-                  {invoiceCollections.map((col) => {
-                    const isSelected = selectedCollectionId === col.id;
-                    const isDone = col.status === 'done';
+                <div className={`divide-y ${isDark && standalone ? 'divide-[#1a262d]' : 'divide-slate-100'}`}>
+                  {callHistory.map((call) => {
+                    const isMissed = call.status === 'missed';
+                    const isInbound = call.direction === 'inbound';
+                    const phone = isInbound ? call.from : call.to;
+                    const contactName = contactDirectory[phone]?.name || null;
+                    const initials = contactName
+                      ? contactName.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() || '').join('')
+                      : phone.slice(-2).toUpperCase();
+                    const timeLabel = new Date(call.started_at * 1000).toLocaleString('en-IN', {
+                      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                    });
+                    const durationLabel = call.duration > 0
+                      ? call.duration >= 60
+                        ? `${Math.floor(call.duration / 60)}m ${call.duration % 60}s`
+                        : `${call.duration}s`
+                      : null;
                     return (
-                      <div
-                        key={col.id}
-                        className={`cursor-pointer px-4 py-3 transition hover:bg-emerald-50 ${isSelected ? 'bg-emerald-50 ring-1 ring-inset ring-emerald-200' : ''
+                      <button
+                        key={call.call_id}
+                        type="button"
+                        onClick={() => setSelectedPhone(phone)}
+                        className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${isDark && standalone
+                          ? 'bg-[#111b21] hover:bg-[#162229]'
+                          : 'bg-white hover:bg-slate-50'
                           }`}
-                        onClick={() => {
-                          setSelectedCollectionId(col.id);
-                          setSelectedPhone(col.phone);
-                        }}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-slate-800">
-                              {col.display_name || col.phone}
-                            </p>
-                            <p className="text-xs text-slate-500">{col.phone}</p>
-                            <p className="mt-1 text-xs text-slate-400">
-                              {new Date(col.window_closed_at).toLocaleString('en-IN', {
-                                day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-                              })}
-                              {' · '}{col.message_count} msg{col.message_count !== 1 ? 's' : ''}
-                            </p>
-                          </div>
-                          <div className="flex flex-col items-end gap-2 shrink-0">
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${isDone
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-amber-100 text-amber-700'
-                              }`}>
-                              {isDone ? '✓ Done' : 'Pending'}
+                        {/* Avatar */}
+                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${isMissed ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-700'}`}>
+                          {initials}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className={`truncate text-sm font-medium ${isMissed ? (isDark && standalone ? 'text-rose-400' : 'text-rose-600') : (isDark && standalone ? 'text-slate-100' : 'text-slate-800')}`}>
+                            {contactName || formatPhone(phone)}
+                          </p>
+                          <div className="mt-0.5 flex items-center gap-1">
+                            {/* Direction arrow */}
+                            <svg className={`h-3.5 w-3.5 ${isMissed ? 'text-rose-400' : 'text-emerald-500'}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                              {isInbound
+                                ? <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 4.5l-15 15M4.5 4.5v10m0-10h10" />
+                                : <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 19.5l15-15M19.5 19.5V9.5m0 10h-10" />
+                              }
+                            </svg>
+                            <span className={`text-xs ${isMissed ? (isDark && standalone ? 'text-rose-400' : 'text-rose-500') : (isDark && standalone ? 'text-slate-400' : 'text-slate-500')}`}>
+                              {isMissed ? 'Missed call' : `${isInbound ? 'Incoming' : 'Outgoing'}${durationLabel ? ` · ${durationLabel}` : ''}`}
                             </span>
-                            {!isDone && (
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); markCollectionDone(col.id); }}
-                                disabled={completingId === col.id}
-                                className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-emerald-700 disabled:opacity-50"
-                              >
-                                {completingId === col.id ? '...' : 'Mark Done'}
-                              </button>
-                            )}
                           </div>
                         </div>
-
-                        {/* AI Draft panel — shown when card is selected */}
-                        {isSelected && col.ai_draft && !col.ai_draft.error && (
-                          <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3 shadow-sm" onClick={(e) => e.stopPropagation()}>
-                            <div className="mb-2 flex items-center justify-between">
-                              <p className="text-xs font-semibold text-slate-700">🤖 AI Invoice Draft</p>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${col.ai_draft.confidence === 'high' ? 'bg-emerald-100 text-emerald-700'
-                                : col.ai_draft.confidence === 'medium' ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-rose-100 text-rose-700'
-                                }`}>
-                                {col.ai_draft.confidence ?? 'low'} confidence
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                              {col.ai_draft.commodity && <><span className="text-slate-400">Commodity</span><span className="font-medium text-slate-700">{col.ai_draft.commodity}</span></>}
-                              {col.ai_draft.quantity != null && <><span className="text-slate-400">Qty</span><span className="font-medium text-slate-700">{col.ai_draft.quantity} {col.ai_draft.unit || ''}</span></>}
-                              {col.ai_draft.rate != null && <><span className="text-slate-400">Rate</span><span className="font-medium text-slate-700">₹{col.ai_draft.rate}</span></>}
-                              {col.ai_draft.total_amount != null && <><span className="text-slate-400">Total</span><span className="font-medium text-emerald-700">₹{col.ai_draft.total_amount.toLocaleString('en-IN')}</span></>}
-                              {col.ai_draft.buyer_name && <><span className="text-slate-400">Buyer</span><span className="font-medium text-slate-700">{col.ai_draft.buyer_name}</span></>}
-                              {col.ai_draft.seller_name && <><span className="text-slate-400">Seller</span><span className="font-medium text-slate-700">{col.ai_draft.seller_name}</span></>}
-                              {col.ai_draft.vehicle_number && <><span className="text-slate-400">Vehicle</span><span className="font-medium text-slate-700">{col.ai_draft.vehicle_number}</span></>}
-                              {col.ai_draft.invoice_date && <><span className="text-slate-400">Date</span><span className="font-medium text-slate-700">{col.ai_draft.invoice_date}</span></>}
-                            </div>
-                            {col.ai_draft.notes && (
-                              <p className="mt-2 text-[11px] text-slate-500 italic">{col.ai_draft.notes}</p>
-                            )}
-                            {/* Missing fields warning */}
-                            {col.ai_draft.missing_fields && col.ai_draft.missing_fields.length > 0 && (
-                              <div className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5">
-                                <p className="text-[11px] font-semibold text-amber-700">⚠ Missing: {col.ai_draft.missing_fields.join(', ')}</p>
-                              </div>
-                            )}
-                            {/* AI note for exec */}
-                            {col.ai_draft.ai_note && (
-                              <p className="mt-1.5 text-[11px] text-slate-500 italic">💬 {col.ai_draft.ai_note}</p>
-                            )}
-                          </div>
-                        )}
-                        {isSelected && col.ai_draft?.error && (
-                          <p className="mt-2 text-[11px] text-rose-400 italic">AI extraction unavailable</p>
-                        )}
-                        {isSelected && !col.ai_draft && (
-                          <p className="mt-2 text-[11px] text-slate-400 italic">AI draft processing...</p>
-                        )}
-                      </div>
+                        <span className={`shrink-0 text-[11px] ${isDark && standalone ? 'text-slate-500' : 'text-slate-400'}`}>{timeLabel}</span>
+                      </button>
                     );
                   })}
                 </div>
@@ -2333,11 +2237,14 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                       message.payload,
                       templatesByName
                     );
+                    const isVoiceCallEvent =
+                      /\[(?:unsupported|error)\].*(?:131051|Message type unknown)/i.test(messageText) ||
+                      message.message_type === 'call';
                     const hideMediaPlaceholder =
                       !!media && /^\[(image|video|audio|voice|document|sticker)\]/i.test(messageText.trim());
                     const hideLocationPlaceholder =
                       !!location && /^\[location\]/i.test(messageText.trim());
-                    const shouldRenderText = !(hideMediaPlaceholder || hideLocationPlaceholder);
+                    const shouldRenderText = !isVoiceCallEvent && !(hideMediaPlaceholder || hideLocationPlaceholder);
                     const bubbleClass = system
                       ? currentTheme.system
                       : incoming
@@ -2533,7 +2440,14 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                             </div>
                           ) : null}
 
-                          {shouldRenderText ? (
+                          {isVoiceCallEvent ? (
+                            <div className="flex items-center gap-2 py-0.5">
+                              <svg className="h-4 w-4 shrink-0 opacity-70" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
+                              </svg>
+                              <span className="text-sm">WhatsApp Voice Call</span>
+                            </div>
+                          ) : shouldRenderText ? (
                             <p className="whitespace-pre-wrap break-words text-sm leading-6">{messageText}</p>
                           ) : null}
 

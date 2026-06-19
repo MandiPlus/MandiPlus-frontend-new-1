@@ -111,6 +111,32 @@ self.addEventListener('fetch', (event) => {
 
 self.addEventListener('push', (event) => {
   const data = event.data ? event.data.json() : {};
+
+  if (data.type === 'incoming_call') {
+    const options = {
+      body: data.body || `${data.from || 'Unknown'} is calling...`,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-72.png',
+      tag: 'wa-incoming-call',
+      requireInteraction: true,
+      vibrate: [300, 100, 300, 100, 300],
+      actions: [
+        { action: 'answer', title: '✅ Answer' },
+        { action: 'decline', title: '❌ Decline' },
+      ],
+      data: {
+        type: 'incoming_call',
+        callId: data.call_id,
+        from: data.from,
+        url: data.url || '/admin/chat-logs',
+      },
+    };
+    event.waitUntil(
+      self.registration.showNotification(data.title || 'Incoming WhatsApp Call', options)
+    );
+    return;
+  }
+
   const title = data.title || 'MandiPlus';
   const options = {
     body: data.body || 'You have a new notification',
@@ -119,14 +145,35 @@ self.addEventListener('push', (event) => {
     tag: data.tag || 'mandiplus-notification',
     data: { url: data.url || '/' },
   };
-
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || '/';
+  const notifData = event.notification.data || {};
+  const action = event.action;
 
+  if (notifData.type === 'incoming_call') {
+    const targetUrl = notifData.url || '/admin/chat-logs';
+    event.waitUntil(
+      self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+        const existing = clients.find((c) => c.url.includes('/admin'));
+        if (existing) {
+          existing.focus();
+          existing.postMessage({
+            type: 'wa-push-call-action',
+            action: action || 'answer',
+            callId: notifData.callId,
+          });
+          return;
+        }
+        return self.clients.openWindow(targetUrl);
+      })
+    );
+    return;
+  }
+
+  const targetUrl = notifData.url || '/';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       const existing = clients.find((c) => c.url.includes(targetUrl));
