@@ -113,7 +113,7 @@ export function WhatsAppCallHandler() {
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const callingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
+  const ringAudioRef = useRef<HTMLAudioElement | null>(null);
   const ringIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const notifRef = useRef<Notification | null>(null);
   // Stable refs for values read inside the WS callback — avoids stale closures
@@ -206,32 +206,35 @@ export function WhatsAppCallHandler() {
     return () => navigator.serviceWorker?.removeEventListener('message', handler);
   }, [callState]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const startRing = useCallback(() => {
-    try {
-      const audio = new Audio('/sounds/incoming_call.mp3');
-      audio.loop = true;
-      audio.volume = 0.85;
-      audio.play().catch(() => {
-        // Autoplay blocked — will play on next user gesture; fallback silent
-      });
-      audioCtxRef.current = audio as any;
-    } catch {}
-  }, []);
-
   const stopRing = useCallback(() => {
-    if (audioCtxRef.current) {
+    if (ringAudioRef.current) {
       try {
-        const audio = audioCtxRef.current as any;
+        const audio = ringAudioRef.current;
         audio.pause();
         audio.currentTime = 0;
+        audio.removeAttribute('src');
+        audio.load();
       } catch {}
-      audioCtxRef.current = null;
+      ringAudioRef.current = null;
     }
     if (ringIntervalRef.current) {
       clearInterval(ringIntervalRef.current);
       ringIntervalRef.current = null;
     }
   }, []);
+
+  const startRing = useCallback(() => {
+    stopRing();
+    try {
+      const audio = new Audio('/sounds/incoming_call.mp3');
+      audio.loop = true;
+      audio.volume = 0.85;
+      ringAudioRef.current = audio;
+      audio.play().catch(() => {
+        // Autoplay blocked — will play on next user gesture; fallback silent
+      });
+    } catch {}
+  }, [stopRing]);
 
   const showCallNotification = useCallback((phone: string) => {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
@@ -257,6 +260,13 @@ export function WhatsAppCallHandler() {
       notifRef.current = null;
     }
   }, []);
+
+  useEffect(() => {
+    if (callState !== 'ringing') {
+      stopRing();
+      closeCallNotification();
+    }
+  }, [callState, stopRing, closeCallNotification]);
 
   const cleanup = useCallback(() => {
     if (durationIntervalRef.current) {
