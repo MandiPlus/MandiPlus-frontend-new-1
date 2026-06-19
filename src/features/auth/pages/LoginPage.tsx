@@ -171,6 +171,12 @@ const LoginPage = () => {
                         Sign up
                     </Link>
                 </p>
+
+                <p className="pt-3 text-center text-xs text-gray-400">
+                    <Link href="/admin/login" className="hover:text-[#4309ac] transition-colors">
+                        Admin Login
+                    </Link>
+                </p>
             </div>
         </div>
     );
