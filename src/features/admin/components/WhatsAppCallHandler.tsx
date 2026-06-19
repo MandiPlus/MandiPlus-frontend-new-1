@@ -130,10 +130,10 @@ export function WhatsAppCallHandler() {
     process.env.NEXT_PUBLIC_BOT_CHAT_ADMIN_TOKEN ||
     '';
 
-  // Dashboard accounts expose account.username; legacy master-admin tokens use a
-  // sentinel and are intentionally outside the WhatsApp routing map.
+  // Dashboard accounts expose account.username; legacy master-admin tokens map
+  // to the shared admin observer so they still receive all WhatsApp calls.
   const currentUser = accessProfile?.account?.username
-    || (accessProfile?.isFullAdmin ? '__full_admin__' : '');
+    || (accessProfile?.isFullAdmin ? 'admin@mandiplus.com' : '');
   const isAllowed = !!accessProfile && !!currentUser;
   const wsUrl = botBaseUrl.replace(/^http/, 'ws') + '/ws/calls' + (currentUser ? `?username=${encodeURIComponent(currentUser)}` : '');
 

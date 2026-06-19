@@ -872,7 +872,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     process.env.NEXT_PUBLIC_BOT_CHAT_ADMIN_TOKEN ||
     '';
   const currentUser = accessProfile?.account?.username
-    || (accessProfile?.isFullAdmin ? '__full_admin__' : '');
+    || (accessProfile?.isFullAdmin ? 'admin@mandiplus.com' : '');
 
   const axiosConfig = useMemo(
     () =>
