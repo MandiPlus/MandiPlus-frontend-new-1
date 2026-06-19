@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { useAdmin } from '@/features/admin/context/AdminContext';
@@ -588,6 +588,64 @@ function buildOpenUrl(media: MediaInfo, resolvedUrl: string) {
 function openAttachment(media: MediaInfo, resolvedUrl: string) {
   const targetUrl = buildOpenUrl(media, resolvedUrl);
   window.open(targetUrl, '_blank', 'noopener,noreferrer');
+}
+
+type UrlButton = { text: string; url: string };
+
+function extractUrlButtons(payload: unknown): UrlButton[] {
+  const buttons: UrlButton[] = [];
+  for (const src of payloadSources(payload)) {
+    const template = src?.template as Record<string, any> | undefined;
+    const components = Array.isArray(template?.components)
+      ? (template.components as Array<Record<string, any>>)
+      : [];
+    for (const component of components) {
+      if (String(component?.type || '').toUpperCase() !== 'BUTTONS') continue;
+      const btns = Array.isArray(component?.buttons)
+        ? (component.buttons as Array<Record<string, any>>)
+        : [];
+      for (const btn of btns) {
+        if (String(btn?.type || '').toUpperCase() === 'URL' && typeof btn.url === 'string') {
+          buttons.push({ text: String(btn.text || 'Open link'), url: btn.url });
+        }
+      }
+    }
+    // cta_url interactive messages
+    const interactive = src?.interactive as Record<string, any> | undefined;
+    if (interactive?.type === 'cta_url') {
+      const action = interactive?.action as Record<string, any> | undefined;
+      if (typeof action?.url === 'string') {
+        buttons.push({ text: String(interactive?.body?.text || 'Open link'), url: action.url });
+      }
+    }
+  }
+  return buttons;
+}
+
+const URL_REGEX = /https?:\/\/[^\s<>"']+/g;
+
+function LinkifiedText({ text, className }: { text: string; className?: string }) {
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  URL_REGEX.lastIndex = 0;
+  while ((match = URL_REGEX.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    parts.push(
+      <a key={key++} href={match[0]} target="_blank" rel="noreferrer"
+        className="break-all underline underline-offset-2 opacity-90 hover:opacity-100">
+        {match[0]}
+      </a>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return (
+    <p className={`whitespace-pre-wrap break-words text-sm leading-6 ${className ?? ''}`}>
+      {parts}
+    </p>
+  );
 }
 
 function prettifyFieldLabel(key: string) {
@@ -2448,8 +2506,32 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                               <span className="text-sm">WhatsApp Voice Call</span>
                             </div>
                           ) : shouldRenderText ? (
-                            <p className="whitespace-pre-wrap break-words text-sm leading-6">{messageText}</p>
+                            <LinkifiedText text={messageText} />
                           ) : null}
+
+                          {/* URL buttons from template/interactive messages */}
+                          {(() => {
+                            const urlButtons = extractUrlButtons(message.payload);
+                            if (urlButtons.length === 0) return null;
+                            return (
+                              <div className="mt-2 flex flex-col gap-1 border-t border-black/10 pt-2">
+                                {urlButtons.map((btn, i) => (
+                                  <a
+                                    key={i}
+                                    href={btn.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:underline"
+                                  >
+                                    <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                                    </svg>
+                                    {btn.text}
+                                  </a>
+                                ))}
+                              </div>
+                            );
+                          })()}
 
                           <div className="mt-2 flex flex-wrap items-center justify-end gap-2 text-[11px] text-slate-500">
                             <span>{formatTime(message.created_at)}</span>

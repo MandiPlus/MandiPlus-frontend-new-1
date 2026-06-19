@@ -113,26 +113,28 @@ self.addEventListener('push', (event) => {
   const data = event.data ? event.data.json() : {};
 
   if (data.type === 'incoming_call') {
+    const callerLabel = data.caller_name || data.from || 'Unknown';
     const options = {
-      body: data.body || `${data.from || 'Unknown'} is calling...`,
+      body: data.body || `${callerLabel} is calling...`,
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-72.png',
       tag: 'wa-incoming-call',
       requireInteraction: true,
-      vibrate: [300, 100, 300, 100, 300],
+      vibrate: [500, 200, 500, 200, 500],
+      silent: false,
       actions: [
-        { action: 'answer', title: '✅ Answer' },
-        { action: 'decline', title: '❌ Decline' },
+        { action: 'decline', title: 'Decline' },
+        { action: 'answer', title: 'Answer' },
       ],
       data: {
         type: 'incoming_call',
         callId: data.call_id,
         from: data.from,
-        url: data.url || '/admin/chat-logs',
+        url: data.url || '/whatsapp-chats',
       },
     };
     event.waitUntil(
-      self.registration.showNotification(data.title || 'Incoming WhatsApp Call', options)
+      self.registration.showNotification(data.title || `Incoming call · ${callerLabel}`, options)
     );
     return;
   }

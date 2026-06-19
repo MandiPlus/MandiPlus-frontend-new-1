@@ -503,19 +503,20 @@ export function WhatsAppCallHandler() {
 
   const handleReject = async () => {
     if (!callId) return;
+    const rejectCallId = callId;
     stopRing();
     closeCallNotification();
-    try {
-      await fetch(`${botBaseUrl}/admin/calls/reject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-token': botAdminToken },
-        body: JSON.stringify({ call_id: callId }),
-      });
-    } catch {}
     cleanup();
     setCallState('idle');
     setCallId('');
     setCallerNumber('');
+    try {
+      await fetch(`${botBaseUrl}/admin/calls/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': botAdminToken },
+        body: JSON.stringify({ call_id: rejectCallId }),
+      });
+    } catch {}
   };
 
   const handleHangup = async () => {
