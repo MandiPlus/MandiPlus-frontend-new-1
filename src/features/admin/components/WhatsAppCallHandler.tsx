@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { X } from 'lucide-react';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 
 type CallState = 'idle' | 'ringing' | 'connecting' | 'active' | 'ended' | 'calling';
@@ -81,6 +82,17 @@ function getInitials(phone: string) {
     return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p: string) => p[0]?.toUpperCase() || '').join('') || 'WA';
   }
   return phone.slice(-2).toUpperCase();
+}
+
+function getErrorMessage(err: unknown, fallback: string) {
+  return err instanceof Error ? err.message : fallback;
+}
+
+function getResponseErrorDetail(data: unknown, fallback: string) {
+  if (data && typeof data === 'object' && 'detail' in data && typeof data.detail === 'string') {
+    return data.detail;
+  }
+  return fallback;
 }
 
 // Phone icon SVG path (reused throughout)
@@ -192,7 +204,7 @@ export function WhatsAppCallHandler() {
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       if (event.data?.type === 'wa-push-call-action') {
-        const { action, callId: pushedCallId } = event.data;
+        const { action } = event.data;
         if (action === 'decline') {
           handleReject();
         } else {
@@ -299,8 +311,8 @@ export function WhatsAppCallHandler() {
       setCallState('active');
       setDuration(0);
       durationIntervalRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to connect call');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to connect call'));
       cleanup();
       setCallState('idle');
     }
@@ -408,15 +420,15 @@ export function WhatsAppCallHandler() {
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || 'Failed to accept call');
+        throw new Error(getResponseErrorDetail(errData, 'Failed to accept call'));
       }
 
       setCallState('active');
       setIsExpanded(true);
       setDuration(0);
       durationIntervalRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to accept call');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to accept call'));
       cleanup();
       setCallState('idle');
     }
@@ -475,7 +487,7 @@ export function WhatsAppCallHandler() {
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || 'Failed to initiate call');
+        throw new Error(getResponseErrorDetail(errData, 'Failed to initiate call'));
       }
 
       const data = await response.json();
@@ -495,8 +507,8 @@ export function WhatsAppCallHandler() {
           return prev;
         });
       }, 8000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to initiate call');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to initiate call'));
       cleanup();
       setCallState('idle');
     }
@@ -597,6 +609,15 @@ export function WhatsAppCallHandler() {
     callState === 'ended' ? 'bg-[#424242]' :
     callState === 'calling' ? 'bg-[#1a4f72]' :
     'bg-[#075E54]';
+  const contactName = getContactName(callerNumber);
+  const callerDisplayName = contactName || formatCallerNumber(callerNumber);
+  const callStatusLabel =
+    callState === 'active' ? formatCallDuration(duration) :
+    callState === 'ringing' ? 'Incoming call' :
+    callState === 'calling' ? 'Ringing...' :
+    callState === 'connecting' ? 'Connecting...' :
+    'Call ended';
+  const isWaitingForCall = callState === 'ringing' || callState === 'calling';
 
   // ─── Minimized floating bar ───────────────────────────────────────────────
   if (!isExpanded) {
@@ -610,7 +631,7 @@ export function WhatsAppCallHandler() {
           className={`h-4 w-4 shrink-0 text-white ${callState === 'ringing' || callState === 'calling' ? 'animate-pulse' : ''}`}
         />
         <span className="flex-1 truncate text-sm font-semibold text-white">
-          {getContactName(callerNumber) || formatCallerNumber(callerNumber)}
+          {callerDisplayName}
         </span>
         <span className="shrink-0 font-mono text-xs text-white/80">
           {callState === 'active' ? formatCallDuration(duration) :
@@ -654,12 +675,134 @@ export function WhatsAppCallHandler() {
     );
   }
 
-  // ─── Full-screen expanded call UI ─────────────────────────────────────────
+  const desktopPanelTone =
+    callState === 'ended' ? 'border-slate-200 bg-slate-950' :
+    callState === 'calling' ? 'border-sky-200 bg-slate-950' :
+    'border-emerald-200 bg-[#073f39]';
+
   return (
-    <div
-      className={`fixed inset-0 z-[9999] flex flex-col ${bgClass}`}
-      style={{ paddingTop: 'env(safe-area-inset-top)' }}
-    >
+    <>
+      {/* Desktop compact call surface */}
+      <div
+        className={`fixed right-4 top-4 z-[9999] hidden w-[360px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border shadow-2xl shadow-slate-950/25 ring-1 ring-white/10 lg:block ${desktopPanelTone}`}
+        role="dialog"
+        aria-label="WhatsApp call"
+      >
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-300 via-teal-200 to-sky-300" />
+        <div className="flex items-start gap-3 px-4 pb-4 pt-5">
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/15 text-base font-bold text-white ring-1 ring-white/20">
+            {getInitials(callerNumber)}
+            {isWaitingForCall && (
+              <span className="absolute inset-0 animate-ping rounded-full bg-emerald-200/20" />
+            )}
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-300 shadow-[0_0_0_3px_rgba(110,231,183,0.18)]" />
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-white/60">WhatsApp</p>
+            </div>
+            <p className="mt-1 truncate text-base font-semibold text-white">{callerDisplayName}</p>
+            {contactName && (
+              <p className="truncate text-xs text-white/55">{formatCallerNumber(callerNumber)}</p>
+            )}
+            <p className="mt-1 text-sm text-white/75">{callStatusLabel}</p>
+            {error && (
+              <p className="mt-3 rounded-lg bg-rose-950/70 px-3 py-2 text-xs leading-5 text-rose-100">{error}</p>
+            )}
+          </div>
+
+          {callState === 'ringing' && (
+            <button
+              type="button"
+              onClick={handleReject}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/40"
+              title="Ignore call"
+              aria-label="Ignore call"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 border-t border-white/10 bg-black/10 px-4 py-3">
+          {callState === 'ringing' && (
+            <>
+              <button
+                type="button"
+                onClick={handleReject}
+                className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-rose-500 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-400 active:scale-[0.98]"
+              >
+                <PhoneIcon className="h-4 w-4" rotate135 />
+                Decline
+              </button>
+              <button
+                type="button"
+                onClick={handleAccept}
+                className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-400 text-sm font-semibold text-emerald-950 shadow-sm transition hover:bg-emerald-300 active:scale-[0.98]"
+              >
+                <PhoneIcon className="h-4 w-4" />
+                Accept
+              </button>
+            </>
+          )}
+
+          {callState === 'calling' && (
+            <button
+              type="button"
+              onClick={handleCancelCall}
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-rose-500 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-400 active:scale-[0.98]"
+            >
+              <PhoneIcon className="h-4 w-4" rotate135 />
+              Cancel
+            </button>
+          )}
+
+          {callState === 'connecting' && (
+            <div className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-white/10 text-sm font-medium text-white/80">
+              <svg className="h-4 w-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Connecting
+            </div>
+          )}
+
+          {callState === 'active' && (
+            <>
+              <button
+                type="button"
+                onClick={toggleMute}
+                className={`flex h-10 flex-1 items-center justify-center rounded-xl text-sm font-semibold transition active:scale-[0.98] ${
+                  isMuted ? 'bg-white text-[#075E54]' : 'bg-white/10 text-white hover:bg-white/15'
+                }`}
+              >
+                {isMuted ? 'Unmute' : 'Mute'}
+              </button>
+              <button
+                type="button"
+                onClick={handleHangup}
+                className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-rose-500 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-400 active:scale-[0.98]"
+              >
+                <PhoneIcon className="h-4 w-4" rotate135 />
+                Hang up
+              </button>
+            </>
+          )}
+
+          {callState === 'ended' && (
+            <p className="w-full text-center text-sm text-white/65">
+              {duration > 0 ? `Duration: ${formatCallDuration(duration)}` : 'Call not answered'}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Mobile full-screen expanded call UI */}
+      <div
+        className={`fixed inset-0 z-[9999] flex flex-col lg:hidden ${bgClass}`}
+        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+      >
       {/* Top bar */}
       <div className="flex items-center justify-between px-5 pb-2 pt-4">
         <button
@@ -681,24 +824,18 @@ export function WhatsAppCallHandler() {
         {/* Avatar circle */}
         <div className="relative flex h-28 w-28 items-center justify-center rounded-full bg-white/20 text-4xl font-bold text-white shadow-lg">
           {getInitials(callerNumber)}
-          {(callState === 'ringing' || callState === 'calling') && (
+          {isWaitingForCall && (
             <span className="absolute inset-0 animate-ping rounded-full bg-white/10" />
           )}
         </div>
 
         {/* Name + status */}
         <div className="text-center">
-          <p className="text-2xl font-semibold text-white">{getContactName(callerNumber) || formatCallerNumber(callerNumber)}</p>
-          {getContactName(callerNumber) && (
+          <p className="text-2xl font-semibold text-white">{callerDisplayName}</p>
+          {contactName && (
             <p className="text-sm text-white/60">{formatCallerNumber(callerNumber)}</p>
           )}
-          <p className="mt-1.5 text-sm text-white/70">
-            {callState === 'ringing' ? 'Incoming call' :
-             callState === 'calling' ? 'Ringing...' :
-             callState === 'connecting' ? 'Connecting...' :
-             callState === 'active' ? formatCallDuration(duration) :
-             'Call ended'}
-          </p>
+          <p className="mt-1.5 text-sm text-white/70">{callStatusLabel}</p>
         </div>
 
         {error && (
@@ -706,7 +843,7 @@ export function WhatsAppCallHandler() {
         )}
 
         {/* Animated dots while waiting */}
-        {(callState === 'ringing' || callState === 'calling') && (
+        {isWaitingForCall && (
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 animate-bounce rounded-full bg-white/50 [animation-delay:0ms]" />
             <span className="h-2 w-2 animate-bounce rounded-full bg-white/50 [animation-delay:150ms]" />
@@ -828,6 +965,7 @@ export function WhatsAppCallHandler() {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }
