@@ -1099,31 +1099,12 @@ export default function InsuranceFormsPage() {
 
         setExporting(true);
         try {
-            const activeFilters = buildActiveFilters(debouncedFilters);
+            const activeFilters = buildActiveFilters(filters);
 
-            const body: any = {
+            const body = {
+                ...activeFilters,
                 selectedColumns: selectedExportColumns,
             };
-
-            if (activeFilters.startDate && activeFilters.endDate) {
-                body.startDate = activeFilters.startDate;
-                body.endDate = activeFilters.endDate;
-                if (activeFilters.invoiceType) body.invoiceType = activeFilters.invoiceType;
-                if (activeFilters.supplierName) body.supplierName = activeFilters.supplierName;
-                if (activeFilters.buyerName) body.buyerName = activeFilters.buyerName;
-            } else {
-                const allResponse = await adminApi.filterInvoices(activeFilters);
-                const allInvoices = Array.isArray(allResponse.data) ? allResponse.data : [];
-                const invoiceIds = allInvoices
-                    .map((inv: any) => inv.id || inv._id)
-                    .filter(Boolean);
-                if (invoiceIds.length === 0) {
-                    toast.error('No invoices found matching current filters.');
-                    setExporting(false);
-                    return;
-                }
-                body.invoiceIds = invoiceIds;
-            }
 
             const blob = await adminApi.exportInvoices(body);
 
@@ -3694,4 +3675,3 @@ export default function InsuranceFormsPage() {
         </div>
     );
 }
-

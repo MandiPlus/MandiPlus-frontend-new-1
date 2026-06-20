@@ -1161,13 +1161,18 @@ class AdminApi {
 
   public exportInvoices = async (body: {
     invoiceType?: string;
+    invoiceNumber?: string;
+    vehicleNumber?: string;
     startDate?: string;
     endDate?: string;
     supplierName?: string;
     buyerName?: string;
     productName?: string;
+    userId?: string;
+    paymentStatus?: string;
     isVerified?: boolean;
     isRejected?: boolean;
+    advancedFilters?: string;
     invoiceIds?: string[];
     exportType?: "all" | "payment";
     selectedColumns?: string[];
