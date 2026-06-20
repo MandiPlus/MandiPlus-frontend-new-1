@@ -1389,6 +1389,9 @@ export default function InsuranceFormsPage() {
     };
 
     const handleEditClick = (invoice: Invoice) => {
+        const initialVehicleNumber = normalizeVehicleText(
+            invoice.vehicleNumber || invoice.truckNumber || ''
+        );
         setEditingInvoice(invoice);
         setWeightmentSlip(null);
         setFormData({
@@ -1414,8 +1417,8 @@ export default function InsuranceFormsPage() {
             quantity: invoice.quantity || 0,
             rate: invoice.rate || 0,
             amount: invoice.amount || 0,
-            vehicleNumber: invoice.vehicleNumber || '',
-            truckNumber: invoice.truckNumber || '',
+            vehicleNumber: initialVehicleNumber,
+            truckNumber: initialVehicleNumber,
             weighmentSlipNote: invoice.weighmentSlipNote || '',
             invoiceDate: invoice.createdAt
                 ? invoice.createdAt.split('T')[0]
@@ -1500,10 +1503,15 @@ export default function InsuranceFormsPage() {
             const qty = Number(formData.quantity) || 0;
             const rate = Number(formData.rate) || 0;
             const computedAmount = qty * rate;
+            const vehicleNumber = normalizeVehicleText(
+                String(formData.vehicleNumber || formData.truckNumber || '')
+            );
 
             const payload: RegenerateInvoicePayload = {
                 ...formData,
                 invoiceId: editingInvoice.id,
+                vehicleNumber,
+                truckNumber: vehicleNumber,
 
                 supplierAddress: typeof formData.supplierAddress === "string"
                     ? formData.supplierAddress.split("\n").filter(Boolean)
@@ -3384,7 +3392,14 @@ export default function InsuranceFormsPage() {
                                     <input
                                         type="text"
                                         value={formData.vehicleNumber}
-                                        onChange={(e) => setFormData({ ...formData, vehicleNumber: e.target.value })}
+                                        onChange={(e) => {
+                                            const vehicleNumber = normalizeVehicleText(e.target.value);
+                                            setFormData({
+                                                ...formData,
+                                                vehicleNumber,
+                                                truckNumber: vehicleNumber,
+                                            });
+                                        }}
                                         className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#4309ac] focus:border-[#4309ac] focus:outline-none text-slate-800 bg-white text-sm"
                                         placeholder="Vehicle number"
                                     />
@@ -3394,9 +3409,9 @@ export default function InsuranceFormsPage() {
                                     <label className="block text-sm font-medium text-slate-800 mb-1">Truck Number</label>
                                     <input
                                         type="text"
-                                        value={formData.truckNumber}
-                                        onChange={(e) => setFormData({ ...formData, truckNumber: e.target.value })}
-                                        className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#4309ac] focus:border-[#4309ac] focus:outline-none text-slate-800 bg-white text-sm"
+                                        value={formData.truckNumber || formData.vehicleNumber || ''}
+                                        readOnly
+                                        className="w-full px-3 sm:px-4 py-2 border border-gray-200 rounded-xl bg-gray-50 text-slate-500 text-sm"
                                         placeholder="Truck number"
                                     />
                                 </div>
