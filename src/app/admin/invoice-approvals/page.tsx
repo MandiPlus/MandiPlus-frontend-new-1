@@ -342,18 +342,14 @@ export default function InvoiceApprovalsPage() {
         } catch { /* non-blocking */ }
       }
 
-      // Step 3: Verify + send payment link + WhatsApp to customer
+      // Step 3: Verify + send invoice PDF to customer. Payment links are sent
+      // manually from the insurance page.
       if (invoiceId) {
         try {
-          const verifyRes = await adminApi.verifyAndSendPaymentForInvoice(invoiceId);
+          await adminApi.verifyInvoice(invoiceId);
           status.whatsappSent = true;
-          status.paymentLink = true;
         } catch {
-          // Fallback: just verify without payment
-          try {
-            await adminApi.verifyInvoice(invoiceId);
-            status.whatsappSent = true;
-          } catch { /* best effort */ }
+          status.whatsappSent = false;
         }
       }
 
@@ -921,7 +917,6 @@ function ReviewTab({
             {postSendStatus.pdfGenerated && <p className="text-emerald-700">✓ PDF generated</p>}
             {postSendStatus.whatsappSent && <p className="text-emerald-700">✓ WhatsApp sent to customer</p>}
             {postSendStatus.paymentLink && <p className="text-emerald-700">✓ Payment link created</p>}
-            {!postSendStatus.paymentLink && <p className="text-amber-600">⚠ Payment link not created (manual step needed)</p>}
           </div>
         </div>
       )}
