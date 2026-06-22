@@ -20,6 +20,7 @@ import {
   InboxArrowDownIcon,
   ClipboardDocumentCheckIcon,
   PhoneIcon,
+  SparklesIcon,
 } from '@heroicons/react/24/outline';
 
 export const ADMIN_SECTIONS = [
@@ -42,6 +43,7 @@ export const ADMIN_SECTIONS = [
   'invoice-approvals',
   'team-logs',
   'call-routing',
+  'reports',
 ] as const;
 
 export type AdminSection = (typeof ADMIN_SECTIONS)[number];
@@ -84,6 +86,7 @@ export const ADMIN_NAV_ITEMS: Array<{
   { name: 'Access Monitor', href: '/admin/access-monitor', icon: ShieldCheckIcon, section: 'access-monitor' },
   { name: 'Team Daily Logs', href: '/admin/team-logs', icon: ClipboardDocumentCheckIcon, section: 'team-logs' },
   { name: 'Call Routing', href: '/admin/call-routing', icon: PhoneIcon, section: 'call-routing' },
+  { name: 'AI Reports', href: '/admin/reports', icon: SparklesIcon, section: 'reports' },
 ];
 
 export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
@@ -106,6 +109,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/invoice-approvals': 'invoice-approvals',
   '/admin/team-logs': 'team-logs',
   '/admin/call-routing': 'call-routing',
+  '/admin/reports': 'reports',
   '/admin/impersonate': 'users',
 };
 

@@ -208,6 +208,56 @@ export interface AdminImpersonationResponse {
   };
 }
 
+export interface AiReportMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface AiReportPreviewResponse {
+  reportId?: string;
+  status: "needs_clarification" | "ready" | "refuse";
+  assistantMessage: string;
+  clarifyingQuestions?: string[];
+  assumptions?: string[];
+  reportTitle?: string | null;
+  expectedColumns?: string[];
+  verificationChecks?: string[];
+  verification?: {
+    matches_request: boolean;
+    confidence: "low" | "medium" | "high";
+    issues: string[];
+    repaired_sql: string | null;
+    user_summary: string;
+  } | null;
+  rowCount?: number;
+  truncated?: boolean;
+  executionMs?: number;
+  rows?: Record<string, unknown>[];
+  sql?: string;
+}
+
+export interface AiReportRequest {
+  reportId?: string;
+  message: string;
+  history?: AiReportMessage[];
+  includeSql?: boolean;
+  selectedColumns?: string[];
+}
+
+export interface AiReportDataQuestionRequest {
+  reportId: string;
+  question: string;
+}
+
+export interface AiReportDataQuestionResponse {
+  reportId: string;
+  answer: string;
+  calculations: string[];
+  confidence: "low" | "medium" | "high";
+  rowCount: number;
+  generatedAt: string;
+}
+
 export interface RegenerateInvoicePayload {
   invoiceId: string;
   invoiceType?: string;
@@ -2535,6 +2585,35 @@ class AdminApi {
         error: error.message,
       };
     }
+  };
+
+  public previewAiReport = async (
+    payload: AiReportRequest,
+  ): Promise<AiReportPreviewResponse> => {
+    const response = await this.client.post<AiReportPreviewResponse>(
+      "/admin/ai-reports/preview",
+      payload,
+    );
+    return response.data;
+  };
+
+  public exportAiReport = async (
+    payload: AiReportRequest,
+  ): Promise<Blob> => {
+    const response = await this.client.post("/admin/ai-reports/export", payload, {
+      responseType: "blob",
+    });
+    return response.data;
+  };
+
+  public askAiReportData = async (
+    payload: AiReportDataQuestionRequest,
+  ): Promise<AiReportDataQuestionResponse> => {
+    const response = await this.client.post<AiReportDataQuestionResponse>(
+      "/admin/ai-reports/ask",
+      payload,
+    );
+    return response.data;
   };
 
   public getDashboardStats = async (): Promise<

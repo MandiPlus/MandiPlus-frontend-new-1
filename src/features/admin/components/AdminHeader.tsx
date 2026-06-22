@@ -53,6 +53,7 @@ const adminTitles: Record<string, string> = {
     '/admin/chat-logs': 'WhatsApp Chats',
     '/admin/pdf-editor': 'Edit Insurance PDF',
     '/admin/impersonate': 'Impersonate',
+    '/admin/reports': 'AI Reports',
 };
 
 function getTimestampValue(timestamp: string): number {
