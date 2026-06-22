@@ -20,6 +20,7 @@ import {
   InboxArrowDownIcon,
   ClipboardDocumentCheckIcon,
   PhoneIcon,
+  UserGroupIcon,
   SparklesIcon,
 } from '@heroicons/react/24/outline';
 
@@ -43,6 +44,7 @@ export const ADMIN_SECTIONS = [
   'invoice-approvals',
   'team-logs',
   'call-routing',
+  'channel-partners',
   'reports',
 ] as const;
 
@@ -61,12 +63,19 @@ export type AdminAccessProfile = {
   };
 };
 
-export const ADMIN_NAV_ITEMS: Array<{
+export type AdminNavItem = {
   name: string;
   href: string;
   icon: ComponentType<SVGProps<SVGSVGElement>>;
   section: AdminSection;
-}> = [
+};
+
+export type AdminNavGroup = {
+  name: string;
+  sections: AdminSection[];
+};
+
+export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Dashboard', href: '/admin/dashboard', icon: HomeIcon, section: 'dashboard' },
   { name: 'Users', href: '/admin/users', icon: UsersIcon, section: 'users' },
   { name: 'Ledger', href: '/admin/ledger', icon: DocumentTextIcon, section: 'ledger' },
@@ -86,7 +95,39 @@ export const ADMIN_NAV_ITEMS: Array<{
   { name: 'Access Monitor', href: '/admin/access-monitor', icon: ShieldCheckIcon, section: 'access-monitor' },
   { name: 'Team Daily Logs', href: '/admin/team-logs', icon: ClipboardDocumentCheckIcon, section: 'team-logs' },
   { name: 'Call Routing', href: '/admin/call-routing', icon: PhoneIcon, section: 'call-routing' },
+  { name: 'Channel Partners', href: '/admin/channel-partners', icon: UserGroupIcon, section: 'channel-partners' },
   { name: 'AI Reports', href: '/admin/reports', icon: SparklesIcon, section: 'reports' },
+];
+
+export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
+  {
+    name: 'Overview',
+    sections: ['dashboard', 'reports'],
+  },
+  {
+    name: 'People',
+    sections: ['users', 'channel-partners', 'team-logs', 'access-monitor'],
+  },
+  {
+    name: 'Invoices',
+    sections: ['insurance-forms', 'invoice-approvals', 'invoice-tracking', 'pdf-editor'],
+  },
+  {
+    name: 'Finance',
+    sections: ['ledger', 'insurance-payments', 'agent-commissions'],
+  },
+  {
+    name: 'Operations',
+    sections: ['tracking', 'trips', 'arrival-reports', 'field-operations', 'fssai-leads'],
+  },
+  {
+    name: 'Insurance & Claims',
+    sections: ['claims'],
+  },
+  {
+    name: 'Communications',
+    sections: ['chat-logs', 'call-routing'],
+  },
 ];
 
 export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
@@ -109,6 +150,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/invoice-approvals': 'invoice-approvals',
   '/admin/team-logs': 'team-logs',
   '/admin/call-routing': 'call-routing',
+  '/admin/channel-partners': 'channel-partners',
   '/admin/reports': 'reports',
   '/admin/impersonate': 'users',
 };

@@ -1,35 +1,142 @@
 'use client';
 
-import { Fragment, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import {
     XMarkIcon,
 } from '@heroicons/react/24/outline';
+import { ChevronDownIcon } from '@heroicons/react/20/solid';
 import { Bars3Icon } from '@heroicons/react/16/solid';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAdmin } from '../context/AdminContext';
-import { ADMIN_NAV_ITEMS } from '../access';
+import { ADMIN_NAV_GROUPS, ADMIN_NAV_ITEMS, AdminNavGroup, AdminNavItem } from '../access';
 
 function classNames(...classes: string[]) {
     return classes.filter(Boolean).join(' ');
 }
 
+type VisibleAdminNavGroup = AdminNavGroup & {
+    items: AdminNavItem[];
+};
+
+function GroupedNavigation({
+    groups,
+    pathname,
+    expandedGroupNames,
+    onToggleGroup,
+    onNavigate,
+    itemTextClassName = 'text-sm',
+}: {
+    groups: VisibleAdminNavGroup[];
+    pathname: string;
+    expandedGroupNames: string[];
+    onToggleGroup: (groupName: string) => void;
+    onNavigate?: () => void;
+    itemTextClassName?: string;
+}) {
+    const expandedGroups = new Set(expandedGroupNames);
+
+    return (
+        <nav className="space-y-1.5 px-2">
+            {groups.map((group) => {
+                const isExpanded = expandedGroups.has(group.name);
+                const isGroupActive = group.items.some((item) => pathname === item.href);
+                return (
+                    <div key={group.name} className="rounded-lg">
+                        <button
+                            type="button"
+                            className={classNames(
+                                isGroupActive
+                                    ? 'bg-[#4309ac]/5 text-slate-950 ring-1 ring-[#4309ac]/10'
+                                    : isExpanded
+                                    ? 'bg-slate-50 text-slate-900'
+                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
+                                'flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs font-bold uppercase tracking-[0.08em] transition-colors'
+                            )}
+                            aria-expanded={isExpanded}
+                            onClick={() => onToggleGroup(group.name)}
+                        >
+                            <span className="truncate">{group.name}</span>
+                            <ChevronDownIcon
+                                className={classNames(
+                                    isExpanded ? 'rotate-180' : '',
+                                    isGroupActive ? 'text-[#4309ac]/60' : 'text-slate-400',
+                                    'h-4 w-4 shrink-0 transition-transform'
+                                )}
+                                aria-hidden="true"
+                            />
+                        </button>
+
+                        {isExpanded ? (
+                            <div className="mt-1 space-y-0.5 border-l border-slate-200 pl-2 ml-3">
+                                {group.items.map((item) => {
+                                    const isActive = pathname === item.href;
+
+                                    return (
+                                        <Link
+                                            key={item.name}
+                                            href={item.href}
+                                            className={classNames(
+                                                isActive
+                                                    ? 'bg-[#4309ac]/10 text-[#4309ac] ring-1 ring-[#4309ac]/10'
+                                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950',
+                                                'group flex min-h-10 items-center rounded-md px-2.5 py-2 font-medium transition-colors',
+                                                itemTextClassName
+                                            )}
+                                            onClick={onNavigate}
+                                        >
+                                            <item.icon
+                                                className={classNames(
+                                                    isActive ? 'text-[#4309ac]' : 'text-slate-400 group-hover:text-slate-600',
+                                                    'mr-2.5 h-5 w-5 shrink-0'
+                                                )}
+                                                aria-hidden="true"
+                                            />
+                                            <span className="min-w-0 truncate">{item.name}</span>
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        ) : null}
+                    </div>
+                );
+            })}
+        </nav>
+    );
+}
+
 export default function AdminSidebar() {
     const pathname = usePathname();
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const { logout, accessProfile } = useAdmin();
-    const navigation = ADMIN_NAV_ITEMS.filter((item) => {
-        if (item.section === 'fssai-leads') {
-            return Boolean(accessProfile?.isFullAdmin);
-        }
+    const { logout, canAccessSection } = useAdmin();
+    const navigationGroups = useMemo(() => {
+        const visibleItems = ADMIN_NAV_ITEMS.filter((item) => canAccessSection(item.section));
+        const itemBySection = new Map(visibleItems.map((item) => [item.section, item]));
 
-        if (item.section === 'team-logs') {
-            return true;
-        }
+        return ADMIN_NAV_GROUPS
+            .map((group) => ({
+                ...group,
+                items: group.sections
+                    .map((section) => itemBySection.get(section))
+                    .filter((item): item is AdminNavItem => Boolean(item)),
+            }))
+            .filter((group) => group.items.length > 0);
+    }, [canAccessSection]);
+    const activeGroupName = navigationGroups.find((group) =>
+        group.items.some((item) => item.href === pathname),
+    )?.name;
+    const [expandedGroupNames, setExpandedGroupNames] = useState<string[]>(() => [
+        activeGroupName || 'Overview',
+    ]);
 
-        return accessProfile?.allowedSections?.includes(item.section);
-    });
+    const toggleGroup = (groupName: string) => {
+        setExpandedGroupNames((current) =>
+            current.includes(groupName)
+                ? current.filter((name) => name !== groupName)
+                : [...current, groupName],
+        );
+    };
 
     return (
         <>
@@ -86,36 +193,15 @@ export default function AdminSidebar() {
                                             <span className="text-[#4309ac]">Plus</span>
                                         </h1>
                                     </div>
-                                    <div className="mt-5 h-0 flex-1 overflow-y-auto">
-                                        <nav className="space-y-1 px-2">
-                                            {navigation.map((item) => {
-                                                const isActive = pathname === item.href;
-
-                                                return (
-                                                    <Link
-                                                        key={item.name}
-                                                        href={item.href}
-                                                        className={classNames(
-                                                            isActive
-                                                                ? 'bg-[#4309ac]/10 text-[#4309ac]'
-                                                                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
-                                                            'group flex items-center rounded-md px-2 py-2 text-base font-medium'
-                                                        )}
-                                                        onClick={() => setSidebarOpen(false)} // Close drawer on link click
-                                                    >
-                                                        <item.icon
-                                                            className={classNames(
-                                                                isActive ? 'text-[#4309ac]' : 'text-gray-400 group-hover:text-gray-500',
-                                                                'mr-4 h-6 w-6 shrink-0'
-                                                            )}
-                                                            aria-hidden="true"
-                                                        />
-                                                        {item.name}
-
-                                                    </Link>
-                                                );
-                                            })}
-                                        </nav>
+                                    <div className="mt-5 h-0 flex-1 overflow-y-auto pb-2">
+                                        <GroupedNavigation
+                                            groups={navigationGroups}
+                                            pathname={pathname}
+                                            expandedGroupNames={expandedGroupNames}
+                                            onToggleGroup={toggleGroup}
+                                            onNavigate={() => setSidebarOpen(false)}
+                                            itemTextClassName="text-base"
+                                        />
                                     </div>
                                 </Dialog.Panel>
                             </Transition.Child>
@@ -136,33 +222,14 @@ export default function AdminSidebar() {
                                     <span className="text-[#4309ac]">Plus</span>
                                 </h1>
                             </div>
-                            <nav className="mt-5 flex-1 space-y-1 bg-white px-2">
-                                {navigation.map((item) => {
-                                    const isActive = pathname === item.href;
-                                    return (
-                                        <Link
-                                            key={item.name}
-                                            href={item.href}
-                                            className={classNames(
-                                                isActive
-                                                    ? 'bg-[#4309ac]/10 text-[#4309ac]'
-                                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
-                                                'group flex items-center rounded-md px-2 py-2 text-sm font-medium'
-                                            )}
-                                        >
-                                            <item.icon
-                                                className={classNames(
-                                                    isActive ? 'text-[#4309ac]' : 'text-gray-400 group-hover:text-gray-500',
-                                                    'mr-3 h-6 w-6 shrink-0'
-                                                )}
-                                                aria-hidden="true"
-                                            />
-                                            {item.name}
-
-                                        </Link>
-                                    );
-                                })}
-                            </nav>
+                            <div className="mt-5 flex-1 overflow-y-auto bg-white pb-2">
+                                <GroupedNavigation
+                                    groups={navigationGroups}
+                                    pathname={pathname}
+                                    expandedGroupNames={expandedGroupNames}
+                                    onToggleGroup={toggleGroup}
+                                />
+                            </div>
                         </div>
                         <div className="flex shrink-0 border-t border-gray-200 p-4">
                             <button
