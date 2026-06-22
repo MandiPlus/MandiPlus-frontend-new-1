@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 
 interface BeforeInstallPromptEvent extends Event {
@@ -7,29 +8,33 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
+interface NavigatorWithStandalone extends Navigator {
+  standalone?: boolean;
+}
+
 export default function InstallPrompt() {
+  const pathname = usePathname();
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
-  const [isIOS, setIsIOS] = useState(false);
-  const [isStandalone, setIsStandalone] = useState(false);
+  const isIOS =
+    typeof navigator !== "undefined" &&
+    /iPad|iPhone|iPod/.test(navigator.userAgent);
 
   useEffect(() => {
+    if (pathname === "/") return;
+
     const standalone =
       window.matchMedia("(display-mode: standalone)").matches ||
-      (window.navigator as any).standalone === true;
-    setIsStandalone(standalone);
+      (window.navigator as NavigatorWithStandalone).standalone === true;
 
     if (standalone) return;
-
-    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    setIsIOS(ios);
 
     // Check localStorage for permanent dismissal
     const dismissed = localStorage.getItem("pwa-install-dismissed");
     if (dismissed === "true") return;
 
-    if (ios) {
+    if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
       const timer = setTimeout(() => setShowPrompt(true), 5000);
       return () => clearTimeout(timer);
     }
@@ -42,7 +47,7 @@ export default function InstallPrompt() {
 
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, []);
+  }, [pathname]);
 
   const handleInstall = async () => {
     if (!deferredPrompt) return;
@@ -60,7 +65,7 @@ export default function InstallPrompt() {
     localStorage.setItem("pwa-install-dismissed", "true");
   };
 
-  if (isStandalone || !showPrompt) return null;
+  if (pathname === "/" || !showPrompt) return null;
 
   return (
     <div className="fixed bottom-20 left-4 right-4 z-[90] animate-fadeIn">
