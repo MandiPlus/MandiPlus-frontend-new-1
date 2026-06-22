@@ -159,7 +159,7 @@ export function WhatsAppCallHandler() {
     setNotifPermission(Notification.permission);
   }, []);
 
-  // Request notification permission + register push subscription
+  // Request notification permission + register push subscription for WhatsApp calls/messages.
   useEffect(() => {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
 
@@ -585,8 +585,8 @@ export function WhatsAppCallHandler() {
           <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
         </svg>
         <div className="flex-1">
-          <p className="text-sm font-semibold text-amber-800">Enable call notifications</p>
-          <p className="mt-0.5 text-xs text-amber-700">Allow notifications so you receive alerts even when this tab is in the background.</p>
+          <p className="text-sm font-semibold text-amber-800">Enable WhatsApp notifications</p>
+          <p className="mt-0.5 text-xs text-amber-700">Allow notifications for incoming calls and important customer messages.</p>
           <button
             type="button"
             className="mt-2 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600"

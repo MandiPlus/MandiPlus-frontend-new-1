@@ -130,6 +130,15 @@ type MetaSenderProfileResponse = {
 type ChatFilter = 'all' | 'unread' | 'delivered' | 'failed';
 type MainTab = 'chats' | 'calls';
 
+type ChatWorkspaceMemory = {
+  selectedPhone?: string;
+  search?: string;
+  chatFilter?: ChatFilter;
+  mainTab?: MainTab;
+  conversationScrollTop?: number;
+  updatedAt?: number;
+};
+
 type CallRecord = {
   call_id: string;
   from: string;
@@ -774,6 +783,43 @@ function isMobileViewport() {
   return window.innerWidth < 1024;
 }
 
+const CHAT_WORKSPACE_MEMORY_KEY = 'chatLogsWorkspaceMemory';
+const CHAT_WORKSPACE_MEMORY_TTL_MS = 60 * 60 * 1000;
+
+function readChatWorkspaceMemory(): ChatWorkspaceMemory {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = sessionStorage.getItem(CHAT_WORKSPACE_MEMORY_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as ChatWorkspaceMemory;
+    if (!parsed.updatedAt || Date.now() - parsed.updatedAt > CHAT_WORKSPACE_MEMORY_TTL_MS) {
+      sessionStorage.removeItem(CHAT_WORKSPACE_MEMORY_KEY);
+      return {};
+    }
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function writeChatWorkspaceMemory(next: ChatWorkspaceMemory) {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(
+      CHAT_WORKSPACE_MEMORY_KEY,
+      JSON.stringify({ ...readChatWorkspaceMemory(), ...next, updatedAt: Date.now() })
+    );
+  } catch { }
+}
+
+function getSavedChatFilter(value: unknown): ChatFilter {
+  return value === 'unread' || value === 'delivered' || value === 'failed' ? value : 'all';
+}
+
+function getSavedMainTab(value: unknown): MainTab {
+  return value === 'calls' ? 'calls' : 'chats';
+}
+
 export function AdminChatLogsView({ standalone = false }: { standalone?: boolean }) {
   const router = useRouter();
   const { isAuthenticated, accessProfile } = useAdmin();
@@ -789,12 +835,17 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [error, setError] = useState('');
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selectedPhone, setSelectedPhone] = useState('');
+  const [selectedPhone, setSelectedPhone] = useState(() => {
+    const saved = readChatWorkspaceMemory().selectedPhone || '';
+    return isMobileViewport() ? '' : saved;
+  });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
   const [mediaFailures, setMediaFailures] = useState<Record<string, boolean>>({});
-  const [search, setSearch] = useState('');
-  const [chatFilter, setChatFilter] = useState<ChatFilter>('all');
+  const [search, setSearch] = useState(() => readChatWorkspaceMemory().search || '');
+  const [chatFilter, setChatFilter] = useState<ChatFilter>(() =>
+    getSavedChatFilter(readChatWorkspaceMemory().chatFilter)
+  );
   const [chatTheme, setChatTheme] = useState<ChatTheme>(() => {
     if (typeof window === 'undefined') return 'light';
     try {
@@ -846,7 +897,9 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   const [sendingTemplate, setSendingTemplate] = useState(false);
 
   // Calls tab
-  const [mainTab, setMainTab] = useState<MainTab>('chats');
+  const [mainTab, setMainTab] = useState<MainTab>(() =>
+    getSavedMainTab(readChatWorkspaceMemory().mainTab)
+  );
   const [callHistory, setCallHistory] = useState<CallRecord[]>([]);
   const [loadingCalls, setLoadingCalls] = useState(false);
 
@@ -854,10 +907,13 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
 
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const conversationListRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const hasLoadedConversationsRef = useRef(false);
   const hasLoadedMessagesRef = useRef(false);
   const mobileBackRef = useRef(false);
+  const suppressAutoSelectRef = useRef(isMobileViewport());
+  const shouldRestoreConversationListRef = useRef(true);
   const phoneChangedRef = useRef(false);
   const scrollSnapshotRef = useRef<{
     scrollTop: number;
@@ -933,6 +989,22 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   }, [chatTheme]);
 
   useEffect(() => {
+    writeChatWorkspaceMemory({ selectedPhone });
+  }, [selectedPhone]);
+
+  useEffect(() => {
+    writeChatWorkspaceMemory({ search });
+  }, [search]);
+
+  useEffect(() => {
+    writeChatWorkspaceMemory({ chatFilter });
+  }, [chatFilter]);
+
+  useEffect(() => {
+    writeChatWorkspaceMemory({ mainTab });
+  }, [mainTab]);
+
+  useEffect(() => {
     if (!isAuthenticated) {
       router.push('/admin/login');
     }
@@ -985,7 +1057,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
 
         if (items.length === 0) {
           setSelectedPhone('');
-        } else if (!selectedPhone && items.length > 0 && !mobileBackRef.current) {
+        } else if (!selectedPhone && items.length > 0 && !mobileBackRef.current && !suppressAutoSelectRef.current) {
           if (!isMobileViewport()) {
             setSelectedPhone(items[0].phone);
           }
@@ -1174,6 +1246,24 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     if (target.scrollTop < 50 && hasMoreMessages && !loadingOlder) {
       loadOlderMessages();
     }
+  };
+
+  const handleConversationListScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    if (mainTab !== 'chats') return;
+    writeChatWorkspaceMemory({ conversationScrollTop: event.currentTarget.scrollTop });
+  };
+
+  const restoreConversationListScroll = () => {
+    const container = conversationListRef.current;
+    if (!container) return;
+    const savedTop = readChatWorkspaceMemory().conversationScrollTop || 0;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (conversationListRef.current) {
+          conversationListRef.current.scrollTop = savedTop;
+        }
+      });
+    });
   };
 
   useEffect(() => {
@@ -1430,6 +1520,14 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
       );
     });
   }, [uniqueConversations, search, chatFilter, contactDirectory]);
+
+  useLayoutEffect(() => {
+    if (mainTab !== 'chats') return;
+    if (selectedPhone && isMobileViewport()) return;
+    if (!shouldRestoreConversationListRef.current) return;
+    shouldRestoreConversationListRef.current = false;
+    restoreConversationListScroll();
+  }, [filteredConversations.length, loadingConversations, mainTab, selectedPhone]);
 
   const groupedMessages = useMemo(() => {
     const groups: Array<{ label: string; items: ChatMessage[] }> = [];
@@ -1748,6 +1846,26 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     window.dispatchEvent(new CustomEvent('wa-initiate-call', { detail: { phone: selectedPhone } }));
   };
 
+  const selectConversation = (phone: string) => {
+    const container = conversationListRef.current;
+    if (container && mainTab === 'chats') {
+      writeChatWorkspaceMemory({ conversationScrollTop: container.scrollTop, selectedPhone: phone });
+    } else {
+      writeChatWorkspaceMemory({ selectedPhone: phone });
+    }
+    mobileBackRef.current = false;
+    suppressAutoSelectRef.current = false;
+    shouldRestoreConversationListRef.current = true;
+    setSelectedPhone(phone);
+  };
+
+  const returnToConversationList = () => {
+    mobileBackRef.current = true;
+    suppressAutoSelectRef.current = true;
+    shouldRestoreConversationListRef.current = true;
+    setSelectedPhone('');
+  };
+
   const filterButtons: Array<{
     key: ChatFilter;
     label: string;
@@ -1816,11 +1934,14 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
             <div className="space-y-1 px-3 py-4">
               {filterButtons.map((filter) => {
                 const active = chatFilter === filter.key;
-                return (
-                  <button
-                    key={`rail-${filter.key}`}
-                    type="button"
-                    onClick={() => setChatFilter(filter.key)}
+	                return (
+	                  <button
+	                    key={`rail-${filter.key}`}
+	                    type="button"
+	                    onClick={() => {
+	                      shouldRestoreConversationListRef.current = true;
+	                      setChatFilter(filter.key);
+	                    }}
                     className={`flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-sm transition ${active ? 'bg-emerald-600 text-white' : isDark ? 'text-slate-200 hover:bg-[#1f2c33]' : 'text-slate-700 hover:bg-slate-100'
                       }`}
                   >
@@ -1885,11 +2006,14 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
             </div>
           )}
 
-          {/* ── Main tab switcher ── */}
-          <div className={`flex border-b ${isDark && standalone ? 'border-[#25323a]' : 'border-slate-200'}`}>
-            <button
-              type="button"
-              onClick={() => setMainTab('chats')}
+	          {/* ── Main tab switcher ── */}
+	          <div className={`flex border-b ${isDark && standalone ? 'border-[#25323a]' : 'border-slate-200'}`}>
+	            <button
+	              type="button"
+	              onClick={() => {
+	                shouldRestoreConversationListRef.current = true;
+	                setMainTab('chats');
+	              }}
               className={`flex-1 py-3 text-sm font-medium transition ${mainTab === 'chats'
                 ? (isDark && standalone ? 'border-b-2 border-emerald-500 text-emerald-400' : 'border-b-2 border-emerald-600 text-emerald-700')
                 : (isDark && standalone ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700')
@@ -1930,9 +2054,12 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                   )}
                 </div>
 
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+	                <input
+	                  value={search}
+	                  onChange={(e) => {
+	                    shouldRestoreConversationListRef.current = true;
+	                    setSearch(e.target.value);
+	                  }}
                   placeholder="Search..."
                   className={`w-full rounded-full lg:rounded-2xl border px-4 py-2.5 lg:py-3 text-sm outline-none transition focus:border-emerald-500 ${isDark && standalone ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500 focus:bg-[#1f2c33]' : 'border-slate-200 bg-slate-50 focus:bg-white'}`}
                 />
@@ -1940,11 +2067,14 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                 <div className={`mt-2 mt-3 flex flex-wrap gap-1.5 gap-2 ${standalone ? 'lg:hidden' : ''}`}>
                   {filterButtons.map((filter) => {
                     const active = chatFilter === filter.key;
-                    return (
-                      <button
-                        key={filter.key}
-                        type="button"
-                        onClick={() => setChatFilter(filter.key)}
+	                    return (
+	                      <button
+	                        key={filter.key}
+	                        type="button"
+	                        onClick={() => {
+	                          shouldRestoreConversationListRef.current = true;
+	                          setChatFilter(filter.key);
+	                        }}
                         className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition ${active
                           ? `${filter.activeTone} border-transparent shadow-sm`
                           : standalone && isDark
@@ -1979,7 +2109,11 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
             )}
           </div>
 
-          <div className={`flex-1 overflow-y-auto ${standalone ? (isDark ? 'bg-[#111b21]' : 'bg-white') : 'bg-[#fcfdfd]'}`}>
+	          <div
+	            ref={conversationListRef}
+	            onScroll={handleConversationListScroll}
+	            className={`flex-1 overflow-y-auto ${standalone ? (isDark ? 'bg-[#111b21]' : 'bg-white') : 'bg-[#fcfdfd]'}`}
+	          >
             {mainTab === 'calls' ? (
               /* ── Call history list ── */
               loadingCalls ? (
@@ -2004,11 +2138,11 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                         ? `${Math.floor(call.duration / 60)}m ${call.duration % 60}s`
                         : `${call.duration}s`
                       : null;
-                    return (
-                      <button
-                        key={call.call_id}
-                        type="button"
-                        onClick={() => setSelectedPhone(phone)}
+	                    return (
+	                      <button
+	                        key={call.call_id}
+	                        type="button"
+	                        onClick={() => selectConversation(phone)}
                         className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${isDark && standalone
                           ? 'bg-[#111b21] hover:bg-[#162229]'
                           : 'bg-white hover:bg-slate-50'
@@ -2051,11 +2185,11 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                 const conversationName = getDisplayName(conv);
                 const unread = isUnreadConversation(conv);
                 const showConversationTicks = conv.last_direction === 'outbound';
-                return (
-                  <button
-                    type="button"
-                    key={conv.phone}
-                    onClick={() => { mobileBackRef.current = false; setSelectedPhone(conv.phone); }}
+	                return (
+	                  <button
+	                    type="button"
+	                    key={conv.phone}
+	                    onClick={() => selectConversation(conv.phone)}
                     className={`flex w-full items-center gap-3 border-b px-3 lg:px-4 py-3 text-left transition active:scale-[0.98] ${standalone && isDark
                       ? active
                         ? 'border-[#25323a] bg-[#1a262d]'
@@ -2119,10 +2253,10 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
 
         <section className={`${selectedPhone ? 'flex' : 'hidden lg:flex'} h-full w-full lg:w-auto flex-col overflow-hidden lg:rounded-[24px] lg:border ${standalone ? (isDark ? 'lg:border-[#25323a] bg-[#111b21] lg:shadow-sm' : 'lg:border-slate-200 bg-white lg:shadow-sm') : `lg:border-slate-200 ${currentTheme.panel}`}`}>
           <div className={`flex items-center justify-between px-2 lg:px-4 py-3 ${standalone ? (isDark ? 'border-b border-[#25323a] bg-[#111b21]' : 'border-b border-slate-200 bg-white') : `border-b border-slate-200 ${currentTheme.topbar}`}`}>
-            <div className="flex min-w-0 items-center gap-2 lg:gap-3">
-              <button
-                type="button"
-                onClick={() => { mobileBackRef.current = true; setSelectedPhone(''); }}
+	            <div className="flex min-w-0 items-center gap-2 lg:gap-3">
+	              <button
+	                type="button"
+	                onClick={returnToConversationList}
                 className={`flex lg:hidden h-10 w-10 items-center justify-center rounded-full shrink-0 ${isDark && standalone ? 'text-slate-200 hover:bg-[#1f2c33]' : 'text-slate-600 hover:bg-slate-100'}`}
                 aria-label="Back to chats"
               >

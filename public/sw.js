@@ -139,6 +139,25 @@ self.addEventListener('push', (event) => {
     return;
   }
 
+  if (data.type === 'new_message') {
+    const options = {
+      body: data.body || 'You have a new WhatsApp message',
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-72.png',
+      tag: data.tag || `wa-message-${data.phone || 'unknown'}`,
+      renotify: true,
+      data: {
+        type: 'new_message',
+        phone: data.phone,
+        url: data.url || '/whatsapp-chats',
+      },
+    };
+    event.waitUntil(
+      self.registration.showNotification(data.title || 'New WhatsApp message', options)
+    );
+    return;
+  }
+
   const title = data.title || 'MandiPlus';
   const options = {
     body: data.body || 'You have a new notification',
@@ -178,7 +197,14 @@ self.addEventListener('notificationclick', (event) => {
   const targetUrl = notifData.url || '/';
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      const existing = clients.find((c) => c.url.includes(targetUrl));
+      const targetPath = new URL(targetUrl, self.location.origin).pathname;
+      const existing = clients.find((c) => {
+        try {
+          return new URL(c.url).pathname === targetPath;
+        } catch {
+          return c.url.includes(targetUrl);
+        }
+      });
       if (existing) return existing.focus();
       return self.clients.openWindow(targetUrl);
     })
