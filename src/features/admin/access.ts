@@ -42,6 +42,7 @@ export const ADMIN_SECTIONS = [
   'access-monitor',
   'invoice-tracking',
   'invoice-approvals',
+  'insurance-learning',
   'team-logs',
   'call-routing',
   'channel-partners',
@@ -91,6 +92,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'WhatsApp Chats', href: '/admin/chat-logs', icon: ChatBubbleLeftRightIcon, section: 'chat-logs' },
   { name: 'Invoice Approvals', href: '/admin/invoice-approvals', icon: InboxArrowDownIcon, section: 'invoice-approvals' },
   { name: 'Invoice Tracking', href: '/admin/invoice-tracking', icon: PaperAirplaneIcon, section: 'invoice-tracking' },
+  { name: 'Insurance Learning', href: '/admin/insurance-learning', icon: SparklesIcon, section: 'insurance-learning' },
   { name: 'Edit Insurance PDF', href: '/admin/pdf-editor', icon: PencilSquareIcon, section: 'pdf-editor' },
   { name: 'Access Monitor', href: '/admin/access-monitor', icon: ShieldCheckIcon, section: 'access-monitor' },
   { name: 'Team Daily Logs', href: '/admin/team-logs', icon: ClipboardDocumentCheckIcon, section: 'team-logs' },
@@ -110,7 +112,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   },
   {
     name: 'Invoices',
-    sections: ['insurance-forms', 'invoice-approvals', 'invoice-tracking', 'pdf-editor'],
+    sections: ['insurance-forms', 'invoice-approvals', 'invoice-tracking', 'insurance-learning', 'pdf-editor'],
   },
   {
     name: 'Finance',
@@ -148,6 +150,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/access-monitor': 'access-monitor',
   '/admin/invoice-tracking': 'invoice-tracking',
   '/admin/invoice-approvals': 'invoice-approvals',
+  '/admin/insurance-learning': 'insurance-learning',
   '/admin/team-logs': 'team-logs',
   '/admin/call-routing': 'call-routing',
   '/admin/channel-partners': 'channel-partners',

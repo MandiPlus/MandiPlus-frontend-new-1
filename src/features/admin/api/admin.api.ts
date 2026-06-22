@@ -106,6 +106,62 @@ export interface AdminMasterLedgerPayload {
   rows: AdminMasterLedgerRow[];
 }
 
+export interface InsuranceLearningSummary {
+  range: {
+    days: number;
+    from: string;
+    to: string;
+  };
+  totals: {
+    totalEvents: number;
+    totalInvoicesObserved: number;
+  };
+  modeBreakdown: Array<{ invoiceType: string; count: number }>;
+  sourceBreakdown: Array<{ usedSuggestion: string; count: number }>;
+  topSuppliers: Array<{ supplierName: string; count: number }>;
+  topBuyers: Array<{ buyerName: string; count: number }>;
+  topPairs: Array<{
+    supplierName: string;
+    buyerName: string;
+    count: number;
+    topProductName?: string | null;
+    topHsnCode?: string | null;
+  }>;
+  productPatterns: Array<{
+    productName: string;
+    hsnCode?: string | null;
+    count: number;
+    avgRate?: number | null;
+    avgQuantity?: number | null;
+  }>;
+  vehiclePatterns: Array<{
+    vehicleNumber: string;
+    ownerName?: string | null;
+    count: number;
+  }>;
+  ruleCandidates: Array<{
+    type: string;
+    label: string;
+    support: number;
+    confidence: string;
+    finding: string;
+  }>;
+  recentEvents: Array<{
+    id: string;
+    eventType: string;
+    sourceSurface: string;
+    invoiceId?: string | null;
+    supplierName?: string | null;
+    buyerName?: string | null;
+    invoiceType?: string | null;
+    productName?: string | null;
+    amount?: string | number | null;
+    vehicleNumber?: string | null;
+    selectionSummary?: Record<string, any> | null;
+    createdAt: string;
+  }>;
+}
+
 export interface PossibleDuplicateUserRow {
   id: string;
   score: number;
@@ -2614,6 +2670,46 @@ class AdminApi {
       payload,
     );
     return response.data;
+  };
+
+  public getInsuranceLearningSummary = async (
+    days = 30,
+  ): Promise<ApiResponse<InsuranceLearningSummary>> => {
+    try {
+      const response = await this.client.get<ApiResponse<InsuranceLearningSummary>>(
+        "/admin/insurance-learning/summary",
+        { params: { days } },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to fetch insurance learning analytics",
+        error: error.message,
+      };
+    }
+  };
+
+  public getInsuranceLearningRulesMarkdown = async (
+    days = 30,
+  ): Promise<ApiResponse<{ markdown: string }>> => {
+    try {
+      const response = await this.client.get<ApiResponse<{ markdown: string }>>(
+        "/admin/insurance-learning/rules-markdown",
+        { params: { days } },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to fetch insurance learning rules",
+        error: error.message,
+      };
+    }
   };
 
   public getDashboardStats = async (): Promise<

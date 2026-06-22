@@ -54,6 +54,7 @@ const adminTitles: Record<string, string> = {
     '/admin/pdf-editor': 'Edit Insurance PDF',
     '/admin/impersonate': 'Impersonate',
     '/admin/reports': 'AI Reports',
+    '/admin/insurance-learning': 'Insurance Learning',
 };
 
 function getTimestampValue(timestamp: string): number {

@@ -39,6 +39,11 @@ import AssistPanel from '../components/AssistPanel';
 import LookupDropdown, {
     type LookupDropdownOption,
 } from '../components/LookupDropdown';
+import {
+    buildInsuranceLearningContext,
+    createInsuranceLearningEvent,
+    type InsuranceLearningUiEvent,
+} from '../learningContext';
 import { itemsData } from '../productCatalog';
 
 // --- Types ---
@@ -273,6 +278,7 @@ const Insurance = () => {
         recentTemplates: [],
     });
     const [isLoadingAssists, setIsLoadingAssists] = useState(false);
+    const [learningEvents, setLearningEvents] = useState<InsuranceLearningUiEvent[]>([]);
     // React state updates can lag behind the last chat answer; keep the selected customerUserId
     // in a ref so submit always includes it when needed.
     const selectedCustomerUserIdRef = useRef<string>('');
@@ -295,6 +301,13 @@ const Insurance = () => {
     const getActiveQuestions = (notes?: string) =>
         shouldUseDynamicQuestionFlow ? getQuestionsForMode(notes) : questions;
     const activeQuestions = getActiveQuestions(formData.notes);
+
+    const recordLearningEvent = (event: Omit<InsuranceLearningUiEvent, 'at'>) => {
+        setLearningEvents((current) => [
+            ...current.slice(-39),
+            createInsuranceLearningEvent(event),
+        ]);
+    };
 
     const ownProfileName = String(user?.name || user?.fullName || user?.businessName || '').trim();
     const ownProfilePhone = String(user?.mobileNumber || user?.phoneNumber || user?.phone || '').trim();
@@ -771,6 +784,20 @@ const Insurance = () => {
                 submitData.append('weighmentSlips', finalFile);
             }
 
+            submitData.append('learningContext', JSON.stringify(buildInsuranceLearningContext({
+                variant: 'desktop',
+                formData: resolvedFormData as unknown as Record<string, unknown>,
+                user,
+                identity,
+                selectedSupplierId,
+                selectedBuyerId,
+                selectedCustomerUserId:
+                    resolvedFormData.customerUserId || selectedCustomerUserIdRef.current || '',
+                events: learningEvents,
+                hasWeighmentSlip: Boolean(finalFile),
+                activeQuestionCount: activeQuestions.length,
+            })));
+
             const invoice = await createInsuranceForm(submitData);
             const rawPdfUrl = invoice.pdfUrl || invoice.pdfURL;
             const isBotEmbed =
@@ -1158,6 +1185,12 @@ const Insurance = () => {
         }
 
         setSelectedSupplierId('');
+        recordLearningEvent({
+            type: 'supplier_selected',
+            field: 'supplierName',
+            source: 'typed',
+            label: value,
+        });
         setFormData((prev) => ({
             ...prev,
             supplierName: value,
@@ -1170,6 +1203,13 @@ const Insurance = () => {
     const handleSupplierSelect = (option: LookupDropdownOption) => {
         const isCash = String(formData.notes || '').toLowerCase() === 'cash';
         if (!shouldRequireVerifiedParties && option.id === OWN_PROFILE_OPTION_ID) {
+            recordLearningEvent({
+                type: 'supplier_selected',
+                field: 'supplierName',
+                source: 'own_profile',
+                label: ownProfileName,
+                id: option.id,
+            });
             setSupplierLookupQuery(ownProfileName);
             setSelectedSupplierId('');
             setFormData((prev) => ({
@@ -1188,6 +1228,17 @@ const Insurance = () => {
                 return;
             }
 
+            recordLearningEvent({
+                type: 'historical_party_used',
+                field: 'supplierName',
+                source: 'historical_supplier',
+                label: matchedSupplier.name,
+                id: matchedSupplier.name,
+                metadata: {
+                    invoiceCount: matchedSupplier.invoiceCount,
+                    hasAddress: Boolean(matchedSupplier.address),
+                },
+            });
             setSupplierLookupQuery(matchedSupplier.name);
             setSelectedSupplierId('');
             setFormData((prev) => ({
@@ -1207,6 +1258,17 @@ const Insurance = () => {
             return;
         }
 
+        recordLearningEvent({
+            type: 'supplier_selected',
+            field: 'supplierName',
+            source: 'verified_user',
+            label: matchedSupplier.name,
+            id: matchedSupplier.id,
+            metadata: {
+                identity: matchedSupplier.identity,
+                hasAddress: Boolean(matchedSupplier.address),
+            },
+        });
         setSupplierLookupQuery(matchedSupplier.name);
         setSelectedSupplierId(matchedSupplier.id);
         setFormData((prev) => ({
@@ -1250,12 +1312,25 @@ const Insurance = () => {
             buyerName: value,
             buyerAddress: '',
         }));
+        recordLearningEvent({
+            type: 'buyer_selected',
+            field: 'buyerName',
+            source: 'typed',
+            label: value,
+        });
         void processInput(value);
     };
 
     const handleBuyerSelect = (option: LookupDropdownOption) => {
         const isCash = String(formData.notes || '').toLowerCase() === 'cash';
         if (!shouldRequireVerifiedParties && option.id === OWN_PROFILE_OPTION_ID) {
+            recordLearningEvent({
+                type: 'buyer_selected',
+                field: 'buyerName',
+                source: 'own_profile',
+                label: ownProfileName,
+                id: option.id,
+            });
             setBuyerLookupQuery(ownProfileName);
             setSelectedBuyerId('');
             setFormData((prev) => ({
@@ -1274,6 +1349,17 @@ const Insurance = () => {
                 return;
             }
 
+            recordLearningEvent({
+                type: 'buyer_selected',
+                field: 'buyerName',
+                source: 'verified_user',
+                label: matchedParty.name,
+                id: matchedParty.id,
+                metadata: {
+                    identity: matchedParty.identity,
+                    hasAddress: Boolean(matchedParty.address),
+                },
+            });
             setBuyerLookupQuery(matchedParty.name);
             setSelectedBuyerId(matchedParty.id);
             setFormData((prev) => ({
@@ -1295,6 +1381,17 @@ const Insurance = () => {
             return;
         }
 
+        recordLearningEvent({
+            type: 'historical_party_used',
+            field: 'buyerName',
+            source: 'historical_buyer',
+            label: matchedParty.name,
+            id: matchedParty.name,
+            metadata: {
+                invoiceCount: matchedParty.invoiceCount,
+                hasAddress: Boolean(matchedParty.address),
+            },
+        });
         setBuyerLookupQuery(matchedParty.name);
         setFormData((prev) => ({
             ...prev,
@@ -1322,6 +1419,17 @@ const Insurance = () => {
     };
 
     const handleTemplateSelect = (template: SupplierPartyAssistTemplate) => {
+        recordLearningEvent({
+            type: 'template_selected',
+            source: 'supplier_party_assist',
+            label: template.invoiceNumber,
+            id: template.id,
+            metadata: {
+                productName: template.productName,
+                hsnCode: template.hsnCode,
+                vehicleNumber: template.vehicleNumber,
+            },
+        });
         applyTemplateToForm(template);
         if (currentQuestion.field === 'itemName' && template.productName) {
             void processInput(template.productName);
@@ -1329,6 +1437,17 @@ const Insurance = () => {
     };
 
     const handleRepeatLatestInvoice = (template: SupplierPartyAssistTemplate) => {
+        recordLearningEvent({
+            type: 'template_repeated',
+            source: 'supplier_party_assist',
+            label: template.invoiceNumber,
+            id: template.id,
+            metadata: {
+                productName: template.productName,
+                hsnCode: template.hsnCode,
+                vehicleNumber: template.vehicleNumber,
+            },
+        });
         applyTemplateToForm(template);
         setWeightmentSlip(null);
         setInputValue('');
@@ -1346,6 +1465,16 @@ const Insurance = () => {
     };
 
     const handleProductSelect = (product: SupplierPartyAssistProduct) => {
+        recordLearningEvent({
+            type: 'product_suggestion_used',
+            field: 'itemName',
+            source: 'supplier_party_assist',
+            label: product.name,
+            metadata: {
+                hsnCode: product.hsnCode,
+                count: product.count,
+            },
+        });
         setFormData((prev) => ({
             ...prev,
             itemName: product.name,
@@ -1357,6 +1486,16 @@ const Insurance = () => {
     };
 
     const handleVehicleSelect = (vehicle: SupplierPartyAssistVehicle) => {
+        recordLearningEvent({
+            type: 'vehicle_suggestion_used',
+            field: 'vehicleNumber',
+            source: 'supplier_party_assist',
+            label: vehicle.vehicleNumber,
+            metadata: {
+                ownerName: vehicle.ownerName,
+                count: vehicle.count,
+            },
+        });
         setFormData((prev) => ({
             ...prev,
             vehicleNumber: vehicle.vehicleNumber,
@@ -1369,11 +1508,27 @@ const Insurance = () => {
 
     const handleAddressSelect = (address: OSMAddress) => {
         const standardizedAddress = formatOSMAddress(address.address);
+        recordLearningEvent({
+            type: 'address_suggestion_used',
+            field: String(currentQuestion.field),
+            source: 'osm',
+            label: standardizedAddress,
+        });
         setInputValue(standardizedAddress);
         void processInput(standardizedAddress);
     };
 
     const handlePartyAddressSelect = (suggestion: PartyAddressSuggestion) => {
+        recordLearningEvent({
+            type: 'address_suggestion_used',
+            field: String(currentQuestion.field),
+            source: suggestion.source || 'party_history',
+            label: suggestion.address,
+            metadata: {
+                invoiceCount: suggestion.invoiceCount,
+                placeOfSupply: suggestion.placeOfSupply,
+            },
+        });
         setInputValue(suggestion.address);
         if (suggestion.placeOfSupply) {
             setFormData(prev => ({
