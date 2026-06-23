@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { X } from 'lucide-react';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 
@@ -137,6 +137,9 @@ export function WhatsAppCallHandler() {
   const botBaseUrl =
     (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_BOT_API_BASE_URL) ||
     'http://localhost:8000';
+  const adminJwt =
+    (typeof window !== 'undefined' && localStorage.getItem('adminToken')) ||
+    '';
   const botAdminToken =
     (typeof window !== 'undefined' && localStorage.getItem('botChatAdminToken')) ||
     process.env.NEXT_PUBLIC_BOT_CHAT_ADMIN_TOKEN ||
@@ -147,7 +150,21 @@ export function WhatsAppCallHandler() {
   const currentUser = accessProfile?.account?.username
     || (accessProfile?.isFullAdmin ? 'admin@mandiplus.com' : '');
   const isAllowed = !!accessProfile && !!currentUser;
-  const wsUrl = botBaseUrl.replace(/^http/, 'ws') + '/ws/calls' + (currentUser ? `?username=${encodeURIComponent(currentUser)}` : '');
+  const botAuthHeaders = useMemo(
+    () =>
+      adminJwt
+        ? { Authorization: `Bearer ${adminJwt}` }
+        : botAdminToken
+          ? { 'x-admin-token': botAdminToken }
+          : {},
+    [adminJwt, botAdminToken],
+  );
+  const wsUrl = useMemo(() => {
+    const wsParams = new URLSearchParams();
+    if (currentUser) wsParams.set('username', currentUser);
+    if (adminJwt) wsParams.set('auth_token', adminJwt);
+    return `${botBaseUrl.replace(/^http/, 'ws')}/ws/calls${wsParams.toString() ? `?${wsParams.toString()}` : ''}`;
+  }, [adminJwt, botBaseUrl, currentUser]);
 
   // Keep call-state refs in sync so the stable WS callback always sees fresh values
   useEffect(() => { callIdRef.current = callId; }, [callId]);
@@ -174,7 +191,7 @@ export function WhatsAppCallHandler() {
 
         // Fetch VAPID application server key
         const keyRes = await fetch(`${botBaseUrl}/admin/push/vapid-key`, {
-          headers: botAdminToken ? { 'x-admin-token': botAdminToken } : {},
+          headers: botAuthHeaders,
         });
         if (!keyRes.ok) return;
         const { applicationServerKey } = await keyRes.json();
@@ -190,7 +207,7 @@ export function WhatsAppCallHandler() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(botAdminToken ? { 'x-admin-token': botAdminToken } : {}),
+            ...botAuthHeaders,
           },
           body: JSON.stringify({ ...subJson, username: currentUser || null }),
         });
@@ -198,7 +215,7 @@ export function WhatsAppCallHandler() {
     };
 
     setupPush();
-  }, [botBaseUrl, botAdminToken, currentUser]);
+  }, [botBaseUrl, botAuthHeaders, currentUser]);
 
   // Listen for messages from the service worker (push notification click actions)
   useEffect(() => {
@@ -414,7 +431,7 @@ export function WhatsAppCallHandler() {
 
       const response = await fetch(`${botBaseUrl}/admin/calls/accept`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-token': botAdminToken },
+        headers: { 'Content-Type': 'application/json', ...botAuthHeaders },
         body: JSON.stringify({ call_id: callId, sdp_answer: sdpAnswer }),
       });
 
@@ -481,7 +498,7 @@ export function WhatsAppCallHandler() {
 
       const response = await fetch(`${botBaseUrl}/admin/calls/initiate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-token': botAdminToken },
+        headers: { 'Content-Type': 'application/json', ...botAuthHeaders },
         body: JSON.stringify({ to_phone: phone, sdp_offer: sdpOffer, username: currentUser || null }),
       });
 
@@ -512,7 +529,7 @@ export function WhatsAppCallHandler() {
       cleanup();
       setCallState('idle');
     }
-  }, [callState, botBaseUrl, botAdminToken, cleanup, currentUser]);
+  }, [callState, botBaseUrl, botAuthHeaders, cleanup, currentUser]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -535,7 +552,7 @@ export function WhatsAppCallHandler() {
     try {
       await fetch(`${botBaseUrl}/admin/calls/reject`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-token': botAdminToken },
+        headers: { 'Content-Type': 'application/json', ...botAuthHeaders },
         body: JSON.stringify({ call_id: rejectCallId }),
       });
     } catch {}
@@ -546,7 +563,7 @@ export function WhatsAppCallHandler() {
     try {
       await fetch(`${botBaseUrl}/admin/calls/terminate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-token': botAdminToken },
+        headers: { 'Content-Type': 'application/json', ...botAuthHeaders },
         body: JSON.stringify({ call_id: callId }),
       });
     } catch {}
@@ -560,7 +577,7 @@ export function WhatsAppCallHandler() {
       try {
         await fetch(`${botBaseUrl}/admin/calls/terminate`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-admin-token': botAdminToken },
+          headers: { 'Content-Type': 'application/json', ...botAuthHeaders },
           body: JSON.stringify({ call_id: callId }),
         });
       } catch {}

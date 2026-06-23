@@ -923,6 +923,9 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
 
   const botBaseUrl =
     process.env.NEXT_PUBLIC_BOT_API_BASE_URL || 'http://localhost:8000';
+  const adminJwt =
+    (typeof window !== 'undefined' && localStorage.getItem('adminToken')) ||
+    '';
   const botAdminToken =
     (typeof window !== 'undefined' && localStorage.getItem('botChatAdminToken')) ||
     process.env.NEXT_PUBLIC_BOT_CHAT_ADMIN_TOKEN ||
@@ -932,14 +935,20 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
 
   const axiosConfig = useMemo(
     () =>
-      botAdminToken
+      adminJwt
+        ? {
+          headers: {
+            Authorization: `Bearer ${adminJwt}`,
+          },
+        }
+        : botAdminToken
         ? {
           headers: {
             'x-admin-token': botAdminToken,
           },
         }
         : {},
-    [botAdminToken]
+    [adminJwt, botAdminToken]
   );
 
   const bodyVarCount = useMemo(
