@@ -98,6 +98,21 @@ function confidenceBadge(confidence?: string) {
   return { label: 'Unknown', bg: 'bg-gray-50 text-gray-500 border-gray-200' };
 }
 
+function invoiceTypeFromDraftNote(note?: string | null) {
+  const normalized = String(note || '').trim().toLowerCase();
+  if (
+    normalized.includes('cash') ||
+    normalized.includes('nak') ||
+    normalized.includes('nag')
+  ) {
+    return 'BUYER_INVOICE';
+  }
+  if (normalized.includes('commission') || normalized.includes('commision')) {
+    return 'SUPPLIER_INVOICE';
+  }
+  return 'SUPPLIER_INVOICE';
+}
+
 function openPdfInNewTab(url?: string | null) {
   if (!url) return;
   if (typeof window === 'undefined') return;
@@ -291,7 +306,13 @@ export default function InvoiceApprovalsPage() {
   }, [activeTab, selectedCollection?.id]);
 
   const handleDraftChange = (field: string, value: any) => {
-    setEditDraft((prev) => (prev ? { ...prev, [field]: value } : { [field]: value }));
+    setEditDraft((prev) => {
+      const next = prev ? { ...prev, [field]: value } : { [field]: value };
+      if (field === 'weighment_slip_note') {
+        next.invoice_type = invoiceTypeFromDraftNote(value);
+      }
+      return next;
+    });
   };
 
   const saveDraft = async () => {
@@ -810,7 +831,7 @@ function ReviewTab({
               <DraftField label="Place of Supply" value={editDraft?.place_of_supply || ''} onChange={(v) => handleDraftChange('place_of_supply', v)} placeholder="e.g. KARNATAKA" disabled={selectedCollection.status !== 'pending'} />
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Invoice Type</label>
-                <select value={editDraft?.invoice_type || 'SUPPLIER_INVOICE'} onChange={(e) => handleDraftChange('invoice_type', e.target.value)} disabled={selectedCollection.status !== 'pending'} className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-400 focus:outline-none disabled:bg-gray-50 disabled:text-gray-500">
+                <select value={editDraft?.invoice_type || invoiceTypeFromDraftNote(editDraft?.weighment_slip_note)} onChange={(e) => handleDraftChange('invoice_type', e.target.value)} disabled={selectedCollection.status !== 'pending'} className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-400 focus:outline-none disabled:bg-gray-50 disabled:text-gray-500">
                   <option value="SUPPLIER_INVOICE">Supplier Invoice</option>
                   <option value="BUYER_INVOICE">Buyer Invoice</option>
                 </select>

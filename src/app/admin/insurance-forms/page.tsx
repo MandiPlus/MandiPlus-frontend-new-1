@@ -1396,7 +1396,7 @@ export default function InsuranceFormsPage() {
         setWeightmentSlip(null);
         setFormData({
             invoiceId: invoice.id,
-            invoiceType: 'BUYER_INVOICE',
+            invoiceType: invoice.invoiceType || 'SUPPLIER_INVOICE',
             supplierName: invoice.supplierName,
             supplierAddress: Array.isArray(invoice.supplierAddress)
                 ? invoice.supplierAddress.join('\n')
