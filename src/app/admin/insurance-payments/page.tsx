@@ -53,7 +53,18 @@ const REPORT_PERIOD_OPTIONS = [
   { value: 'quarterly', label: 'Quarterly Report' },
   { value: 'annual', label: 'Annual Report' },
 ] as const;
+const EXPORT_REPORT_TYPE_OPTIONS = [
+  { value: 'PAYMENT_DETAILS', label: 'Payment Details' },
+  { value: 'USER_WISE_DETAILS', label: 'User-wise Details' },
+] as const;
 const ITEMS_PER_PAGE = 20;
+
+type InsurancePaymentsExportParams = NonNullable<
+  Parameters<typeof adminApi.exportInsurancePayments>[0]
+> & {
+  userId?: string;
+  reportType?: (typeof EXPORT_REPORT_TYPE_OPTIONS)[number]['value'];
+};
 
 function getPaymentStatusBadgeClasses(status?: string | null) {
   const normalized = String(status || '').toUpperCase();
@@ -201,6 +212,22 @@ function formatDateForInput(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function normalizeDateForApi(value?: string | null) {
+  const rawValue = String(value || '').trim();
+  if (!rawValue) return undefined;
+
+  const isoMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) return rawValue;
+
+  const dayFirstMatch = rawValue.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dayFirstMatch) {
+    const [, day, month, year] = dayFirstMatch;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  return rawValue;
+}
+
 function getOrdinalDay(day: number) {
   const remainder10 = day % 10;
   const remainder100 = day % 100;
@@ -315,6 +342,8 @@ export default function AdminInsurancePaymentsPage() {
   const [productName, setProductName] = useState('');
   const [reportPeriod, setReportPeriod] =
     useState<(typeof REPORT_PERIOD_OPTIONS)[number]['value']>('daily');
+  const [exportReportType, setExportReportType] =
+    useState<(typeof EXPORT_REPORT_TYPE_OPTIONS)[number]['value']>('PAYMENT_DETAILS');
   const [nameQuery, setNameQuery] = useState('');
   const [debouncedNameQuery, setDebouncedNameQuery] = useState('');
   const [supplierQuery, setSupplierQuery] = useState('');
@@ -394,8 +423,8 @@ export default function AdminInsurancePaymentsPage() {
   const fetchPage = useCallback(
     async (pageNum: number) => {
       const response = await adminApi.getInsurancePayments({
-        fromDate: fromDate || undefined,
-        toDate: effectiveToDate || undefined,
+        fromDate: normalizeDateForApi(fromDate),
+        toDate: normalizeDateForApi(effectiveToDate),
         paymentStatus: effectivePaymentStatus || undefined,
         ...paymentMethodParams,
         productName: productName || undefined,
@@ -417,16 +446,19 @@ export default function AdminInsurancePaymentsPage() {
     try {
       setLoading(true);
       setError('');
+      const baseFilters = {
+        fromDate: normalizeDateForApi(fromDate),
+        toDate: normalizeDateForApi(effectiveToDate),
+        productName: productName || undefined,
+        paymentStatus: effectivePaymentStatus || undefined,
+        ...paymentMethodParams,
+        searchQuery: debouncedNameQuery.trim() || undefined,
+        supplierQuery: debouncedSupplierQuery.trim() || undefined,
+      };
       const [pageResponse, summaryResponse] = await Promise.all([
         fetchPage(currentPage),
         adminApi.getInsurancePaymentsSummary({
-          fromDate: fromDate || undefined,
-          toDate: effectiveToDate || undefined,
-          productName: productName || undefined,
-          paymentStatus: effectivePaymentStatus || undefined,
-          ...paymentMethodParams,
-          searchQuery: debouncedNameQuery.trim() || undefined,
-          supplierQuery: debouncedSupplierQuery.trim() || undefined,
+          ...baseFilters,
           userId: selectedUserId || undefined,
         }),
       ]);
@@ -680,7 +712,7 @@ export default function AdminInsurancePaymentsPage() {
   const submitBulkEdit = async () => {
     if (selectedInvoiceIds.size === 0) return;
 
-    const payload: Record<string, unknown> = {
+    const payload: Parameters<typeof adminApi.bulkUpdateInsurancePayments>[0] = {
       invoiceIds: Array.from(selectedInvoiceIds),
     };
     if (bulkForm.paymentStatus) payload.paymentStatus = bulkForm.paymentStatus;
@@ -702,7 +734,7 @@ export default function AdminInsurancePaymentsPage() {
 
     setBulkSaving(true);
     try {
-      const response = await adminApi.bulkUpdateInsurancePayments(payload as any);
+      const response = await adminApi.bulkUpdateInsurancePayments(payload);
       if (!response.success) {
         throw new Error(response.message || 'Failed to bulk update payments');
       }
@@ -739,7 +771,7 @@ export default function AdminInsurancePaymentsPage() {
   };
 
   const exportWithParams = (
-    params: Parameters<typeof adminApi.exportInsurancePayments>[0],
+    params: InsurancePaymentsExportParams,
     fileName: string,
   ) => {
     setExporting(true);
@@ -753,17 +785,23 @@ export default function AdminInsurancePaymentsPage() {
   };
 
   const exportToExcel = () => {
+    const filePrefix =
+      exportReportType === 'USER_WISE_DETAILS'
+        ? 'insurance-payments-user-wise-details'
+        : 'insurance-payments';
     exportWithParams(
       {
-        fromDate: fromDate || undefined,
-        toDate: effectiveToDate || undefined,
+        fromDate: normalizeDateForApi(fromDate),
+        toDate: normalizeDateForApi(effectiveToDate),
         paymentStatus: effectivePaymentStatus || undefined,
         ...paymentMethodParams,
         productName: productName || undefined,
         searchQuery: nameQuery.trim() || undefined,
         supplierQuery: supplierQuery.trim() || undefined,
+        userId: selectedUserId || undefined,
+        reportType: exportReportType,
       },
-      `insurance-payments-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      `${filePrefix}-${new Date().toISOString().slice(0, 10)}.xlsx`,
     );
   };
 
@@ -778,8 +816,13 @@ export default function AdminInsurancePaymentsPage() {
         ...paymentMethodParams,
         productName: productName || undefined,
         searchQuery: nameQuery.trim() || undefined,
+        supplierQuery: supplierQuery.trim() || undefined,
+        userId: selectedUserId || undefined,
+        reportType: exportReportType,
       },
-      getPresetReportFileName(reportPeriod, presetFromDate, presetToDate),
+      exportReportType === 'USER_WISE_DETAILS'
+        ? `user-wise ${getPresetReportFileName(reportPeriod, presetFromDate, presetToDate)}`
+        : getPresetReportFileName(reportPeriod, presetFromDate, presetToDate),
     );
   };
 
@@ -1059,6 +1102,21 @@ export default function AdminInsurancePaymentsPage() {
               onChange={(e) => setSupplierQuery(e.target.value)}
               className="w-[160px] rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
+            <select
+              value={exportReportType}
+              onChange={(e) =>
+                setExportReportType(
+                  e.target.value as (typeof EXPORT_REPORT_TYPE_OPTIONS)[number]['value'],
+                )
+              }
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+            >
+              {EXPORT_REPORT_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
             <button
               type="button"
               onClick={exportToExcel}
@@ -1187,7 +1245,6 @@ export default function AdminInsurancePaymentsPage() {
             </p>
           </div>
         </div>
-
 
         {error ? (
           <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
