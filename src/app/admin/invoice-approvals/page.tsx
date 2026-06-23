@@ -100,11 +100,7 @@ function confidenceBadge(confidence?: string) {
 
 function invoiceTypeFromDraftNote(note?: string | null) {
   const normalized = String(note || '').trim().toLowerCase();
-  if (
-    normalized.includes('cash') ||
-    normalized.includes('nak') ||
-    normalized.includes('nag')
-  ) {
+  if (/(^|[^a-z0-9])(cash|nak|nag)([^a-z0-9]|$)/i.test(normalized)) {
     return 'BUYER_INVOICE';
   }
   if (normalized.includes('commission') || normalized.includes('commision')) {
