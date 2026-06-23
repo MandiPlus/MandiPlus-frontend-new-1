@@ -808,10 +808,12 @@ export default function AdminInsurancePaymentsPage() {
   const exportPresetReport = () => {
     const { fromDate: presetFromDate, toDate: presetToDate } =
       getReportDateRange(reportPeriod);
+    const exportFromDate = normalizeDateForApi(fromDate) || presetFromDate;
+    const exportToDate = normalizeDateForApi(effectiveToDate) || presetToDate;
     exportWithParams(
       {
-        fromDate: presetFromDate,
-        toDate: presetToDate,
+        fromDate: exportFromDate,
+        toDate: exportToDate,
         paymentStatus: paymentStatus || undefined,
         ...paymentMethodParams,
         productName: productName || undefined,
@@ -821,8 +823,8 @@ export default function AdminInsurancePaymentsPage() {
         reportType: exportReportType,
       },
       exportReportType === 'USER_WISE_DETAILS'
-        ? `user-wise ${getPresetReportFileName(reportPeriod, presetFromDate, presetToDate)}`
-        : getPresetReportFileName(reportPeriod, presetFromDate, presetToDate),
+        ? `user-wise ${getPresetReportFileName(reportPeriod, exportFromDate, exportToDate)}`
+        : getPresetReportFileName(reportPeriod, exportFromDate, exportToDate),
     );
   };
 
