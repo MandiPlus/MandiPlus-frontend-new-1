@@ -150,13 +150,16 @@ export function WhatsAppCallHandler() {
   const currentUser = accessProfile?.account?.username
     || (accessProfile?.isFullAdmin ? 'admin@mandiplus.com' : '');
   const isAllowed = !!accessProfile && !!currentUser;
-  const botAuthHeaders = useMemo(
-    () =>
-      adminJwt
-        ? { Authorization: `Bearer ${adminJwt}` }
-        : botAdminToken
-          ? { 'x-admin-token': botAdminToken }
-          : {},
+  const botAuthHeaders = useMemo<Record<string, string>>(
+    () => {
+      const headers: Record<string, string> = {};
+      if (adminJwt) {
+        headers.Authorization = `Bearer ${adminJwt}`;
+      } else if (botAdminToken) {
+        headers['x-admin-token'] = botAdminToken;
+      }
+      return headers;
+    },
     [adminJwt, botAdminToken],
   );
   const wsUrl = useMemo(() => {
