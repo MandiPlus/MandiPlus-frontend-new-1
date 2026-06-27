@@ -1974,6 +1974,48 @@ class AdminApi {
     }
   };
 
+  public sendAccumulatedPaymentLink = async (
+    invoiceIds: string[],
+    paymentLink: string,
+    phoneNumber?: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        "/payment/accumulated-link/send",
+        { invoiceIds, paymentLink, phoneNumber },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to send accumulated payment link",
+        error: error.message,
+      };
+    }
+  };
+
+  public generatePaymentSummaryImage = async (
+    invoiceIds: string[],
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        "/payment/summary-image",
+        { invoiceIds },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to generate payment summary image",
+        error: error.message,
+      };
+    }
+  };
+
   public generateRazorpayPaymentLink = async (
     invoiceId: string,
   ): Promise<ApiResponse<any>> => {
