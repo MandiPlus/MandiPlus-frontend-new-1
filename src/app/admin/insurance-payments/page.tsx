@@ -6,10 +6,13 @@ import { toast } from 'react-toastify';
 import {
   CheckCheck,
   CircleCheck,
+  Download,
   FileText,
+  Image as ImageIcon,
   Link2,
   Pencil,
   ReceiptText,
+  X,
 } from 'lucide-react';
 import { FaWhatsapp } from 'react-icons/fa';
 import {
@@ -59,6 +62,13 @@ const EXPORT_REPORT_TYPE_OPTIONS = [
   { value: 'USER_WISE_DETAILS', label: 'User-wise Details' },
 ] as const;
 const ITEMS_PER_PAGE = 20;
+
+type SummaryImagePreview = {
+  imageUrl: string;
+  invoiceCount: number;
+  totalAmount: number;
+  invoiceLabel: string;
+};
 
 type InsurancePaymentsExportParams = NonNullable<
   Parameters<typeof adminApi.exportInsurancePayments>[0]
@@ -329,6 +339,10 @@ export default function AdminInsurancePaymentsPage() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [generatingAccumulatedLink, setGeneratingAccumulatedLink] = useState(false);
+  const [generatingSummaryImage, setGeneratingSummaryImage] = useState(false);
+  const [downloadingSummaryImage, setDownloadingSummaryImage] = useState(false);
+  const [summaryImagePreview, setSummaryImagePreview] =
+    useState<SummaryImagePreview | null>(null);
   const [bulkMarkingPaid, setBulkMarkingPaid] = useState(false);
   const [error, setError] = useState('');
 
@@ -767,6 +781,51 @@ export default function AdminInsurancePaymentsPage() {
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
+  };
+
+  const generateSummaryImage = async () => {
+    if (selectedPendingRows.length === 0) {
+      toast.error('Select at least one unpaid invoice');
+      return;
+    }
+
+    setGeneratingSummaryImage(true);
+    try {
+      const response = await adminApi.generatePaymentSummaryImage(
+        selectedPendingRows.map((row) => row.invoiceId),
+      );
+      if (!response.success || !response.data?.imageUrl) {
+        throw new Error(
+          response.message || 'Failed to generate payment summary image',
+        );
+      }
+      setSummaryImagePreview(response.data);
+    } catch (err: unknown) {
+      toast.error(
+        getErrorMessage(err, 'Failed to generate payment summary image'),
+      );
+    } finally {
+      setGeneratingSummaryImage(false);
+    }
+  };
+
+  const downloadSummaryImage = async () => {
+    if (!summaryImagePreview?.imageUrl) return;
+
+    setDownloadingSummaryImage(true);
+    try {
+      const response = await fetch(summaryImagePreview.imageUrl);
+      if (!response.ok) throw new Error('Unable to download summary image');
+      const blob = await response.blob();
+      const safeLabel = summaryImagePreview.invoiceLabel
+        .replace(/[^A-Za-z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      downloadBlob(blob, `payment-summary-${safeLabel || 'invoices'}.png`);
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Failed to download summary image'));
+    } finally {
+      setDownloadingSummaryImage(false);
+    }
   };
 
   const exportWithParams = (
@@ -1295,6 +1354,17 @@ export default function AdminInsurancePaymentsPage() {
               >
                 <Pencil className="h-4 w-4" strokeWidth={2.2} />
                 {`Bulk Edit${selectedInvoiceIds.size > 0 ? ` (${selectedInvoiceIds.size})` : ''}`}
+              </button>
+              <button
+                type="button"
+                onClick={generateSummaryImage}
+                disabled={
+                  generatingSummaryImage || selectedPendingRows.length === 0
+                }
+                className="inline-flex items-center gap-2 rounded-md bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <ImageIcon className="h-4 w-4" strokeWidth={2.2} />
+                {generatingSummaryImage ? 'Generating...' : 'Summary Image'}
               </button>
               <button
                 type="button"
@@ -1846,6 +1916,74 @@ export default function AdminInsurancePaymentsPage() {
                 className="rounded-md bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
               >
                 {bulkSaving ? 'Applying...' : `Apply to ${selectedInvoiceIds.size}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {summaryImagePreview ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="summary-image-title"
+          onClick={() => setSummaryImagePreview(null)}
+        >
+          <div
+            className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-4 border-b border-gray-200 px-5 py-4">
+              <div className="min-w-0">
+                <h2
+                  id="summary-image-title"
+                  className="text-lg font-semibold text-gray-900"
+                >
+                  Payment Summary
+                </h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  {summaryImagePreview.invoiceCount} invoice
+                  {summaryImagePreview.invoiceCount === 1 ? '' : 's'} ·{' '}
+                  {formatCurrency(summaryImagePreview.totalAmount)} pending
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSummaryImagePreview(null)}
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                aria-label="Close payment summary"
+                title="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto bg-gray-100 p-4 sm:p-6">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={summaryImagePreview.imageUrl}
+                alt={`Payment summary for ${summaryImagePreview.invoiceLabel}`}
+                className="mx-auto h-auto max-h-[68vh] max-w-full bg-white object-contain shadow-sm"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-gray-200 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setSummaryImagePreview(null)}
+                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={downloadSummaryImage}
+                disabled={downloadingSummaryImage}
+                className="inline-flex items-center gap-2 rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Download className="h-4 w-4" />
+                {downloadingSummaryImage ? 'Downloading...' : 'Download Image'}
               </button>
             </div>
           </div>

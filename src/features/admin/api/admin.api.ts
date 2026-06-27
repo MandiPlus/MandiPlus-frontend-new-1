@@ -1974,6 +1974,33 @@ class AdminApi {
     }
   };
 
+  public generatePaymentSummaryImage = async (
+    invoiceIds: string[],
+  ): Promise<
+    ApiResponse<{
+      imageUrl: string;
+      invoiceCount: number;
+      totalAmount: number;
+      invoiceLabel: string;
+    }>
+  > => {
+    try {
+      const response = await this.client.post(
+        "/payment/summary-image",
+        { invoiceIds },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to generate payment summary image",
+        error: error.message,
+      };
+    }
+  };
+
   public generateRazorpayPaymentLink = async (
     invoiceId: string,
   ): Promise<ApiResponse<any>> => {
