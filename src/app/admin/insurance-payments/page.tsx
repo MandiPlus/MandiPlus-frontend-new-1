@@ -369,6 +369,9 @@ export default function AdminInsurancePaymentsPage() {
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [selectedRowsById, setSelectedRowsById] = useState<
+    Record<string, InsurancePaymentRow>
+  >({});
 
   const [editing, setEditing] = useState<InsurancePaymentRow | null>(null);
   const [bulkEditing, setBulkEditing] = useState(false);
@@ -385,6 +388,15 @@ export default function AdminInsurancePaymentsPage() {
     null,
   );
   const [reminderPhone, setReminderPhone] = useState('');
+  const [accumulatedLinkModal, setAccumulatedLinkModal] = useState<{
+    invoiceIds: string[];
+    paymentLink: string;
+    phoneNumber: string;
+    invoiceLabel: string;
+    invoiceCount: number;
+    totalAmount: number;
+  } | null>(null);
+  const [sendingAccumulatedLink, setSendingAccumulatedLink] = useState(false);
   const [saving, setSaving] = useState(false);
   const [remindingInvoiceIds, setRemindingInvoiceIds] = useState<
     Record<string, boolean>
@@ -543,8 +555,11 @@ export default function AdminInsurancePaymentsPage() {
   const pageStart = totalRows === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
   const pageEnd = Math.min(currentPage * ITEMS_PER_PAGE, totalRows);
   const selectedRows = useMemo(
-    () => filteredRows.filter((row) => selectedInvoiceIds.has(row.invoiceId)),
-    [filteredRows, selectedInvoiceIds],
+    () =>
+      Array.from(selectedInvoiceIds)
+        .map((invoiceId) => selectedRowsById[invoiceId])
+        .filter((row): row is InsurancePaymentRow => Boolean(row)),
+    [selectedInvoiceIds, selectedRowsById],
   );
   const selectedPendingRows = useMemo(
     () =>
@@ -563,9 +578,18 @@ export default function AdminInsurancePaymentsPage() {
       ),
     [selectedPendingRows],
   );
+  const pageSelectableRows = useMemo(
+    () =>
+      paginatedRows.filter(
+        (row) =>
+          String(row.paymentStatus || '').toUpperCase() !== 'PAID' &&
+          Number(row.premiumAmount || 0) > 0,
+      ),
+    [paginatedRows],
+  );
   const allPageRowsSelected =
-    paginatedRows.length > 0 &&
-    paginatedRows.every((row) => selectedInvoiceIds.has(row.invoiceId));
+    pageSelectableRows.length > 0 &&
+    pageSelectableRows.every((row) => selectedInvoiceIds.has(row.invoiceId));
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -576,6 +600,22 @@ export default function AdminInsurancePaymentsPage() {
   useEffect(() => {
     setJumpPageInput(String(currentPage));
   }, [currentPage]);
+
+  useEffect(() => {
+    setSelectedInvoiceIds(new Set());
+    setSelectedRowsById({});
+  }, [
+    fromDate,
+    effectiveToDate,
+    effectivePaymentStatus,
+    paymentMethodFilterKey,
+    productName,
+    debouncedNameQuery,
+    debouncedSupplierQuery,
+    selectedUserId,
+    debouncedOverdueDays,
+    debouncedMinAmount,
+  ]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -602,39 +642,85 @@ export default function AdminInsurancePaymentsPage() {
   }, [minAmountInput]);
 
   useEffect(() => {
-    setSelectedInvoiceIds((prev) => {
-      const visibleIds = new Set(filteredRows.map((row) => row.invoiceId));
-      const next = new Set(
-        Array.from(prev).filter((invoiceId) => visibleIds.has(invoiceId)),
-      );
-      return next.size === prev.size ? prev : next;
+    setSelectedRowsById((prev) => {
+      const next = { ...prev };
+      for (const row of filteredRows) {
+        if (selectedInvoiceIds.has(row.invoiceId)) {
+          next[row.invoiceId] = row;
+        }
+      }
+      return next;
     });
-  }, [filteredRows]);
+  }, [filteredRows, selectedInvoiceIds]);
 
-  const toggleInvoiceSelection = (invoiceId: string, checked: boolean) => {
+  const toggleInvoiceSelection = (row: InsurancePaymentRow, checked: boolean) => {
     setSelectedInvoiceIds((prev) => {
       const next = new Set(prev);
       if (checked) {
-        next.add(invoiceId);
+        next.add(row.invoiceId);
       } else {
-        next.delete(invoiceId);
+        next.delete(row.invoiceId);
+      }
+      return next;
+    });
+    setSelectedRowsById((prev) => {
+      const next = { ...prev };
+      if (checked) {
+        next[row.invoiceId] = row;
+      } else {
+        delete next[row.invoiceId];
       }
       return next;
     });
   };
 
-  const togglePageSelection = (checked: boolean) => {
-    setSelectedInvoiceIds((prev) => {
-      const next = new Set(prev);
-      paginatedRows.forEach((row) => {
-        if (checked) {
-          next.add(row.invoiceId);
-        } else {
-          next.delete(row.invoiceId);
-        }
+  const selectAllMatchingRows = async () => {
+    setLoading(true);
+    try {
+      const response = await adminApi.getInsurancePayments({
+        fromDate: normalizeDateForApi(fromDate),
+        toDate: normalizeDateForApi(effectiveToDate),
+        paymentStatus: effectivePaymentStatus || undefined,
+        ...paymentMethodParams,
+        productName: productName || undefined,
+        searchQuery: debouncedNameQuery.trim() || undefined,
+        supplierQuery: debouncedSupplierQuery.trim() || undefined,
+        userId: selectedUserId || undefined,
+        page: 1,
+        limit: Math.max(serverTotal || ITEMS_PER_PAGE, ITEMS_PER_PAGE),
       });
-      return next;
-    });
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to select payments');
+      }
+      const allRows = Array.isArray(response.data) ? response.data : [];
+      const minAmt = Number(debouncedMinAmount) || 0;
+      const selectableRows = allRows.filter(
+        (row) =>
+          String(row.paymentStatus || '').toUpperCase() !== 'PAID' &&
+          Number(row.premiumAmount || 0) > 0 &&
+          (minAmt <= 0 || Number(row.premiumAmount || 0) >= minAmt),
+      );
+      setSelectedInvoiceIds(new Set(selectableRows.map((row) => row.invoiceId)));
+      setSelectedRowsById(
+        selectableRows.reduce<Record<string, InsurancePaymentRow>>((acc, row) => {
+          acc[row.invoiceId] = row;
+          return acc;
+        }, {}),
+      );
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Failed to select payments'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleAllSelection = (checked: boolean) => {
+    if (!checked) {
+      setSelectedInvoiceIds(new Set());
+      setSelectedRowsById({});
+      return;
+    }
+    void selectAllMatchingRows();
   };
 
   const generateAccumulatedPaymentLink = async () => {
@@ -643,10 +729,11 @@ export default function AdminInsurancePaymentsPage() {
       return;
     }
 
+    const selectedSnapshot = selectedPendingRows;
     setGeneratingAccumulatedLink(true);
     try {
       const response = await adminApi.generateAccumulatedPaymentLink(
-        selectedPendingRows.map((row) => row.invoiceId),
+        selectedSnapshot.map((row) => row.invoiceId),
       );
       if (!response.success) {
         throw new Error(response.message || 'Failed to generate payment link');
@@ -654,19 +741,67 @@ export default function AdminInsurancePaymentsPage() {
 
       const responsePayload = response as typeof response & { paymentLink?: string };
       const paymentLink = responsePayload.paymentLink || response.data?.paymentLink;
-      if (paymentLink && typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(paymentLink);
-        toast.success('Accumulated payment link copied');
-      } else {
-        toast.success('Accumulated payment link generated');
+      if (!paymentLink) {
+        throw new Error('Payment link was not returned');
       }
 
-      setSelectedInvoiceIds(new Set());
+      const firstRow = selectedSnapshot[0];
+      setAccumulatedLinkModal({
+        invoiceIds: selectedSnapshot.map((row) => row.invoiceId),
+        paymentLink,
+        phoneNumber: normalizePhoneInput(firstRow?.recipientPhone),
+        invoiceLabel:
+          selectedSnapshot.length === 1
+            ? firstRow.invoiceNumber
+            : `${firstRow.invoiceNumber} + ${selectedSnapshot.length - 1} more`,
+        invoiceCount: selectedSnapshot.length,
+        totalAmount: selectedSnapshot.reduce(
+          (sum, row) => sum + Number(row.premiumAmount || 0),
+          0,
+        ),
+      });
+      toast.success('Accumulated payment link generated');
       await fetchRows();
     } catch (err: unknown) {
       toast.error(getErrorMessage(err, 'Failed to generate payment link'));
     } finally {
       setGeneratingAccumulatedLink(false);
+    }
+  };
+
+  const closeAccumulatedLinkModal = () => {
+    setAccumulatedLinkModal(null);
+    setSendingAccumulatedLink(false);
+  };
+
+  const sendAccumulatedPaymentLink = async () => {
+    if (!accumulatedLinkModal) return;
+    const normalizedPhone = normalizePhoneInput(accumulatedLinkModal.phoneNumber);
+    if (!normalizedPhone) {
+      toast.error('Please enter a mobile number');
+      return;
+    }
+
+    setSendingAccumulatedLink(true);
+    try {
+      const response = await adminApi.sendAccumulatedPaymentLink(
+        accumulatedLinkModal.invoiceIds,
+        accumulatedLinkModal.paymentLink,
+        normalizedPhone,
+      );
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to send accumulated payment link');
+      }
+
+      toast.success('Accumulated payment link sent on WhatsApp');
+      setSelectedInvoiceIds(new Set());
+      setSelectedRowsById({});
+      closeAccumulatedLinkModal();
+      await fetchRows();
+    } catch (err: unknown) {
+      toast.error(getErrorMessage(err, 'Failed to send accumulated payment link'));
+    } finally {
+      setSendingAccumulatedLink(false);
     }
   };
 
@@ -702,6 +837,7 @@ export default function AdminInsurancePaymentsPage() {
       }
 
       setSelectedInvoiceIds(new Set());
+      setSelectedRowsById({});
       await fetchRows();
     } catch (err: unknown) {
       toast.error(getErrorMessage(err, 'Failed to mark payments as paid'));
@@ -764,6 +900,7 @@ export default function AdminInsurancePaymentsPage() {
 
       closeBulkEditModal();
       setSelectedInvoiceIds(new Set());
+      setSelectedRowsById({});
       await fetchRows();
     } catch (err: unknown) {
       toast.error(getErrorMessage(err, 'Failed to bulk update payments'));
@@ -1327,7 +1464,10 @@ export default function AdminInsurancePaymentsPage() {
               {selectedInvoiceIds.size > 0 ? (
                 <button
                   type="button"
-                  onClick={() => setSelectedInvoiceIds(new Set())}
+                  onClick={() => {
+                    setSelectedInvoiceIds(new Set());
+                    setSelectedRowsById({});
+                  }}
                   className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >
                   Clear
@@ -1389,8 +1529,9 @@ export default function AdminInsurancePaymentsPage() {
                     <input
                       type="checkbox"
                       checked={allPageRowsSelected}
-                      onChange={(e) => togglePageSelection(e.target.checked)}
-                      aria-label="Select all invoices on this page"
+                      disabled={loading || totalRows === 0}
+                      onChange={(e) => toggleAllSelection(e.target.checked)}
+                      aria-label="Select all unpaid invoices matching filters"
                     />
                   </th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">
@@ -1455,7 +1596,7 @@ export default function AdminInsurancePaymentsPage() {
                           type="checkbox"
                           checked={selectedInvoiceIds.has(row.invoiceId)}
                           onChange={(e) =>
-                            toggleInvoiceSelection(row.invoiceId, e.target.checked)
+                            toggleInvoiceSelection(row, e.target.checked)
                           }
                           aria-label={`Select ${row.invoiceNumber}`}
                         />
@@ -1984,6 +2125,68 @@ export default function AdminInsurancePaymentsPage() {
               >
                 <Download className="h-4 w-4" />
                 {downloadingSummaryImage ? 'Downloading...' : 'Download Image'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {accumulatedLinkModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Send Accumulated Payment Link
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              The number is prefilled from the selected insured person and can be changed before sending.
+            </p>
+
+            <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+              <div className="flex justify-between gap-3">
+                <span>Invoices</span>
+                <span className="font-semibold text-gray-900">
+                  {accumulatedLinkModal.invoiceLabel} ({accumulatedLinkModal.invoiceCount})
+                </span>
+              </div>
+              <div className="mt-1 flex justify-between gap-3">
+                <span>Total</span>
+                <span className="font-semibold text-gray-900">
+                  {formatCurrency(accumulatedLinkModal.totalAmount)}
+                </span>
+              </div>
+            </div>
+
+            <label className="mt-4 block text-sm text-gray-700">
+              WhatsApp Number
+              <input
+                type="text"
+                value={accumulatedLinkModal.phoneNumber}
+                onChange={(e) =>
+                  setAccumulatedLinkModal((prev) =>
+                    prev ? { ...prev, phoneNumber: e.target.value } : prev,
+                  )
+                }
+                placeholder="Enter mobile number"
+                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+              />
+            </label>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeAccumulatedLinkModal}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                disabled={sendingAccumulatedLink}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={sendAccumulatedPaymentLink}
+                disabled={sendingAccumulatedLink}
+                className="rounded-md bg-[#4309ac] px-4 py-2 text-sm font-semibold text-white hover:bg-[#35088a] disabled:opacity-60"
+              >
+                {sendingAccumulatedLink ? 'Sending...' : 'Send on WhatsApp'}
               </button>
             </div>
           </div>

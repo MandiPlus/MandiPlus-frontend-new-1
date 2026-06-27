@@ -1985,7 +1985,14 @@ class AdminApi {
     }>
   > => {
     try {
-      const response = await this.client.post(
+      const response = await this.client.post<
+        ApiResponse<{
+          imageUrl: string;
+          invoiceCount: number;
+          totalAmount: number;
+          invoiceLabel: string;
+        }>
+      >(
         "/payment/summary-image",
         { invoiceIds },
       );
@@ -1996,6 +2003,28 @@ class AdminApi {
         message:
           error.response?.data?.message ||
           "Failed to generate payment summary image",
+        error: error.message,
+      };
+    }
+  };
+
+  public sendAccumulatedPaymentLink = async (
+    invoiceIds: string[],
+    paymentLink: string,
+    phoneNumber?: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        "/payment/accumulated-link/send",
+        { invoiceIds, paymentLink, phoneNumber },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to send accumulated payment link",
         error: error.message,
       };
     }
