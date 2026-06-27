@@ -19,6 +19,7 @@ import {
 } from '@/features/admin/api/admin.api';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import AsyncSearchableSelect from '@/features/admin/components/AsyncSearchableSelect';
+import { itemsData } from '@/features/insurance/productCatalog';
 
 const PAYMENT_STATUS_OPTIONS = [
   'PENDING',
@@ -509,13 +510,11 @@ export default function AdminInsurancePaymentsPage() {
   }, [rows, debouncedMinAmount]);
 
   const productOptions = useMemo(() => {
-    return [
-      ...new Set(
-        rows
-          .map((row) => String(row.productName || '').trim())
-          .filter(Boolean),
-      ),
-    ].sort((a, b) => a.localeCompare(b));
+    const catalogProducts = itemsData.map((item) => item.name);
+    const rowProducts = rows
+      .map((row) => String(row.productName || '').trim())
+      .filter(Boolean);
+    return [...new Set([...catalogProducts, ...rowProducts])];
   }, [rows]);
 
   const totalRows = serverTotal;
