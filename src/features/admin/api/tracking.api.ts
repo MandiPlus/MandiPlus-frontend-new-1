@@ -53,6 +53,8 @@ export interface TruckTrackingResponse {
     timeRecorded: string | null;
     distanceRemained: string | null;
     timeRemained: string | null;
+    distanceTravel?: number | null;
+    totalDistance?: number | null;
   } | null;
   origin: { lat: number; lng: number } | null;
   destination: { lat: number; lng: number } | null;
@@ -74,6 +76,7 @@ export interface AdminTripRow {
     id: string;
     truckNumber: string;
   } | null;
+  vehicleNumber?: string | null;
   invoice: {
     id: string;
     invoiceNumber?: string;
@@ -86,11 +89,35 @@ export interface AdminTripRow {
     lastEvaluatedAt?: string | null;
     lastEta?: string | null;
   } | null;
+  lastLocation?: {
+    address?: string | null;
+    timeRecorded?: string | null;
+    distanceRemained?: number | null;
+    timeRemained?: string | null;
+    distanceTravel?: number | null;
+    totalDistance?: number | null;
+  } | null;
 }
 
 export interface ManualTripAlertPayload {
   alertKind: "reached" | "delayed" | "current_position";
   phoneOverride?: string;
+}
+
+export interface TraqoConsentRow {
+  phone_number: string;
+  latitude: number | null;
+  longitude: number | null;
+  location: string | null;
+  update_at: string | null;
+  status: string | null;
+  operator: string | null;
+  last_24h: string | null;
+  name: string | null;
+  gender: string | null;
+  total_distance: number | null;
+  total_requests: number | null;
+  avg_speed: number | null;
 }
 
 function getAuthHeaders() {
@@ -164,6 +191,22 @@ export async function resendDriverConsentSms(
   }
 }
 
+export async function listCreatedConsents(): Promise<
+  AdminTrackingApiResponse<TraqoConsentRow[]>
+> {
+  try {
+    const res = await axios.get<TraqoConsentRow[]>(`${API_BASE_URL}/traqo/consents`, {
+      headers: getAuthHeaders(),
+    });
+    return { success: true, data: Array.isArray(res.data) ? res.data : [] };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to fetch created consents"),
+    };
+  }
+}
+
 export async function createTrackingTrip(
   payload: CreateTripPayload
 ): Promise<AdminTrackingApiResponse<GenericPayload>> {
@@ -229,6 +272,25 @@ export async function closeTrip(
     return {
       success: false,
       message: getErrorMessage(error, "Failed to close trip"),
+    };
+  }
+}
+
+export async function editTrip(
+  tripId: string,
+  updates: { truck_number?: string; tel?: string; src?: string; dest?: string; srcname?: string; destname?: string },
+): Promise<AdminTrackingApiResponse<GenericPayload>> {
+  try {
+    const res = await axios.patch(
+      `${API_BASE_URL}/traqo/trips/${tripId}`,
+      updates,
+      { headers: getAuthHeaders() },
+    );
+    return { success: true, data: res.data };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to edit trip"),
     };
   }
 }

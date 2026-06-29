@@ -8,11 +8,13 @@ import {
   AddDriverPayload,
   CheckConsentPayload,
   CreateTripPayload,
+  TraqoConsentRow,
   TruckTrackingResponse,
   addDriverNumber,
   checkDriverConsent,
   createTrackingTrip,
   getTruckTracking,
+  listCreatedConsents,
   resendDriverConsentSms,
 } from '@/features/admin/api/tracking.api';
 
@@ -110,6 +112,10 @@ export default function AdminTrackingPage() {
   const [trackingData, setTrackingData] = useState<TruckTrackingResponse | null>(
     null
   );
+  const [consentsModalOpen, setConsentsModalOpen] = useState(false);
+  const [consents, setConsents] = useState<TraqoConsentRow[]>([]);
+  const [consentsLoading, setConsentsLoading] = useState(false);
+  const [consentsError, setConsentsError] = useState('');
 
   const [busy, setBusy] = useState({
     register: false,
@@ -342,6 +348,34 @@ export default function AdminTrackingPage() {
     setBusyFlag('createTrip', false);
   };
 
+  const handleOpenConsents = async () => {
+    setConsentsModalOpen(true);
+    setConsentsLoading(true);
+    setConsentsError('');
+
+    const response = await listCreatedConsents();
+    if (!response.success) {
+      setConsents([]);
+      setConsentsError(response.message || 'Failed to fetch created consents.');
+    } else {
+      setConsents(response.data || []);
+    }
+
+    setConsentsLoading(false);
+  };
+
+  const handleTrackConsentVehicle = async (consent: TraqoConsentRow) => {
+    const vehicleNumber = consent.name?.trim();
+    if (!vehicleNumber) {
+      toast.error('Vehicle number is not available for this consent.');
+      return;
+    }
+
+    setTrackVehicle(vehicleNumber);
+    setConsentsModalOpen(false);
+    setTrackingData(null);
+  };
+
   if (loading || !isAuthenticated) {
     return (
       <div className="py-8">
@@ -352,12 +386,124 @@ export default function AdminTrackingPage() {
 
   return (
     <div className="py-6 space-y-6">
+      {consentsModalOpen && (
+        <div className="fixed inset-0 z-[2100] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={() => setConsentsModalOpen(false)}
+          />
+          <div className="relative max-h-[85vh] w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-black/10">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Created Consents</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Live list fetched from Traqo number list, including operator details.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleOpenConsents()}
+                  disabled={consentsLoading}
+                  className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+                >
+                  {consentsLoading ? 'Refreshing...' : 'Refresh'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConsentsModalOpen(false)}
+                  className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="max-h-[calc(85vh-80px)] overflow-auto p-5">
+              {consentsLoading ? (
+                <div className="py-12 text-center text-sm text-slate-500">
+                  Loading created consents...
+                </div>
+              ) : consentsError ? (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {consentsError}
+                </div>
+              ) : consents.length === 0 ? (
+                <div className="py-12 text-center text-sm text-slate-500">
+                  No consents found from Traqo.
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-xl border border-slate-200">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Phone</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Name</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Operator</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Status</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Updated</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Location</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Last 24h</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Track</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 bg-white">
+                      {consents.map((consent) => (
+                        <tr key={`${consent.phone_number}-${consent.update_at || ''}`}>
+                          <td className="px-4 py-3 font-medium text-slate-900">{consent.phone_number}</td>
+                          <td className="px-4 py-3 text-slate-700">{consent.name || '-'}</td>
+                          <td className="px-4 py-3 text-slate-700">{consent.operator || '-'}</td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                consentApproved(consent.status)
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'bg-amber-100 text-amber-700'
+                              }`}
+                            >
+                              {consent.status || 'Unknown'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">{consent.update_at || '-'}</td>
+                          <td className="max-w-sm px-4 py-3 text-slate-700">{consent.location || '-'}</td>
+                          <td className="px-4 py-3 text-slate-700">{consent.last_24h || '-'}</td>
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              onClick={() => void handleTrackConsentVehicle(consent)}
+                              className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"
+                            >
+                              Track
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Tracking Setup</h1>
-        <p className="text-sm text-gray-600">
-          Admin flow: register driver number, confirm consent, then create trip for
-          vehicle tracking.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900">Tracking Setup</h1>
+            <p className="text-sm text-gray-600">
+              Admin flow: register driver number, confirm consent, then create trip for
+              vehicle tracking.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleOpenConsents()}
+            className="rounded-md border border-[#4309ac]/20 bg-[#4309ac]/10 px-4 py-2 text-sm font-semibold text-[#4309ac]"
+          >
+            Consents Created
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">

@@ -1,14 +1,21 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { adminApi } from '../api/admin.api';
+import {
+    AdminAccessProfile,
+    AdminSection,
+    getFirstAllowedAdminPath,
+} from '../access';
 
 type AdminContextType = {
     isAuthenticated: boolean;
     loading: boolean;
+    accessProfile: AdminAccessProfile | null;
     login: (email: string, password: string) => Promise<void>;
     logout: () => void;
+    canAccessSection: (section: AdminSection) => boolean;
 };
 
 const WARNING_WINDOW_MS = 15 * 60 * 1000;
@@ -31,15 +38,43 @@ const AdminContext = createContext<AdminContextType | undefined>(undefined);
 export function AdminProvider({ children }: { children: ReactNode }) {
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(true);
+    const [accessProfile, setAccessProfile] = useState<AdminAccessProfile | null>(null);
     const [showSessionWarning, setShowSessionWarning] = useState(false);
     const [warningMinutesLeft, setWarningMinutesLeft] = useState(15);
     const [warningShownForToken, setWarningShownForToken] = useState<string | null>(null);
+    const pathname = usePathname();
     const router = useRouter();
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
+
+    const getStoredCandidateToken = () => {
+        if (typeof window === 'undefined') return null;
+        return localStorage.getItem('adminToken');
+    };
+
+    const fetchAccessProfile = async (token: string): Promise<AdminAccessProfile | null> => {
+        try {
+            const response = await fetch(`${apiBaseUrl}/auth/admin/access-profile`, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            });
+
+            if (!response.ok) {
+                return null;
+            }
+
+            const payload = await response.json();
+            return payload?.data ?? null;
+        } catch {
+            return null;
+        }
+    };
 
     const clearAdminAuthState = () => {
         localStorage.removeItem('adminToken');
         adminApi.clearAuthToken();
         setIsAuthenticated(false);
+        setAccessProfile(null);
         setShowSessionWarning(false);
         setWarningShownForToken(null);
     };
@@ -54,22 +89,53 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     };
 
     useEffect(() => {
-        const token = localStorage.getItem('adminToken');
-        if (token) {
-            const expiryMs = getJwtExpiryMs(token);
-            if (!expiryMs || Date.now() >= expiryMs) {
-                forceAdminSessionExpired();
+        const initAdminAccess = async () => {
+            if (pathname === '/admin/impersonate') {
                 setLoading(false);
                 return;
             }
-            // Set the token in the API client
+
+            const token = getStoredCandidateToken();
+            if (!token) {
+                setLoading(false);
+                return;
+            }
+
+            const expiryMs = getJwtExpiryMs(token);
+            if (!expiryMs || Date.now() >= expiryMs) {
+                if (localStorage.getItem('adminToken')) {
+                    forceAdminSessionExpired();
+                }
+                setLoading(false);
+                return;
+            }
+
+            const profile = await fetchAccessProfile(token);
+            if (!profile) {
+                if (localStorage.getItem('adminToken')) {
+                    forceAdminSessionExpired();
+                }
+                setLoading(false);
+                return;
+            }
+
+            localStorage.setItem('adminToken', token);
             adminApi.setAuthToken(token);
+            setAccessProfile(profile);
             setIsAuthenticated(true);
-        }
-        setLoading(false);
-    }, []);
+            setLoading(false);
+        };
+
+        void initAdminAccess();
+    }, [pathname]);
 
     useEffect(() => {
+        if (pathname === '/admin/impersonate') {
+            setShowSessionWarning(false);
+            setWarningShownForToken(null);
+            return;
+        }
+
         const tick = () => {
             const token = localStorage.getItem('adminToken');
             if (!token) {
@@ -99,7 +165,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         tick();
         const timer = setInterval(tick, 30000);
         return () => clearInterval(timer);
-    }, [warningShownForToken]);
+    }, [pathname, warningShownForToken]);
 
     const login = async (email: string, password: string) => {
         try {
@@ -108,10 +174,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             if (token) {
                 localStorage.setItem('adminToken', token);
                 adminApi.setAuthToken(token);
+                const profile = await fetchAccessProfile(token);
+                if (!profile) {
+                    throw new Error('Admin access profile not available');
+                }
+                setAccessProfile(profile);
                 setIsAuthenticated(true);
                 setShowSessionWarning(false);
                 setWarningShownForToken(null);
-                router.push('/admin/dashboard');
+                router.push(getFirstAllowedAdminPath(profile));
                 return;
             }
             throw new Error(response.message || 'Invalid admin credentials');
@@ -126,8 +197,20 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         router.push('/admin/login');
     };
 
+    const canAccessSection = (section: AdminSection) => {
+        if (section === 'fssai-leads') {
+            return Boolean(accessProfile?.isFullAdmin);
+        }
+
+        if (section === 'team-logs') {
+            return true;
+        }
+
+        return Boolean(accessProfile?.allowedSections?.includes(section));
+    };
+
     return (
-        <AdminContext.Provider value={{ isAuthenticated, loading, login, logout }}>
+        <AdminContext.Provider value={{ isAuthenticated, loading, accessProfile, login, logout, canAccessSection }}>
             {children}
             {showSessionWarning && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4">

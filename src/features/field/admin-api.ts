@@ -27,23 +27,85 @@ export interface AdminFieldLead {
   customerName: string;
   businessAddress: string;
   mobileNumber: string;
+  businessType?: string;
+  boardPhotoUrl?: string | null;
   currentStatus: string;
   createdAt: string;
   createdByUser?: {
     name?: string;
+  };
+  leadSource?: 'FIELD_LEAD' | 'MANDI_DATA' | 'FSSAI_LEAD';
+  mandiData?: {
+    commodity: string;
+    mandiName: string;
+    biggestBuyerName: string;
+    transporterName: string;
+    trucksPerDay: number;
+    regionSourceArea: string;
+    todayPrice: number | string;
+  };
+  fssaiData?: {
+    businessName: string;
+    businessAddress: string;
+    kindOfBusiness: string;
+    companyPhone: string;
+    companyEmail: string;
+    aadharFrontPhotoUrl?: string | null;
+    aadharBackPhotoUrl?: string | null;
+    panCardPhotoUrl?: string | null;
+    clientPhotoUrl?: string | null;
+  };
+}
+
+export interface AdminFieldPriorityLead {
+  id: string;
+  commodity: string;
+  mandiName: string;
+  biggestBuyerName: string;
+  transporterName: string;
+  trucksPerDay: number;
+  regionSourceArea: string;
+  todayPrice: number | string;
+  createdAt: string;
+  createdByUser?: {
+    name?: string;
+    mobileNumber?: string;
+  };
+}
+
+export interface AdminFieldFssaiLead {
+  id: string;
+  businessName: string;
+  businessAddress: string;
+  kindOfBusiness: string;
+  companyPhone: string;
+  companyEmail: string;
+  aadharFrontPhotoUrl?: string | null;
+  aadharBackPhotoUrl?: string | null;
+  panCardPhotoUrl?: string | null;
+  clientPhotoUrl?: string | null;
+  createdAt: string;
+  createdByUser?: {
+    name?: string;
+    mobileNumber?: string;
   };
 }
 
 export interface AdminFieldAppointment {
   id: string;
   scheduledAt: string;
+  status?: string;
   notes?: string | null;
   assignedMeetingUserId?: string | null;
   lead?: {
+    customerName?: string;
+    businessAddress?: string;
+    mobileNumber?: string;
     businessName?: string;
   };
   assignedMeetingUser?: {
     name?: string;
+    mobileNumber?: string;
   } | null;
 }
 
@@ -121,6 +183,20 @@ export async function createFieldAppointment(payload: {
   return response.data;
 }
 
+export async function sendFieldAppointmentAlert(id: string) {
+  const response = await axios.post(
+    `${API_BASE_URL}/field-operations/admin/appointments/${id}/send-alert`,
+    {},
+    {
+      headers: {
+        ...getAdminHeaders(),
+        'Content-Type': 'application/json',
+      },
+    },
+  );
+  return response.data;
+}
+
 export async function getFieldAdminTeamMembers(): Promise<AdminFieldTeamMember[]> {
   const response = await axios.get(
     `${API_BASE_URL}/field-operations/admin/team-members`,
@@ -148,8 +224,29 @@ export async function upsertFieldAdminTeamMember(payload: {
 }
 
 export async function getUsersForFieldOperations(): Promise<AdminFieldUser[]> {
-  const response = await axios.get(`${API_BASE_URL}/users`, {
-    headers: getAdminHeaders(),
-  });
+  const response = await axios.get(
+    `${API_BASE_URL}/field-operations/admin/users`,
+    {
+      headers: getAdminHeaders(),
+    },
+  );
+  return response.data;
+}
+
+export async function getFieldAdminPriorityLeads(): Promise<
+  AdminFieldPriorityLead[]
+> {
+  const response = await axios.get(
+    `${API_BASE_URL}/field-operations/admin/priority-leads`,
+    { headers: getAdminHeaders() },
+  );
+  return response.data;
+}
+
+export async function getFieldAdminFssaiLeads(): Promise<AdminFieldFssaiLead[]> {
+  const response = await axios.get(
+    `${API_BASE_URL}/field-operations/admin/fssai-leads`,
+    { headers: getAdminHeaders() },
+  );
   return response.data;
 }

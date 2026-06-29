@@ -1,19 +1,22 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
+import { useEffect, useState, useCallback, useRef, Fragment, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import { formatCurrency, formatDateOnly, formatTimeOnly } from '@/features/admin/utils/format';
-import { adminApi, InvoiceFilterParams, RegenerateInvoicePayload } from '@/features/admin/api/admin.api';
+import { AdminLedgerUser, adminApi, InvoiceFilterParams, RegenerateInvoicePayload } from '@/features/admin/api/admin.api';
 import { toast } from 'react-toastify';
 import 'cropperjs/dist/cropper.css';
 import Cropper, { ReactCropperElement } from "react-cropper";
 import { ArrowPathIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { Menu, Transition } from '@headlessui/react';
-import { FileText, RefreshCw, Upload, Eye, CheckCircle, AlertCircle, Filter, X, XCircle, Pencil, ChevronDown, ChevronRight, MoreVertical, Link as LinkIcon, RotateCcw } from 'lucide-react';
+import { FileText, RefreshCw, Upload, Eye, CheckCircle, AlertCircle, X, XCircle, Pencil, ChevronDown, ChevronRight, MoreVertical, Link as LinkIcon, RotateCcw } from 'lucide-react';
 
 import InsuranceUploadModal from '@/features/admin/components/InsuranceUploadModal';
-import { uploadWeighmentSlips } from '@/features/insurance/api';
+import PartyCombobox, { type PartyComboboxOption } from '@/features/admin/components/PartyCombobox';
+import { getHsnForProduct, itemsData } from '@/features/insurance/productCatalog';
+import { getVehicleRecentInvoiceStatus, getSupplierHistoricalParties, getBuyerHistoricalSuppliers } from '@/features/insurance/api';
+import type { HistoricalPartyOption } from '@/features/insurance/api';
 
 function useDebounce<T>(value: T, delay: number): T {
     const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -27,7 +30,13 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 const INSURANCE_OVERRIDES_KEY = 'admin_invoice_insurance_overrides';
+const ADMIN_CREATE_INVOICE_SKIP_OCR_KEY = 'admin_create_invoice_skip_ocr';
 const INDIAN_PHONE_REGEX = /^(?:\+91|91)?[6-9]\d{9}$/;
+const createInvoicePanelClass = 'rounded-xl border border-slate-200 bg-white p-3 shadow-sm';
+const createInvoiceFieldClass = 'mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-100 disabled:text-slate-500';
+const createInvoiceFileFieldClass = `${createInvoiceFieldClass} cursor-pointer p-0 text-slate-500 file:mr-3 file:cursor-pointer file:border-0 file:border-r file:border-slate-200 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-800 hover:file:bg-slate-200`;
+const createInvoiceTextareaClass = `${createInvoiceFieldClass} resize-none`;
+const createInvoiceLabelClass = 'block text-xs font-medium text-slate-700';
 const getInvoiceKey = (inv: { id?: string; _id?: string; invoiceNumber?: string }) =>
     inv?.id || inv?._id || inv?.invoiceNumber || '';
 const getInvoiceId = (inv: { id?: string; _id?: string }) => inv?.id || inv?._id || '';
@@ -39,6 +48,7 @@ interface Invoice {
     _id?: string;
     invoiceNumber: string;
     invoiceDate: string;
+    invoiceType?: string;
     supplierName: string;
     supplierAddress: string[];
     billToName: string;
@@ -60,6 +70,10 @@ interface Invoice {
     terms?: string;
     insuredPersonNameSnapshot?: string;
     insuredPersonUserId?: string;
+    insuredPersonDisplayName?: string;
+    otherPartyDisplayName?: string;
+    insuredPersonDisplayAddress?: string[];
+    otherPartyDisplayAddress?: string[];
     isVerified?: boolean;
     isRejected?: boolean;
     rejectionReason?: string | null;
@@ -79,63 +93,274 @@ interface Invoice {
     } | null;
 }
 
-type FilterJoin = 'where' | 'and' | 'or';
-type FilterColumn =
-    | 'invoiceNumber'
-    | 'invoiceDate'
-    | 'terms'
-    | 'supplierName'
-    | 'billToName'
-    | 'placeOfSupply'
-    | 'vehicleNumber'
-    | 'truckNumber'
-    | 'paymentStatus'
-    | 'insuredPersonNameSnapshot';
-type FilterOperator =
-    | 'equals'
-    | 'not_equals'
-    | 'greater'
-    | 'greater_or_equals'
-    | 'less'
-    | 'less_or_equals';
-
-interface FilterRule {
-    id: string;
-    join: FilterJoin;
-    column: FilterColumn;
-    operator: FilterOperator;
-    value: string;
+interface InsuranceFormFilters extends InvoiceFilterParams {
+    verificationStatus?: '' | 'verified' | 'rejected';
 }
 
-const FILTERABLE_COLUMNS: Array<{ value: FilterColumn; label: string; type: 'text' | 'date' }> = [
-    { value: 'invoiceNumber', label: 'invoiceNumber', type: 'text' },
-    { value: 'invoiceDate', label: 'invoiceDate', type: 'date' },
-    { value: 'terms', label: 'terms', type: 'text' },
-    { value: 'supplierName', label: 'supplierName', type: 'text' },
-    { value: 'billToName', label: 'buyerName', type: 'text' },
-    { value: 'placeOfSupply', label: 'placeOfSupply', type: 'text' },
-    { value: 'vehicleNumber', label: 'vehicleNumber', type: 'text' },
-    { value: 'truckNumber', label: 'truckNumber', type: 'text' },
-    { value: 'paymentStatus', label: 'paymentStatus', type: 'text' },
-    { value: 'insuredPersonNameSnapshot', label: 'insuredPerson', type: 'text' },
-];
+type SendPhoneMode = 'payment_link' | 'invoice_created_template';
+type AdminInvoiceKind = 'cash' | 'commission';
 
-const FILTER_OPERATORS: Array<{ value: FilterOperator; label: string }> = [
-    { value: 'equals', label: 'equals' },
-    { value: 'not_equals', label: 'not equals' },
-    { value: 'greater', label: 'greater' },
-    { value: 'greater_or_equals', label: 'greater or equals' },
-    { value: 'less', label: 'less' },
-    { value: 'less_or_equals', label: 'less or equals' },
-];
+type AdminCreateInvoiceForm = {
+    invoiceKind: AdminInvoiceKind;
+    insuredUserId: string;
+    otherPartyUserId: string;
+    invoiceDate: string;
+    supplierName: string;
+    supplierAddress: string;
+    placeOfSupply: string;
+    billToName: string;
+    billToAddress: string;
+    shipToName: string;
+    shipToAddress: string;
+    productName: string;
+    hsnCode: string;
+    quantity: string;
+    rate: string;
+    vehicleNumber: string;
+    truckNumber: string;
+    ownerName: string;
+    insuredPartyPhone: string;
+};
 
-const createFilterRule = (join: FilterJoin = 'where'): FilterRule => ({
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    join,
-    column: 'invoiceNumber',
-    operator: 'equals',
-    value: '',
+const emptyAdminCreateInvoiceForm = (): AdminCreateInvoiceForm => ({
+    invoiceKind: 'cash',
+    insuredUserId: '',
+    otherPartyUserId: '',
+    invoiceDate: new Date().toISOString().slice(0, 10),
+    supplierName: '',
+    supplierAddress: '',
+    placeOfSupply: '',
+    billToName: '',
+    billToAddress: '',
+    shipToName: '',
+    shipToAddress: '',
+    productName: '',
+    hsnCode: '',
+    quantity: '',
+    rate: '',
+    vehicleNumber: '',
+    truckNumber: '',
+    ownerName: '',
+    insuredPartyPhone: '',
 });
+
+const addressFieldsByIdentity: Record<string, string[]> = {
+    CUSTOMER: ['destinationShopAddress', 'officeAddress', 'destinationAddress', 'loadingPoint'],
+    TRANSPORTER: ['officeAddress', 'destinationAddress', 'loadingPoint'],
+    BUYER: ['destinationShopAddress', 'destinationAddress', 'route'],
+    SUPPLIER: ['loadingPoint', 'officeAddress', 'route'],
+    AGENT: ['destinationAddress', 'mandiName', 'officeAddress'],
+    FIELD_AGENT: ['destinationAddress', 'officeAddress'],
+    INTERNAL_TEAM: ['officeAddress', 'destinationAddress'],
+};
+
+const normalizeLines = (value: unknown): string[] => {
+    if (Array.isArray(value)) {
+        return value.map((item) => String(item || '').trim()).filter(Boolean);
+    }
+    if (typeof value === 'string') {
+        return value
+            .split(/\r?\n|,/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+    }
+    return [];
+};
+
+const userAddressText = (user?: Partial<AdminLedgerUser> | null) => {
+    if (!user) return '';
+    const anyUser = user as any;
+    const preferredFields = addressFieldsByIdentity[String(user.identity || '').toUpperCase()] || [];
+    const fields = [...preferredFields, 'destinationShopAddress', 'loadingPoint', 'officeAddress', 'destinationAddress', 'route', 'mandiName'];
+    for (const field of fields) {
+        const lines = normalizeLines(anyUser[field]);
+        if (lines.length > 0) return lines.join('\n');
+    }
+    return String(user.state || '').replace(/_/g, ' ');
+};
+
+const userPlaceOfSupply = (user?: Partial<AdminLedgerUser> | null) =>
+    userAddressText(user).split('\n').find(Boolean) || String(user?.state || '').replace(/_/g, ' ');
+
+const normalizeVehicleText = (value: string) =>
+    value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+const hasCatalogProduct = (productName: string) =>
+    itemsData.some((item) => item.name === productName);
+
+const extractVehicleNumber = (text: string) => {
+    const compact = normalizeVehicleText(text);
+    const match = compact.match(/[A-Z]{2}\d{1,2}[A-Z]{1,3}\d{4}/);
+    return match?.[0] || '';
+};
+
+const extractAmountNear = (text: string, labels: string[]) => {
+    for (const label of labels) {
+        const regex = new RegExp(`${label}[^0-9]{0,20}([0-9]+(?:\\.[0-9]+)?)`, 'i');
+        const match = text.match(regex);
+        if (match?.[1]) return match[1];
+    }
+    return '';
+};
+
+const extractStateLikePlace = (text: string) => {
+    const states = [
+        'ANDHRA PRADESH', 'BIHAR', 'DELHI', 'GUJARAT', 'HARYANA', 'KARNATAKA',
+        'MAHARASHTRA', 'PUNJAB', 'RAJASTHAN', 'TAMIL NADU', 'TELANGANA',
+        'UTTAR PRADESH', 'UTTARAKHAND', 'WEST BENGAL',
+    ];
+    const upper = text.toUpperCase().replace(/_/g, ' ');
+    return states.find((state) => upper.includes(state)) || '';
+};
+
+const extractProductGuess = (text: string) => {
+    const products = ['Tender Coconut', 'Pineapple', 'Mosambi', 'Ginger', 'Coconut', 'Banana', 'Mango'];
+    const lower = text.toLowerCase();
+    return products.find((product) => lower.includes(product.toLowerCase())) || '';
+};
+
+const normalizePartyName = (value: string) =>
+    value
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+const cleanExtractedName = (value?: string | null) =>
+    String(value || '')
+        .replace(/\s+/g, ' ')
+        .replace(/^(for|to|bill to|party name)\s*[:\-]?\s*/i, '')
+        .trim();
+
+const getOcrLines = (text: string) =>
+    text
+        .split(/\r?\n/)
+        .map((line) => line.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+
+const extractLineValue = (text: string, patterns: RegExp[]) => {
+    for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match?.[1]) return cleanExtractedName(match[1]);
+    }
+    return '';
+};
+
+const nextUsefulLine = (lines: string[], index: number) => {
+    const blocked = /^(authorized signatory|tax invoice|invoice details|invoice no|date|phone|email|state|description|total|sub total)$/i;
+    for (let cursor = index + 1; cursor < Math.min(lines.length, index + 5); cursor += 1) {
+        const line = lines[cursor];
+        if (!line || blocked.test(line)) continue;
+        return line;
+    }
+    return '';
+};
+
+const extractSupplierName = (text: string) => {
+    const lines = getOcrLines(text);
+    for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        const inlineFor = line.match(/^For\s*:\s*(.+)$/i);
+        if (inlineFor?.[1]) {
+            const value = cleanExtractedName(inlineFor[1]);
+            if (value && !/authorized signatory/i.test(value)) return value;
+        }
+        if (/^For\s*:?\s*$/i.test(line)) {
+            const value = cleanExtractedName(nextUsefulLine(lines, index));
+            if (value) return value;
+        }
+        const labelled = line.match(/^(Seller|Supplier)\s*[:\-]\s*(.+)$/i);
+        if (labelled?.[2]) return cleanExtractedName(labelled[2]);
+    }
+
+    return extractLineValue(text, [
+        /For\s*:\s*([^\n\r]+?)(?=\s{2,}|Authorized|Phone|Email|State|Tax Invoice|$)/i,
+        /Seller\s*[:\-]\s*([^\n\r]+)/i,
+        /Supplier\s*[:\-]\s*([^\n\r]+)/i,
+    ]);
+};
+
+const extractBillToName = (text: string) => {
+    const lines = getOcrLines(text);
+    for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        const inlineBillTo = line.match(/^Bill\s*To\s*:?\s*(.+)$/i);
+        if (inlineBillTo?.[1]) {
+            const value = cleanExtractedName(inlineBillTo[1]);
+            if (value && !/^contact/i.test(value)) return value;
+        }
+        if (/^Bill\s*To\s*:?\s*$/i.test(line)) {
+            const value = cleanExtractedName(nextUsefulLine(lines, index));
+            if (value) return value;
+        }
+        const labelled = line.match(/^(Buyer|Billed\s*To)\s*[:\-]\s*(.+)$/i);
+        if (labelled?.[2]) return cleanExtractedName(labelled[2]);
+    }
+
+    return extractLineValue(text, [
+        /Bill\s*To\s+([^\n\r]+?)(?=\s{2,}|Contact|Invoice Details|Address|$)/i,
+        /Buyer\s*[:\-]\s*([^\n\r]+)/i,
+        /Billed\s*To\s*[:\-]\s*([^\n\r]+)/i,
+    ]);
+};
+
+const extractBillToAddress = (text: string) => {
+    const lines = getOcrLines(text);
+    const billIndex = lines.findIndex((line) => /^Bill\s*To\b/i.test(line));
+    if (billIndex >= 0) {
+        const nameLine = /^Bill\s*To\s*:?\s*.+/i.test(lines[billIndex])
+            ? lines[billIndex]
+            : nextUsefulLine(lines, billIndex);
+        const nameIndex = lines.findIndex((line, index) => index >= billIndex && line === nameLine);
+        const address = nextUsefulLine(lines, nameIndex >= 0 ? nameIndex : billIndex);
+        if (address && !/^Contact/i.test(address) && !/^Invoice Details/i.test(address)) {
+            return address;
+        }
+    }
+
+    return extractLineValue(text, [
+        /Bill\s*To\s+[^\n\r]+?\s{2,}([A-Za-z][A-Za-z\s,.-]+?)(?=\s{2,}|Contact|Invoice Details|$)/i,
+    ]);
+};
+
+const extractPhoneNear = (text: string, labels: string[]) => {
+    for (const label of labels) {
+        const pattern = new RegExp(`${label}[^0-9+]{0,25}((?:\\+?91[\\s-]?)?[6-9][0-9\\s-]{9,14})`, 'i');
+        const match = text.match(pattern);
+        if (match?.[1]) return match[1].replace(/[^\d+]/g, '');
+    }
+    return '';
+};
+
+const extractInvoiceHints = (text: string) => ({
+    vehicleNumber: extractVehicleNumber(text),
+    quantity: extractAmountNear(text, ['quantity', 'qty', 'net weight', 'weight']),
+    rate: extractAmountNear(text, ['rate']),
+    placeOfSupply: extractStateLikePlace(text),
+    productName: extractProductGuess(text),
+    supplierName: extractSupplierName(text),
+    billToName: extractBillToName(text),
+    billToAddress: extractBillToAddress(text),
+    insuredPhone: extractPhoneNear(text, ['Contact No\\.?', 'Mobile', 'Phone no\\.?', 'Phone']),
+});
+
+const extractPdfText = async (file: File): Promise<string> => {
+    if (!file.type.includes('pdf')) return '';
+    try {
+        const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+        const data = new Uint8Array(await file.arrayBuffer());
+        const pdf = await (pdfjs as any).getDocument({ data, disableWorker: true }).promise;
+        const pageTexts: string[] = [];
+        for (let pageNumber = 1; pageNumber <= Math.min(pdf.numPages, 3); pageNumber += 1) {
+            const page = await pdf.getPage(pageNumber);
+            const content = await page.getTextContent();
+            pageTexts.push(content.items.map((item: any) => item.str || '').join(' '));
+        }
+        return pageTexts.join('\n');
+    } catch {
+        return '';
+    }
+};
 
 const EXPORTABLE_INVOICE_COLUMNS = [
     { key: 'invoiceNumber', label: 'Invoice Number' },
@@ -210,9 +435,22 @@ export default function InsuranceFormsPage() {
     const [selectedExportColumns, setSelectedExportColumns] = useState<string[]>(
         EXPORTABLE_INVOICE_COLUMNS.map((column) => column.key),
     );
-    const [showFilters, setShowFilters] = useState(false);
     const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
     const [invoiceMenuPlacement, setInvoiceMenuPlacement] = useState<Record<string, 'up' | 'down'>>({});
+    const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
+    const [createInvoiceSubmitting, setCreateInvoiceSubmitting] = useState(false);
+    const [createInvoiceParsing, setCreateInvoiceParsing] = useState(false);
+    const [verifiedUsers, setVerifiedUsers] = useState<AdminLedgerUser[]>([]);
+    const [otherPartyHistorical, setOtherPartyHistorical] = useState<HistoricalPartyOption[]>([]);
+    const [otherPartyHistoricalLoading, setOtherPartyHistoricalLoading] = useState(false);
+    const [createInvoiceForm, setCreateInvoiceForm] = useState<AdminCreateInvoiceForm>(() => emptyAdminCreateInvoiceForm());
+    const [createWeighmentFiles, setCreateWeighmentFiles] = useState<File[]>([]);
+    const [createPurchaseBillFile, setCreatePurchaseBillFile] = useState<File | null>(null);
+    const [documentExtractText, setDocumentExtractText] = useState('');
+    const [skipCreateInvoiceOcr, setSkipCreateInvoiceOcr] = useState<boolean>(() => {
+        if (typeof window === 'undefined') return false;
+        return window.localStorage.getItem(ADMIN_CREATE_INVOICE_SKIP_OCR_KEY) === '1';
+    });
 
     const [modalOpen, setModalOpen] = useState(false);
     const [modalType, setModalType] = useState<'verify' | 'reject' | 'info' | null>(null);
@@ -225,6 +463,7 @@ export default function InsuranceFormsPage() {
     const [sendPhoneModalOpen, setSendPhoneModalOpen] = useState(false);
     const [sendPhoneInvoice, setSendPhoneInvoice] = useState<Invoice | null>(null);
     const [sendPhoneDraft, setSendPhoneDraft] = useState('');
+    const [sendPhoneMode, setSendPhoneMode] = useState<SendPhoneMode>('payment_link');
     // Send Insurance PDF modal state
     const [sendPdfModalOpen, setSendPdfModalOpen] = useState(false);
     const [sendPdfInvoice, setSendPdfInvoice] = useState<Invoice | null>(null);
@@ -241,7 +480,8 @@ export default function InsuranceFormsPage() {
     const [weightmentSlip, setWeightmentSlip] = useState<File | null>(null);
     const cropperRef = useRef<ReactCropperElement>(null);
     const [invoiceDateInputType, setInvoiceDateInputType] = useState<'text' | 'date'>('text');
-    const [filters, setFilters] = useState<InvoiceFilterParams>({
+    const [pdfRefreshKeys, setPdfRefreshKeys] = useState<Record<string, number>>({});
+    const [filters, setFilters] = useState<InsuranceFormFilters>({
         invoiceType: '',
         invoiceNumber: '',
         vehicleNumber: '',
@@ -249,102 +489,117 @@ export default function InsuranceFormsPage() {
         endDate: '',
         supplierName: '',
         buyerName: '',
+        productName: '',
+        verificationStatus: '',
     });
-    const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-    const [filterRules, setFilterRules] = useState<FilterRule[]>([createFilterRule()]);
-    const [appliedFilterRules, setAppliedFilterRules] = useState<FilterRule[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
-    const ITEMS_PER_PAGE = 10;
+    const ITEMS_PER_PAGE = 20;
+    const [serverTotal, setServerTotal] = useState(0);
+    const [serverTotalPages, setServerTotalPages] = useState(1);
+    const [summaryStats, setSummaryStats] = useState({ totalRows: 0, verifiedCount: 0, rejectedCount: 0, pendingPaymentCount: 0, paidCount: 0, totalPremium: 0, totalPaidAmount: 0 });
     const debouncedFilters = useDebounce(filters, 500);
+
+    const buildActiveFilters = useCallback((sourceFilters: InsuranceFormFilters): InvoiceFilterParams => {
+        const activeFilters: InvoiceFilterParams = {};
+
+        if (sourceFilters.invoiceType) {
+            activeFilters.invoiceType = sourceFilters.invoiceType;
+        }
+
+        if (sourceFilters.invoiceNumber?.trim()) {
+            const value = sourceFilters.invoiceNumber.trim();
+            if (value.length >= 2) activeFilters.invoiceNumber = value;
+        }
+
+        if (sourceFilters.vehicleNumber?.trim()) {
+            const value = sourceFilters.vehicleNumber.trim();
+            if (value.length >= 2) activeFilters.vehicleNumber = value;
+        }
+
+        if (sourceFilters.startDate) {
+            activeFilters.startDate = sourceFilters.startDate;
+        }
+
+        if (sourceFilters.endDate) {
+            activeFilters.endDate = sourceFilters.endDate;
+        }
+
+        if (sourceFilters.supplierName?.trim()) {
+            const value = sourceFilters.supplierName.trim();
+            if (value.length >= 3) activeFilters.supplierName = value;
+        }
+
+        if (sourceFilters.buyerName?.trim()) {
+            const value = sourceFilters.buyerName.trim();
+            if (value.length >= 3) activeFilters.buyerName = value;
+        }
+
+        if (sourceFilters.productName?.trim()) {
+            activeFilters.productName = sourceFilters.productName.trim();
+        }
+
+        if (sourceFilters.verificationStatus === 'verified') {
+            activeFilters.isVerified = true;
+            activeFilters.isRejected = false;
+        } else if (sourceFilters.verificationStatus === 'rejected') {
+            activeFilters.isRejected = true;
+        }
+
+        return activeFilters;
+    }, []);
+
+    const normalizeInvoices = useCallback((rawInvoices: any[]) => {
+        return rawInvoices.map((raw: any) => {
+            const inv = {
+                ...raw,
+                id: getInvoiceId(raw),
+            };
+            const key = getInvoiceKey(inv);
+            const override = key ? insuranceOverrides[key] : undefined;
+            if (!override) return inv;
+            return {
+                ...inv,
+                insurance: {
+                    fileUrl: override.fileUrl,
+                    uploadedAt: override.uploadedAt,
+                    fileType: override.fileType ?? 'application/pdf',
+                },
+            };
+        });
+    }, [insuranceOverrides]);
 
     const fetchInvoices = useCallback(async () => {
         setLoading(true);
         setError('');
 
         try {
-            const activeFilters: InvoiceFilterParams = {};
+            const activeFilters = buildActiveFilters(debouncedFilters);
 
-            if (debouncedFilters.invoiceType) {
-                activeFilters.invoiceType = debouncedFilters.invoiceType;
-            }
-
-            if (debouncedFilters.invoiceNumber?.trim()) {
-                const value = debouncedFilters.invoiceNumber.trim();
-                if (value.length >= 2) activeFilters.invoiceNumber = value;
-            }
-
-            if (debouncedFilters.vehicleNumber?.trim()) {
-                const value = debouncedFilters.vehicleNumber.trim();
-                if (value.length >= 2) activeFilters.vehicleNumber = value;
-            }
-
-            if (debouncedFilters.startDate) {
-                activeFilters.startDate = debouncedFilters.startDate;
-            }
-
-            if (debouncedFilters.endDate) {
-                activeFilters.endDate = debouncedFilters.endDate;
-            }
-
-            if (debouncedFilters.supplierName?.trim()) {
-                const value = debouncedFilters.supplierName.trim();
-                if (value.length >= 3) activeFilters.supplierName = value;
-            }
-
-            if (debouncedFilters.buyerName?.trim()) {
-                const value = debouncedFilters.buyerName.trim();
-                if (value.length >= 3) activeFilters.buyerName = value;
-            }
-
-            if (appliedFilterRules.length > 0) {
-                activeFilters.advancedFilters = JSON.stringify(appliedFilterRules);
-            }
-
-            const response = await adminApi.filterInvoices(activeFilters);
+            const [pageResponse, summaryResponse] = await Promise.all([
+                adminApi.filterInvoicesPaginated({ ...activeFilters, page: currentPage, limit: ITEMS_PER_PAGE }),
+                adminApi.filterInvoicesSummary(activeFilters),
+            ]);
 
             let data: Invoice[] = [];
-            if (Array.isArray(response.data)) {
-                data = response.data;
-            } else if (response.success && Array.isArray(response.data)) {
-                data = response.data;
-            } else if (Array.isArray(response)) {
-                data = response as any;
+            if (pageResponse.success && Array.isArray(pageResponse.data)) {
+                data = pageResponse.data;
             }
 
-            const sortedData = data.sort((a: any, b: any) =>
-                new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-            );
+            setInvoices(normalizeInvoices(data));
+            setServerTotal(Number(pageResponse.total) || 0);
+            setServerTotalPages(Math.max(1, Number(pageResponse.totalPages) || 1));
 
-            const merged = sortedData.map((raw: any) => {
-                const inv = {
-                    ...raw,
-                    id: getInvoiceId(raw),
-                };
-                const key = getInvoiceKey(inv);
-                const override = key ? insuranceOverrides[key] : undefined;
-                if (!override) return inv;
-                return {
-                    ...inv,
-                    insurance: {
-                        fileUrl: override.fileUrl,
-                        uploadedAt: override.uploadedAt,
-                        fileType: override.fileType ?? 'application/pdf',
-                    },
-                };
-            });
-
-            const invoiceNumberQuery = debouncedFilters.invoiceNumber?.trim().toLowerCase() || '';
-            const vehicleNumberQuery = debouncedFilters.vehicleNumber?.trim().toLowerCase() || '';
-            const result = merged.filter((inv) => {
-                const matchesInvoice = !invoiceNumberQuery
-                    || String(inv.invoiceNumber || '').toLowerCase().includes(invoiceNumberQuery);
-                const matchesVehicle = !vehicleNumberQuery
-                    || String(inv.vehicleNumber || '').toLowerCase().includes(vehicleNumberQuery);
-
-                return matchesInvoice && matchesVehicle;
-            });
-
-            setInvoices(result);
+            if (summaryResponse.success) {
+                setSummaryStats({
+                    totalRows: summaryResponse.totalRows || 0,
+                    verifiedCount: summaryResponse.verifiedCount || 0,
+                    rejectedCount: summaryResponse.rejectedCount || 0,
+                    pendingPaymentCount: summaryResponse.pendingPaymentCount || 0,
+                    paidCount: summaryResponse.paidCount || 0,
+                    totalPremium: summaryResponse.totalPremium || 0,
+                    totalPaidAmount: summaryResponse.totalPaidAmount || 0,
+                });
+            }
 
         } catch (err: any) {
             console.error("Fetch error:", err);
@@ -352,7 +607,43 @@ export default function InsuranceFormsPage() {
         } finally {
             setLoading(false);
         }
-    }, [appliedFilterRules, debouncedFilters, insuranceOverrides]);
+    }, [buildActiveFilters, debouncedFilters, normalizeInvoices, currentPage]);
+
+    const refreshInvoiceAfterRegenerate = useCallback(async (invoiceId: string) => {
+        const activeFilters = buildActiveFilters(debouncedFilters);
+
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+            try {
+                const response = await adminApi.filterInvoicesPaginated({ ...activeFilters, page: currentPage, limit: ITEMS_PER_PAGE });
+                let data: Invoice[] = [];
+
+                if (response.success && Array.isArray(response.data)) {
+                    data = response.data;
+                }
+
+                const normalized = normalizeInvoices(data);
+                const refreshedInvoice = normalized.find((invoice) => getInvoiceId(invoice) === invoiceId);
+
+                if (refreshedInvoice) {
+                    setInvoices((prev) => prev.map((invoice) => (
+                        getInvoiceId(invoice) === invoiceId ? refreshedInvoice : invoice
+                    )));
+                }
+
+                if (refreshedInvoice?.pdfUrl || refreshedInvoice?.pdfURL) {
+                    setPdfRefreshKeys((prev) => ({ ...prev, [invoiceId]: Date.now() }));
+                    return;
+                }
+            } catch (error) {
+                console.error('Failed to refresh regenerated invoice', error);
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+
+        await fetchInvoices();
+        setPdfRefreshKeys((prev) => ({ ...prev, [invoiceId]: Date.now() }));
+    }, [buildActiveFilters, debouncedFilters, fetchInvoices, normalizeInvoices, currentPage]);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -367,6 +658,15 @@ export default function InsuranceFormsPage() {
     }, [insuranceOverrides]);
 
     useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (skipCreateInvoiceOcr) {
+            window.localStorage.setItem(ADMIN_CREATE_INVOICE_SKIP_OCR_KEY, '1');
+        } else {
+            window.localStorage.removeItem(ADMIN_CREATE_INVOICE_SKIP_OCR_KEY);
+        }
+    }, [skipCreateInvoiceOcr]);
+
+    useEffect(() => {
         if (!isAuthenticated) {
             router.replace('/admin/login');
             return;
@@ -374,72 +674,408 @@ export default function InsuranceFormsPage() {
         fetchInvoices();
     }, [isAuthenticated, router, fetchInvoices]);
 
-    const getFilterColumnType = (column: FilterColumn) =>
-        FILTERABLE_COLUMNS.find((item) => item.value === column)?.type ?? 'text';
+    useEffect(() => {
+        if (!isAuthenticated) return;
+        const loadVerifiedUsers = async () => {
+            const response = await adminApi.getAdminLedgerUsers();
+            if (!response.success || !Array.isArray(response.data)) return;
+            setVerifiedUsers(
+                response.data
+                    .filter((user) => (
+                        user.isLedgerMasterVerified &&
+                        !user.isMerged &&
+                        user.id === user.canonicalUserId
+                    ))
+                    .sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''))),
+            );
+        };
+        void loadVerifiedUsers();
+    }, [isAuthenticated]);
+
+    const selectedInsuredUser = useMemo(
+        () => verifiedUsers.find((user) => user.id === createInvoiceForm.insuredUserId) || null,
+        [createInvoiceForm.insuredUserId, verifiedUsers],
+    );
+
+    const selectedOtherPartyUser = useMemo(
+        () => verifiedUsers.find((user) => user.id === createInvoiceForm.otherPartyUserId) || null,
+        [createInvoiceForm.otherPartyUserId, verifiedUsers],
+    );
+
+    useEffect(() => {
+        const insuredId = createInvoiceForm.insuredUserId;
+        if (!insuredId) {
+            setOtherPartyHistorical([]);
+            return;
+        }
+        let cancelled = false;
+        const fetchHistorical = async () => {
+            setOtherPartyHistoricalLoading(true);
+            try {
+                const isCash = createInvoiceForm.invoiceKind === 'cash';
+                const parties = isCash
+                    ? await getBuyerHistoricalSuppliers({ buyerId: insuredId })
+                    : await getSupplierHistoricalParties({ supplierId: insuredId });
+                if (!cancelled) setOtherPartyHistorical(parties);
+            } catch {
+                if (!cancelled) setOtherPartyHistorical([]);
+            } finally {
+                if (!cancelled) setOtherPartyHistoricalLoading(false);
+            }
+        };
+        void fetchHistorical();
+        return () => { cancelled = true; };
+    }, [createInvoiceForm.insuredUserId, createInvoiceForm.invoiceKind]);
+
+    const otherPartyComboboxOptions: PartyComboboxOption[] = useMemo(() => {
+        const byName = new Map<string, { totalInvoices: number; addresses: string[]; phone?: string }>();
+        for (const party of otherPartyHistorical) {
+            const key = party.name.trim().toLowerCase();
+            const existing = byName.get(key);
+            if (existing) {
+                existing.totalInvoices += party.invoiceCount;
+                if (party.address && !existing.addresses.includes(party.address)) {
+                    existing.addresses.push(party.address);
+                }
+                if (!existing.phone && party.phoneNumber) existing.phone = party.phoneNumber;
+            } else {
+                byName.set(key, {
+                    totalInvoices: party.invoiceCount,
+                    addresses: party.address ? [party.address] : [],
+                    phone: party.phoneNumber || undefined,
+                });
+            }
+        }
+
+        const seen = new Set<string>();
+        return otherPartyHistorical
+            .filter((party) => {
+                const key = party.name.trim().toLowerCase();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .map((party) => {
+                const key = party.name.trim().toLowerCase();
+                const agg = byName.get(key)!;
+                const subtitle = agg.addresses.length > 1
+                    ? `${agg.addresses[0]} (+${agg.addresses.length - 1} more)`
+                    : agg.addresses[0] || undefined;
+                return {
+                    value: party.name,
+                    label: party.name,
+                    subtitle,
+                    meta: `${agg.totalInvoices} invoice${agg.totalInvoices === 1 ? '' : 's'}`,
+                    searchText: `${party.name} ${agg.addresses.join(' ')} ${agg.phone || ''}`,
+                };
+            });
+    }, [otherPartyHistorical]);
+
+    const applyCreateInvoiceParties = useCallback((
+        insuredUser: AdminLedgerUser | null,
+        otherPartyUser: AdminLedgerUser | null,
+        invoiceKind: AdminInvoiceKind,
+        previous: AdminCreateInvoiceForm,
+    ): AdminCreateInvoiceForm => {
+        const insuredAddress = userAddressText(insuredUser);
+        const otherAddress = userAddressText(otherPartyUser);
+        const next: AdminCreateInvoiceForm = {
+            ...previous,
+            invoiceKind,
+            insuredPartyPhone: insuredUser?.mobileNumber || previous.insuredPartyPhone,
+        };
+
+        if (invoiceKind === 'cash') {
+            next.invoiceKind = 'cash';
+            next.billToName = insuredUser?.name || '';
+            next.billToAddress = insuredAddress;
+            next.shipToName = insuredUser?.name || '';
+            next.shipToAddress = insuredAddress;
+            next.supplierName = otherPartyUser?.name || '';
+            next.supplierAddress = otherAddress;
+            next.placeOfSupply = previous.placeOfSupply || userPlaceOfSupply(otherPartyUser) || userPlaceOfSupply(insuredUser);
+        } else {
+            next.invoiceKind = 'commission';
+            next.supplierName = insuredUser?.name || '';
+            next.supplierAddress = insuredAddress;
+            next.placeOfSupply = previous.placeOfSupply || userPlaceOfSupply(insuredUser);
+            next.billToName = otherPartyUser?.name || '';
+            next.billToAddress = otherAddress;
+            next.shipToName = otherPartyUser?.name || '';
+            next.shipToAddress = otherAddress;
+        }
+
+        if (!next.productName && Array.isArray((insuredUser as any)?.products) && (insuredUser as any).products[0]) {
+            next.productName = (insuredUser as any).products[0];
+        }
+        if (next.productName && !next.hsnCode) {
+            next.hsnCode = getHsnForProduct(next.productName) || next.hsnCode;
+        }
+
+        return next;
+    }, []);
+
+    const handleOtherPartyComboboxChange = useCallback((value: string, isCustom: boolean) => {
+        const matchedHistorical = otherPartyHistorical.find(
+            (p) => p.name === value,
+        );
+        const matchedVerified = verifiedUsers.find(
+            (u) => u.name?.trim().toLowerCase() === value.trim().toLowerCase(),
+        );
+
+        const otherPartyUser = matchedVerified || null;
+        const otherPartyUserId = otherPartyUser?.id || '';
+
+        setCreateInvoiceForm((prev) => {
+            const updated = applyCreateInvoiceParties(
+                selectedInsuredUser,
+                otherPartyUser,
+                prev.invoiceKind,
+                { ...prev, otherPartyUserId },
+            );
+
+            if (isCustom || (!otherPartyUser && matchedHistorical)) {
+                if (prev.invoiceKind === 'cash') {
+                    updated.supplierName = value;
+                    updated.supplierAddress = matchedHistorical?.address || '';
+                } else {
+                    updated.billToName = value;
+                    updated.billToAddress = matchedHistorical?.address || '';
+                    updated.shipToName = value;
+                    updated.shipToAddress = matchedHistorical?.shipToAddress || matchedHistorical?.address || '';
+                }
+            }
+
+            if (matchedHistorical?.phoneNumber && prev.invoiceKind === 'cash') {
+                updated.insuredPartyPhone = matchedHistorical.phoneNumber;
+            }
+
+            return updated;
+        });
+    }, [otherPartyHistorical, verifiedUsers, selectedInsuredUser, applyCreateInvoiceParties]);
+
+    const findVerifiedUserByName = useCallback((name: string) => {
+        const normalizedName = normalizePartyName(name);
+        if (!normalizedName) return null;
+        return (
+            verifiedUsers.find((user) => normalizePartyName(user.name || '') === normalizedName) ||
+            verifiedUsers.find((user) => {
+                const userName = normalizePartyName(user.name || '');
+                return Boolean(userName && (userName.includes(normalizedName) || normalizedName.includes(userName)));
+            }) ||
+            null
+        );
+    }, [verifiedUsers]);
+
+    const updateCreateInvoiceForm = (patch: Partial<AdminCreateInvoiceForm>) => {
+        setCreateInvoiceForm((prev) => ({ ...prev, ...patch }));
+    };
+
+    const updateCreateInvoiceProduct = (productName: string) => {
+        setCreateInvoiceForm((prev) => ({
+            ...prev,
+            productName,
+            hsnCode: getHsnForProduct(productName),
+        }));
+    };
+
+    const validateCreateInvoiceVehicle = async (vehicleNumber: string) => {
+        const normalizedVehicle = normalizeVehicleText(vehicleNumber);
+        if (!normalizedVehicle) return;
+
+        try {
+            const status = await getVehicleRecentInvoiceStatus(normalizedVehicle);
+            if (status.hasRecentInvoice) {
+                toast.error(
+                    status.message ||
+                    'An invoice was already created for this vehicle within the last 24 hours. Please try again after 24 hours.',
+                );
+            }
+        } catch (error: any) {
+            toast.error(error?.message || 'Unable to verify recent vehicle invoice status.');
+        }
+    };
+
+    const openCreateInvoiceModal = () => {
+        setCreateInvoiceForm(emptyAdminCreateInvoiceForm());
+        setCreateWeighmentFiles([]);
+        setCreatePurchaseBillFile(null);
+        setDocumentExtractText('');
+        setCreateInvoiceOpen(true);
+    };
+
+    const closeCreateInvoiceModal = () => {
+        if (createInvoiceSubmitting) return;
+        setCreateInvoiceOpen(false);
+        setCreateInvoiceForm(emptyAdminCreateInvoiceForm());
+        setCreateWeighmentFiles([]);
+        setCreatePurchaseBillFile(null);
+        setDocumentExtractText('');
+    };
+
+    const handleCreateInvoiceDocumentChange = async (
+        weighmentFiles: File[],
+        purchaseBillFile: File | null,
+    ) => {
+        setCreateWeighmentFiles(weighmentFiles);
+        setCreatePurchaseBillFile(purchaseBillFile);
+
+        const filesToParse = [...weighmentFiles, ...(purchaseBillFile ? [purchaseBillFile] : [])];
+        if (filesToParse.length === 0) {
+            setDocumentExtractText('');
+            return;
+        }
+
+        if (skipCreateInvoiceOcr) {
+            setDocumentExtractText('');
+            toast.info('OCR is skipped. Fill invoice details manually.');
+            return;
+        }
+
+        setCreateInvoiceParsing(true);
+        try {
+            let extracted = '';
+            const ocrResponse = await adminApi.extractInvoiceDocumentText(filesToParse);
+            if (ocrResponse.success) {
+                extracted = ocrResponse.data?.text || '';
+            } else {
+                extracted = (await Promise.all(filesToParse.map(extractPdfText))).join('\n');
+                toast.error(ocrResponse.message || 'Gemini OCR failed. PDF text fallback was used where possible.');
+            }
+            setDocumentExtractText(extracted);
+            const hints = extractInvoiceHints(extracted);
+            setCreateInvoiceForm((prev) => {
+                const supplierUser = findVerifiedUserByName(hints.supplierName);
+                const billToUser = findVerifiedUserByName(hints.billToName);
+                const insuredUser = prev.invoiceKind === 'cash' ? billToUser : supplierUser;
+                const otherPartyUser = prev.invoiceKind === 'cash' ? supplierUser : billToUser;
+                const base = applyCreateInvoiceParties(
+                    insuredUser,
+                    otherPartyUser,
+                    prev.invoiceKind,
+                    {
+                        ...prev,
+                        insuredUserId: insuredUser?.id || prev.insuredUserId,
+                        otherPartyUserId: otherPartyUser?.id || prev.otherPartyUserId,
+                    },
+                );
+
+                const productName = hasCatalogProduct(hints.productName)
+                    ? hints.productName
+                    : prev.productName;
+
+                return {
+                    ...base,
+                    supplierName: base.supplierName || hints.supplierName || prev.supplierName,
+                    billToName: base.billToName || hints.billToName || prev.billToName,
+                    shipToName: base.shipToName || hints.billToName || prev.shipToName,
+                    billToAddress: base.billToAddress || hints.billToAddress || prev.billToAddress,
+                    shipToAddress: base.shipToAddress || hints.billToAddress || prev.shipToAddress,
+                    vehicleNumber: hints.vehicleNumber || prev.vehicleNumber,
+                    truckNumber: hints.vehicleNumber || prev.truckNumber,
+                    quantity: hints.quantity || prev.quantity,
+                    rate: hints.rate || prev.rate,
+                    productName,
+                    hsnCode: getHsnForProduct(productName) || base.hsnCode || prev.hsnCode,
+                    placeOfSupply: hints.placeOfSupply || base.placeOfSupply || prev.placeOfSupply,
+                    insuredPartyPhone:
+                        insuredUser?.mobileNumber ||
+                        (prev.invoiceKind === 'cash' ? hints.insuredPhone : supplierUser?.mobileNumber) ||
+                        prev.insuredPartyPhone,
+                };
+            });
+            if (!extracted.trim()) {
+                toast.info('No readable text was extracted. Review and fill fields manually.');
+            }
+        } finally {
+            setCreateInvoiceParsing(false);
+        }
+    };
+
+    const handleCreateInvoiceSubmit = async () => {
+        const insuredUser = selectedInsuredUser;
+        if (!insuredUser) {
+            toast.error('Select a registered verified insured party.');
+            return;
+        }
+        if (createWeighmentFiles.length === 0) {
+            toast.error('Upload at least one weighment slip.');
+            return;
+        }
+
+        const qty = Number(createInvoiceForm.quantity || 0);
+        const rate = Number(createInvoiceForm.rate || 0);
+        const amount = Number((qty * rate).toFixed(2));
+        if (!createInvoiceForm.supplierName.trim() || !createInvoiceForm.billToName.trim()) {
+            toast.error('Supplier and bill-to details are required.');
+            return;
+        }
+        if (!createInvoiceForm.productName.trim() || qty <= 0 || rate <= 0) {
+            toast.error('Fill product, quantity, and rate before creating invoice.');
+            return;
+        }
+        if (!isValidIndianPhone(createInvoiceForm.insuredPartyPhone)) {
+            toast.error('Insured party phone must be a valid Indian mobile number.');
+            return;
+        }
+
+        setCreateInvoiceSubmitting(true);
+        try {
+            const response = await adminApi.createAdminInvoice({
+                userId: insuredUser.id,
+                customerUserId: insuredUser.id,
+                invoiceDate: createInvoiceForm.invoiceDate,
+                invoiceType: createInvoiceForm.invoiceKind === 'cash' ? 'BUYER_INVOICE' : 'SUPPLIER_INVOICE',
+                supplierName: createInvoiceForm.supplierName.trim(),
+                supplierAddress: normalizeLines(createInvoiceForm.supplierAddress),
+                placeOfSupply: createInvoiceForm.placeOfSupply.trim() || userPlaceOfSupply(insuredUser),
+                billToName: createInvoiceForm.billToName.trim(),
+                billToAddress: normalizeLines(createInvoiceForm.billToAddress),
+                shipToName: createInvoiceForm.shipToName.trim(),
+                shipToAddress: normalizeLines(createInvoiceForm.shipToAddress),
+                productName: createInvoiceForm.productName.trim(),
+                hsnCode: createInvoiceForm.hsnCode.trim() || undefined,
+                quantity: qty,
+                rate,
+                amount,
+                vehicleNumber: normalizeVehicleText(createInvoiceForm.vehicleNumber),
+                truckNumber: normalizeVehicleText(createInvoiceForm.truckNumber || createInvoiceForm.vehicleNumber),
+                ownerName: createInvoiceForm.ownerName.trim() || undefined,
+                insuredPartyPhone: normalizePhoneInput(createInvoiceForm.insuredPartyPhone),
+                weighmentSlipNote: createInvoiceForm.invoiceKind === 'cash' ? 'cash' : 'commission',
+                weighmentSlips: createWeighmentFiles,
+            });
+
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to create invoice');
+            }
+
+            toast.success('Invoice created and sent to insured party.');
+            closeCreateInvoiceModal();
+            await fetchInvoices();
+        } catch (error: any) {
+            toast.error(error?.message || 'Failed to create invoice');
+        } finally {
+            setCreateInvoiceSubmitting(false);
+        }
+    };
+
+    const productOptions = useMemo(() => {
+        const options = invoices
+            .flatMap((invoice) => Array.isArray(invoice.productName) ? invoice.productName : [invoice.productName])
+            .map((product) => String(product || '').trim())
+            .filter(Boolean);
+
+        if (filters.productName?.trim()) {
+            options.push(filters.productName.trim());
+        }
+
+        return Array.from(new Set(options)).sort((a, b) => a.localeCompare(b));
+    }, [filters.productName, invoices]);
 
     const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFilters((prev) => ({ ...prev, [name]: value }));
-        setCurrentPage(1);
-    };
-
-    const updateFilterRule = (
-        ruleId: string,
-        field: keyof Omit<FilterRule, 'id'>,
-        value: string,
-    ) => {
-        setFilterRules((prev) =>
-            prev.map((rule) => {
-                if (rule.id !== ruleId) return rule;
-
-                if (field === 'column') {
-                    const nextColumn = value as FilterColumn;
-                    return {
-                        ...rule,
-                        column: nextColumn,
-                        operator: rule.operator,
-                        value: rule.value,
-                    };
-                }
-
-                return {
-                    ...rule,
-                    [field]: value,
-                };
-            }),
-        );
-    };
-
-    const addFilterRule = () => {
-        setFilterRules((prev) => [...prev, createFilterRule('and')]);
-    };
-
-    const removeFilterRule = (ruleId: string) => {
-        setFilterRules((prev) => {
-            const next = prev.filter((rule) => rule.id !== ruleId);
-            if (next.length === 0) return [createFilterRule()];
-            return next.map((rule, index) => ({
-                ...rule,
-                join: index === 0 ? 'where' : rule.join === 'or' ? 'or' : 'and',
-            }));
-        });
-    };
-
-    const clearFilterRules = () => {
-        setFilterRules([createFilterRule()]);
-        setAppliedFilterRules([]);
-        setCurrentPage(1);
-    };
-
-    const applyAdvancedFilters = () => {
-        const activeRules = filterRules.filter((rule) => rule.value.trim().length > 0);
-
-        setAppliedFilterRules(
-            activeRules.map((rule, index) => ({
-                ...rule,
-                join: index === 0 ? 'where' : rule.join,
-            })),
-        );
         setCurrentPage(1);
     };
 
@@ -463,23 +1099,12 @@ export default function InsuranceFormsPage() {
 
         setExporting(true);
         try {
-            const invoiceIds = invoices
-                .map((invoice) => getInvoiceId(invoice))
-                .filter((id): id is string => Boolean(id));
+            const activeFilters = buildActiveFilters(filters);
 
-            const body: any = {
+            const body = {
+                ...activeFilters,
                 selectedColumns: selectedExportColumns,
             };
-
-            // Prefer exact export of the currently filtered rows shown in the list.
-            if (invoiceIds.length > 0) {
-                body.invoiceIds = Array.from(new Set(invoiceIds));
-            } else {
-                toast.error('No filtered invoices available to export.');
-                return;
-            }
-
-            console.log("📤 Export payload:", body);
 
             const blob = await adminApi.exportInvoices(body);
 
@@ -524,6 +1149,14 @@ export default function InsuranceFormsPage() {
         setSendPhoneModalOpen(false);
         setSendPhoneInvoice(null);
         setSendPhoneDraft('');
+        setSendPhoneMode('payment_link');
+    };
+
+    const openSendPhoneModal = (inv: Invoice, mode: SendPhoneMode) => {
+        setSendPhoneInvoice(inv);
+        setSendPhoneDraft(inv.insuredPartyPhone || '');
+        setSendPhoneMode(mode);
+        setSendPhoneModalOpen(true);
     };
 
     const closeSendPdfModal = () => {
@@ -564,7 +1197,7 @@ export default function InsuranceFormsPage() {
             setSendingPdfInvoiceId(invoiceId);
             toast.loading('Sending insurance PDF...', { toastId: 'send-pdf' });
 
-            const res = await adminApi.sendInsurancePdfViaBot(fileUrl, phoneNumber);
+            const res = await adminApi.sendInsurancePdfViaBackend(invoiceId, phoneNumber);
             if (!res.success) throw new Error(res.message || 'Failed to send insurance PDF');
 
             const updateRes = await adminApi.updateInvoicePhone(invoiceId, phoneNumber);
@@ -744,17 +1377,26 @@ export default function InsuranceFormsPage() {
         return undefined;
     };
 
-    const handleViewPdf = (url: string | undefined) => {
+    const handleViewPdf = (inv: Invoice) => {
+        const url = inv.pdfUrl || inv.pdfURL;
         if (!url) return;
-        window.open(toFullFileUrl(url), '_blank');
+
+        const fullUrl = toFullFileUrl(url);
+        const invoiceId = getInvoiceId(inv);
+        const refreshKey = invoiceId ? (pdfRefreshKeys[invoiceId] || Date.now()) : Date.now();
+        const separator = fullUrl.includes('?') ? '&' : '?';
+        window.open(`${fullUrl}${separator}v=${refreshKey}`, '_blank');
     };
 
     const handleEditClick = (invoice: Invoice) => {
+        const initialVehicleNumber = normalizeVehicleText(
+            invoice.vehicleNumber || invoice.truckNumber || ''
+        );
         setEditingInvoice(invoice);
         setWeightmentSlip(null);
         setFormData({
             invoiceId: invoice.id,
-            invoiceType: 'BUYER_INVOICE',
+            invoiceType: invoice.invoiceType || 'SUPPLIER_INVOICE',
             supplierName: invoice.supplierName,
             supplierAddress: Array.isArray(invoice.supplierAddress)
                 ? invoice.supplierAddress.join('\n')
@@ -775,8 +1417,8 @@ export default function InsuranceFormsPage() {
             quantity: invoice.quantity || 0,
             rate: invoice.rate || 0,
             amount: invoice.amount || 0,
-            vehicleNumber: invoice.vehicleNumber || '',
-            truckNumber: invoice.truckNumber || '',
+            vehicleNumber: initialVehicleNumber,
+            truckNumber: initialVehicleNumber,
             weighmentSlipNote: invoice.weighmentSlipNote || '',
             invoiceDate: invoice.createdAt
                 ? invoice.createdAt.split('T')[0]
@@ -802,8 +1444,18 @@ export default function InsuranceFormsPage() {
     };
 
     const rotateImage = (degrees: number) => {
-        setRotation(prev => (prev + degrees) % 360);
-        cropperRef.current?.cropper.rotateTo(rotation + degrees);
+        setRotation((prev) => {
+            const nextRotation = (prev + degrees) % 360;
+            cropperRef.current?.cropper.rotateTo(nextRotation);
+            return nextRotation;
+        });
+    };
+
+    const closeCropper = () => {
+        setIsCropping(false);
+        setIsCropperReady(false);
+        setImageSrc(null);
+        setRotation(0);
     };
 
     const handleCropComplete = () => {
@@ -815,8 +1467,7 @@ export default function InsuranceFormsPage() {
         }).toBlob(blob => {
             if (blob) {
                 setWeightmentSlip(new File([blob], 'updated-weightment-slip.jpg', { type: 'image/jpeg' }));
-                setIsCropping(false);
-                setImageSrc(null);
+                closeCropper();
             }
         }, 'image/jpeg', 0.9);
     };
@@ -846,16 +1497,21 @@ export default function InsuranceFormsPage() {
 
         try {
             if (weightmentSlip) {
-                await uploadWeighmentSlips(editingInvoice.id, [weightmentSlip]);
+                await adminApi.uploadWeighmentSlips(editingInvoice.id, [weightmentSlip]);
             }
 
             const qty = Number(formData.quantity) || 0;
             const rate = Number(formData.rate) || 0;
             const computedAmount = qty * rate;
+            const vehicleNumber = normalizeVehicleText(
+                String(formData.vehicleNumber || formData.truckNumber || '')
+            );
 
             const payload: RegenerateInvoicePayload = {
                 ...formData,
                 invoiceId: editingInvoice.id,
+                vehicleNumber,
+                truckNumber: vehicleNumber,
 
                 supplierAddress: typeof formData.supplierAddress === "string"
                     ? formData.supplierAddress.split("\n").filter(Boolean)
@@ -874,9 +1530,14 @@ export default function InsuranceFormsPage() {
                 amount: computedAmount,
             };
 
-            await adminApi.regenerateInvoice(payload);
+            const regenerateResponse = await adminApi.regenerateInvoice(payload);
+            if (!regenerateResponse.success) {
+                throw new Error(regenerateResponse.message || 'Failed to regenerate invoice');
+            }
+
+            setPdfRefreshKeys((prev) => ({ ...prev, [editingInvoice.id]: Date.now() }));
             toast.success("Invoice updated & PDF regenerated");
-            await fetchInvoices();
+            await refreshInvoiceAfterRegenerate(editingInvoice.id);
             closeModal();
         } catch (error: any) {
             console.error("Regenerate error:", error);
@@ -892,22 +1553,39 @@ export default function InsuranceFormsPage() {
         setInvoiceDateInputType('text');
         setFormData({});
         setWeightmentSlip(null);
+        closeCropper();
     };
 
-    const getInsuredPersonName = (inv: Invoice) => {
-        if (inv.insuredPersonNameSnapshot?.trim()) {
-            return inv.insuredPersonNameSnapshot.trim();
+    const isBuyerInsuredInvoice = (inv: Invoice) => {
+        if (inv.invoiceType) {
+            return inv.invoiceType === 'BUYER_INVOICE';
         }
         const note = (inv.weighmentSlipNote || '').toLowerCase().trim();
-        const isCash = note.includes('cash') || note.includes('nak') || note.includes('nag');
-        return isCash ? (inv.billToName || '') : (inv.supplierName || '');
+        return (
+            note.includes('cash') ||
+            note.includes('nak') ||
+            note.includes('nag')
+        );
     };
 
-    const getOtherPartyName = (inv: Invoice) => {
-        const note = (inv.weighmentSlipNote || '').toLowerCase().trim();
-        const isCash = note.includes('cash') || note.includes('nak') || note.includes('nag');
-        return isCash ? (inv.supplierName || '') : (inv.billToName || '');
+    const getCanonicalPartyNames = (inv: Invoice) => {
+        if (inv.insuredPersonDisplayName || inv.otherPartyDisplayName) {
+            return {
+                insured: inv.insuredPersonDisplayName || '',
+                other: inv.otherPartyDisplayName || '',
+            };
+        }
+
+        const isBuyerInsured = isBuyerInsuredInvoice(inv);
+        return {
+            insured: isBuyerInsured ? (inv.billToName || '') : (inv.supplierName || ''),
+            other: isBuyerInsured ? (inv.supplierName || '') : (inv.billToName || ''),
+        };
     };
+
+    const getInsuredPersonName = (inv: Invoice) => getCanonicalPartyNames(inv).insured;
+
+    const getOtherPartyName = (inv: Invoice) => getCanonicalPartyNames(inv).other;
 
     const getPaymentStatusLabelAndClasses = (inv: Invoice) => {
         const raw = inv.paymentStatus || '';
@@ -953,9 +1631,16 @@ export default function InsuranceFormsPage() {
             return;
         }
 
-        setSendPhoneInvoice(inv);
-        setSendPhoneDraft(inv.insuredPartyPhone || '');
-        setSendPhoneModalOpen(true);
+        openSendPhoneModal(inv, 'payment_link');
+    };
+
+    const handleSendInvoiceCreatedMessage = (inv: Invoice) => {
+        if (inv.isRejected) {
+            toast.error('Rejected invoice cannot send this message');
+            return;
+        }
+
+        openSendPhoneModal(inv, 'invoice_created_template');
     };
 
     const submitSendPaymentLink = async () => {
@@ -981,19 +1666,41 @@ export default function InsuranceFormsPage() {
         try {
             setSendingPaymentInvoiceId(invoiceId);
             toast.loading(
-                'Sending payment link...',
-                { toastId: 'payment-link' },
+                sendPhoneMode === 'payment_link'
+                    ? 'Sending payment link...'
+                    : 'Sending invoice message...',
+                { toastId: 'send-phone-action' },
             );
 
-            const res = await adminApi.verifyAndSendPaymentForInvoice(invoiceId, {
-                phoneNumber,
-            });
+            const res = sendPhoneMode === 'payment_link'
+                ? await adminApi.verifyAndSendPaymentForInvoice(invoiceId, {
+                    phoneNumber,
+                })
+                : await adminApi.sendInvoiceCreatedTemplate(invoiceId, {
+                    phoneNumber,
+                });
             if (!res.success) {
-                throw new Error(res.message || 'Failed to send payment link');
+                throw new Error(
+                    res.message ||
+                    (sendPhoneMode === 'payment_link'
+                        ? 'Failed to send payment link'
+                        : 'Failed to send invoice message'),
+                );
             }
 
-            toast.update('payment-link', {
-                render: 'Payment link sent successfully',
+            setInvoices((prev) =>
+                prev.map((invoice) =>
+                    getInvoiceId(invoice) === invoiceId
+                        ? { ...invoice, insuredPartyPhone: phoneNumber }
+                        : invoice,
+                ),
+            );
+
+            toast.update('send-phone-action', {
+                render:
+                    sendPhoneMode === 'payment_link'
+                        ? 'Payment link sent successfully'
+                        : 'Invoice message sent successfully',
                 type: 'success',
                 isLoading: false,
                 autoClose: 2000,
@@ -1002,8 +1709,12 @@ export default function InsuranceFormsPage() {
             closeSendPhoneModal();
             await fetchInvoices();
         } catch (error: any) {
-            toast.update('payment-link', {
-                render: error?.message || 'Failed to send payment link',
+            toast.update('send-phone-action', {
+                render:
+                    error?.message ||
+                    (sendPhoneMode === 'payment_link'
+                        ? 'Failed to send payment link'
+                        : 'Failed to send invoice message'),
                 type: 'error',
                 isLoading: false,
                 autoClose: 3000,
@@ -1035,14 +1746,11 @@ export default function InsuranceFormsPage() {
         setInvoiceMenuPlacement((prev) => (prev[invoiceId] === placement ? prev : { ...prev, [invoiceId]: placement }));
     };
 
-    const totalPages = Math.max(1, Math.ceil(invoices.length / ITEMS_PER_PAGE));
-    const paginatedInvoices = invoices.slice(
-        (currentPage - 1) * ITEMS_PER_PAGE,
-        currentPage * ITEMS_PER_PAGE
-    );
+    const totalPages = serverTotalPages;
+    const paginatedInvoices = invoices;
 
     useEffect(() => {
-        if (currentPage > totalPages) {
+        if (currentPage > totalPages && totalPages > 0) {
             setCurrentPage(totalPages);
         }
     }, [currentPage, totalPages]);
@@ -1121,9 +1829,15 @@ export default function InsuranceFormsPage() {
                     <div className="relative w-full max-w-md rounded-2xl bg-white shadow-xl ring-1 ring-black/10">
                         <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
                             <div className="min-w-0">
-                                <h3 className="text-base font-semibold text-slate-900">Send Payment Link</h3>
+                                <h3 className="text-base font-semibold text-slate-900">
+                                    {sendPhoneMode === 'payment_link'
+                                        ? 'Send Payment Link'
+                                        : 'Send Invoice Message'}
+                                </h3>
                                 <p className="mt-1 text-sm text-slate-600">
-                                    Enter the WhatsApp number for invoice {sendPhoneInvoice.invoiceNumber}.
+                                    {sendPhoneMode === 'payment_link'
+                                        ? `Enter the WhatsApp number for invoice ${sendPhoneInvoice.invoiceNumber}.`
+                                        : `Enter the WhatsApp number to send the invoice-created template for ${sendPhoneInvoice.invoiceNumber}.`}
                                 </p>
                             </div>
                             <button
@@ -1148,7 +1862,9 @@ export default function InsuranceFormsPage() {
                                 />
                             </div>
                             <p className="text-xs text-slate-500">
-                                This sends the existing Meta template message and payment link to the number you enter.
+                                {sendPhoneMode === 'payment_link'
+                                    ? 'This sends the existing Meta template message and payment link to the number you enter.'
+                                    : 'This sends the invoice-created tracking template using the latest invoice details and the number you enter.'}
                             </p>
                         </div>
 
@@ -1166,7 +1882,11 @@ export default function InsuranceFormsPage() {
                                 disabled={sendingPaymentInvoiceId === getInvoiceId(sendPhoneInvoice)}
                                 className="rounded-xl bg-[#25D366] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1fa955] disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                                {sendingPaymentInvoiceId === getInvoiceId(sendPhoneInvoice) ? 'Sending...' : 'Send'}
+                                {sendingPaymentInvoiceId === getInvoiceId(sendPhoneInvoice)
+                                    ? 'Sending...'
+                                    : sendPhoneMode === 'payment_link'
+                                        ? 'Send'
+                                        : 'Resend'}
                             </button>
                         </div>
                     </div>
@@ -1257,53 +1977,194 @@ export default function InsuranceFormsPage() {
                 </div>
             )}
 
-            {/* Cropper Overlay */}
-            {isCropping && imageSrc && (
-                <div className="fixed inset-0 z-50 bg-black flex flex-col">
-                    <div className="flex-1 w-full relative min-h-0 bg-black">
-                        <Cropper
-                            src={imageSrc}
-                            style={{ height: '100%', width: '100%' }}
-                            ref={cropperRef}
-                            guides={true}
-                            viewMode={1}
-                            dragMode="move"
-                            autoCropArea={1}
-                            checkOrientation={true}
-                            ready={() => {
-                                setIsCropperReady(true);
-                                setRotation(0);
-                            }}
-                        />
-                    </div>
-                    <div className="w-full bg-black/90 p-3 sm:p-4 flex justify-between items-center px-4 sm:px-6 z-50 border-t border-gray-800">
-                        <div className="flex gap-3 sm:gap-4 text-white">
-                            <button type="button" onClick={() => rotateImage(-90)}>
-                                <ArrowPathIcon className="w-5 h-5 sm:w-6 sm:h-6 transform rotate-90" />
-                            </button>
-                            <button type="button" onClick={() => rotateImage(90)}>
-                                <ArrowPathIcon className="w-5 h-5 sm:w-6 sm:h-6 -scale-x-100 transform rotate-90" />
-                            </button>
+            {createInvoiceOpen && (
+                <div className="fixed inset-0 z-[2160] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:p-4">
+                    <div className="relative flex max-h-[96vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-white/70 bg-slate-50 shadow-2xl">
+                        {createInvoiceParsing && (
+                            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/85 backdrop-blur-sm">
+                                <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-emerald-600" />
+                                <p className="mt-3 text-sm font-semibold text-slate-800">Extracting document details with Gemini OCR...</p>
+                            </div>
+                        )}
+                        <div className="relative overflow-hidden border-b border-slate-200 bg-gradient-to-r from-emerald-50 via-white to-sky-50 px-4 py-3">
+                            <div className="absolute right-6 top-4 h-16 w-16 rounded-full bg-emerald-200/35 blur-2xl" />
+                            <div className="relative flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-3">
+                                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-md shadow-emerald-200">
+                                        <FileText className="h-5 w-5" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-slate-950">Create Invoice</h3>
+                                        <p className="mt-0.5 text-sm text-slate-600">Choose invoice type first, upload documents, then review and create.</p>
+                                    </div>
+                                </div>
+                                <button onClick={closeCreateInvoiceModal} disabled={createInvoiceSubmitting} className="rounded-lg p-2 text-slate-500 transition hover:bg-white hover:text-slate-900">
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
                         </div>
-                        <div className="flex gap-4 sm:gap-6">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setIsCropping(false);
-                                    setImageSrc(null);
-                                }}
-                                className="text-red-500"
-                            >
-                                <XMarkIcon className="w-7 h-7 sm:w-8 sm:h-8" />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleCropComplete}
-                                disabled={!isCropperReady}
-                                className={isCropperReady ? 'text-[#25D366]' : 'text-gray-500'}
-                            >
-                                <CheckIcon className="w-7 h-7 sm:w-8 sm:h-8" />
-                            </button>
+                        <div className="overflow-hidden px-4 py-3">
+                            <div className="grid gap-3 lg:grid-cols-[0.9fr_1.4fr]">
+                                <div className="space-y-3">
+                                    <div className={createInvoicePanelClass}>
+                                        <h4 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><CheckCircle className="h-4 w-4 text-emerald-600" />Invoice type</h4>
+                                        <label className={`mt-2 ${createInvoiceLabelClass}`}>
+                                            Select before upload
+                                            <select
+                                                value={createInvoiceForm.invoiceKind}
+                                                disabled={createInvoiceParsing}
+                                                onChange={(e) => {
+                                                    const invoiceKind = e.target.value as AdminInvoiceKind;
+                                                    setCreateInvoiceForm((prev) => applyCreateInvoiceParties(selectedInsuredUser, selectedOtherPartyUser, invoiceKind, prev));
+                                                }}
+                                                className={createInvoiceFieldClass}
+                                            >
+                                                <option value="cash">Cash</option>
+                                                <option value="commission">Commission</option>
+                                            </select>
+                                        </label>
+                                    </div>
+
+                                    <div className={createInvoicePanelClass}>
+                                        <h4 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><Upload className="h-4 w-4 text-sky-600" />Documents</h4>
+                                        <label className="mt-2 flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                                            <input
+                                                type="checkbox"
+                                                checked={skipCreateInvoiceOcr}
+                                                onChange={(e) => setSkipCreateInvoiceOcr(e.target.checked)}
+                                                className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                            />
+                                            <span>
+                                                <span className="block font-medium text-slate-900">Do not use OCR</span>
+                                                <span className="block text-xs text-slate-500">Uploaded files will be attached, but fields must be filled manually.</span>
+                                            </span>
+                                        </label>
+                                        <label className={`mt-2 ${createInvoiceLabelClass}`}>
+                                            Weighment slip
+                                            <input
+                                                type="file"
+                                                accept="image/*,application/pdf"
+                                                multiple
+                                                disabled={createInvoiceParsing}
+                                                onChange={(e) => handleCreateInvoiceDocumentChange(Array.from(e.target.files || []), createPurchaseBillFile)}
+                                                className={createInvoiceFileFieldClass}
+                                            />
+                                        </label>
+                                        <label className={`mt-2 ${createInvoiceLabelClass}`}>
+                                            Purchase bill / previous invoice
+                                            <input
+                                                type="file"
+                                                accept="image/*,application/pdf"
+                                                disabled={createInvoiceParsing}
+                                                onChange={(e) => handleCreateInvoiceDocumentChange(createWeighmentFiles, e.target.files?.[0] || null)}
+                                                className={createInvoiceFileFieldClass}
+                                            />
+                                        </label>
+                                        <p className="mt-1 text-xs text-slate-500">
+                                            {skipCreateInvoiceOcr
+                                                ? 'OCR is skipped until you manually uncheck this option.'
+                                                : createInvoiceParsing
+                                                    ? 'Reading document text with Gemini OCR...'
+                                                    : documentExtractText
+                                                        ? 'Text extracted. Review fields.'
+                                                        : 'Upload screenshots, images, or PDFs for OCR.'}
+                                        </p>
+                                    </div>
+
+                                    <div className={createInvoicePanelClass}>
+                                        <h4 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><LinkIcon className="h-4 w-4 text-indigo-600" />Parties</h4>
+                                        <label className={`mt-2 ${createInvoiceLabelClass}`}>
+                                            Insured party name
+                                            <select
+                                                value={createInvoiceForm.insuredUserId}
+                                                disabled={createInvoiceParsing}
+                                                onChange={(e) => {
+                                                    const insuredUser = verifiedUsers.find((user) => user.id === e.target.value) || null;
+                                                    setCreateInvoiceForm((prev) => applyCreateInvoiceParties(insuredUser, selectedOtherPartyUser, prev.invoiceKind, { ...prev, insuredUserId: e.target.value }));
+                                                }}
+                                                className={createInvoiceFieldClass}
+                                            >
+                                                <option value="">Select registered verified user</option>
+                                                {verifiedUsers.map((user) => (
+                                                    <option key={user.id} value={user.id}>
+                                                        {user.name} - {user.mobileNumber} {user.walletType === 'UNPAID' ? '(Unpaid)' : ''}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </label>
+                                        <div className="mt-2">
+                                            <PartyCombobox
+                                                label="Select other party"
+                                                options={otherPartyComboboxOptions}
+                                                value={createInvoiceForm.invoiceKind === 'cash' ? createInvoiceForm.supplierName : createInvoiceForm.billToName}
+                                                onChange={handleOtherPartyComboboxChange}
+                                                disabled={createInvoiceParsing}
+                                                loading={otherPartyHistoricalLoading}
+                                                placeholder={createInvoiceForm.insuredUserId ? 'Search or type party name...' : 'Select insured party first'}
+                                                emptyMessage={createInvoiceForm.insuredUserId ? 'No historical parties found — type a name above' : 'Select insured party first'}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                                    <div className="mb-2 flex items-center justify-between gap-3">
+                                        <h4 className="flex items-center gap-2 text-sm font-semibold text-slate-900"><Pencil className="h-4 w-4 text-emerald-600" />Invoice details</h4>
+                                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{createInvoiceForm.invoiceKind === 'cash' ? 'Cash invoice' : 'Commission invoice'}</span>
+                                    </div>
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                    <label className={createInvoiceLabelClass}>Invoice date<input disabled={createInvoiceParsing} type="date" value={createInvoiceForm.invoiceDate} onChange={(e) => updateCreateInvoiceForm({ invoiceDate: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>
+                                        Insured party phone
+                                        <input
+                                            disabled={createInvoiceParsing}
+                                            value={createInvoiceForm.insuredPartyPhone}
+                                            onChange={(e) => updateCreateInvoiceForm({ insuredPartyPhone: e.target.value })}
+                                            className={createInvoiceFieldClass}
+                                        />
+                                        <span className="mt-1 block text-xs text-slate-500">Invoice message will be sent to this number. You can edit it before creating.</span>
+                                    </label>
+                                    <label className={createInvoiceLabelClass}>Supplier name<input disabled={createInvoiceParsing} value={createInvoiceForm.supplierName} onChange={(e) => updateCreateInvoiceForm({ supplierName: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Place of supply<input disabled={createInvoiceParsing} value={createInvoiceForm.placeOfSupply} onChange={(e) => updateCreateInvoiceForm({ placeOfSupply: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={`${createInvoiceLabelClass} sm:col-span-2`}>Supplier address<textarea disabled={createInvoiceParsing} value={createInvoiceForm.supplierAddress} onChange={(e) => updateCreateInvoiceForm({ supplierAddress: e.target.value })} rows={1} className={createInvoiceTextareaClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Bill to name<input disabled={createInvoiceParsing} value={createInvoiceForm.billToName} onChange={(e) => updateCreateInvoiceForm({ billToName: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Ship to name<input disabled={createInvoiceParsing} value={createInvoiceForm.shipToName} onChange={(e) => updateCreateInvoiceForm({ shipToName: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Bill to address<textarea disabled={createInvoiceParsing} value={createInvoiceForm.billToAddress} onChange={(e) => updateCreateInvoiceForm({ billToAddress: e.target.value })} rows={1} className={createInvoiceTextareaClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Ship to address<textarea disabled={createInvoiceParsing} value={createInvoiceForm.shipToAddress} onChange={(e) => updateCreateInvoiceForm({ shipToAddress: e.target.value })} rows={1} className={createInvoiceTextareaClass} /></label>
+                                    <label className={createInvoiceLabelClass}>
+                                        Product
+                                        <select
+                                            disabled={createInvoiceParsing}
+                                            value={createInvoiceForm.productName}
+                                            onChange={(e) => updateCreateInvoiceProduct(e.target.value)}
+                                            className={createInvoiceFieldClass}
+                                        >
+                                            <option value="">Select product</option>
+                                            {itemsData.map((item) => (
+                                                <option key={item.name} value={item.name}>{item.name}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    <label className={createInvoiceLabelClass}>HSN<input disabled={createInvoiceParsing} value={createInvoiceForm.hsnCode} onChange={(e) => updateCreateInvoiceForm({ hsnCode: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Quantity<input disabled={createInvoiceParsing} type="number" step="0.01" value={createInvoiceForm.quantity} onChange={(e) => updateCreateInvoiceForm({ quantity: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Rate<input disabled={createInvoiceParsing} type="number" step="0.01" value={createInvoiceForm.rate} onChange={(e) => updateCreateInvoiceForm({ rate: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Vehicle number<input disabled={createInvoiceParsing} value={createInvoiceForm.vehicleNumber} onChange={(e) => updateCreateInvoiceForm({ vehicleNumber: e.target.value })} onBlur={(e) => validateCreateInvoiceVehicle(e.target.value)} className={createInvoiceFieldClass} /></label>
+                                    <label className={createInvoiceLabelClass}>Owner name<input disabled={createInvoiceParsing} value={createInvoiceForm.ownerName} onChange={(e) => updateCreateInvoiceForm({ ownerName: e.target.value })} className={createInvoiceFieldClass} /></label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-3">
+                            <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-1.5">
+                                <p className="text-xs font-medium uppercase text-emerald-700">Amount</p>
+                                <p className="text-base font-semibold text-slate-950">{formatCurrency((Number(createInvoiceForm.quantity) || 0) * (Number(createInvoiceForm.rate) || 0))}</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={closeCreateInvoiceModal} disabled={createInvoiceSubmitting} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">Cancel</button>
+                                <button onClick={handleCreateInvoiceSubmit} disabled={createInvoiceSubmitting || createInvoiceParsing} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-emerald-200 transition hover:bg-emerald-700 disabled:opacity-60">
+                                    {createInvoiceSubmitting ? 'Creating...' : 'Create & Send'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1317,6 +2178,14 @@ export default function InsuranceFormsPage() {
                     </h1>
 
                     <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                        <button
+                            onClick={openCreateInvoiceModal}
+                            disabled={loading}
+                            className="bg-slate-800 hover:bg-slate-900 text-white px-3 sm:px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
+                        >
+                            <FileText className="w-4 h-4" />
+                            Create Invoice
+                        </button>
                         <button
                             onClick={openExportModal}
                             disabled={exporting || loading}
@@ -1341,19 +2210,8 @@ export default function InsuranceFormsPage() {
                     </div>
                 </div>
 
-                {/* Mobile Filter Toggle */}
-                <div className="sm:hidden mb-4">
-                    <button
-                        onClick={() => setShowFilters(!showFilters)}
-                        className="w-full flex items-center justify-center gap-2 bg-white text-gray-700 px-4 py-2.5 rounded-lg shadow-sm border border-gray-200"
-                    >
-                        <Filter className="w-4 h-4" />
-                        {showFilters ? 'Hide Filters' : 'Show Filters'}
-                    </button>
-                </div>
-
-                <div className={`bg-white text-black p-3 sm:p-4 rounded-lg shadow mb-4 sm:mb-6 ${showFilters ? 'block' : 'hidden sm:block'}`}>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-7 gap-3 sm:gap-4">
+                <div className="bg-white text-black p-3 sm:p-4 rounded-lg shadow mb-4 sm:mb-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-9 gap-3 sm:gap-4">
                         <select
                             name="invoiceType"
                             value={filters.invoiceType || ''}
@@ -1417,123 +2275,35 @@ export default function InsuranceFormsPage() {
                             className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
                         />
 
-                        <button
-                            type="button"
-                            onClick={() => setShowAdvancedFilters((prev) => !prev)}
-                            className="inline-flex items-center justify-center gap-2 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-gray-50"
+                        <select
+                            name="productName"
+                            value={filters.productName || ''}
+                            onChange={handleFilterChange}
+                            className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
                         >
-                            <Filter className="w-4 h-4" />
-                            {showAdvancedFilters ? 'Hide Filters' : 'Filters'}
-                            {appliedFilterRules.length > 0 && (
-                                <span className="rounded-full bg-[#4309ac] px-2 py-0.5 text-xs text-white">
-                                    {appliedFilterRules.length}
-                                </span>
-                            )}
-                        </button>
+                            <option value="">All Products</option>
+                            {productOptions.map((product) => (
+                                <option key={product} value={product}>
+                                    {product}
+                                </option>
+                            ))}
+                        </select>
+
+                        <select
+                            name="verificationStatus"
+                            value={filters.verificationStatus || ''}
+                            onChange={handleFilterChange}
+                            className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
+                        >
+                            <option value="">Status</option>
+                            <option value="verified">Verified</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
                     </div>
 
                     <div className="mt-3 flex items-center justify-between gap-3 text-xs sm:text-sm text-slate-500">
                         <span>Showing {invoices.length} invoices</span>
-                        {appliedFilterRules.length > 0 && (
-                            <span>{appliedFilterRules.length} advanced filter(s) applied</span>
-                        )}
                     </div>
-
-                    {showAdvancedFilters && (
-                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
-                            <div className="space-y-3">
-                                {filterRules.map((rule, index) => {
-                                    const columnType = getFilterColumnType(rule.column);
-
-                                    return (
-                                        <div key={rule.id} className="grid grid-cols-1 gap-3 xl:grid-cols-[36px_96px_minmax(180px,1fr)_minmax(180px,1fr)_minmax(220px,1.2fr)]">
-                                            <button
-                                                type="button"
-                                                onClick={() => removeFilterRule(rule.id)}
-                                                className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-white"
-                                                aria-label="Remove filter"
-                                            >
-                                                <X className="w-4 h-4" />
-                                            </button>
-
-                                            <select
-                                                value={index === 0 ? 'where' : rule.join}
-                                                onChange={(e) => updateFilterRule(rule.id, 'join', e.target.value)}
-                                                disabled={index === 0}
-                                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
-                                            >
-                                                <option value="where">where</option>
-                                                <option value="and">and</option>
-                                                <option value="or">or</option>
-                                            </select>
-
-                                            <select
-                                                value={rule.column}
-                                                onChange={(e) => updateFilterRule(rule.id, 'column', e.target.value)}
-                                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#4309ac] focus:outline-none focus:ring-2 focus:ring-[#4309ac]/20"
-                                            >
-                                                {FILTERABLE_COLUMNS.map((column) => (
-                                                    <option key={column.value} value={column.value}>
-                                                        {column.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-
-                                            <select
-                                                value={rule.operator}
-                                                onChange={(e) => updateFilterRule(rule.id, 'operator', e.target.value)}
-                                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-[#4309ac] focus:outline-none focus:ring-2 focus:ring-[#4309ac]/20"
-                                            >
-                                                {FILTER_OPERATORS.map((operator) => (
-                                                    <option key={operator.value} value={operator.value}>
-                                                        {operator.label}
-                                                    </option>
-                                                ))}
-                                            </select>
-
-                                            <input
-                                                type={columnType === 'date' ? 'date' : 'text'}
-                                                value={rule.value}
-                                                onChange={(e) => updateFilterRule(rule.id, 'value', e.target.value)}
-                                                placeholder={columnType === 'date' ? 'Select date' : 'Enter value'}
-                                                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#4309ac] focus:outline-none focus:ring-2 focus:ring-[#4309ac]/20"
-                                            />
-                                        </div>
-                                    );
-                                })}
-
-                                <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center sm:justify-between">
-                                    <div className="flex flex-col gap-2 sm:flex-row">
-                                        <button
-                                            type="button"
-                                            onClick={addFilterRule}
-                                            className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-gray-50"
-                                        >
-                                            + Add filter
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={applyAdvancedFilters}
-                                            className="inline-flex items-center justify-center rounded-md bg-[#4309ac] px-4 py-2 text-sm font-semibold text-white hover:bg-[#2f0679]"
-                                        >
-                                            Apply filters
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={clearFilterRules}
-                                            className="inline-flex items-center justify-center rounded-md px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
-                                        >
-                                            Clear filters
-                                        </button>
-                                    </div>
-
-                                    <div className="text-xs text-slate-500">
-                                        Multiple rows can be joined using AND or OR.
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
                 </div>
 
                 {/* Error Banner */}
@@ -1544,13 +2314,13 @@ export default function InsuranceFormsPage() {
                 )}
 
                 {/* Desktop Table View */}
-                <div className="hidden lg:block overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg bg-white">
+                <div className="hidden lg:block overflow-visible shadow ring-1 ring-black ring-opacity-5 rounded-lg bg-white pb-16">
                     {loading && invoices.length === 0 ? (
                         <div className="flex justify-center items-center h-64">
                             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-green-500"></div>
                         </div>
                     ) : (
-                        <div className="relative isolate overflow-x-auto overflow-y-hidden">
+                        <div className="relative isolate overflow-x-auto overflow-y-visible">
                             <table className="w-full min-w-[1400px] table-fixed divide-y divide-gray-200 border-separate border-spacing-0">
                                 <thead className="bg-slate-50">
                                     <tr>
@@ -1646,7 +2416,7 @@ export default function InsuranceFormsPage() {
                                                     <td className={`px-2 py-3 xl:py-2 text-center align-top ${expandedInvoiceId === inv.id ? 'bg-slate-50' : 'bg-white'}`}>
                                                         {(inv.pdfUrl || inv.pdfURL) ? (
                                                             <button
-                                                                onClick={() => handleViewPdf(inv.pdfUrl || inv.pdfURL)}
+                                                                onClick={() => handleViewPdf(inv)}
                                                                 className="inline-flex items-center justify-center w-9 h-9 text-[#4309ac] hover:bg-[#4309ac]/10 rounded-lg border border-[#4309ac]/20"
                                                                 title="View Invoice PDF"
                                                             >
@@ -1905,6 +2675,20 @@ export default function InsuranceFormsPage() {
                                                                                 )}
                                                                             </Menu.Item>
                                                                         )}
+                                                                        {!inv.isRejected && (
+                                                                            <Menu.Item>
+                                                                                {({ active }) => (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleSendInvoiceCreatedMessage(inv)}
+                                                                                        className={`${active ? 'bg-gray-100' : ''} flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700`}
+                                                                                    >
+                                                                                        <RotateCcw className="w-4 h-4 text-[#25D366]" />
+                                                                                        Resend invoice message
+                                                                                    </button>
+                                                                                )}
+                                                                            </Menu.Item>
+                                                                        )}
                                                                         {getInsuranceFileUrl(inv) && (
                                                                             <Menu.Item>
                                                                                 {({ active }) => (
@@ -2044,7 +2828,7 @@ export default function InsuranceFormsPage() {
                                                                                 <p className="text-xs font-semibold text-slate-500">Invoice PDF</p>
                                                                                 {(inv.pdfUrl || inv.pdfURL) ? (
                                                                                     <button
-                                                                                        onClick={() => handleViewPdf(inv.pdfUrl || inv.pdfURL)}
+                                                                                        onClick={() => handleViewPdf(inv)}
                                                                                         className="inline-flex items-center gap-2 rounded-lg border border-[#4309ac]/20 px-3 py-2 text-sm font-semibold text-[#4309ac] hover:bg-[#4309ac]/10"
                                                                                     >
                                                                                         <FileText className="w-4 h-4" />
@@ -2116,7 +2900,7 @@ export default function InsuranceFormsPage() {
                                         <div className="flex items-center gap-1.5 sm:gap-2 ml-2">
                                             {(inv.pdfUrl || inv.pdfURL) && (
                                                 <button
-                                                    onClick={() => handleViewPdf(inv.pdfUrl || inv.pdfURL)}
+                                                    onClick={() => handleViewPdf(inv)}
                                                     className="p-1.5 sm:p-2 text-green-600 hover:bg-green-50 rounded-lg border border-green-200"
                                                     title="View PDF"
                                                 >
@@ -2242,6 +3026,20 @@ export default function InsuranceFormsPage() {
                                                                                 <LinkIcon className="w-4 h-4 text-[#25D366]" />
                                                                             )}
                                                                             {getPaymentLinkSentLabel(inv) ? 'Resend payment link' : 'Send payment link'}
+                                                                        </button>
+                                                                    )}
+                                                                </Menu.Item>
+                                                            )}
+                                                            {!inv.isRejected && (
+                                                                <Menu.Item>
+                                                                    {({ active }) => (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleSendInvoiceCreatedMessage(inv)}
+                                                                            className={`${active ? 'bg-gray-100' : ''} flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700`}
+                                                                        >
+                                                                            <RotateCcw className="w-4 h-4 text-[#25D366]" />
+                                                                            Resend invoice message
                                                                         </button>
                                                                     )}
                                                                 </Menu.Item>
@@ -2394,17 +3192,18 @@ export default function InsuranceFormsPage() {
                     <div className="mt-4 sm:mt-6 flex flex-col sm:flex-row justify-between items-center gap-3 sm:gap-0">
                         <button
                             onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                            disabled={currentPage === 1}
+                            disabled={currentPage === 1 || loading}
                             className="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Previous
                         </button>
                         <span className="text-sm text-gray-700">
                             Page <span className="font-medium">{currentPage}</span> of <span className="font-medium">{totalPages}</span>
+                            {serverTotal > 0 && <span className="text-gray-500 ml-2">({serverTotal} total)</span>}
                         </span>
                         <button
                             onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                            disabled={currentPage === totalPages}
+                            disabled={currentPage === totalPages || loading}
                             className="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Next
@@ -2416,7 +3215,7 @@ export default function InsuranceFormsPage() {
             {/* Edit Invoice Modal - Responsive */}
             {isEditing && editingInvoice && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[2000] p-3 sm:p-4">
-                    <div className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-lg max-h-[90vh] sm:max-h-[80vh] overflow-y-auto shadow-2xl">
+                    <div className="relative bg-white rounded-2xl sm:rounded-3xl w-full max-w-lg max-h-[90vh] sm:max-h-[80vh] overflow-y-auto shadow-2xl">
                         <div className="sticky top-0 bg-white border-b px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center rounded-t-2xl sm:rounded-t-3xl z-10">
                             <h3 className="text-lg sm:text-xl font-bold text-slate-800">Update Invoice</h3>
                             <button
@@ -2593,7 +3392,14 @@ export default function InsuranceFormsPage() {
                                     <input
                                         type="text"
                                         value={formData.vehicleNumber}
-                                        onChange={(e) => setFormData({ ...formData, vehicleNumber: e.target.value })}
+                                        onChange={(e) => {
+                                            const vehicleNumber = normalizeVehicleText(e.target.value);
+                                            setFormData({
+                                                ...formData,
+                                                vehicleNumber,
+                                                truckNumber: vehicleNumber,
+                                            });
+                                        }}
                                         className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#4309ac] focus:border-[#4309ac] focus:outline-none text-slate-800 bg-white text-sm"
                                         placeholder="Vehicle number"
                                     />
@@ -2603,9 +3409,9 @@ export default function InsuranceFormsPage() {
                                     <label className="block text-sm font-medium text-slate-800 mb-1">Truck Number</label>
                                     <input
                                         type="text"
-                                        value={formData.truckNumber}
-                                        onChange={(e) => setFormData({ ...formData, truckNumber: e.target.value })}
-                                        className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#4309ac] focus:border-[#4309ac] focus:outline-none text-slate-800 bg-white text-sm"
+                                        value={formData.truckNumber || formData.vehicleNumber || ''}
+                                        readOnly
+                                        className="w-full px-3 sm:px-4 py-2 border border-gray-200 rounded-xl bg-gray-50 text-slate-500 text-sm"
                                         placeholder="Truck number"
                                     />
                                 </div>
@@ -2667,6 +3473,80 @@ export default function InsuranceFormsPage() {
                                 {isRegenerating ? 'Updating...' : 'Update & Regenerate PDF'}
                             </button>
                         </div>
+
+                        {isCropping && imageSrc && (
+                            <div className="absolute inset-0 z-30 flex flex-col rounded-2xl sm:rounded-3xl bg-black/80 backdrop-blur-[1px]">
+                                <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-white sm:px-6">
+                                    <div>
+                                        <p className="text-sm font-semibold">Crop Weighment Slip</p>
+                                        <p className="text-xs text-white/70">Adjust the image before regenerating the invoice PDF.</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={closeCropper}
+                                        className="rounded-full p-1 text-white/80 transition hover:bg-white/10 hover:text-white"
+                                    >
+                                        <XMarkIcon className="h-5 w-5" />
+                                    </button>
+                                </div>
+
+                                <div className="relative min-h-[320px] flex-1 bg-black">
+                                    <Cropper
+                                        src={imageSrc}
+                                        style={{ height: '100%', width: '100%' }}
+                                        ref={cropperRef}
+                                        guides={true}
+                                        viewMode={1}
+                                        dragMode="move"
+                                        autoCropArea={1}
+                                        checkOrientation={true}
+                                        ready={() => {
+                                            setIsCropperReady(true);
+                                            setRotation(0);
+                                        }}
+                                    />
+                                </div>
+
+                                <div className="flex items-center justify-between border-t border-white/10 bg-black/90 px-4 py-3 sm:px-6">
+                                    <div className="flex gap-3 text-white">
+                                        <button
+                                            type="button"
+                                            onClick={() => rotateImage(-90)}
+                                            className="rounded-full p-2 transition hover:bg-white/10"
+                                            aria-label="Rotate left"
+                                        >
+                                            <ArrowPathIcon className="h-5 w-5 rotate-90 transform sm:h-6 sm:w-6" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => rotateImage(90)}
+                                            className="rounded-full p-2 transition hover:bg-white/10"
+                                            aria-label="Rotate right"
+                                        >
+                                            <ArrowPathIcon className="h-5 w-5 -scale-x-100 rotate-90 transform sm:h-6 sm:w-6" />
+                                        </button>
+                                    </div>
+
+                                    <div className="flex gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={closeCropper}
+                                            className="rounded-lg border border-white/15 px-3 py-2 text-sm font-medium text-white/80 transition hover:bg-white/10 hover:text-white"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleCropComplete}
+                                            disabled={!isCropperReady}
+                                            className="rounded-lg bg-[#25D366] px-3 py-2 text-sm font-semibold text-white transition hover:bg-[#1ebe5d] disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            Apply Crop
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -2705,7 +3585,7 @@ export default function InsuranceFormsPage() {
                                 />
                             </div>
                             <p className="text-xs text-slate-500">
-                                The insurance PDF will be sent to this WhatsApp number via the bot.
+                                The insurance PDF will be sent to this WhatsApp number via the backend template.
                             </p>
                         </div>
 

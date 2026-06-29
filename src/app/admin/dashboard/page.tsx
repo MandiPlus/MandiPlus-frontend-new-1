@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
+import { adminApi } from '@/features/admin/api/admin.api';
 import axios from 'axios';
 import {
     Bar,
@@ -18,7 +19,7 @@ import {
     XAxis,
     YAxis
 } from 'recharts';
-import { FileText, Filter, IndianRupee, Timer, Users, UserSquare2 } from 'lucide-react';
+import { Download, FileText, Filter, IndianRupee, Timer, Users, UserSquare2 } from 'lucide-react';
 
 type InvoiceStatus = 'Verified' | 'Pending' | 'Rejected';
 type ClaimStatus = 'Pending' | 'Surveyor Assigned' | 'Completed';
@@ -129,6 +130,62 @@ function monthLabel(d: Date) {
 function toNum(v: unknown) {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
+}
+
+function getErrorMessage(error: unknown) {
+    if (error instanceof Error && error.message) {
+        return error.message;
+    }
+    return 'Failed to run tender coconut report.';
+}
+
+function startOfDay(value: string) {
+    const date = new Date(`${value}T00:00:00`);
+    date.setHours(0, 0, 0, 0);
+    return date;
+}
+
+function endOfDay(value: string) {
+    const date = new Date(`${value}T00:00:00`);
+    date.setHours(23, 59, 59, 999);
+    return date;
+}
+
+function diffDaysInclusive(start: Date, end: Date) {
+    const msPerDay = 24 * 60 * 60 * 1000;
+    return Math.max(1, Math.floor((end.getTime() - start.getTime()) / msPerDay) + 1);
+}
+
+function buildInvoiceRecords(invoiceRows: RawInvoice[], claimByInvoiceId: Map<string, ClaimStatus>): InvoiceRecord[] {
+    return invoiceRows.map((row) => {
+        const product = Array.isArray(row.productName)
+            ? String(row.productName[0] || 'Unknown')
+            : String(row.productName || 'Unknown');
+        const baseAmount = toNum(row.amount);
+        const premiumBase = toNum(row.premiumAmount || row.paymentAmount || baseAmount * 0.002);
+        const commissionRate = toNum(row.user?.commissionRate);
+        const commissionAmount = String(row.user?.identity || '').toUpperCase() === 'AGENT'
+            ? (premiumBase * commissionRate) / 100
+            : 0;
+        const invoiceStatus: InvoiceStatus = row.isRejected ? 'Rejected' : row.isVerified ? 'Verified' : 'Pending';
+
+        return {
+            id: String(row.id || ''),
+            invoiceNumber: String(row.invoiceNumber || 'NA'),
+            createdAt: String(row.createdAt || new Date().toISOString()),
+            supplier: String(row.supplierName || 'Unknown'),
+            buyer: String(row.billToName || 'Unknown'),
+            product,
+            category: PRODUCT_CATEGORY[product] || 'Others',
+            state: String(row.placeOfSupply || 'Unknown'),
+            agent: String(row.user?.name || 'Unassigned'),
+            salesAmount: premiumBase,
+            commissionAmount,
+            invoiceStatus,
+            claimStatus: claimByInvoiceId.get(String(row.id || '')) || 'Pending',
+            paymentStatus: normalizePaymentStatus(row.paymentStatus)
+        };
+    });
 }
 
 function normalizePaymentStatus(raw: unknown): PaymentStatus {
@@ -243,6 +300,7 @@ export default function AnalyticsDashboardPage() {
 
     const [loading, setLoading] = useState(true);
     const [records, setRecords] = useState<InvoiceRecord[]>([]);
+    const [comparisonRecords, setComparisonRecords] = useState<InvoiceRecord[]>([]);
     const [claimRecords, setClaimRecords] = useState<ClaimRecord[]>([]);
     const [filterOptions, setFilterOptions] = useState<FilterOptions>({
         suppliers: [],
@@ -259,6 +317,9 @@ export default function AnalyticsDashboardPage() {
     const [product, setProduct] = useState('');
     const [state, setState] = useState('');
     const [topProductsMetric, setTopProductsMetric] = useState<TopProductsMetric>('premium');
+    const [runningTenderReport, setRunningTenderReport] = useState(false);
+    const [tenderReportMessage, setTenderReportMessage] = useState('');
+    const [tenderReportError, setTenderReportError] = useState('');
 
     useEffect(() => {
         if (!isAuthenticated) {
@@ -280,16 +341,49 @@ export default function AnalyticsDashboardPage() {
                 if (toDate) invoiceParams.endDate = new Date(`${toDate}T23:59:59.999Z`).toISOString();
                 if (supplier) invoiceParams.supplierName = supplier;
                 if (buyer) invoiceParams.buyerName = buyer;
+                const hasExplicitDateRange = Boolean(fromDate && toDate);
 
-                const [invoicesRes, claimsRes] = await Promise.all([
+                let comparisonInvoiceParams: Record<string, string> | undefined;
+                if (hasExplicitDateRange) {
+                    const rangeStart = startOfDay(fromDate);
+                    const rangeEnd = endOfDay(toDate);
+                    const rangeDays = diffDaysInclusive(rangeStart, rangeEnd);
+                    const previousRangeEnd = new Date(rangeStart);
+                    previousRangeEnd.setDate(previousRangeEnd.getDate() - 1);
+                    previousRangeEnd.setHours(23, 59, 59, 999);
+                    const previousRangeStart = new Date(previousRangeEnd);
+                    previousRangeStart.setDate(previousRangeStart.getDate() - (rangeDays - 1));
+                    previousRangeStart.setHours(0, 0, 0, 0);
+
+                    comparisonInvoiceParams = {
+                        ...invoiceParams,
+                        startDate: previousRangeStart.toISOString(),
+                        endDate: previousRangeEnd.toISOString()
+                    };
+                }
+
+                const requests = [
                     axios.get(`${baseUrl}/invoices/admin/filter`, { headers, params: invoiceParams }),
                     axios.get(`${baseUrl}/claim-requests/admin`, { headers })
-                ]);
+                ];
+                if (comparisonInvoiceParams) {
+                    requests.push(axios.get(`${baseUrl}/invoices/admin/filter`, { headers, params: comparisonInvoiceParams }));
+                }
+
+                const responses = await Promise.all(requests);
+                const invoicesRes = responses[0];
+                const claimsRes = responses[1];
+                const comparisonInvoicesRes = comparisonInvoiceParams ? responses[2] : null;
 
                 const invoiceRows: RawInvoice[] = Array.isArray(invoicesRes.data)
                     ? invoicesRes.data
                     : Array.isArray(invoicesRes.data?.data)
                         ? invoicesRes.data.data
+                        : [];
+                const comparisonInvoiceRows: RawInvoice[] = Array.isArray(comparisonInvoicesRes?.data)
+                    ? comparisonInvoicesRes.data
+                    : Array.isArray(comparisonInvoicesRes?.data?.data)
+                        ? comparisonInvoicesRes.data.data
                         : [];
 
                 const claimRows: RawClaim[] = Array.isArray(claimsRes.data)
@@ -309,36 +403,11 @@ export default function AnalyticsDashboardPage() {
                     }
                 });
 
-                const mapped: InvoiceRecord[] = invoiceRows.map((row) => {
-                    const product = Array.isArray(row.productName)
-                        ? String(row.productName[0] || 'Unknown')
-                        : String(row.productName || 'Unknown');
-                    const baseAmount = toNum(row.amount);
-                    const premiumBase = toNum(row.premiumAmount || row.paymentAmount || baseAmount * 0.002);
-                    const commissionRate = toNum(row.user?.commissionRate);
-                    const commissionAmount = String(row.user?.identity || '').toUpperCase() === 'AGENT'
-                        ? (premiumBase * commissionRate) / 100
-                        : 0;
-
-                    return {
-                        id: String(row.id || ''),
-                        invoiceNumber: String(row.invoiceNumber || 'NA'),
-                        createdAt: String(row.createdAt || new Date().toISOString()),
-                        supplier: String(row.supplierName || 'Unknown'),
-                        buyer: String(row.billToName || 'Unknown'),
-                        product,
-                        category: PRODUCT_CATEGORY[product] || 'Others',
-                        state: String(row.placeOfSupply || 'Unknown'),
-                        agent: String(row.user?.name || 'Unassigned'),
-                        salesAmount: premiumBase,
-                        commissionAmount,
-                        invoiceStatus: row.isRejected ? 'Rejected' : row.isVerified ? 'Verified' : 'Pending',
-                        claimStatus: claimByInvoiceId.get(String(row.id || '')) || 'Pending',
-                        paymentStatus: normalizePaymentStatus(row.paymentStatus)
-                    };
-                });
+                const mapped = buildInvoiceRecords(invoiceRows, claimByInvoiceId);
+                const mappedComparison = buildInvoiceRecords(comparisonInvoiceRows, claimByInvoiceId);
 
                 setRecords(mapped);
+                setComparisonRecords(mappedComparison);
                 setClaimRecords(normalizedClaimRows);
                 setFilterOptions({
                     suppliers: [...new Set(mapped.map((r) => r.supplier))].sort(),
@@ -349,6 +418,7 @@ export default function AnalyticsDashboardPage() {
             } catch {
                 setError('Failed to load analytics from database.');
                 setRecords([]);
+                setComparisonRecords([]);
                 setClaimRecords([]);
             } finally {
                 setLoading(false);
@@ -366,8 +436,19 @@ export default function AnalyticsDashboardPage() {
         });
     }, [records, product, state]);
     const premiumEligibleRecords = useMemo(
-        () => filteredRecords.filter((r) => r.invoiceStatus !== 'Rejected'),
+        () => filteredRecords.filter((r) => r.invoiceStatus === 'Verified'),
         [filteredRecords]
+    );
+    const comparisonFilteredRecords = useMemo(() => {
+        return comparisonRecords.filter((r) => {
+            const productOk = product ? r.product === product : true;
+            const stateOk = state ? r.state === state : true;
+            return productOk && stateOk;
+        });
+    }, [comparisonRecords, product, state]);
+    const comparisonPremiumEligibleRecords = useMemo(
+        () => comparisonFilteredRecords.filter((r) => r.invoiceStatus === 'Verified'),
+        [comparisonFilteredRecords]
     );
 
     const filteredInvoiceIds = useMemo(() => new Set(filteredRecords.map((r) => r.id).filter(Boolean)), [filteredRecords]);
@@ -375,12 +456,21 @@ export default function AnalyticsDashboardPage() {
         () => claimRecords.filter((c) => filteredInvoiceIds.has(c.invoiceId)),
         [claimRecords, filteredInvoiceIds]
     );
+    const comparisonInvoiceIds = useMemo(
+        () => new Set(comparisonFilteredRecords.map((r) => r.id).filter(Boolean)),
+        [comparisonFilteredRecords]
+    );
+    const comparisonClaimRecords = useMemo(
+        () => claimRecords.filter((c) => comparisonInvoiceIds.has(c.invoiceId)),
+        [claimRecords, comparisonInvoiceIds]
+    );
 
     const currentMonthKey = monthKey(new Date());
     const previousMonthDate = new Date();
     previousMonthDate.setMonth(previousMonthDate.getMonth() - 1);
     const previousMonthKey = monthKey(previousMonthDate);
     const previousMonthDays = new Date(previousMonthDate.getFullYear(), previousMonthDate.getMonth() + 1, 0).getDate();
+    const summaryCompareLabel = fromDate && toDate ? 'vs previous period' : 'vs last month';
 
     const currentMonthRecords = premiumEligibleRecords.filter((r) => monthKey(new Date(r.createdAt)) === currentMonthKey);
     const previousMonthRecords = premiumEligibleRecords.filter((r) => monthKey(new Date(r.createdAt)) === previousMonthKey);
@@ -407,41 +497,80 @@ export default function AnalyticsDashboardPage() {
         const uniqueSuppliers = new Set(filteredRecords.map((r) => r.supplier)).size;
         const uniqueBuyers = new Set(filteredRecords.map((r) => r.buyer)).size;
         const pendingClaims = filteredClaimRecords.filter((r) => r.status === 'Pending').length;
-        const averageDailyInvoices = currentMonthRecords.length / currentMonthDaysElapsed;
         const currentMonthAveragePremium = currentMonthRecords.length
             ? currentMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0) / currentMonthRecords.length
             : 0;
+        const hasExplicitDateRange = Boolean(fromDate && toDate);
+
+        let averageDailyInvoices = currentMonthRecords.length / currentMonthDaysElapsed;
+        let previousAverageDailyInvoices = previousMonthRecords.length / Math.max(1, previousMonthDays);
+        let trendTotalInvoices = currentMonthRecords.length;
+        let previousTotalInvoices = previousMonthRecords.length;
+        let trendTotalSalesAmount = currentMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0);
+        let previousTotalSalesAmount = previousMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0);
+        let trendAveragePremiumValue = currentMonthAveragePremium;
+        let previousAveragePremiumValue = previousMonthRecords.length
+            ? previousMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0) / previousMonthRecords.length
+            : 0;
+        let trendUniqueSuppliers = new Set(currentMonthRecords.map((r) => r.supplier)).size;
+        let previousUniqueSuppliers = new Set(previousMonthRecords.map((r) => r.supplier)).size;
+        let trendUniqueBuyers = new Set(currentMonthRecords.map((r) => r.buyer)).size;
+        let previousUniqueBuyers = new Set(previousMonthRecords.map((r) => r.buyer)).size;
+        let previousPendingClaims = 0;
+
+        if (hasExplicitDateRange) {
+            const rangeStart = startOfDay(fromDate);
+            const rangeEnd = endOfDay(toDate);
+            const rangeDays = diffDaysInclusive(rangeStart, rangeEnd);
+
+            averageDailyInvoices = filteredRecords.length / rangeDays;
+            previousAverageDailyInvoices = comparisonFilteredRecords.length / rangeDays;
+            trendTotalInvoices = totalInvoices;
+            previousTotalInvoices = comparisonFilteredRecords.length;
+            trendTotalSalesAmount = totalSalesAmount;
+            previousTotalSalesAmount = comparisonPremiumEligibleRecords.reduce((sum, r) => sum + r.salesAmount, 0);
+            trendAveragePremiumValue = averagePremiumValue;
+            previousAveragePremiumValue = comparisonPremiumEligibleRecords.length
+                ? previousTotalSalesAmount / comparisonPremiumEligibleRecords.length
+                : 0;
+            trendUniqueSuppliers = uniqueSuppliers;
+            previousUniqueSuppliers = new Set(comparisonFilteredRecords.map((r) => r.supplier)).size;
+            trendUniqueBuyers = uniqueBuyers;
+            previousUniqueBuyers = new Set(comparisonFilteredRecords.map((r) => r.buyer)).size;
+            previousPendingClaims = comparisonClaimRecords.filter((r) => r.status === 'Pending').length;
+        } else {
+            const previousMonthInvoiceIds = new Set(previousMonthRecords.map((r) => r.id).filter(Boolean));
+            previousPendingClaims = claimRecords.filter((r) => previousMonthInvoiceIds.has(r.invoiceId) && r.status === 'Pending').length;
+        }
 
         const prev = {
-            totalInvoices: previousMonthRecords.length,
-            totalSalesAmount: previousMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0),
-            averagePremiumValue: previousMonthRecords.length
-                ? previousMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0) / previousMonthRecords.length
-                : 0,
-            uniqueSuppliers: new Set(previousMonthRecords.map((r) => r.supplier)).size,
-            uniqueBuyers: new Set(previousMonthRecords.map((r) => r.buyer)).size,
-            pendingClaims: 0,
-            averageDailyInvoices: previousMonthRecords.length / Math.max(1, previousMonthDays)
+            totalInvoices: previousTotalInvoices,
+            totalSalesAmount: previousTotalSalesAmount,
+            averagePremiumValue: previousAveragePremiumValue,
+            uniqueSuppliers: previousUniqueSuppliers,
+            uniqueBuyers: previousUniqueBuyers,
+            pendingClaims: previousPendingClaims,
+            averageDailyInvoices: previousAverageDailyInvoices
         };
 
         return {
-            totalInvoices: { value: totalInvoices, trend: safePct(currentMonthRecords.length, prev.totalInvoices) },
+            totalInvoices: { value: totalInvoices, trend: safePct(trendTotalInvoices, prev.totalInvoices) },
             todayInvoices: { value: todayInvoices, trend: safePct(todayInvoices, yesterdayInvoices) },
             totalSalesAmount: {
                 value: totalSalesAmount,
-                trend: safePct(currentMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0), prev.totalSalesAmount)
+                trend: safePct(trendTotalSalesAmount, prev.totalSalesAmount)
             },
             averagePremiumValue: {
                 value: averagePremiumValue,
-                trend: safePct(currentMonthAveragePremium, prev.averagePremiumValue)
+                trend: safePct(trendAveragePremiumValue, prev.averagePremiumValue)
             },
             uniqueSuppliers: {
                 value: uniqueSuppliers,
-                trend: safePct(new Set(currentMonthRecords.map((r) => r.supplier)).size, prev.uniqueSuppliers)
+                trend: safePct(trendUniqueSuppliers, prev.uniqueSuppliers)
             },
             uniqueBuyers: {
                 value: uniqueBuyers,
-                trend: safePct(new Set(currentMonthRecords.map((r) => r.buyer)).size, prev.uniqueBuyers)
+                trend: safePct(trendUniqueBuyers, prev.uniqueBuyers)
             },
             pendingClaims: {
                 value: pendingClaims,
@@ -452,7 +581,20 @@ export default function AnalyticsDashboardPage() {
                 trend: safePct(averageDailyInvoices, prev.averageDailyInvoices)
             }
         };
-    }, [filteredRecords, premiumEligibleRecords, currentMonthRecords, previousMonthRecords, filteredClaimRecords, previousMonthDays]);
+    }, [
+        claimRecords,
+        comparisonClaimRecords,
+        comparisonFilteredRecords,
+        comparisonPremiumEligibleRecords,
+        currentMonthRecords,
+        filteredClaimRecords,
+        filteredRecords,
+        fromDate,
+        premiumEligibleRecords,
+        previousMonthDays,
+        previousMonthRecords,
+        toDate
+    ]);
 
     const monthlySalesTrend = useMemo(() => {
         const buckets = new Map<string, number>();
@@ -661,16 +803,69 @@ export default function AnalyticsDashboardPage() {
 
     const filters = filterOptions;
 
+    const handleRunTenderCoconutReport = async () => {
+        try {
+            setRunningTenderReport(true);
+            setTenderReportError('');
+            setTenderReportMessage('');
+
+            const response = await adminApi.runLatestTenderCoconutReport();
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to run tender coconut report.');
+            }
+
+            const data = response.data;
+            if (!data) {
+                setTenderReportMessage('Report run completed, but no tender coconut invoices were found for the previous day.');
+                return;
+            }
+
+            if ((data.totalInvoices || 0) === 0) {
+                setTenderReportMessage(`No tender coconut invoices found for ${data.reportDate}.`);
+                return;
+            }
+
+            setTenderReportMessage(
+                `Tender coconut reports generated for ${data.reportDate}. ${data.totalInvoices} invoices included and sent to ${data.recipients.join(', ')}.`
+            );
+        } catch (error: unknown) {
+            setTenderReportError(getErrorMessage(error));
+        } finally {
+            setRunningTenderReport(false);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100/80 py-8">
             <div className="mx-auto w-full max-w-[1560px] px-2 sm:px-3 lg:px-4">
-                <div className="mb-5">
-                    <h1 className="text-3xl font-bold tracking-tight text-slate-900">MandiPlus Analytics Dashboard</h1>
-                    <p className="mt-1 text-sm text-slate-500">     </p>
+                <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                        <h1 className="text-3xl font-bold tracking-tight text-slate-900">MandiPlus Analytics Dashboard</h1>
+                        <p className="mt-1 text-sm text-slate-500">     </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={handleRunTenderCoconutReport}
+                        disabled={runningTenderReport}
+                        className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-[#1155b8] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0d4697] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        <Download className="h-4 w-4" />
+                        {runningTenderReport ? 'Generating...' : 'Run Tender Coconut Report'}
+                    </button>
                 </div>
                 {error ? (
                     <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
                         {error}
+                    </div>
+                ) : null}
+                {tenderReportError ? (
+                    <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                        {tenderReportError}
+                    </div>
+                ) : null}
+                {tenderReportMessage ? (
+                    <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                        {tenderReportMessage}
                     </div>
                 ) : null}
 
@@ -709,14 +904,14 @@ export default function AnalyticsDashboardPage() {
                     ) : (
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                             {[
-                                { label: 'Total Invoices', data: kpis.totalInvoices, icon: FileText, value: kpis.totalInvoices.value.toLocaleString('en-IN'), compareLabel: 'vs last month' },
+                                { label: 'Total Invoices', data: kpis.totalInvoices, icon: FileText, value: kpis.totalInvoices.value.toLocaleString('en-IN'), compareLabel: summaryCompareLabel },
                                 { label: 'Today Invoices', data: kpis.todayInvoices, icon: FileText, value: kpis.todayInvoices.value.toLocaleString('en-IN'), compareLabel: 'vs yesterday' },
-                                { label: 'Total Premium Amount', data: kpis.totalSalesAmount, icon: IndianRupee, value: formatCurrency(kpis.totalSalesAmount.value), compareLabel: 'vs last month' },
-                                { label: 'Average Premium Value', data: kpis.averagePremiumValue, icon: IndianRupee, value: formatCurrency(kpis.averagePremiumValue.value), compareLabel: 'vs last month' },
-                                { label: 'Unique Suppliers', data: kpis.uniqueSuppliers, icon: Users, value: kpis.uniqueSuppliers.value.toLocaleString('en-IN'), compareLabel: 'vs last month' },
-                                { label: 'Unique Buyers', data: kpis.uniqueBuyers, icon: UserSquare2, value: kpis.uniqueBuyers.value.toLocaleString('en-IN'), compareLabel: 'vs last month' },
-                                { label: 'Pending Claims', data: kpis.pendingClaims, icon: Timer, value: kpis.pendingClaims.value.toLocaleString('en-IN'), compareLabel: 'vs last month' },
-                                { label: 'Average Daily Invoices', data: kpis.averageDailyInvoices, icon: FileText, value: Math.round(kpis.averageDailyInvoices.value).toLocaleString('en-IN'), compareLabel: 'vs last month' }
+                                { label: 'Total Premium Amount', data: kpis.totalSalesAmount, icon: IndianRupee, value: formatCurrency(kpis.totalSalesAmount.value), compareLabel: summaryCompareLabel },
+                                { label: 'Average Premium Value', data: kpis.averagePremiumValue, icon: IndianRupee, value: formatCurrency(kpis.averagePremiumValue.value), compareLabel: summaryCompareLabel },
+                                { label: 'Unique Suppliers', data: kpis.uniqueSuppliers, icon: Users, value: kpis.uniqueSuppliers.value.toLocaleString('en-IN'), compareLabel: summaryCompareLabel },
+                                { label: 'Unique Buyers', data: kpis.uniqueBuyers, icon: UserSquare2, value: kpis.uniqueBuyers.value.toLocaleString('en-IN'), compareLabel: summaryCompareLabel },
+                                { label: 'Pending Claims', data: kpis.pendingClaims, icon: Timer, value: kpis.pendingClaims.value.toLocaleString('en-IN'), compareLabel: summaryCompareLabel },
+                                { label: 'Average Daily Invoices', data: kpis.averageDailyInvoices, icon: FileText, value: Math.round(kpis.averageDailyInvoices.value).toLocaleString('en-IN'), compareLabel: summaryCompareLabel }
                             ].map((item) => (
                                 <div key={item.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                                     <div className="mb-3 flex items-center justify-between">

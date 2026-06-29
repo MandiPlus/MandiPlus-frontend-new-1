@@ -21,17 +21,155 @@ interface User {
   id?: string;
   name?: string;
   mobileNumber: string;
+  secondaryMobileNumber?: string | null;
   category?: string;
   identity?: string;
   billingType?: "BULK" | "PER_POLICY" | null;
+  unionMember?: string | null;
   state?: string;
   createdAt: string;
   totalForms?: number;
   walletId?: string | null;
+  walletType?: "PAID" | "UNPAID" | null;
   walletBalance?: number;
   availableBalance?: number;
   holdBalance?: number;
   totalBalance?: number;
+  canonicalUserId?: string;
+  isLedgerMasterVerified?: boolean;
+  duplicateCount?: number;
+  aliasNames?: string[];
+  aliasPhones?: string[];
+  isMerged?: boolean;
+  canonicalMasterName?: string | null;
+  canonicalMasterMobileNumber?: string | null;
+}
+
+export interface AdminLedgerUser extends User {
+  id: string;
+  canonicalUserId: string;
+  isLedgerMasterVerified: boolean;
+  duplicateCount: number;
+  aliasNames: string[];
+  aliasPhones: string[];
+}
+
+export interface AdminMasterLedgerLinkedUser {
+  id: string;
+  name: string;
+  mobileNumber: string;
+  secondaryMobileNumber?: string | null;
+  state?: string | null;
+  isMaster: boolean;
+  isMerged: boolean;
+}
+
+export interface AdminMasterLedgerSummary {
+  totalInvoices: number;
+  totalPremiumAmount: number;
+  totalPaidAmount: number;
+  totalPendingAmount: number;
+  paidCount: number;
+  pendingCount: number;
+}
+
+export interface AdminMasterLedgerRow {
+  invoiceId: string;
+  invoiceNumber: string;
+  invoiceDate: string | null;
+  insuredPersonName?: string | null;
+  sourceUserId: string | null;
+  sourceUserName: string | null;
+  sourceUserMobile: string | null;
+  premiumAmount: number;
+  paidAmount: number;
+  pendingAmount: number;
+  paymentStatus: string;
+  paymentCompletedAt: string | null;
+  walletDebitReference: string | null;
+  walletTransactionId?: string | null;
+  remarks: string | null;
+  proofOfPaymentImage: string | null;
+  duplicateCount: number;
+  duplicateInvoiceIds: string[];
+}
+
+export interface AdminMasterLedgerPayload {
+  masterUser: {
+    id: string;
+    name: string;
+    mobileNumber: string;
+    state?: string | null;
+  };
+  linkedUsers: AdminMasterLedgerLinkedUser[];
+  summary: AdminMasterLedgerSummary;
+  rows: AdminMasterLedgerRow[];
+}
+
+export interface InsuranceLearningSummary {
+  range: {
+    days: number;
+    from: string;
+    to: string;
+  };
+  totals: {
+    totalEvents: number;
+    totalInvoicesObserved: number;
+  };
+  modeBreakdown: Array<{ invoiceType: string; count: number }>;
+  sourceBreakdown: Array<{ usedSuggestion: string; count: number }>;
+  topSuppliers: Array<{ supplierName: string; count: number }>;
+  topBuyers: Array<{ buyerName: string; count: number }>;
+  topPairs: Array<{
+    supplierName: string;
+    buyerName: string;
+    count: number;
+    topProductName?: string | null;
+    topHsnCode?: string | null;
+  }>;
+  productPatterns: Array<{
+    productName: string;
+    hsnCode?: string | null;
+    count: number;
+    avgRate?: number | null;
+    avgQuantity?: number | null;
+  }>;
+  vehiclePatterns: Array<{
+    vehicleNumber: string;
+    ownerName?: string | null;
+    count: number;
+  }>;
+  ruleCandidates: Array<{
+    type: string;
+    label: string;
+    support: number;
+    confidence: string;
+    finding: string;
+  }>;
+  recentEvents: Array<{
+    id: string;
+    eventType: string;
+    sourceSurface: string;
+    invoiceId?: string | null;
+    supplierName?: string | null;
+    buyerName?: string | null;
+    invoiceType?: string | null;
+    productName?: string | null;
+    amount?: string | number | null;
+    vehicleNumber?: string | null;
+    selectionSummary?: Record<string, any> | null;
+    createdAt: string;
+  }>;
+}
+
+export interface PossibleDuplicateUserRow {
+  id: string;
+  score: number;
+  reason: string;
+  matchingSignals: string[];
+  status: string;
+  sourceUser: AdminLedgerUser;
+  candidateUser: AdminLedgerUser;
 }
 
 export type UserIdentity =
@@ -40,7 +178,28 @@ export type UserIdentity =
   | "INTERNAL_TEAM"
   | "BUYER"
   | "SUPPLIER"
-  | "AGENT";
+  | "AGENT"
+  | "FIELD_AGENT";
+
+export interface AdminCreateUserPayload {
+  name: string;
+  mobileNumber: string;
+  secondaryMobileNumber?: string;
+  state: string;
+  identity: UserIdentity;
+  billingType?: "BULK" | "PER_POLICY";
+  unionMember?: string | null;
+}
+
+export interface AdminUpdateUserPayload {
+  name?: string;
+  mobileNumber?: string;
+  secondaryMobileNumber?: string;
+  state?: string;
+  identity?: UserIdentity;
+  billingType?: "BULK" | "PER_POLICY" | null;
+  unionMember?: string | null;
+}
 
 export interface InsuranceForm {
   _id: string;
@@ -77,6 +236,22 @@ interface LoginResponse {
   token: string;
 }
 
+export interface AdminAccountRow {
+  id: string;
+  fullName: string;
+  username: string;
+  mobileNumber?: string | null;
+  requestedRole: string;
+  status: string;
+  assignedSections: string[];
+  isSuperAdmin?: boolean;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  rejectionReason?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AdminImpersonationResponse {
   token: string;
   user: {
@@ -87,6 +262,56 @@ export interface AdminImpersonationResponse {
     tenantId?: string;
     impersonation?: boolean;
   };
+}
+
+export interface AiReportMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface AiReportPreviewResponse {
+  reportId?: string;
+  status: "needs_clarification" | "ready" | "refuse";
+  assistantMessage: string;
+  clarifyingQuestions?: string[];
+  assumptions?: string[];
+  reportTitle?: string | null;
+  expectedColumns?: string[];
+  verificationChecks?: string[];
+  verification?: {
+    matches_request: boolean;
+    confidence: "low" | "medium" | "high";
+    issues: string[];
+    repaired_sql: string | null;
+    user_summary: string;
+  } | null;
+  rowCount?: number;
+  truncated?: boolean;
+  executionMs?: number;
+  rows?: Record<string, unknown>[];
+  sql?: string;
+}
+
+export interface AiReportRequest {
+  reportId?: string;
+  message: string;
+  history?: AiReportMessage[];
+  includeSql?: boolean;
+  selectedColumns?: string[];
+}
+
+export interface AiReportDataQuestionRequest {
+  reportId: string;
+  question: string;
+}
+
+export interface AiReportDataQuestionResponse {
+  reportId: string;
+  answer: string;
+  calculations: string[];
+  confidence: "low" | "medium" | "high";
+  rowCount: number;
+  generatedAt: string;
 }
 
 export interface RegenerateInvoicePayload {
@@ -119,10 +344,12 @@ export interface InvoiceFilterParams {
   endDate?: string;
   supplierName?: string;
   buyerName?: string;
+  productName?: string;
   userId?: string;
   exportType?: "all" | "payment";
   paymentStatus?: string;
   isVerified?: boolean;
+  isRejected?: boolean;
   advancedFilters?: string;
 }
 
@@ -143,6 +370,9 @@ export interface InsurancePaymentRow {
   id: string;
   invoiceId: string;
   invoiceNumber: string;
+  recipientPhone?: string;
+  pdfUrl?: string | null;
+  paymentReceiptUrl?: string | null;
   createdAt: string;
   productName?: string;
   buyer: string;
@@ -152,6 +382,7 @@ export interface InsurancePaymentRow {
   paymentAmount: number;
   balance: number;
   paymentStatus: string;
+  paymentMethod?: string | null;
   isPaymentRequired: boolean;
   paymentCompletedAt?: string | null;
   remarks?: string | null;
@@ -172,12 +403,27 @@ export interface ArrivalReportRow {
   updatedAt: string;
 }
 
+export interface TenderCoconutReportRunResult {
+  reportDate: string;
+  totalInvoices: number;
+  averagePremium: number;
+  totalPremiumAmount: number;
+  dashboardPaymentReported: number;
+  summaryUrl?: string | null;
+  breakupUrl?: string | null;
+  recipients: string[];
+}
+
 export interface AdminWalletStatementItem {
   id: string;
   type: string;
   amount: number;
   direction: "CREDIT" | "DEBIT";
   balanceAfter?: number;
+  invoicePremiumAmount?: number;
+  invoicePaymentStatus?: string;
+  invoicePaidAmount?: number;
+  invoicePendingAmount?: number;
   referenceId?: string;
   narration?: string;
   remark?: string;
@@ -198,10 +444,36 @@ export interface AdminWalletRebuildResult {
   message: string;
 }
 
+export interface AdminCreateInvoicePayload {
+  userId: string;
+  customerUserId: string;
+  invoiceDate: string;
+  invoiceType: "SUPPLIER_INVOICE" | "BUYER_INVOICE";
+  supplierName: string;
+  supplierAddress: string[];
+  placeOfSupply: string;
+  billToName: string;
+  billToAddress: string[];
+  shipToName: string;
+  shipToAddress: string[];
+  productName: string;
+  hsnCode?: string;
+  quantity: number;
+  rate: number;
+  amount: number;
+  vehicleNumber?: string;
+  truckNumber?: string;
+  weighmentSlipNote?: string;
+  insuredPartyPhone?: string;
+  ownerName?: string;
+  weighmentSlips?: File[];
+}
+
 export interface UpdateInsurancePaymentPayload {
   premiumAmount?: number;
   paymentAmount?: number;
   paymentStatus?: string;
+  paymentMethod?: string | null;
   isPaymentRequired?: boolean;
   paymentCompletedAt?: string | null;
   remarks?: string | null;
@@ -228,6 +500,7 @@ export interface ClaimRequest {
   surveyorContact?: string;
   notes?: string;
   claimFormUrl?: string;
+  rawClaimFormUrl?: string | null;
   // New individual media fields
   fir?: string | null; // FIR document URL
   accidentPic?: string | null; // Accident picture URL
@@ -257,7 +530,7 @@ export interface UpdateClaimStatusDto {
 // ----------------------------------------
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001";
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 
 class AdminApi {
   private client: AxiosInstance;
@@ -307,6 +580,11 @@ class AdminApi {
             return Promise.reject(error);
           }
           if (typeof window !== "undefined") {
+            const isImpersonatingThisTab =
+              sessionStorage.getItem("impersonationActive") === "1";
+            if (isImpersonatingThisTab) {
+              return Promise.reject(error);
+            }
             localStorage.removeItem("adminToken");
             window.location.href = "/admin-session-expired";
           }
@@ -372,6 +650,102 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || "Login failed",
+        error: error.message,
+      };
+    }
+  };
+
+  public signupAdminAccount = async (payload: {
+    fullName: string;
+    username: string;
+    mobileNumber: string;
+    password: string;
+  }): Promise<ApiResponse<{ id: string; username: string; status: string }>> => {
+    try {
+      const response = await this.client.post("/auth/admin/signup", payload);
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Signup failed",
+        error: error.message,
+      };
+    }
+  };
+
+  public requestAdminPasswordResetOtp = async (
+    username: string,
+  ): Promise<ApiResponse<{ maskedMobileNumber?: string }>> => {
+    try {
+      const response = await this.client.post(
+        "/auth/admin/password-reset/request-otp",
+        { username },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to send password reset OTP",
+        error: error.message,
+      };
+    }
+  };
+
+  public resetAdminPassword = async (payload: {
+    username: string;
+    otp: string;
+    newPassword: string;
+  }): Promise<ApiResponse<null>> => {
+    try {
+      const response = await this.client.post(
+        "/auth/admin/password-reset/confirm",
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to reset password",
+        error: error.message,
+      };
+    }
+  };
+
+  public getAdminAccounts = async (): Promise<ApiResponse<AdminAccountRow[]>> => {
+    try {
+      const response = await this.client.get<ApiResponse<AdminAccountRow[]>>(
+        "/auth/admin/accounts",
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to fetch admin accounts",
+        error: error.message,
+      };
+    }
+  };
+
+  public updateAdminAccountApproval = async (
+    accountId: string,
+    payload: {
+      status: "APPROVED" | "REJECTED" | "SUSPENDED";
+      assignedSections?: string[];
+      rejectionReason?: string;
+    },
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/auth/admin/accounts/${accountId}/approval`,
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to update admin account",
         error: error.message,
       };
     }
@@ -568,6 +942,26 @@ class AdminApi {
     }
   };
 
+  public exportAdminUserWalletStatement = async (userId: string): Promise<Blob> => {
+    const response = await this.client.get(
+      `/wallet/admin/users/${userId}/statement/export`,
+      {
+        responseType: "blob",
+      },
+    );
+    return response.data;
+  };
+
+  public exportUnpaidWalletPaymentPendingReport = async (): Promise<Blob> => {
+    const response = await this.client.get(
+      "/wallet/admin/unpaid-wallet-payment-pending-report/export",
+      {
+        responseType: "blob",
+      },
+    );
+    return response.data;
+  };
+
   public rebuildUserWallet = async (
     userId: string,
     effectiveDate: string,
@@ -613,6 +1007,29 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || "Failed to convert user identity",
+        error: error.message,
+      };
+    }
+  };
+
+  public updateUser = async (
+    userId: string,
+    payload: AdminUpdateUserPayload,
+  ): Promise<ApiResponse<AdminLedgerUser>> => {
+    try {
+      const response = await this.client.patch(`/users/${userId}`, payload);
+      const data = response.data as any;
+      if (data && typeof data === "object" && "success" in data) {
+        return data as ApiResponse<AdminLedgerUser>;
+      }
+      return {
+        success: true,
+        data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to update user",
         error: error.message,
       };
     }
@@ -713,12 +1130,155 @@ class AdminApi {
     }
   };
 
+  public filterInvoicesPaginated = async (
+    filters: InvoiceFilterParams & { page?: number; limit?: number },
+  ): Promise<{
+    success: boolean;
+    data?: any[];
+    total?: number;
+    page?: number;
+    limit?: number;
+    totalPages?: number;
+    message?: string;
+  }> => {
+    try {
+      const response = await this.client.get("/invoices/admin/filter", {
+        params: filters,
+      });
+      if (response.data && !Array.isArray(response.data) && response.data.data) {
+        return { success: true, ...response.data };
+      }
+      if (Array.isArray(response.data)) {
+        return { success: true, data: response.data, total: response.data.length, page: 1, totalPages: 1 };
+      }
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to filter invoices",
+      };
+    }
+  };
+
+  public filterInvoicesSummary = async (
+    filters: InvoiceFilterParams,
+  ): Promise<{
+    success: boolean;
+    totalRows?: number;
+    verifiedCount?: number;
+    rejectedCount?: number;
+    pendingPaymentCount?: number;
+    paidCount?: number;
+    totalPremium?: number;
+    totalPaidAmount?: number;
+  }> => {
+    try {
+      const response = await this.client.get("/invoices/admin/filter/summary", {
+        params: filters,
+      });
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return { success: false };
+    }
+  };
+
+  public createAdminInvoice = async (
+    payload: AdminCreateInvoicePayload,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const formData = new FormData();
+      formData.append("userId", payload.userId);
+      formData.append("customerUserId", payload.customerUserId);
+      formData.append("invoiceDate", payload.invoiceDate);
+      formData.append("invoiceType", payload.invoiceType);
+      formData.append("supplierName", payload.supplierName);
+      formData.append("supplierAddress", JSON.stringify(payload.supplierAddress));
+      formData.append("placeOfSupply", payload.placeOfSupply);
+      formData.append("billToName", payload.billToName);
+      formData.append("billToAddress", JSON.stringify(payload.billToAddress));
+      formData.append("shipToName", payload.shipToName);
+      formData.append("shipToAddress", JSON.stringify(payload.shipToAddress));
+      formData.append("productName", payload.productName);
+      formData.append("quantity", String(payload.quantity));
+      formData.append("rate", String(payload.rate));
+      formData.append("amount", String(payload.amount));
+      if (payload.hsnCode) formData.append("hsnCode", payload.hsnCode);
+      if (payload.vehicleNumber) formData.append("vehicleNumber", payload.vehicleNumber);
+      if (payload.truckNumber) formData.append("truckNumber", payload.truckNumber);
+      if (payload.weighmentSlipNote) formData.append("weighmentSlipNote", payload.weighmentSlipNote);
+      if (payload.insuredPartyPhone) formData.append("insuredPartyPhone", payload.insuredPartyPhone);
+      if (payload.ownerName) formData.append("ownerName", payload.ownerName);
+      payload.weighmentSlips?.forEach((file) => {
+        formData.append("weighmentSlips", file);
+      });
+
+      const response = await this.client.post<ApiResponse<any>>(
+        "/invoices",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        },
+      );
+      const data = response.data;
+      if (data && typeof data === "object" && "success" in data) {
+        return data;
+      }
+      return { success: true, data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to create invoice",
+        error: error.message,
+      };
+    }
+  };
+
+  public extractInvoiceDocumentText = async (
+    files: File[],
+  ): Promise<ApiResponse<{ text: string; filesProcessed: number; model: string }>> => {
+    try {
+      const formData = new FormData();
+      files.forEach((file) => formData.append("documents", file));
+      const response = await this.client.post(
+        "/invoices/admin/extract-document-text",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        },
+      );
+      return {
+        success: true,
+        data: response.data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to extract text from document",
+        error: error.message,
+      };
+    }
+  };
+
   public exportInvoices = async (body: {
     invoiceType?: string;
+    invoiceNumber?: string;
+    vehicleNumber?: string;
     startDate?: string;
     endDate?: string;
     supplierName?: string;
     buyerName?: string;
+    productName?: string;
+    userId?: string;
+    paymentStatus?: string;
+    isVerified?: boolean;
+    isRejected?: boolean;
+    advancedFilters?: string;
     invoiceIds?: string[];
     exportType?: "all" | "payment";
     selectedColumns?: string[];
@@ -731,6 +1291,354 @@ class AdminApi {
     } catch (error) {
       console.error("Export failed", error);
       return null;
+    }
+  };
+
+  public searchUsers = async (
+    query: string,
+    limit: number = 20,
+    options?: { verified?: boolean },
+  ): Promise<ApiResponse<AdminLedgerUser[]>> => {
+    try {
+      const response = await this.client.get('/users/search', {
+        params: { q: query, limit, ...(options?.verified ? { verified: 'true' } : {}) },
+      });
+      const rows = Array.isArray(response.data)
+        ? response.data
+        : ((response.data as any)?.data ?? []);
+      return { success: true, data: rows };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to search users',
+        error: error.message,
+      };
+    }
+  };
+
+  public getAdminLedgerUsers = async (): Promise<ApiResponse<AdminLedgerUser[]>> => {
+    try {
+      const response = await this.client.get<AdminLedgerUser[]>('/users/admin/list');
+      const rows = Array.isArray(response.data)
+        ? response.data
+        : ((response.data as any)?.data ?? []);
+      return {
+        success: true,
+        data: rows,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to fetch admin ledger users',
+        error: error.message,
+      };
+    }
+  };
+
+  public getAdminUsersPaginated = async (params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    section?: string;
+  }): Promise<{
+    success: boolean;
+    data?: AdminLedgerUser[];
+    total?: number;
+    page?: number;
+    limit?: number;
+    totalPages?: number;
+    message?: string;
+  }> => {
+    try {
+      const response = await this.client.get('/users/admin/list/paginated', { params });
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to fetch users',
+      };
+    }
+  };
+
+  public getMasterUserLedger = async (
+    userId: string,
+  ): Promise<ApiResponse<AdminMasterLedgerPayload>> => {
+    try {
+      const response = await this.client.get<ApiResponse<AdminMasterLedgerPayload>>(
+        `/users/admin/${userId}/master-ledger`,
+      );
+      const payload = response.data;
+
+      if (payload && typeof payload === 'object' && 'success' in payload) {
+        return payload;
+      }
+
+      return {
+        success: true,
+        data: payload as AdminMasterLedgerPayload,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          'Failed to fetch master user ledger',
+        error: error.message,
+      };
+    }
+  };
+
+  public getGcaLedgerSummary = async (): Promise<{
+    success: boolean;
+    data?: Array<{
+      userId: string;
+      name: string;
+      mobileNumber: string;
+      state?: string | null;
+      totalInvoices: number;
+      totalPremiumAmount: number;
+      totalPaidAmount: number;
+      totalPendingAmount: number;
+      paidCount: number;
+      pendingCount: number;
+    }>;
+    totalMembers?: number;
+    loadedMembers?: number;
+    message?: string;
+  }> => {
+    try {
+      const response = await this.client.get('/users/admin/gca-ledger-summary');
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to fetch GCA ledger summary',
+      };
+    }
+  };
+
+  public updateLedgerPaymentStatus = async (payload: {
+    invoiceIds: string[];
+    paymentStatus: 'PAID' | 'PENDING';
+    remarks: string;
+  }): Promise<ApiResponse<{ updatedCount: number }>> => {
+    try {
+      const response = await this.client.post<ApiResponse<{ updatedCount: number }>>(
+        '/users/admin/ledger/payment-status',
+        payload,
+      );
+      const data = response.data as any;
+
+      if (data && typeof data === 'object' && 'success' in data) {
+        return data;
+      }
+
+      return {
+        success: true,
+        data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          'Failed to update ledger payment status',
+        error: error.message,
+      };
+    }
+  };
+
+  public createUser = async (
+    payload: AdminCreateUserPayload,
+  ): Promise<ApiResponse<AdminLedgerUser>> => {
+    try {
+      const response = await this.client.post<AdminLedgerUser>('/users', payload);
+      const data = response.data as any;
+
+      if (data && typeof data === 'object' && 'success' in data) {
+        return data as ApiResponse<AdminLedgerUser>;
+      }
+
+      return {
+        success: true,
+        data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to create user',
+        error: error.message,
+      };
+    }
+  };
+
+  public scanPossibleDuplicates = async (): Promise<
+    ApiResponse<PossibleDuplicateUserRow[]>
+  > => {
+    try {
+      const response = await this.client.post<PossibleDuplicateUserRow[]>(
+        '/users/admin/possible-duplicates/scan',
+      );
+      const rows = Array.isArray(response.data)
+        ? response.data
+        : ((response.data as any)?.data ?? []);
+      return {
+        success: true,
+        data: rows,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          'Failed to scan possible duplicate users',
+        error: error.message,
+      };
+    }
+  };
+
+  public getPossibleDuplicates = async (): Promise<
+    ApiResponse<PossibleDuplicateUserRow[]>
+  > => {
+    try {
+      const response = await this.client.get<PossibleDuplicateUserRow[]>(
+        '/users/admin/possible-duplicates',
+      );
+      const rows = Array.isArray(response.data)
+        ? response.data
+        : ((response.data as any)?.data ?? []);
+      return {
+        success: true,
+        data: rows,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          'Failed to fetch possible duplicate users',
+        error: error.message,
+      };
+    }
+  };
+
+  public mergeUsers = async (payload: {
+    sourceUserId: string;
+    targetUserId: string;
+    reason?: string;
+    notes?: string;
+  }): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        '/users/admin/merge',
+        payload,
+      );
+      const data = response.data;
+      if (data && typeof data === 'object' && 'success' in data) {
+        return data;
+      }
+      return { success: true, data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to merge users',
+        error: error.message,
+      };
+    }
+  };
+
+  public verifyMasterUser = async (
+    userId: string,
+    reason?: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/users/admin/${userId}/verify-master`,
+        { reason },
+      );
+      const data = response.data;
+      if (data && typeof data === 'object' && 'success' in data) {
+        return data;
+      }
+      return { success: true, data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to verify master user',
+        error: error.message,
+      };
+    }
+  };
+
+  public unverifyMasterUser = async (
+    userId: string,
+    reason?: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/users/admin/${userId}/unverify-master`,
+        { reason },
+      );
+      const data = response.data;
+      if (data && typeof data === 'object' && 'success' in data) {
+        return data;
+      }
+      return { success: true, data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to unverify master user',
+        error: error.message,
+      };
+    }
+  };
+
+  public unmergeUser = async (
+    userId: string,
+    reason?: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/users/admin/${userId}/unmerge`,
+        { reason },
+      );
+      const data = response.data;
+      if (data && typeof data === 'object' && 'success' in data) {
+        return data;
+      }
+      return { success: true, data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to unmerge user',
+        error: error.message,
+      };
+    }
+  };
+
+  public ignorePossibleDuplicate = async (
+    id: string,
+  ): Promise<ApiResponse<{ success: boolean }>> => {
+    try {
+      const response = await this.client.post(`/users/admin/possible-duplicates/${id}/ignore`);
+      const data = response.data;
+      if (data && typeof data === 'object' && 'success' in data) {
+        return data;
+      }
+      return {
+        success: true,
+        data: { success: true },
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to ignore duplicate suggestion',
+        error: error.message,
+      };
     }
   };
 
@@ -782,12 +1690,41 @@ class AdminApi {
     }
   };
 
+  public runLatestTenderCoconutReport = async (): Promise<
+    ApiResponse<TenderCoconutReportRunResult | null>
+  > => {
+    try {
+      const response = await this.client.post<
+        TenderCoconutReportRunResult | ApiResponse<TenderCoconutReportRunResult | null>
+      >("/invoices/admin/tender-coconut-reports/run-latest");
+      if (
+        response.data &&
+        typeof response.data === "object" &&
+        "success" in response.data
+      ) {
+        return response.data as ApiResponse<TenderCoconutReportRunResult | null>;
+      }
+      return {
+        success: true,
+        data: (response.data as TenderCoconutReportRunResult) || null,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to run latest tender coconut report",
+        error: error.message,
+      };
+    }
+  };
+
   uploadWeighmentSlips = async (
     invoiceId: string,
     files: File[],
   ): Promise<any> => {
     try {
-      const token = localStorage.getItem("accessToken");
+      const token = localStorage.getItem("adminToken");
       if (!token) {
         throw new Error("Authentication required");
       }
@@ -829,7 +1766,10 @@ class AdminApi {
         "/invoices/regenerate",
         payload,
       );
-      return response.data;
+      return this.normalizeApiResponse(
+        response.data,
+        "Invoice updated & PDF regenerated",
+      );
     } catch (error: any) {
       return {
         success: false,
@@ -886,6 +1826,20 @@ class AdminApi {
       return responseData.message.join(", ");
     }
     return fallback;
+  }
+
+  private normalizeClaim(claim: ClaimRequest): ClaimRequest {
+    const claimFormUrl =
+      claim?.claimFormUrl ||
+      (claim as ClaimRequest & { damageFormUrl?: string | null })?.damageFormUrl ||
+      null;
+
+    return {
+      ...claim,
+      claimFormUrl: claimFormUrl ?? undefined,
+      rawClaimFormUrl: claimFormUrl,
+      damageFormUrl: claimFormUrl ?? undefined,
+    };
   }
 
   public rejectInvoice = async (
@@ -1000,6 +1954,161 @@ class AdminApi {
     }
   };
 
+  public generateAccumulatedPaymentLink = async (
+    invoiceIds: string[],
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        "/payment/generate-accumulated-link",
+        { invoiceIds },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to generate accumulated payment link",
+        error: error.message,
+      };
+    }
+  };
+
+  public generatePaymentSummaryImage = async (
+    invoiceIds: string[],
+  ): Promise<
+    ApiResponse<{
+      imageUrl: string;
+      invoiceCount: number;
+      totalAmount: number;
+      invoiceLabel: string;
+    }>
+  > => {
+    try {
+      const response = await this.client.post<
+        ApiResponse<{
+          imageUrl: string;
+          invoiceCount: number;
+          totalAmount: number;
+          invoiceLabel: string;
+        }>
+      >(
+        "/payment/summary-image",
+        { invoiceIds },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to generate payment summary image",
+        error: error.message,
+      };
+    }
+  };
+
+  public sendAccumulatedPaymentLink = async (
+    invoiceIds: string[],
+    paymentLink: string,
+    phoneNumber?: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        "/payment/accumulated-link/send",
+        { invoiceIds, paymentLink, phoneNumber },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to send accumulated payment link",
+        error: error.message,
+      };
+    }
+  };
+
+  public generateRazorpayPaymentLink = async (
+    invoiceId: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/payment/razorpay/generate-link/${invoiceId}`,
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to generate Razorpay payment link",
+        error: error.message,
+      };
+    }
+  };
+
+  public generateRazorpayQRCode = async (
+    invoiceId: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/payment/razorpay/generate-qr/${invoiceId}`,
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to generate Razorpay QR code",
+        error: error.message,
+      };
+    }
+  };
+
+  public getRazorpayPaymentStatus = async (
+    invoiceId: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.get<ApiResponse<any>>(
+        `/payment/razorpay/status/${invoiceId}`,
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to fetch Razorpay payment status",
+        error: error.message,
+      };
+    }
+  };
+
+  public sendPaymentReminderForInvoice = async (
+    invoiceId: string,
+    phoneNumber?: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/payment/reminders/send/${invoiceId}`,
+        {
+          phoneNumber,
+        },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to send payment reminder",
+        error: error.message,
+      };
+    }
+  };
+
   public verifyAndSendPaymentForInvoice = async (
     invoiceId: string,
     payload?: { phoneNumber?: string },
@@ -1041,11 +2150,38 @@ class AdminApi {
     }
   };
 
+  public sendInvoiceCreatedTemplate = async (
+    invoiceId: string,
+    payload?: { phoneNumber?: string },
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post<ApiResponse<any>>(
+        `/invoices/${invoiceId}/send-created-template`,
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          'Failed to send invoice created message',
+        error: error.message,
+      };
+    }
+  };
+
   public getInsurancePayments = async (filters?: {
     fromDate?: string;
     toDate?: string;
     paymentStatus?: string;
+    paymentMethod?: string;
+    excludePaymentMethod?: string;
+    paymentMethods?: string;
     productName?: string;
+    searchQuery?: string;
+    supplierQuery?: string;
+    userId?: string;
     page?: number;
     limit?: number;
   }): Promise<ApiResponse<InsurancePaymentRow[]>> => {
@@ -1098,6 +2234,61 @@ class AdminApi {
     }
   };
 
+  public getInsurancePaymentsSummary = async (filters?: {
+    fromDate?: string;
+    toDate?: string;
+    productName?: string;
+    paymentStatus?: string;
+    paymentMethod?: string;
+    excludePaymentMethod?: string;
+    paymentMethods?: string;
+    searchQuery?: string;
+    supplierQuery?: string;
+    userId?: string;
+  }): Promise<{
+    success: boolean;
+    totalRows?: number;
+    totalPremium?: number;
+    totalPaid?: number;
+    totalPending?: number;
+    paidToday?: number;
+    paidFromWallet?: number;
+  }> => {
+    try {
+      const params: Record<string, string> = {};
+      if (filters) {
+        for (const [k, v] of Object.entries(filters)) {
+          if (v) params[k] = v;
+        }
+      }
+      const response = await this.client.get("/insurance-payments/admin/summary", {
+        params,
+      });
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return { success: false };
+    }
+  };
+
+  public exportInsurancePayments = async (filters?: {
+    fromDate?: string;
+    toDate?: string;
+    paymentStatus?: string;
+    paymentMethod?: string;
+    excludePaymentMethod?: string;
+    paymentMethods?: string;
+    productName?: string;
+    searchQuery?: string;
+    supplierQuery?: string;
+  }): Promise<Blob> => {
+    const response = await this.client.get('/insurance-payments/admin/export', {
+      params: filters,
+      responseType: 'blob',
+    });
+
+    return response.data;
+  };
+
   public updateInsurancePayment = async (
     invoiceId: string,
     payload: UpdateInsurancePaymentPayload,
@@ -1121,6 +2312,60 @@ class AdminApi {
         success: false,
         message:
           error.response?.data?.message || "Failed to update insurance payment",
+        error: error.message,
+      };
+    }
+  };
+
+  public bulkMarkInsurancePaymentsPaid = async (
+    invoiceIds: string[],
+    options?: { paymentMethod?: string | null; remarks?: string | null },
+  ): Promise<ApiResponse<{ invoiceId: string; success: boolean; error?: string }[]>> => {
+    try {
+      const response = await this.client.post(
+        "/insurance-payments/admin/bulk-mark-paid",
+        { invoiceIds, ...options },
+      );
+      const data = response.data;
+      if (data && typeof data === "object" && "success" in data) {
+        return data as ApiResponse<{ invoiceId: string; success: boolean; error?: string }[]>;
+      }
+      return { success: true, data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to bulk mark payments as paid",
+        error: error.message,
+      };
+    }
+  };
+
+  public bulkUpdateInsurancePayments = async (
+    payload: {
+      invoiceIds: string[];
+      paymentStatus?: string;
+      paymentMethod?: string | null;
+      paymentCompletedAt?: string | null;
+      remarks?: string | null;
+      isPaymentRequired?: boolean;
+    },
+  ): Promise<ApiResponse<{ invoiceId: string; success: boolean; error?: string }[]>> => {
+    try {
+      const response = await this.client.post(
+        "/insurance-payments/admin/bulk-update",
+        payload,
+      );
+      const data = response.data;
+      if (data && typeof data === "object" && "success" in data) {
+        return data as ApiResponse<{ invoiceId: string; success: boolean; error?: string }[]>;
+      }
+      return { success: true, data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to bulk update payments",
         error: error.message,
       };
     }
@@ -1207,11 +2452,13 @@ class AdminApi {
       }
 
       // Normalize status field (backend uses lowercase status values)
-      claims = claims.map((claim) => ({
-        ...claim,
-        status:
-          (claim.status?.toLowerCase() as ClaimStatus) || ClaimStatus.PENDING,
-      }));
+      claims = claims.map((claim) =>
+        this.normalizeClaim({
+          ...claim,
+          status:
+            (claim.status?.toLowerCase() as ClaimStatus) || ClaimStatus.PENDING,
+        }),
+      );
 
       return {
         success: true,
@@ -1236,10 +2483,11 @@ class AdminApi {
       const response = await this.client.get<ApiResponse<ClaimRequest>>(
         `/claim-requests/${id}`,
       );
+      const payload = (response.data as any)?.data ?? response.data;
 
       return {
         success: true,
-        data: response.data.data,
+        data: payload ? this.normalizeClaim(payload as ClaimRequest) : undefined,
       };
     } catch (error: any) {
       return {
@@ -1320,7 +2568,8 @@ class AdminApi {
       | "inspectionReport"
       | "weighmentSlip"
       | "lorryReceipt"
-      | "insurancePolicy",
+      | "insurancePolicy"
+      | "damageForm",
     file: File,
   ): Promise<ApiResponse<ClaimRequest>> => {
     try {
@@ -1339,7 +2588,7 @@ class AdminApi {
 
       return {
         success: true,
-        data: response.data,
+        data: this.normalizeClaim(response.data),
         message: "Media uploaded successfully",
       };
     } catch (error: any) {
@@ -1360,7 +2609,8 @@ class AdminApi {
       | "inspectionReport"
       | "weighmentSlip"
       | "lorryReceipt"
-      | "insurancePolicy",
+      | "insurancePolicy"
+      | "damageForm",
   ): Promise<ApiResponse<ClaimRequest>> => {
     try {
       const response = await this.client.patch<ClaimRequest>(
@@ -1369,7 +2619,7 @@ class AdminApi {
 
       return {
         success: true,
-        data: response.data,
+        data: this.normalizeClaim(response.data),
         message: "Media removed successfully",
       };
     } catch (error: any) {
@@ -1410,7 +2660,7 @@ class AdminApi {
       );
       return {
         success: true,
-        data: response.data,
+        data: this.normalizeClaim(response.data),
         message: "Damage form submitted successfully",
       };
     } catch (error: any) {
@@ -1427,29 +2677,14 @@ class AdminApi {
   // END CLAIM REQUESTS
   // ============================================================
 
-  public sendInsurancePdfViaBot = async (
-    fileUrl: string,
+  public sendInsurancePdfViaBackend = async (
+    invoiceId: string,
     phoneNumber: string,
   ): Promise<ApiResponse<any>> => {
     try {
-      const botBaseUrl =
-        (typeof process !== "undefined" &&
-          process.env.NEXT_PUBLIC_BOT_API_BASE_URL) ||
-        "http://localhost:8000";
-      const adminToken =
-        this.authToken ||
-        (typeof window !== "undefined"
-          ? localStorage.getItem("adminToken")
-          : null);
-
-      const formData = new FormData();
-      formData.append("phone", phoneNumber);
-      formData.append("file_url", fileUrl);
-
-      const response = await axios.post(
-        `${botBaseUrl}/admin/send-insurance-pdf`,
-        formData,
-        { headers: { "x-admin-token": adminToken || "" } },
+      const response = await this.client.post(
+        `/invoices/${invoiceId}/send-insurance-template`,
+        { phoneNumber },
       );
       return { success: true, data: response.data, message: "Insurance PDF sent successfully" };
     } catch (error: any) {
@@ -1459,6 +2694,75 @@ class AdminApi {
           error.response?.data?.detail ||
           error.response?.data?.message ||
           "Failed to send insurance PDF",
+        error: error.message,
+      };
+    }
+  };
+
+  public previewAiReport = async (
+    payload: AiReportRequest,
+  ): Promise<AiReportPreviewResponse> => {
+    const response = await this.client.post<AiReportPreviewResponse>(
+      "/admin/ai-reports/preview",
+      payload,
+    );
+    return response.data;
+  };
+
+  public exportAiReport = async (
+    payload: AiReportRequest,
+  ): Promise<Blob> => {
+    const response = await this.client.post("/admin/ai-reports/export", payload, {
+      responseType: "blob",
+    });
+    return response.data;
+  };
+
+  public askAiReportData = async (
+    payload: AiReportDataQuestionRequest,
+  ): Promise<AiReportDataQuestionResponse> => {
+    const response = await this.client.post<AiReportDataQuestionResponse>(
+      "/admin/ai-reports/ask",
+      payload,
+    );
+    return response.data;
+  };
+
+  public getInsuranceLearningSummary = async (
+    days = 30,
+  ): Promise<ApiResponse<InsuranceLearningSummary>> => {
+    try {
+      const response = await this.client.get<ApiResponse<InsuranceLearningSummary>>(
+        "/admin/insurance-learning/summary",
+        { params: { days } },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to fetch insurance learning analytics",
+        error: error.message,
+      };
+    }
+  };
+
+  public getInsuranceLearningRulesMarkdown = async (
+    days = 30,
+  ): Promise<ApiResponse<{ markdown: string }>> => {
+    try {
+      const response = await this.client.get<ApiResponse<{ markdown: string }>>(
+        "/admin/insurance-learning/rules-markdown",
+        { params: { days } },
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to fetch insurance learning rules",
         error: error.message,
       };
     }

@@ -81,7 +81,7 @@ const HomePage = () => {
   // --- Cropper & File State ---
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeClaimIdForUpload, setActiveClaimIdForUpload] = useState<string | null>(null); // ✅ NEW
-  const [activeMediaType, setActiveMediaType] = useState<'fir' | 'accidentPic' | 'lorryReceipt' | 'insurancePolicy' | null>(null); // ✅ NEW
+  const [activeMediaType, setActiveMediaType] = useState<'fir' | 'accidentPic' | 'lorryReceipt' | 'insurancePolicy' | 'damageForm' | null>(null); // ✅ NEW
   const [showClaimDetailModal, setShowClaimDetailModal] = useState(false); // ✅ NEW
   const [selectedClaimForDetail, setSelectedClaimForDetail] = useState<ClaimRequest | null>(null); // ✅ NEW
 
@@ -93,6 +93,11 @@ const HomePage = () => {
   const [weightmentSlip, setWeightmentSlip] = useState<File | null>(null);
 
   // Regenerate form states
+  const defaultInvoiceType = (() => {
+    const identity = user?.identity?.toUpperCase();
+    if (identity === 'AGENT' || identity === 'SUPPLIER') return 'SUPPLIER_INVOICE';
+    return 'BUYER_INVOICE';
+  })();
   const [formData, setFormData] = useState<RegenerateInvoicePayload>({
     invoiceId: '',
     supplierName: '',
@@ -110,7 +115,7 @@ const HomePage = () => {
     vehicleNumber: '',
     truckNumber: '',
     weighmentSlipNote: '',
-    invoiceType: 'BUYER_INVOICE',
+    invoiceType: defaultInvoiceType as 'BUYER_INVOICE' | 'SUPPLIER_INVOICE',
     invoiceDate: new Date().toISOString().split('T')[0],
   });
   const [regenerating, setRegenerating] = useState(false);
@@ -180,6 +185,18 @@ const HomePage = () => {
     return await getMyClaimsForms();
   };
 
+  const syncClaimInState = (updatedClaim: ClaimRequest) => {
+    setClaims((prev) => prev.map((claim) => (claim.id === updatedClaim.id ? updatedClaim : claim)));
+    setSelectedClaimForDetail((prev) => (prev?.id === updatedClaim.id ? updatedClaim : prev));
+    setSelectedClaimForDamage((prev) => (prev?.id === updatedClaim.id ? updatedClaim : prev));
+    setStatusLookupResult((prev) => (prev?.id === updatedClaim.id ? updatedClaim : prev));
+  };
+
+  const getClaimMediaAccept = (mediaType: typeof activeMediaType) => {
+    if (mediaType === 'damageForm') return '.pdf,.jpg,.jpeg,.png,.webp,.gif';
+    return 'image/*,application/pdf,.doc,.docx';
+  };
+
   // --- NEW: Fetch Claims ---
   const fetchClaims = async () => {
     setLoadingClaims(true);
@@ -198,6 +215,23 @@ const HomePage = () => {
   const handleOpenInvoiceModal = () => {
     setShowInvoiceModal(true);
     fetchInvoices();
+  };
+
+  const closeInvoiceModal = () => {
+    setShowInvoiceModal(false);
+    setSelectedInvoice(null);
+  };
+
+  const getInvoiceInsuranceUrl = (invoice: InsuranceForm) => {
+    const insurance = invoice.insurance;
+    if (typeof insurance === 'string') return insurance;
+    return (
+      insurance?.fileUrl ||
+      insurance?.url ||
+      invoice.insuranceFileUrl ||
+      invoice.insuranceUrl ||
+      ''
+    );
   };
 
   // --- NEW: Open Claims Modal ---
@@ -264,17 +298,13 @@ const HomePage = () => {
     if (e.target.files && e.target.files.length > 0 && activeClaimIdForUpload && activeMediaType) {
       try {
         const file = e.target.files[0];
-        await uploadClaimMedia(activeClaimIdForUpload, activeMediaType, file);
-        alert("File uploaded successfully!");
-        fetchClaims();
-        // Refresh selected claim if detail modal is open
-        if (selectedClaimForDetail && selectedClaimForDetail.id === activeClaimIdForUpload) {
-          const updatedClaims = await fetchClaimsByRole();
-          const updatedClaim = updatedClaims.find(c => c.id === activeClaimIdForUpload);
-          if (updatedClaim) {
-            setSelectedClaimForDetail(updatedClaim);
-          }
+        if (activeMediaType === 'damageForm' && !(/^(image\/|application\/pdf$)/i.test(file.type))) {
+          alert("Damage certificate only supports PDF and image files.");
+          return;
         }
+        const updatedClaim = await uploadClaimMedia(activeClaimIdForUpload, activeMediaType, file);
+        alert("File uploaded successfully!");
+        syncClaimInState(updatedClaim);
       } catch (err: any) {
         console.error("Upload failed:", err);
         const msg = err.response?.data?.message || err.message || "Failed to upload file.";
@@ -300,8 +330,8 @@ const HomePage = () => {
   // --- NEW: Damage Form Logic ---
   const openDamageForm = (claim: ClaimRequest) => {
     // If damage form already exists, just show a message
-    if (claim.damageFormUrl) {
-      window.open(claim.damageFormUrl, '_blank');
+    if (claim.damageFormUrl || claim.claimFormUrl) {
+      window.open(claim.damageFormUrl || claim.claimFormUrl, '_blank');
       return;
     }
     setSelectedClaimForDamage(claim);
@@ -395,7 +425,7 @@ const HomePage = () => {
       vehicleNumber: invoice.vehicleNumber || '',
       truckNumber: invoice.truckNumber || '',
       weighmentSlipNote: invoice.weighmentSlipNote || '',
-      invoiceType: 'BUYER_INVOICE', // Default to BUYER_INVOICE since invoiceType doesn't exist on InsuranceForm
+      invoiceType: defaultInvoiceType as 'BUYER_INVOICE' | 'SUPPLIER_INVOICE',
       invoiceDate: invoice.createdAt
         ? new Date(invoice.createdAt).toISOString().split('T')[0]
         : new Date().toISOString().split('T')[0],
@@ -747,12 +777,21 @@ const HomePage = () => {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
               <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center rounded-t-3xl">
-                <h3 className="text-xl font-bold text-slate-800">My Invoices</h3>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={closeInvoiceModal}
+                    className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    ← Back
+                  </button>
+                  <h3 className="text-xl font-bold text-slate-800">My Invoices</h3>
+                </div>
                 <button
-                  onClick={() => setShowInvoiceModal(false)}
-                  className="text-gray-500 hover:text-gray-700"
+                  onClick={closeInvoiceModal}
+                  className="hidden"
+                  aria-label="Close invoices"
                 >
-                  
+                  ✕
                 </button>
               </div>
 
@@ -763,17 +802,31 @@ const HomePage = () => {
                   <div className="text-center py-8 text-gray-500">No invoices found</div>
                 ) : (
                   <div className="space-y-4">
-                    {invoices.map((invoice) => (
-                      <div key={invoice.id} className="border rounded-2xl p-4 hover:shadow-md transition-shadow">
+                    {invoices.map((invoice) => {
+                      const isRejected = Boolean(invoice.isRejected);
+                      return (
+                      <div key={invoice.id} className={`border rounded-2xl p-4 transition-shadow ${isRejected ? 'border-red-200 bg-red-50/70' : 'hover:shadow-md'}`}>
                         <div className="flex justify-between items-start mb-3">
                           <div>
-                            <h4 className="font-semibold text-slate-800">{invoice.invoiceNumber}</h4>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="font-semibold text-slate-800">{invoice.invoiceNumber}</h4>
+                              {isRejected && (
+                                <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">
+                                  Rejected
+                                </span>
+                              )}
+                            </div>
                             <p className="text-sm text-gray-600">{invoice.supplierName}</p>
                             <p className="text-xs text-gray-500">
                               {invoice.createdAt
                                 ? new Date(invoice.createdAt).toLocaleDateString()
                                 : 'N/A'}
                             </p>
+                            {isRejected && invoice.rejectionReason && (
+                              <p className="mt-1 text-xs font-medium text-red-700">
+                                Reason: {invoice.rejectionReason}
+                              </p>
+                            )}
                           </div>
                           <div className="text-right">
                             <p className="font-bold text-slate-800">₹{invoice.amount?.toLocaleString()}</p>
@@ -791,15 +844,36 @@ const HomePage = () => {
                               📄 View PDF
                             </a>
                           )}
-                          <button
-                            onClick={() => handleEditInvoice(invoice)}
-                            className="flex-1 bg-[#4309ac] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#350889]"
-                          >
-                            ✏️ Edit & Regenerate
-                          </button>
+                          {isRejected ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="flex-1 bg-red-100 text-red-700 px-4 py-2 rounded-xl text-sm font-semibold cursor-not-allowed"
+                            >
+                              Invoice rejected
+                            </button>
+                          ) : getInvoiceInsuranceUrl(invoice) ? (
+                            <a
+                              href={`${getInvoiceInsuranceUrl(invoice)}?t=${Date.now()}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex-1 bg-[#4309ac] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#350889] text-center"
+                            >
+                              🛡️ View Insurance
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              className="flex-1 bg-slate-100 text-slate-400 px-4 py-2 rounded-xl text-sm font-medium cursor-not-allowed"
+                            >
+                              Insurance not uploaded
+                            </button>
+                          )}
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -951,7 +1025,7 @@ const HomePage = () => {
               id="claim-media-upload"
               className="hidden"
               onChange={handleClaimMediaUpload}
-              accept="image/*,application/pdf,.doc,.docx"
+              accept={getClaimMediaAccept(activeMediaType)}
             />
           </div>
         )}
@@ -1154,8 +1228,19 @@ const HomePage = () => {
                     }}
                   />
 
-                  {/* 2. Damage Certificate (Billed by transporter) */}
-                  <div className="border border-gray-200 rounded-xl p-4 flex items-center justify-between">
+                  {/* 2. Damage Certificate */}
+                  <UserMediaUploadSection
+                    label="Damage Certificate"
+                    mediaType="damageForm"
+                    existingUrl={selectedClaimForDetail.damageFormUrl || selectedClaimForDetail.claimFormUrl}
+                    claimId={selectedClaimForDetail.id}
+                    onUploadClick={(mediaType) => {
+                      setActiveClaimIdForUpload(selectedClaimForDetail.id);
+                      setActiveMediaType(mediaType);
+                      document.getElementById('claim-media-upload')?.click();
+                    }}
+                  />
+                  {false && <div className="border border-gray-200 rounded-xl p-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-slate-700">Damage Certificate</span>
                       <span className="text-xs text-gray-500">(Filled by your transporter)</span>
@@ -1169,7 +1254,7 @@ const HomePage = () => {
                         📥 Download
                       </a>
                     </div>
-                  </div>
+                  </div>}
 
                   {/* 3. FIR Document */}
                   <UserMediaUploadSection
@@ -1527,10 +1612,10 @@ function UserMediaUploadSection({
     onUploadClick
 }: {
     label: string;
-    mediaType: 'fir' | 'accidentPic' | 'lorryReceipt' | 'insurancePolicy';
+    mediaType: 'fir' | 'accidentPic' | 'lorryReceipt' | 'insurancePolicy' | 'damageForm';
     existingUrl?: string | null;
     claimId: string;
-    onUploadClick: (mediaType: 'fir' | 'accidentPic' | 'lorryReceipt' | 'insurancePolicy') => void;
+    onUploadClick: (mediaType: 'fir' | 'accidentPic' | 'lorryReceipt' | 'insurancePolicy' | 'damageForm') => void;
 }) {
     return (
         <div className="border border-gray-200 rounded-xl p-4 flex items-center justify-between">

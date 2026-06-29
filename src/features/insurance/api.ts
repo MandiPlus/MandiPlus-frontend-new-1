@@ -1,4 +1,5 @@
 import axios, { AxiosError } from "axios";
+import { getStoredAuthToken } from "@/features/auth/api";
 
 // 1. BACKEND BASE URL
 export const API_BASE_URL =
@@ -36,10 +37,20 @@ export interface InsuranceForm {
   claimDetails?: string;
   pdfUrl?: string;
   pdfURL?: string;
+  insurance?: {
+    fileUrl?: string;
+    url?: string;
+    fileType?: string;
+    uploadedAt?: string;
+  } | string | null;
+  insuranceFileUrl?: string;
+  insuranceUrl?: string;
   createdAt?: string;
   invoiceType?: "SUPPLIER_INVOICE" | "BUYER_INVOICE";
   insuredPersonNameSnapshot?: string;
   insuredPersonUserId?: string;
+  isRejected?: boolean;
+  rejectionReason?: string | null;
 }
 
 // ✅ NEW: Type for regenerating invoice
@@ -74,6 +85,7 @@ export interface ClaimRequest {
   surveyorName?: string;
   surveyorContact?: string;
   claimFormUrl?: string; // URL for the generated PDF
+  rawClaimFormUrl?: string | null;
   // New individual media fields
   fir?: string | null; // FIR document URL
   accidentPic?: string | null; // Accident picture URL
@@ -105,6 +117,20 @@ export interface CreateDamageFormDto {
 
 export type CreateInsuranceResponse = InsuranceForm;
 
+function normalizeClaimRequest(claim: ClaimRequest): ClaimRequest {
+  const claimFormUrl =
+    claim?.claimFormUrl ||
+    (claim as ClaimRequest & { damageFormUrl?: string | null })?.damageFormUrl ||
+    null;
+
+  return {
+    ...claim,
+    claimFormUrl: claimFormUrl ?? undefined,
+    rawClaimFormUrl: claimFormUrl,
+    damageFormUrl: claimFormUrl ?? undefined,
+  };
+}
+
 export interface InvoiceCustomerAccount {
   id: string;
   userId?: string;
@@ -132,6 +158,75 @@ export interface TruckFlagStatus {
   message: string | null;
 }
 
+export interface VehicleRecentInvoiceStatus {
+  vehicleNumber: string | null;
+  hasRecentInvoice: boolean;
+  invoice: {
+    id: string;
+    invoiceNumber: string;
+    createdAt: string;
+  } | null;
+  message: string | null;
+}
+
+export interface VerifiedSupplierOption {
+  id: string;
+  name: string;
+  mobileNumber: string;
+  identity?: string;
+  address: string;
+  placeOfSupply: string;
+}
+
+export interface HistoricalPartyOption {
+  name: string;
+  address: string;
+  shipToAddress: string;
+  placeOfSupply: string;
+  phoneNumber?: string;
+  invoiceCount: number;
+  lastInvoiceDate: string | null;
+}
+
+export interface PartyAddressSuggestion {
+  address: string;
+  placeOfSupply: string;
+  invoiceCount: number;
+  lastInvoiceDate: string | null;
+  source: "profile" | "history";
+}
+
+export interface SupplierPartyAssistProduct {
+  name: string;
+  hsnCode: string;
+  count: number;
+}
+
+export interface SupplierPartyAssistVehicle {
+  vehicleNumber: string;
+  ownerName: string;
+  count: number;
+}
+
+export interface SupplierPartyAssistTemplate {
+  id: string;
+  invoiceNumber: string;
+  invoiceDate: string | null;
+  productName: string;
+  hsnCode: string;
+  quantity: number;
+  rate: number;
+  vehicleNumber: string;
+  ownerName: string;
+  notes: string;
+}
+
+export interface SupplierPartyAssistResponse {
+  productSuggestions: SupplierPartyAssistProduct[];
+  vehicleSuggestions: SupplierPartyAssistVehicle[];
+  recentTemplates: SupplierPartyAssistTemplate[];
+}
+
 /* -------------------------------------------------------------------------- */
 /* APIs                                                                       */
 /* -------------------------------------------------------------------------- */
@@ -144,8 +239,7 @@ export const createInsuranceForm = async (
   formData: FormData,
 ): Promise<CreateInsuranceResponse> => {
   try {
-    const token =
-      localStorage.getItem("accessToken") || localStorage.getItem("token");
+    const token = getStoredAuthToken();
 
     const response = await axios.post(`${API_BASE_URL}/invoices`, formData, {
       headers: {
@@ -164,8 +258,7 @@ export const getInvoiceCustomerAccounts = async (): Promise<
   InvoiceCustomerAccount[]
 > => {
   try {
-    const token =
-      localStorage.getItem("accessToken") || localStorage.getItem("token");
+    const token = getStoredAuthToken();
 
     const response = await axios.get(`${API_BASE_URL}/invoices/customer-accounts`, {
       headers: {
@@ -185,8 +278,7 @@ export const getTruckFlagStatus = async (
   truckNumber: string,
 ): Promise<TruckFlagStatus> => {
   try {
-    const token =
-      localStorage.getItem("accessToken") || localStorage.getItem("token");
+    const token = getStoredAuthToken();
 
     const response = await axios.get(
       `${API_BASE_URL}/trucks/flag-status/${encodeURIComponent(truckNumber)}`,
@@ -204,14 +296,159 @@ export const getTruckFlagStatus = async (
   }
 };
 
+export const getVehicleRecentInvoiceStatus = async (
+  vehicleNumber: string,
+): Promise<VehicleRecentInvoiceStatus> => {
+  try {
+    const token = getStoredAuthToken();
+
+    const response = await axios.get(
+      `${API_BASE_URL}/invoices/vehicle/recent-status/${encodeURIComponent(vehicleNumber)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to check recent vehicle invoice status" };
+  }
+};
+
+export const getVerifiedSuppliers = async (): Promise<
+  VerifiedSupplierOption[]
+> => {
+  try {
+    const token = getStoredAuthToken();
+    const response = await axios.get(`${API_BASE_URL}/invoices/verified-suppliers`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const payload = response.data?.data ?? response.data;
+    return Array.isArray(payload) ? payload : [];
+  } catch (error) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to fetch verified suppliers" };
+  }
+};
+
+export const getSupplierHistoricalParties = async (
+  params: {
+    supplierId?: string;
+    supplierName?: string;
+    search?: string;
+  },
+): Promise<HistoricalPartyOption[]> => {
+  try {
+    const token = getStoredAuthToken();
+    const response = await axios.get(`${API_BASE_URL}/invoices/supplier-parties`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      params,
+    });
+
+    const payload = response.data?.data ?? response.data;
+    return Array.isArray(payload) ? payload : [];
+  } catch (error) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to fetch supplier parties" };
+  }
+};
+
+export const getBuyerHistoricalSuppliers = async (
+  params: {
+    buyerId?: string;
+    buyerName?: string;
+    search?: string;
+  },
+): Promise<HistoricalPartyOption[]> => {
+  try {
+    const token = getStoredAuthToken();
+    const response = await axios.get(`${API_BASE_URL}/invoices/buyer-suppliers`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      params,
+    });
+
+    const payload = response.data?.data ?? response.data;
+    return Array.isArray(payload) ? payload : [];
+  } catch (error) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to fetch buyer suppliers" };
+  }
+};
+
+export const getPartyAddressSuggestions = async (
+  params: {
+    partyId?: string;
+    partyName?: string;
+    role?: "buyer" | "supplier";
+    search?: string;
+  },
+): Promise<PartyAddressSuggestion[]> => {
+  try {
+    const token = getStoredAuthToken();
+    const response = await axios.get(`${API_BASE_URL}/invoices/party-addresses`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      params,
+    });
+    return response.data;
+  } catch (error: unknown) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to fetch party addresses" };
+  }
+};
+
+export const getSupplierPartyAssists = async (
+  params: {
+    supplierId?: string;
+    supplierName?: string;
+    partyName: string;
+  },
+): Promise<SupplierPartyAssistResponse> => {
+  try {
+    const token = getStoredAuthToken();
+    const response = await axios.get(`${API_BASE_URL}/invoices/supplier-party-assists`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      params,
+    });
+
+    const payload = response.data?.data ?? response.data;
+    return {
+      productSuggestions: Array.isArray(payload?.productSuggestions)
+        ? payload.productSuggestions
+        : [],
+      vehicleSuggestions: Array.isArray(payload?.vehicleSuggestions)
+        ? payload.vehicleSuggestions
+        : [],
+      recentTemplates: Array.isArray(payload?.recentTemplates)
+        ? payload.recentTemplates
+        : [],
+    };
+  } catch (error) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to fetch supplier-party assists" };
+  }
+};
+
 /**
  * Get all insurance forms for the logged-in user
  * GET /invoices/user/:userId
  */
 export const getMyInsuranceForms = async (): Promise<InsuranceForm[]> => {
   try {
-    const token =
-      localStorage.getItem("accessToken") || localStorage.getItem("token");
+    const token = getStoredAuthToken();
     const userData = localStorage.getItem("user");
 
     if (!userData) {
@@ -243,7 +480,7 @@ export const getMyInsuranceForms = async (): Promise<InsuranceForm[]> => {
  */
 export const getMyClaimsForms = async (): Promise<ClaimRequest[]> => {
   try {
-    const token = localStorage.getItem("accessToken");
+    const token = getStoredAuthToken();
     const userData = localStorage.getItem("user");
 
     if (!userData) throw new Error("User not found");
@@ -268,14 +505,15 @@ export const getMyClaimsForms = async (): Promise<ClaimRequest[]> => {
  */
 export const getAdminClaimsForms = async (): Promise<ClaimRequest[]> => {
   try {
-    const token =
-      localStorage.getItem("accessToken") || localStorage.getItem("token");
+    const token = getStoredAuthToken();
 
     const response = await axios.get(`${API_BASE_URL}/claim-requests/admin`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    return Array.isArray(response.data) ? response.data : [];
+    return Array.isArray(response.data)
+      ? response.data.map(normalizeClaimRequest)
+      : [];
   } catch (error) {
     const err = error as AxiosError<any>;
     throw err.response?.data || { message: "Failed to fetch admin claims" };
@@ -290,7 +528,7 @@ export const createClaimByTruck = async (
   truckNumber: string,
 ): Promise<ClaimRequest> => {
   try {
-    const token = localStorage.getItem("accessToken");
+    const token = getStoredAuthToken();
     const response = await axios.post(
       `${API_BASE_URL}/claim-requests/by-truck`,
       { truckNumber },
@@ -317,11 +555,12 @@ export const uploadClaimMedia = async (
     | "accidentPic"
     | "inspectionReport"
     | "lorryReceipt"
-    | "insurancePolicy",
+    | "insurancePolicy"
+    | "damageForm",
   file: File,
 ): Promise<ClaimRequest> => {
   try {
-    const token = localStorage.getItem("accessToken");
+    const token = getStoredAuthToken();
     const formData = new FormData();
     formData.append("file", file);
 
@@ -335,7 +574,7 @@ export const uploadClaimMedia = async (
         },
       },
     );
-    return response.data;
+    return normalizeClaimRequest(response.data);
   } catch (error) {
     const err = error as AxiosError<any>;
     throw err.response?.data || { message: "Failed to upload media" };
@@ -351,13 +590,13 @@ export const submitDamageForm = async (
   data: CreateDamageFormDto,
 ): Promise<any> => {
   try {
-    const token = localStorage.getItem("accessToken");
+    const token = getStoredAuthToken();
     const response = await axios.post(
       `${API_BASE_URL}/claim-requests/${claimId}/damage-form`,
       data,
       { headers: { Authorization: `Bearer ${token}` } },
     );
-    return response.data;
+    return normalizeClaimRequest(response.data);
   } catch (error) {
     const err = error as AxiosError<any>;
     throw err.response?.data || { message: "Failed to submit damage form" };
@@ -373,7 +612,7 @@ export const regenerateInvoice = async (
   payload: RegenerateInvoicePayload,
 ): Promise<InsuranceForm> => {
   try {
-    const token = localStorage.getItem("accessToken");
+    const token = getStoredAuthToken();
 
     if (!token) {
       throw new Error("Authentication required. Please log in.");
@@ -416,7 +655,7 @@ export const uploadWeighmentSlips = async (
   files: File[],
 ): Promise<InsuranceForm> => {
   try {
-    const token = localStorage.getItem("accessToken");
+    const token = getStoredAuthToken();
     if (!token) {
       throw new Error("Authentication required");
     }
@@ -455,7 +694,7 @@ export const getInvoiceById = async (
   invoiceId: string,
 ): Promise<InsuranceForm> => {
   try {
-    const token = localStorage.getItem("token");
+    const token = getStoredAuthToken();
 
     const response = await axios.get(`${API_BASE_URL}/invoices/${invoiceId}`, {
       headers: {
@@ -478,7 +717,7 @@ export const updateInvoice = async (
   formData: FormData,
 ): Promise<InsuranceForm> => {
   try {
-    const token = localStorage.getItem("accessToken");
+    const token = getStoredAuthToken();
     if (!token) {
       throw new Error("Authentication required");
     }

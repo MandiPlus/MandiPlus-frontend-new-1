@@ -130,6 +130,23 @@ export async function getMyFieldMeetings(): Promise<FieldAppointment[]> {
   return response.data;
 }
 
+export async function initiateFieldCall(
+  targetPhone: string,
+  targetName?: string,
+): Promise<{ callSid: string | null; message: string }> {
+  const response = await axios.post(
+    `${API_BASE_URL}/exotel/field-call`,
+    { targetPhone, targetName },
+    {
+      headers: {
+        ...getAuthHeaders(),
+        'Content-Type': 'application/json',
+      },
+    },
+  );
+  return response.data;
+}
+
 export async function submitMeetingFeedback(
   appointmentId: string,
   payload: {

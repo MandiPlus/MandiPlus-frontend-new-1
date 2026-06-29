@@ -9,6 +9,7 @@ import {
   AdminTripRow,
   TruckTrackingResponse,
   closeTrip,
+  editTrip,
   getTruckTracking,
   listTrips,
   sendCurrentPositionAlertsForActiveTrips,
@@ -23,6 +24,10 @@ type TrackModalState = {
   sourceName: string;
   destinationName: string;
 };
+
+function normalizeSearchValue(value?: string | null): string {
+  return (value || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+}
 
 function normalizeCoordValue(value?: string | null): string | null {
   if (!value) return null;
@@ -72,9 +77,16 @@ export default function AdminTripsPage() {
   });
 
   const [trips, setTrips] = useState<AdminTripRow[]>([]);
+  const [searchFilters, setSearchFilters] = useState({
+    driverPhone: '',
+    vehicleNumber: '',
+  });
   const [phoneOverrides, setPhoneOverrides] = useState<Record<string, string>>({});
   const [routeLabels, setRouteLabels] = useState<Record<string, string>>({});
   const [trackModal, setTrackModal] = useState<TrackModalState | null>(null);
+  const [editingTrip, setEditingTrip] = useState<AdminTripRow | null>(null);
+  const [editForm, setEditForm] = useState({ truck_number: '', tel: '', srcname: '', destname: '' });
+  const [editSaving, setEditSaving] = useState(false);
   const [busy, setBusy] = useState({
     fetchTrips: false,
     closeTrip: false,
@@ -152,7 +164,7 @@ export default function AdminTripsPage() {
   }, [trips, routeLabels]);
 
   const handleTrack = async (trip: AdminTripRow) => {
-    const truckNumber = trip.truck?.truckNumber;
+    const truckNumber = trip.truck?.truckNumber || trip.vehicleNumber;
     if (!truckNumber) {
       toast.error('Truck number is missing for this trip.');
       return;
@@ -202,6 +214,45 @@ export default function AdminTripsPage() {
       });
     }
     setBusyFlag('track', false);
+  };
+
+  const openEditModal = (trip: AdminTripRow) => {
+    setEditForm({
+      truck_number: trip.truck?.truckNumber || trip.vehicleNumber || '',
+      tel: trip.tel || '',
+      srcname: '',
+      destname: '',
+    });
+    setEditingTrip(trip);
+  };
+
+  const submitEdit = async () => {
+    if (!editingTrip) return;
+    const updates: Record<string, string> = {};
+    if (editForm.truck_number && editForm.truck_number !== (editingTrip.truck?.truckNumber || editingTrip.vehicleNumber || '')) {
+      updates.truck_number = editForm.truck_number;
+    }
+    if (editForm.tel && editForm.tel !== editingTrip.tel) {
+      updates.tel = editForm.tel;
+    }
+    if (editForm.srcname) updates.srcname = editForm.srcname;
+    if (editForm.destname) updates.destname = editForm.destname;
+
+    if (Object.keys(updates).length === 0) {
+      toast.error('No changes to save');
+      return;
+    }
+
+    setEditSaving(true);
+    const response = await editTrip(editingTrip.id, updates);
+    if (!response.success) {
+      toast.error(response.message || 'Failed to edit trip');
+    } else {
+      toast.success('Trip updated successfully');
+      setEditingTrip(null);
+      await fetchTrips();
+    }
+    setEditSaving(false);
   };
 
   const handleClose = async (trip: AdminTripRow) => {
@@ -284,6 +335,19 @@ export default function AdminTripsPage() {
   const delayedAlertsSent = trips.filter(
     (trip) => Boolean(trip.alerts?.delayedSentAt)
   ).length;
+  const filteredTrips = useMemo(() => {
+    const phoneQuery = normalizeSearchValue(searchFilters.driverPhone);
+    const vehicleQuery = normalizeSearchValue(searchFilters.vehicleNumber);
+
+    return trips.filter((trip) => {
+      const normalizedPhone = normalizeSearchValue(trip.tel);
+      const normalizedVehicle = normalizeSearchValue(trip.truck?.truckNumber);
+      const matchesPhone = !phoneQuery || normalizedPhone.includes(phoneQuery);
+      const matchesVehicle = !vehicleQuery || normalizedVehicle.includes(vehicleQuery);
+
+      return matchesPhone && matchesVehicle;
+    });
+  }, [searchFilters.driverPhone, searchFilters.vehicleNumber, trips]);
 
   const trackCurrent = useMemo<Coord | null>(() => {
     if (
@@ -378,33 +442,6 @@ export default function AdminTripsPage() {
 
   return (
     <div className="py-6 space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Created Trips</h1>
-          <p className="text-sm text-gray-600">
-            Track trips, review alert status, and send WhatsApp updates from one place.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void handleSendAllCurrentPositionAlerts()}
-            disabled={busy.sendAllPositions}
-            className="rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-          >
-            {busy.sendAllPositions ? 'Sending Positions...' : 'Send Position To All Active'}
-          </button>
-          <button
-            type="button"
-            onClick={() => void fetchTrips()}
-            disabled={busy.fetchTrips}
-            className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 disabled:opacity-60"
-          >
-            {busy.fetchTrips ? 'Refreshing...' : 'Refresh Trips'}
-          </button>
-        </div>
-      </div>
-
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -435,10 +472,73 @@ export default function AdminTripsPage() {
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex flex-col gap-1">
           <h2 className="text-lg font-semibold text-gray-900">Trips List</h2>
-          <p className="text-xs text-gray-500">
-            Use the override field only when you want to send a manual alert to a different
-            WhatsApp number than the linked customer number.
-          </p>
+        </div>
+        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
+            <div className="flex-1">
+              <label
+                htmlFor="trip-driver-phone-search"
+                className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600"
+              >
+                Search by driver phone
+              </label>
+              <input
+                id="trip-driver-phone-search"
+                type="text"
+                value={searchFilters.driverPhone}
+                onChange={(e) =>
+                  setSearchFilters((prev) => ({
+                    ...prev,
+                    driverPhone: e.target.value,
+                  }))
+                }
+                placeholder="Enter driver phone number"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800"
+              />
+            </div>
+            <div className="flex-1">
+              <label
+                htmlFor="trip-vehicle-number-search"
+                className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600"
+              >
+                Search by vehicle number
+              </label>
+              <input
+                id="trip-vehicle-number-search"
+                type="text"
+                value={searchFilters.vehicleNumber}
+                onChange={(e) =>
+                  setSearchFilters((prev) => ({
+                    ...prev,
+                    vehicleNumber: e.target.value,
+                  }))
+                }
+                placeholder="Enter vehicle number"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm uppercase text-gray-800"
+              />
+            </div>
+            <div className="flex flex-wrap items-end gap-2 xl:flex-nowrap">
+              <button
+                type="button"
+                onClick={() => void handleSendAllCurrentPositionAlerts()}
+                disabled={busy.sendAllPositions}
+                className="rounded-md bg-sky-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {busy.sendAllPositions ? 'Sending Positions...' : 'Send Position To All Active'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void fetchTrips()}
+                disabled={busy.fetchTrips}
+                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 disabled:opacity-60"
+              >
+                {busy.fetchTrips ? 'Refreshing...' : 'Refresh Trips'}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div className="mb-3 text-xs text-slate-500">
+          Showing {filteredTrips.length} of {trips.length} trips
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -447,6 +547,7 @@ export default function AdminTripsPage() {
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Truck</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Driver</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Status</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-700">Completion</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">WhatsApp</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Alerts</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Route</th>
@@ -455,18 +556,18 @@ export default function AdminTripsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
-              {trips.length === 0 ? (
+              {filteredTrips.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-3 py-4 text-center text-gray-500">
-                    No trips found.
+                  <td colSpan={9} className="px-3 py-4 text-center text-gray-500">
+                    {trips.length === 0 ? 'No trips found.' : 'No trips match the current search.'}
                   </td>
                 </tr>
               ) : (
-                trips.map((trip) => (
+                filteredTrips.map((trip) => (
                   <tr key={trip.id}>
                     <td className="px-3 py-3 align-top font-medium text-gray-900">
                       <div className="flex flex-col gap-1">
-                        <span>{trip.truck?.truckNumber || '-'}</span>
+                        <span>{trip.truck?.truckNumber || trip.vehicleNumber || '-'}</span>
                         {trip.invoice?.invoiceNumber ? (
                           <span className="text-[11px] text-gray-500">
                             Invoice: {trip.invoice.invoiceNumber}
@@ -487,6 +588,46 @@ export default function AdminTripsPage() {
                       >
                         {trip.status}
                       </span>
+                    </td>
+                    <td className="px-3 py-3 align-top text-gray-700">
+                      {(() => {
+                        const traveled = trip.lastLocation?.distanceTravel;
+                        const total = trip.lastLocation?.totalDistance;
+                        const pct =
+                          typeof traveled === 'number' && typeof total === 'number' && total > 0
+                            ? Math.min(Math.round((traveled / total) * 100), 100)
+                            : null;
+
+                        if (trip.status === 'ENDED') {
+                          return (
+                            <div className="flex flex-col gap-1">
+                              <span className="text-xs font-semibold text-emerald-700">100%</span>
+                              <div className="h-1.5 w-16 rounded-full bg-gray-200">
+                                <div className="h-1.5 rounded-full bg-emerald-500" style={{ width: '100%' }} />
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        if (pct === null) {
+                          return <span className="text-xs text-slate-400">-</span>;
+                        }
+
+                        return (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-semibold text-slate-900">{pct}%</span>
+                            <div className="h-1.5 w-16 rounded-full bg-gray-200">
+                              <div
+                                className={`h-1.5 rounded-full ${pct >= 90 ? 'bg-emerald-500' : pct >= 50 ? 'bg-sky-500' : 'bg-amber-500'}`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] text-slate-500">
+                              {traveled} / {total} KM
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-3 py-3 align-top text-gray-700">
                       <div className="flex min-w-[230px] max-w-[260px] flex-col gap-2">
@@ -619,6 +760,14 @@ export default function AdminTripsPage() {
                           className="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
                         >
                           Send Position
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(trip)}
+                          disabled={trip.status === 'ENDED'}
+                          className="rounded-md border border-violet-300 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 disabled:opacity-50"
+                        >
+                          Edit
                         </button>
                         <button
                           type="button"
@@ -763,6 +912,28 @@ export default function AdminTripsPage() {
                       ? 'Enroute To Destination'
                       : 'Not Tracking'}
                   </div>
+                  {(() => {
+                    const traveled = trackModal.tracking.location?.distanceTravel;
+                    const total = trackModal.tracking.location?.totalDistance;
+                    const pct = typeof traveled === 'number' && typeof total === 'number' && total > 0
+                      ? Math.min(Math.round((traveled / total) * 100), 100)
+                      : null;
+                    if (pct === null) return null;
+                    return (
+                      <div className="mt-3">
+                        <div className="flex items-center justify-between text-xs text-emerald-700 mb-1">
+                          <span>{pct}% complete</span>
+                          <span>{traveled} / {total} KM</span>
+                        </div>
+                        <div className="h-2 w-full rounded-full bg-emerald-200">
+                          <div
+                            className="h-2 rounded-full bg-emerald-500 transition-all"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="rounded-xl border border-sky-100 bg-sky-50 p-4">
                   <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">
@@ -811,6 +982,79 @@ export default function AdminTripsPage() {
                   End Trip
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {editingTrip ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Edit Trip
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Changes sync with Traqo. Only fill fields you want to update.
+            </p>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="text-sm text-gray-700">
+                Vehicle Number
+                <input
+                  type="text"
+                  value={editForm.truck_number}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, truck_number: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                />
+              </label>
+              <label className="text-sm text-gray-700">
+                Driver Phone
+                <input
+                  type="text"
+                  value={editForm.tel}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, tel: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                />
+              </label>
+              <label className="text-sm text-gray-700">
+                New Source (city/address)
+                <input
+                  type="text"
+                  placeholder="Leave empty to keep current"
+                  value={editForm.srcname}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, srcname: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                />
+              </label>
+              <label className="text-sm text-gray-700">
+                New Destination (city/address)
+                <input
+                  type="text"
+                  placeholder="Leave empty to keep current"
+                  value={editForm.destname}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, destname: e.target.value }))}
+                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+                />
+              </label>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingTrip(null)}
+                disabled={editSaving}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitEdit()}
+                disabled={editSaving}
+                className="rounded-md bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60"
+              >
+                {editSaving ? 'Saving...' : 'Save & Sync'}
+              </button>
             </div>
           </div>
         </div>
