@@ -65,6 +65,8 @@ const RegisterPage = () => {
     mobileNumber: initialMobile,
     state: "",
     identity: "",
+    isChannelPartner: false,
+    referredByChannelPartner: "",
   });
 
   useEffect(() => {
@@ -107,6 +109,10 @@ const RegisterPage = () => {
         mobileNumber,
         state,
         identity: identity as "BUYER" | "AGENT" | "SUPPLIER" | "CUSTOMER" | "TRANSPORTER",
+        ...(formData.isChannelPartner ? { isChannelPartner: true } : {}),
+        ...(formData.referredByChannelPartner.trim()
+          ? { referredByChannelPartner: formData.referredByChannelPartner.trim() }
+          : {}),
       });
 
       if (response.accessToken) {
@@ -175,6 +181,28 @@ const RegisterPage = () => {
                 value={formData.identity}
                 onChange={(e) => setFormData({ ...formData, identity: e.target.value })}
               />
+
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                  <input
+                    type="checkbox"
+                    checked={formData.isChannelPartner}
+                    onChange={(e) =>
+                      setFormData({ ...formData, isChannelPartner: e.target.checked })
+                    }
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  I want to register as a channel partner
+                </label>
+                <Input
+                  className="mt-3 bg-white"
+                  placeholder="Referred by channel partner code or mobile (optional)"
+                  value={formData.referredByChannelPartner}
+                  onChange={(e) =>
+                    setFormData({ ...formData, referredByChannelPartner: e.target.value })
+                  }
+                />
+              </div>
             </>
           ) : (
             <>

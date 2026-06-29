@@ -37,6 +37,8 @@ export interface RegisterPayload {
     state: string;
     identity: "BUYER" | "AGENT" | "SUPPLIER" | "CUSTOMER" | "TRANSPORTER";
     billingType?: "BULK" | "PER_POLICY";
+    isChannelPartner?: boolean;
+    referredByChannelPartner?: string;
 }
 
 export interface AgentRegisterPayload {

@@ -1,0 +1,38 @@
+import axios, { AxiosError } from "axios";
+import {
+  getStoredAuthToken,
+  refreshAccessToken,
+} from "@/features/auth/api";
+import type { ChannelPartnerDetailPayload } from "@/features/admin/api/admin.api";
+
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
+
+function getAuthHeader() {
+  const token = getStoredAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function withAuthRetry<T>(request: () => Promise<T>): Promise<T> {
+  try {
+    return await request();
+  } catch (error) {
+    const err = error as AxiosError;
+    if (err.response?.status === 401) {
+      const refreshed = await refreshAccessToken();
+      if (refreshed) {
+        return await request();
+      }
+    }
+    throw error;
+  }
+}
+
+export async function getMyChannelPartnerDashboard(): Promise<ChannelPartnerDetailPayload> {
+  const response = await withAuthRetry(() =>
+    axios.get(`${API_BASE_URL}/channel-partners/me/dashboard`, {
+      headers: getAuthHeader(),
+    }),
+  );
+  return response.data?.data ?? response.data;
+}

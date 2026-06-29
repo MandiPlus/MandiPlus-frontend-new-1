@@ -43,6 +43,9 @@ interface User {
   isMerged?: boolean;
   canonicalMasterName?: string | null;
   canonicalMasterMobileNumber?: string | null;
+  channelPartnerProfileId?: string | null;
+  channelPartnerStatus?: "PENDING" | "ACTIVE" | "SUSPENDED" | null;
+  channelPartnerCode?: string | null;
 }
 
 export interface AdminLedgerUser extends User {
@@ -467,6 +470,130 @@ export interface AdminCreateInvoicePayload {
   insuredPartyPhone?: string;
   ownerName?: string;
   weighmentSlips?: File[];
+}
+
+export type ChannelPartnerStatus = "PENDING" | "ACTIVE" | "SUSPENDED";
+export type ChannelPartnerLinkStatus = "PENDING" | "APPROVED" | "REMOVED";
+export type ChannelPartnerCommissionStatus = "PENDING" | "PAYABLE" | "PAID" | "VOID";
+
+export interface ChannelPartnerSummary {
+  customers: number;
+  invoices: number;
+  premiumTotal: number;
+  commissionPending: number;
+  commissionPayable: number;
+  commissionPaid: number;
+  activeTrips: number;
+  pendingPayments: number;
+}
+
+export interface ChannelPartnerProfilePayload {
+  id: string;
+  code: string;
+  status: ChannelPartnerStatus;
+  commissionRate: number;
+  approvedAt?: string | null;
+  suspendedAt?: string | null;
+  createdAt?: string;
+  partnerUser?: {
+    id: string;
+    name?: string;
+    mobileNumber?: string;
+    identity?: string | null;
+    state?: string | null;
+  };
+}
+
+export interface ChannelPartnerCustomerPayload {
+  linkId: string;
+  status: ChannelPartnerLinkStatus;
+  source: "ADMIN" | "REGISTRATION";
+  approvedAt?: string | null;
+  customer: {
+    id: string;
+    name: string;
+    mobileNumber: string;
+    identity?: string | null;
+    state?: string | null;
+  };
+  stats: {
+    invoices: number;
+    premiumTotal: number;
+    pendingPayments: number;
+    activeTrips: number;
+    lastInvoiceDate?: string | null;
+  };
+}
+
+export interface ChannelPartnerInvoicePayload {
+  id: string;
+  invoiceNumber: string;
+  invoiceDate?: string | null;
+  supplierName?: string;
+  billToName?: string;
+  shipToName?: string;
+  insuredPersonNameSnapshot?: string | null;
+  vehicleNumber?: string | null;
+  productName?: string | string[];
+  amount: number;
+  premiumAmount: number;
+  paymentStatus: string;
+  paymentAmount: number;
+  isVerified: boolean;
+  isRejected: boolean;
+  pdfUrl?: string | null;
+  insuranceUrl?: string | null;
+  createdAt: string;
+}
+
+export interface ChannelPartnerTripPayload {
+  id: string;
+  status: string;
+  tel?: string;
+  src?: string | null;
+  dest?: string | null;
+  vehicleNumber?: string | null;
+  invoice?: { id: string; invoiceNumber?: string } | null;
+  lastLocation?: {
+    address?: string | null;
+    timeRecorded?: string | null;
+    distanceRemained?: string | number | null;
+    timeRemained?: string | null;
+  } | null;
+  updatedAt: string;
+}
+
+export interface ChannelPartnerCommissionPayload {
+  id: string;
+  invoiceId: string;
+  invoiceNumber?: string;
+  invoiceDate?: string | null;
+  customer?: {
+    id: string;
+    name: string;
+    mobileNumber: string;
+  };
+  premiumAmount: number;
+  commissionRate: number;
+  commissionAmount: number;
+  status: ChannelPartnerCommissionStatus;
+  paymentStatusSnapshot?: string | null;
+  paidAt?: string | null;
+  createdAt: string;
+}
+
+export interface ChannelPartnerDetailPayload {
+  profile: ChannelPartnerProfilePayload | null;
+  summary: ChannelPartnerSummary;
+  customers: ChannelPartnerCustomerPayload[];
+  invoices: ChannelPartnerInvoicePayload[];
+  trips: ChannelPartnerTripPayload[];
+  commissions: ChannelPartnerCommissionPayload[];
+  message?: string;
+}
+
+export interface AdminChannelPartnerListRow extends ChannelPartnerProfilePayload {
+  summary: ChannelPartnerSummary;
 }
 
 export interface UpdateInsurancePaymentPayload {
@@ -1357,6 +1484,128 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || 'Failed to fetch users',
+      };
+    }
+  };
+
+  public enableChannelPartnerForUser = async (
+    userId: string,
+  ): Promise<ApiResponse<ChannelPartnerProfilePayload>> => {
+    try {
+      const response = await this.client.post(`/channel-partners/admin/users/${userId}/enable`);
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to enable channel partner',
+        error: error.message,
+      };
+    }
+  };
+
+  public disableChannelPartnerForUser = async (
+    userId: string,
+  ): Promise<ApiResponse<ChannelPartnerProfilePayload>> => {
+    try {
+      const response = await this.client.post(`/channel-partners/admin/users/${userId}/disable`);
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to suspend channel partner',
+        error: error.message,
+      };
+    }
+  };
+
+  public getChannelPartners = async (): Promise<ApiResponse<AdminChannelPartnerListRow[]>> => {
+    try {
+      const response = await this.client.get<ApiResponse<AdminChannelPartnerListRow[]>>(
+        '/channel-partners/admin',
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to load channel partners',
+        error: error.message,
+      };
+    }
+  };
+
+  public getChannelPartnerDetail = async (
+    partnerId: string,
+  ): Promise<ApiResponse<ChannelPartnerDetailPayload>> => {
+    try {
+      const response = await this.client.get<ApiResponse<ChannelPartnerDetailPayload>>(
+        `/channel-partners/admin/${partnerId}`,
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to load channel partner detail',
+        error: error.message,
+      };
+    }
+  };
+
+  public updateChannelPartnerStatus = async (
+    partnerId: string,
+    status: ChannelPartnerStatus,
+  ): Promise<ApiResponse<ChannelPartnerProfilePayload>> => {
+    try {
+      const response = await this.client.patch(`/channel-partners/admin/${partnerId}`, {
+        status,
+      });
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to update channel partner',
+        error: error.message,
+      };
+    }
+  };
+
+  public addChannelPartnerCustomer = async (
+    partnerId: string,
+    customerUserId: string,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.post(`/channel-partners/admin/${partnerId}/customers`, {
+        customerUserId,
+      });
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to assign customer',
+        error: error.message,
+      };
+    }
+  };
+
+  public updateChannelPartnerCustomerLink = async (
+    linkId: string,
+    status: ChannelPartnerLinkStatus,
+  ): Promise<ApiResponse<any>> => {
+    try {
+      const response = await this.client.patch(`/channel-partners/admin/customer-links/${linkId}`, {
+        status,
+      });
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to update customer link',
+        error: error.message,
       };
     }
   };

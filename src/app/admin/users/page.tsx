@@ -168,6 +168,7 @@ export default function UsersPage() {
     const [rebuildLoadingByUser, setRebuildLoadingByUser] = useState<Record<string, boolean>>({});
     const [convertingByUser, setConvertingByUser] = useState<Record<string, boolean>>({});
     const [impersonatingByUser, setImpersonatingByUser] = useState<Record<string, boolean>>({});
+    const [channelPartnerLoadingByUser, setChannelPartnerLoadingByUser] = useState<Record<string, boolean>>({});
     const [walletLogsOpen, setWalletLogsOpen] = useState(false);
     const [walletLogsLoading, setWalletLogsLoading] = useState(false);
     const [walletLogUser, setWalletLogUser] = useState<User | null>(null);
@@ -223,6 +224,7 @@ export default function UsersPage() {
         (showWalletColumns ? 2 : 0) +
         (showUserManagementColumns ? 3 : 0) +
         (showMasterDetailColumns ? 1 : 0) +
+        1 +
         1;
     const sectionTitle =
         activeSection === 'ADMIN_REQUESTS'
@@ -1140,6 +1142,36 @@ export default function UsersPage() {
         }
     };
 
+    const handleEnableChannelPartner = async (user: User) => {
+        setChannelPartnerLoadingByUser((prev) => ({ ...prev, [user.id]: true }));
+        try {
+            const response = await adminApi.enableChannelPartnerForUser(user.id);
+            if (!response.success) {
+                toast.error(response.message || 'Failed to enable channel partner');
+                return;
+            }
+            toast.success('Channel partner enabled');
+            await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+        } finally {
+            setChannelPartnerLoadingByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
+    };
+
+    const handleSuspendChannelPartner = async (user: User) => {
+        setChannelPartnerLoadingByUser((prev) => ({ ...prev, [user.id]: true }));
+        try {
+            const response = await adminApi.disableChannelPartnerForUser(user.id);
+            if (!response.success) {
+                toast.error(response.message || 'Failed to suspend channel partner');
+                return;
+            }
+            toast.success('Channel partner suspended');
+            await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+        } finally {
+            setChannelPartnerLoadingByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
+    };
+
     const handleVerifyMaster = async (user: User) => {
         if (!user?.id) return;
         setVerifyingMasterByUser((prev) => ({ ...prev, [user.id]: true }));
@@ -1511,6 +1543,9 @@ export default function UsersPage() {
                                                 </th>
                                             )}
                                             <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                Channel Partner
+                                            </th>
+                                            <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                 Access
                                             </th>
                                         </tr>
@@ -1753,6 +1788,51 @@ export default function UsersPage() {
                                                             })()}
                                                         </td>
                                                     )}
+                                                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                                        <div className="flex min-w-[150px] flex-col gap-2">
+                                                            {user.channelPartnerStatus ? (
+                                                                <div>
+                                                                    <span
+                                                                        className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${
+                                                                            user.channelPartnerStatus === 'ACTIVE'
+                                                                                ? 'bg-emerald-50 text-emerald-700'
+                                                                                : user.channelPartnerStatus === 'PENDING'
+                                                                                    ? 'bg-amber-50 text-amber-700'
+                                                                                    : 'bg-rose-50 text-rose-700'
+                                                                        }`}
+                                                                    >
+                                                                        {user.channelPartnerStatus}
+                                                                    </span>
+                                                                    <p className="mt-1 text-xs font-medium text-slate-500">
+                                                                        {user.channelPartnerCode || 'Code pending'}
+                                                                    </p>
+                                                                </div>
+                                                            ) : null}
+                                                            {user.channelPartnerStatus === 'ACTIVE' ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleSuspendChannelPartner(user)}
+                                                                    disabled={channelPartnerLoadingByUser[user.id]}
+                                                                    className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                                                                >
+                                                                    {channelPartnerLoadingByUser[user.id] ? 'Saving...' : 'Suspend'}
+                                                                </button>
+                                                            ) : (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleEnableChannelPartner(user)}
+                                                                    disabled={channelPartnerLoadingByUser[user.id]}
+                                                                    className="rounded-md bg-violet-700 px-3 py-1 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-60"
+                                                                >
+                                                                    {channelPartnerLoadingByUser[user.id]
+                                                                        ? 'Saving...'
+                                                                        : user.channelPartnerStatus
+                                                                            ? 'Approve'
+                                                                            : 'Enable'}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </td>
                                                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                         <div className="flex items-center gap-2">
                                                             <button
@@ -2428,4 +2508,3 @@ export default function UsersPage() {
         </div>
     );
 }
-
