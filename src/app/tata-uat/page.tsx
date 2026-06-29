@@ -72,6 +72,7 @@ export default function TataUatTestPage() {
     const [error, setError] = useState('');
     const [expandedStep, setExpandedStep] = useState<number | null>(null);
     const [retryingDownload, setRetryingDownload] = useState(false);
+    const [downloadingPdf, setDownloadingPdf] = useState(false);
 
     const [formData, setFormData] = useState({
         backendUrl: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3001',
@@ -221,9 +222,55 @@ export default function TataUatTestPage() {
         }
     };
 
+    const handleDownloadPdf = async () => {
+        if (!result?.policy_id || downloadingPdf) return;
+
+        setDownloadingPdf(true);
+        setError('');
+
+        try {
+            const adminToken = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
+            const uatAccessToken = formData.accessToken.trim();
+            if (!adminToken && !uatAccessToken) {
+                throw new Error('Enter the Tata UAT access token or log in as admin.');
+            }
+
+            const targetUrl = `${formData.backendUrl.replace(/\/$/, '')}/admin/tata-aig/download/${encodeURIComponent(result.policy_id)}`;
+            const response = await fetch(targetUrl, {
+                method: 'GET',
+                headers: {
+                    ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
+                    ...(uatAccessToken ? { 'x-tata-uat-access-token': uatAccessToken } : {}),
+                },
+            });
+
+            if (!response.ok) {
+                const message = await response.text();
+                throw new Error(message || 'Certificate PDF download failed');
+            }
+
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = `tata-aig-certificate-${result.policy_id}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(blobUrl);
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : 'Certificate PDF download failed';
+            setError(msg);
+        } finally {
+            setDownloadingPdf(false);
+        }
+    };
+
     const isExpanded = (step: number) => expandedStep === -1 || expandedStep === step;
     const passedCount = result?.steps?.filter(s => s.passed).length ?? 0;
     const totalCount = result?.steps?.length ?? 0;
+    const pdfStep = result?.steps?.find((step) => step.step === 5);
+    const pdfAvailable = Boolean(result?.pdf_url || pdfStep?.pdf_available);
 
     const methodColor: Record<string, string> = {
         POST: 'bg-blue-100 text-blue-700',
@@ -434,24 +481,35 @@ export default function TataUatTestPage() {
                         ))}
 
                         {/* PDF link */}
-                        {result.pdf_url && (
+                        {pdfAvailable && (
                             <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
                                 <p className="font-semibold text-blue-800 mb-1">🎉 Certificate PDF Generated!</p>
-                                <a href={result.pdf_url} target="_blank" rel="noreferrer"
-                                   className="text-blue-600 underline text-sm break-all">
-                                    {result.pdf_url}
-                                </a>
+                                {result.pdf_url ? (
+                                    <a href={result.pdf_url} target="_blank" rel="noreferrer"
+                                       className="text-blue-600 underline text-sm break-all">
+                                        {result.pdf_url}
+                                    </a>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={handleDownloadPdf}
+                                        disabled={downloadingPdf}
+                                        className="mt-2 inline-flex items-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                                    >
+                                        {downloadingPdf ? 'Downloading...' : 'Download Certificate PDF'}
+                                    </button>
+                                )}
                             </div>
                         )}
 
                         {/* UAT note */}
-                        {!result.pdf_url && result.policy_id && (
+                        {!pdfAvailable && result.policy_id && (
                             <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
                                 <p className="text-amber-800 text-xs">
-                                    <strong>⚠️ UAT Note:</strong> No PDF was generated because Tata AIG UAT always returns
-                                    &quot;Referred to Underwriter&quot;. The policy draft was successfully created
-                                    (Policy ID: <strong className="font-mono">{result.policy_id}</strong>).
-                                    This is expected UAT behaviour — the integration is working correctly.
+                                    <strong>⚠️ UAT Note:</strong> Tata AIG created the policy draft
+                                    (Policy ID: <strong className="font-mono">{result.policy_id}</strong>),
+                                    but the certificate PDF is not available from Tata yet. Retry the download after the
+                                    certificate status changes.
                                 </p>
                             </div>
                         )}
