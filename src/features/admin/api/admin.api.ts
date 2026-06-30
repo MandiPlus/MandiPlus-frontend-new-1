@@ -722,8 +722,10 @@ class AdminApi {
   }
 
   public uploadInvoiceInsurance = async (invoiceId: string, file: File) => {
+    const { file: uploadFile, premiumRowRemoved } =
+      await this.prepareInsurancePdfForUpload(file);
     const formData = new FormData();
-    formData.append("insuranceFile", file);
+    formData.append("insuranceFile", uploadFile);
 
     const response = await this.client.post(
       `/invoices/${invoiceId}/insurance`,
@@ -736,7 +738,61 @@ class AdminApi {
       },
     );
 
-    return response.data;
+    return {
+      ...response.data,
+      premiumRowRemoved:
+        Boolean(response.data?.premiumRowRemoved) || premiumRowRemoved,
+    };
+  };
+
+  private prepareInsurancePdfForUpload = async (
+    file: File,
+  ): Promise<{ file: File; premiumRowRemoved: boolean }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await this.client.post<Blob>(
+        "/pdf/edit-insurance",
+        formData,
+        {
+          responseType: "blob",
+          headers: {
+            "Content-Type": undefined,
+          },
+        },
+      );
+
+      const editedFile = new File([response.data], file.name, {
+        type: "application/pdf",
+      });
+
+      return { file: editedFile, premiumRowRemoved: true };
+    } catch (error) {
+      const axiosError = error as AxiosError<Blob | { message?: string }>;
+      if (axiosError.response?.status === 400) {
+        const message = await this.readBlobErrorMessage(axiosError.response.data);
+        if (/no premium row found/i.test(message)) {
+          return { file, premiumRowRemoved: false };
+        }
+      }
+
+      throw error;
+    }
+  };
+
+  private readBlobErrorMessage = async (
+    data: Blob | { message?: string } | undefined,
+  ): Promise<string> => {
+    if (!data) return "";
+    if (data instanceof Blob) {
+      try {
+        return await data.text();
+      } catch {
+        return "";
+      }
+    }
+    return data.message || "";
   };
 
   public setAuthToken = (token: string | null) => {
