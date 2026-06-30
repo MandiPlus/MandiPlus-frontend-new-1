@@ -63,8 +63,6 @@ interface RawInvoice {
     billToName?: string;
     productName?: string[] | string;
     placeOfSupply?: string;
-    supplierState?: string | null;
-    buyerState?: string | null;
     amount?: number | string;
     premiumAmount?: number | string;
     paymentAmount?: number | string | null;
@@ -180,7 +178,7 @@ function buildInvoiceRecords(invoiceRows: RawInvoice[], claimByInvoiceId: Map<st
             buyer: String(row.billToName || 'Unknown'),
             product,
             category: PRODUCT_CATEGORY[product] || 'Others',
-            state: String(row.buyerState || row.supplierState || row.placeOfSupply || 'Unknown'),
+            state: String(row.placeOfSupply || 'Unknown'),
             agent: String(row.user?.name || 'Unassigned'),
             salesAmount: premiumBase,
             commissionAmount,
