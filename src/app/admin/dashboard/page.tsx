@@ -57,6 +57,7 @@ interface FilterOptions {
 interface RawInvoice {
     id?: string;
     invoiceNumber?: string;
+    invoiceDate?: string;
     createdAt?: string;
     supplierName?: string;
     billToName?: string;
@@ -172,7 +173,7 @@ function buildInvoiceRecords(invoiceRows: RawInvoice[], claimByInvoiceId: Map<st
         return {
             id: String(row.id || ''),
             invoiceNumber: String(row.invoiceNumber || 'NA'),
-            createdAt: String(row.createdAt || new Date().toISOString()),
+            createdAt: String(row.invoiceDate || row.createdAt || new Date().toISOString()),
             supplier: String(row.supplierName || 'Unknown'),
             buyer: String(row.billToName || 'Unknown'),
             product,

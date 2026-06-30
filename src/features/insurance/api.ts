@@ -9,6 +9,11 @@ export const getBackendURL = () => {
   return API_BASE_URL.replace("/api", "");
 };
 
+const getInsuranceLookupToken = (): string | null => {
+  if (typeof window === "undefined") return null;
+  return getStoredAuthToken() || localStorage.getItem("adminToken");
+};
+
 /* -------------------------------------------------------------------------- */
 /* Types                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -322,11 +327,9 @@ export const getVerifiedSuppliers = async (): Promise<
   VerifiedSupplierOption[]
 > => {
   try {
-    const token = getStoredAuthToken();
+    const token = getInsuranceLookupToken();
     const response = await axios.get(`${API_BASE_URL}/invoices/verified-suppliers`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
 
     const payload = response.data?.data ?? response.data;

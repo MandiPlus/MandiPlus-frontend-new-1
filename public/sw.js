@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'mandiplus-v1';
+const CACHE_VERSION = 'mandiplus-v2';
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 const API_CACHE = `api-${CACHE_VERSION}`;
 const IMAGE_CACHE = `images-${CACHE_VERSION}`;
@@ -37,6 +37,11 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   if (url.origin !== location.origin) return;
+
+  if (url.pathname.startsWith('/_next/')) {
+    event.respondWith(fetch(request).catch(() => caches.match(request)));
+    return;
+  }
 
   if (request.mode === 'navigate') {
     event.respondWith(

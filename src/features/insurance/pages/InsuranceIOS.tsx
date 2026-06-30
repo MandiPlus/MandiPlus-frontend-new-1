@@ -48,6 +48,7 @@ import { itemsData } from '../productCatalog';
 // --- Types ---
 
 interface FormData {
+    invoiceDate: string;
     supplierName: string;
     supplierAddress: string;
     placeOfSupply: string;
@@ -74,7 +75,7 @@ interface QuestionText {
 
 interface Question {
     field: keyof FormData | 'language' | 'weightmentSlip';
-    type: 'text' | 'number' | 'language' | 'file' | 'select';
+    type: 'text' | 'number' | 'language' | 'file' | 'select' | 'date';
     text: QuestionText;
     optional?: boolean;
     step?: string;
@@ -131,6 +132,13 @@ const questions: Question[] = [
             hi: "भाषा चुनें \nType 1 - English\nType 2 - Hindi"
         }
     },
+    {
+        field: 'notes',
+        type: 'select',
+        options: ['Cash', 'Commission'],
+        optional: true,
+        text: { en: "Cash ya Commission", hi: "नकद या कमीशन" }
+    },
     { field: 'supplierName', type: 'text', text: { en: "Supplier Kaun", hi: "माल भेजने वाला" } },
     { field: 'supplierAddress', type: 'text', text: { en: "Supplier Ka Address", hi: "भेजने वाले का पता" } },
     { field: 'placeOfSupply', type: 'text', text: { en: "Place of Supply", hi: "प्लेस ऑफ सप्लाई " } },
@@ -147,16 +155,17 @@ const questions: Question[] = [
     { field: 'vehicleNumber', type: 'text', text: { en: "Gaadi No.", hi: "गाड़ी नंबर" } },
     { field: 'ownerName', type: 'text', text: { en: "Transporter Ka Naam", hi: "ट्रांसपोर्टर का नाम" } },
     {
+        field: 'invoiceDate',
+        type: 'date',
+        text: {
+            en: 'Invoice Date',
+            hi: 'इनवॉइस की तारीख',
+        },
+    },
+    {
         field: 'insuredPartyPhone',
         type: 'text',
         text: { en: "WhatsApp Phone Number (Buyer)", hi: "à¤–à¤°à¥€à¤¦à¤¾à¤° à¤•à¤¾ WhatsApp à¤¨à¤‚à¤¬à¤°" }
-    },
-    {
-        field: 'notes',
-        type: 'select',
-        options: ['Cash', 'Commission'],
-        optional: true,
-        text: { en: "Cash ya Commission", hi: "नकद या कमीशन" }
     },
     {
         field: 'invoiceType',
@@ -202,6 +211,7 @@ const getQuestionsForMode = (notes?: string): Question[] => {
         byField('rate'),
         byField('vehicleNumber'),
         byField('ownerName'),
+        byField('invoiceDate'),
         byField('insuredPartyPhone'),
         byField('weightmentSlip'),
         byField('addToCustomerAccount'),
@@ -233,6 +243,36 @@ function getResolvedUserId(user: any): string {
 
 const OWN_PROFILE_OPTION_ID = '__own_profile__';
 
+const getTodayDateInputValue = () => {
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const formatDateForDisplay = (value?: string) => {
+    if (!value) return '';
+    const matchedDate = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (matchedDate) {
+        return `${matchedDate[3]}/${matchedDate[2]}/${matchedDate[1]}`;
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Kolkata',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+    }).format(date);
+};
+
+const isValidDateInputValue = (value: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const date = new Date(`${value}T00:00:00`);
+    return !Number.isNaN(date.getTime()) && value <= getTodayDateInputValue();
+};
+
 /* ---------------- COMPONENT ---------------- */
 
 const InsuranceIOS = () => {
@@ -244,6 +284,7 @@ const InsuranceIOS = () => {
     const chatContainerRef = useRef<HTMLDivElement>(null);
 
     const [formData, setFormData] = useState<FormData>({
+        invoiceDate: getTodayDateInputValue(),
         supplierName: '',
         supplierAddress: '',
         placeOfSupply: '',
@@ -272,6 +313,7 @@ const InsuranceIOS = () => {
     ]);
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
     const [error, setError] = useState<string>('');
+    const [isInvoiceDatePickerOpen, setIsInvoiceDatePickerOpen] = useState(false);
 
     // Viewport States
     const [viewportHeight, setViewportHeight] = useState<string>('100vh');
@@ -306,15 +348,9 @@ const InsuranceIOS = () => {
     const selectedCustomerUserIdRef = useRef<string>('');
     const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
     const shouldAskCustomerPicker = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
-    const shouldRequireVerifiedParties = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
-    const shouldUseDynamicQuestionFlow = [
-        'AGENT',
-        'INTERNAL_TEAM',
-        'BUYER',
-        'SUPPLIER',
-        'CUSTOMER',
-        'TRANSPORTER',
-    ].includes(identity);
+    const shouldRequireVerifiedParties =
+        ['AGENT', 'INTERNAL_TEAM'].includes(identity) || !identity;
+    const shouldUseDynamicQuestionFlow = true;
     const getActiveQuestions = (notes?: string) =>
         shouldUseDynamicQuestionFlow ? getQuestionsForMode(notes) : questions;
     const activeQuestions = getActiveQuestions(formData.notes);
@@ -736,7 +772,7 @@ const InsuranceIOS = () => {
             }
             submitData.append('userId', effectiveUserId);
 
-            submitData.append('invoiceDate', new Date().toISOString());
+            submitData.append('invoiceDate', resolvedFormData.invoiceDate || getTodayDateInputValue());
             submitData.append('placeOfSupply', resolvedFormData.placeOfSupply || 'State');
             const supAddr = resolvedFormData.supplierAddress || 'Unknown Address';
             submitData.append('supplierAddress', JSON.stringify([supAddr]));
@@ -879,9 +915,12 @@ const InsuranceIOS = () => {
 
         if (fieldToEdit === 'weightmentSlip') {
             setWeightmentSlip(null);
+        } else if (fieldToEdit === 'invoiceDate') {
+            setIsInvoiceDatePickerOpen(true);
+            setInputValue(formData.invoiceDate || getTodayDateInputValue());
         } else if (fieldToEdit === 'language') {
             setInputValue(language === 'en' ? '1' : '2');
-        } else {
+        } else if (fieldToEdit !== 'invoiceDate') {
             const val = formData[fieldToEdit as keyof FormData];
             setInputValue(val ? String(val) : '');
         }
@@ -908,6 +947,9 @@ const InsuranceIOS = () => {
             return isCash
                 ? (language === 'hi' ? 'Buyer Ka WhatsApp Number' : 'Buyer Ka WhatsApp Number')
                 : (language === 'hi' ? 'Supplier Ka WhatsApp Number' : 'Supplier Ka WhatsApp Number');
+        }
+        if (question.field === 'invoiceDate') {
+            return language === 'hi' ? 'इनवॉइस की तारीख' : 'Invoice Date';
         }
         return language ? question.text[language] : question.text.en;
     };
@@ -1070,6 +1112,10 @@ const InsuranceIOS = () => {
             setError(language === 'hi' ? 'Cash ya Commission select karein.' : 'Please select Cash or Commission.');
             return;
         }
+        if (q.field === 'invoiceDate' && !isValidDateInputValue(currentInput)) {
+            setError(language === 'hi' ? 'Aaj ya pehle ki valid date select karein.' : 'Select a valid date up to today.');
+            return;
+        }
         setError('');
 
         const isFormField = (field: keyof FormData | 'language' | 'weightmentSlip'): field is keyof FormData => {
@@ -1151,6 +1197,10 @@ const InsuranceIOS = () => {
             }
         }
 
+        if (q.field === 'invoiceDate') {
+            setIsInvoiceDatePickerOpen(false);
+        }
+
         if (q.field === 'vehicleNumber') {
             const vehicleValidationMessage = await validateVehicleNumber(currentInput);
             if (vehicleValidationMessage) {
@@ -1165,7 +1215,10 @@ const InsuranceIOS = () => {
         if (editingMessageIndex !== null) {
             setMessages(prev => {
                 const newMsgs = [...prev];
-                newMsgs[editingMessageIndex!] = { ...newMsgs[editingMessageIndex!], text: currentInput };
+                newMsgs[editingMessageIndex!] = {
+                    ...newMsgs[editingMessageIndex!],
+                    text: q.field === 'invoiceDate' ? formatDateForDisplay(currentInput) : currentInput,
+                };
                 return newMsgs;
             });
             setEditingMessageIndex(null);
@@ -1175,7 +1228,11 @@ const InsuranceIOS = () => {
                 setResumeQuestionIndex(null);
             }
         } else {
-            setMessages(prev => [...prev, { text: currentInput, sender: 'user', field: q.field }]);
+            setMessages(prev => [...prev, {
+                text: q.field === 'invoiceDate' ? formatDateForDisplay(currentInput) : currentInput,
+                sender: 'user',
+                field: q.field,
+            }]);
             setInputValue('');
             const notesOverride = q.field === 'notes' ? currentInput : undefined;
             goToNextQuestion(currentInput, notesOverride);
@@ -1190,6 +1247,17 @@ const InsuranceIOS = () => {
     // Handler for Chips/Buttons
     const handleOptionSelect = (opt: string) => {
         void processInput(opt);
+    };
+
+    const handleInvoiceDateDefault = () => {
+        const today = getTodayDateInputValue();
+        setFormData(prev => ({ ...prev, invoiceDate: today }));
+        void processInput(today);
+    };
+
+    const handleInvoiceDateConfirm = () => {
+        const selectedDate = formData.invoiceDate || getTodayDateInputValue();
+        void processInput(selectedDate);
     };
 
     const handleSupplierLookupSubmit = () => {
@@ -1694,6 +1762,7 @@ const InsuranceIOS = () => {
     const currentQuestion = activeQuestions[currentQuestionIndex] || activeQuestions[activeQuestions.length - 1];
     const isFileInput = currentQuestion.type === 'file';
     const isSelectInput = currentQuestion.type === 'select';
+    const isInvoiceDateInput = currentQuestion.type === 'date';
     const isSupplierLookupQuestion = currentQuestion.field === 'supplierName';
     const isBuyerLookupQuestion = currentQuestion.field === 'buyerName';
     const isCashMode = String(formData.notes || '').toLowerCase() === 'cash';
@@ -1995,6 +2064,63 @@ const InsuranceIOS = () => {
                     </div>
                 ))}
 
+                {isInvoiceDateInput && !isSubmitting && (
+                    <div className="flex justify-start w-full animate-in fade-in slide-in-from-bottom-2">
+                        <div className="w-[85%] sm:w-[75%] bg-white rounded-lg p-3 shadow-sm">
+                            <p className="text-[10px] text-gray-500 mb-2 uppercase font-semibold tracking-wider">
+                                {language === 'hi' ? 'तारीख चुनें' : 'Choose invoice date'}
+                            </p>
+                            {error && (
+                                <p className="text-[10px] text-red-600 mb-2">
+                                    {error}
+                                </p>
+                            )}
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={handleInvoiceDateDefault}
+                                    className="bg-[#dcf8c6] border border-[#25D366] text-gray-900 px-3 py-2 rounded-lg text-sm font-semibold shadow-sm active:scale-95 text-left flex-1 min-w-[140px]"
+                                >
+                                    {language === 'hi'
+                                        ? `Default (Aaj) - ${formatDateForDisplay(getTodayDateInputValue())}`
+                                        : `Default (Today) - ${formatDateForDisplay(getTodayDateInputValue())}`}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsInvoiceDatePickerOpen(true)}
+                                    className="bg-white border border-gray-300 text-gray-800 px-3 py-2 rounded-lg text-sm shadow-sm hover:bg-[#dcf8c6] active:scale-95 text-left flex-1 min-w-[120px]"
+                                >
+                                    {language === 'hi' ? 'Date badlein' : 'Modify date'}
+                                </button>
+                            </div>
+                            {isInvoiceDatePickerOpen && (
+                                <div className="mt-2 flex flex-col gap-2">
+                                    <input
+                                        type="date"
+                                        value={formData.invoiceDate}
+                                        max={getTodayDateInputValue()}
+                                        onChange={(event) =>
+                                            setFormData((prev) => ({
+                                                ...prev,
+                                                invoiceDate: event.target.value || getTodayDateInputValue(),
+                                            }))
+                                        }
+                                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-900 outline-none focus:border-[#25D366] focus:ring-1 focus:ring-[#25D366]"
+                                        style={{ fontSize: '16px' }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleInvoiceDateConfirm}
+                                        className="rounded-lg bg-[#128C7E] px-3 py-2 text-sm font-semibold text-white shadow-sm active:scale-95"
+                                    >
+                                        {language === 'hi' ? 'Ye date use karein' : 'Use date'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
                 {/* --- RENDER DROPDOWN OPTIONS IN CHAT --- */}
                 {isSelectInput && !isSubmitting && (
                     <div className="flex justify-start w-full animate-in fade-in slide-in-from-bottom-2">
@@ -2163,7 +2289,7 @@ const InsuranceIOS = () => {
             )}
 
             {/* INPUT AREA */}
-            {!isSelectInput && !showLookupDropdown && (
+            {!isSelectInput && !isInvoiceDateInput && !showLookupDropdown && (
                 <div
                     className="border-t bg-[#f0f0f0] p-2 flex-none"
                     style={{
