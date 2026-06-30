@@ -23,9 +23,15 @@ export interface InsuranceForm {
   invoiceNumber: string;
   invoiceDate: string;
   supplierName: string;
+  supplierState?: string | null;
+  supplierDistrict?: string | null;
+  supplierMandi?: string | null;
   supplierAddress: string[];
   placeOfSupply: string;
   billToName: string;
+  buyerState?: string | null;
+  buyerDistrict?: string | null;
+  buyerMandi?: string | null;
   billToAddress: string[];
   shipToName: string;
   shipToAddress: string[];
@@ -65,9 +71,15 @@ export interface RegenerateInvoicePayload {
   terms?: string;
   invoiceType?: "SUPPLIER_INVOICE" | "BUYER_INVOICE";
   supplierName?: string;
+  supplierState?: string;
+  supplierDistrict?: string;
+  supplierMandi?: string;
   supplierAddress?: string[];
   placeOfSupply?: string;
   billToName?: string;
+  buyerState?: string;
+  buyerDistrict?: string;
+  buyerMandi?: string;
   billToAddress?: string[];
   shipToName?: string;
   shipToAddress?: string[];
@@ -181,6 +193,9 @@ export interface VerifiedSupplierOption {
   identity?: string;
   address: string;
   placeOfSupply: string;
+  state?: string | null;
+  district?: string | null;
+  mandiName?: string | null;
 }
 
 export interface HistoricalPartyOption {
@@ -408,6 +423,29 @@ export const getPartyAddressSuggestions = async (
   } catch (error: unknown) {
     const err = error as AxiosError<ApiError>;
     throw err.response?.data || { message: "Failed to fetch party addresses" };
+  }
+};
+
+export const rememberPartyLocation = async (
+  partyId: string,
+  payload: {
+    state?: string;
+    district?: string;
+    mandiName?: string;
+  },
+): Promise<void> => {
+  try {
+    const token = getInsuranceLookupToken();
+    await axios.patch(
+      `${API_BASE_URL}/invoices/party-location-memory/${encodeURIComponent(partyId)}`,
+      payload,
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      },
+    );
+  } catch (error) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to remember party location" };
   }
 };
 
