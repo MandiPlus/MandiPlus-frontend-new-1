@@ -376,6 +376,11 @@ export interface InsurancePaymentRow {
   recipientPhone?: string;
   pdfUrl?: string | null;
   paymentReceiptUrl?: string | null;
+  paymentGatewayOrderId?: string | null;
+  paymentGatewayPaymentId?: string | null;
+  paymentShortCode?: string | null;
+  phonepeOrderId?: string | null;
+  paymentGatewayFlow?: string | null;
   createdAt: string;
   productName?: string;
   buyer: string;
