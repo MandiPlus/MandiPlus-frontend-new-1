@@ -4,16 +4,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { useAdmin } from '@/features/admin/context/AdminContext';
+import { adminApi, InsuranceForm } from '@/features/admin/api/admin.api';
 import {
   AddDriverPayload,
   CheckConsentPayload,
   CreateTripPayload,
+  TrackingInvoiceDraft,
   TraqoConsentRow,
   TruckTrackingResponse,
   addDriverNumber,
   checkDriverConsent,
   createTrackingTrip,
   getTruckTracking,
+  listInvoiceDriverDrafts,
+  listTrips,
   listCreatedConsents,
   resendDriverConsentSms,
 } from '@/features/admin/api/tracking.api';
@@ -46,6 +50,31 @@ function pickString(
     if (typeof value === 'string' && value.trim()) return value;
   }
   return null;
+}
+
+function joinAddressParts(value: string[] | string | null | undefined) {
+  if (Array.isArray(value)) {
+    return value.map((part) => String(part || '').trim()).filter(Boolean).join(', ');
+  }
+  return String(value || '').trim();
+}
+
+function toInvoiceDraft(form: InsuranceForm): TrackingInvoiceDraft | null {
+  const driverPhone = toTenDigitPhone(form.driverPhone || '');
+  if (driverPhone.length !== 10) return null;
+
+  return {
+    id: form.id || form._id,
+    invoiceNumber: form.invoiceNumber || '',
+    driverPhone,
+    driverSecondaryPhone: form.driverSecondaryPhone || null,
+    vehicleNumber: form.truckNumber || form.vehicleNumber || null,
+    sourceName: joinAddressParts(form.supplierAddress),
+    destinationName:
+      joinAddressParts(form.shipToAddress) || joinAddressParts(form.billToAddress),
+    consentStatus: form.driverConsentStatus || null,
+    createdAt: form.createdAt || form.invoiceDate || form.date,
+  };
 }
 
 async function geocodeWithGoogle(address: string): Promise<string | null> {
@@ -116,6 +145,10 @@ export default function AdminTrackingPage() {
   const [consents, setConsents] = useState<TraqoConsentRow[]>([]);
   const [consentsLoading, setConsentsLoading] = useState(false);
   const [consentsError, setConsentsError] = useState('');
+  const [invoiceDrafts, setInvoiceDrafts] = useState<TrackingInvoiceDraft[]>([]);
+  const [selectedInvoiceDraftId, setSelectedInvoiceDraftId] = useState('');
+  const [invoiceDraftsLoading, setInvoiceDraftsLoading] = useState(false);
+  const [invoiceDraftsError, setInvoiceDraftsError] = useState('');
 
   const [busy, setBusy] = useState({
     register: false,
@@ -140,6 +173,88 @@ export default function AdminTrackingPage() {
   const setBusyFlag = useCallback((key: keyof typeof busy, value: boolean) => {
     setBusy((prev) => ({ ...prev, [key]: value }));
   }, []);
+
+  const applyInvoiceDraft = useCallback((draft: TrackingInvoiceDraft) => {
+    const phone = draft.driverPhone;
+
+    setSelectedInvoiceDraftId(draft.id);
+    setRegisterForm({
+      phone_number: phone,
+      name: draft.vehicleNumber?.trim() || undefined,
+      operator: '',
+    });
+    setConsentForm({ tel: phone });
+    setConsentState(draft.consentStatus || null);
+    setTripForm((prev) => ({
+      ...prev,
+      tel: phone,
+      truck_number: draft.vehicleNumber || '',
+      srcname: draft.sourceName || '',
+      destname: draft.destinationName || '',
+      invoice: draft.invoiceNumber,
+      internalInvoiceId: draft.id,
+    }));
+    if (draft.vehicleNumber) setTrackVehicle(draft.vehicleNumber);
+  }, []);
+
+  const refreshInvoiceDrafts = useCallback(async (shouldAutoApply = false) => {
+    setInvoiceDraftsLoading(true);
+    setInvoiceDraftsError('');
+
+    const response = await listInvoiceDriverDrafts(20);
+    if (!response.success) {
+      const [formsResponse, tripsResponse] = await Promise.all([
+        adminApi.getInsuranceForms(1, 50),
+        listTrips(),
+      ]);
+      if (!formsResponse.success) {
+        setInvoiceDrafts([]);
+        setInvoiceDraftsError(response.message || 'Failed to fetch invoice driver details.');
+        setInvoiceDraftsLoading(false);
+        return;
+      }
+
+      const tripInvoiceIds = new Set(
+        (tripsResponse.data || [])
+          .map((trip) => trip.invoice?.id)
+          .filter((id): id is string => Boolean(id)),
+      );
+      const fallbackDrafts = (formsResponse.data?.forms || [])
+        .filter((form) => !tripInvoiceIds.has(form.id || form._id))
+        .map(toInvoiceDraft)
+        .filter((draft): draft is TrackingInvoiceDraft => Boolean(draft));
+
+      setInvoiceDrafts(fallbackDrafts);
+      setInvoiceDraftsLoading(false);
+
+      if (shouldAutoApply && fallbackDrafts[0]) {
+        applyInvoiceDraft(fallbackDrafts[0]);
+      }
+      if (fallbackDrafts.length === 0) {
+        setInvoiceDraftsError('');
+      }
+      return;
+    }
+
+    const drafts = (response.data || [])
+      .sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
+
+    setInvoiceDrafts(drafts);
+    setInvoiceDraftsLoading(false);
+
+    if (shouldAutoApply && drafts[0]) {
+      applyInvoiceDraft(drafts[0]);
+    }
+  }, [applyInvoiceDraft]);
+
+  useEffect(() => {
+    if (loading || !isAuthenticated) return;
+    void refreshInvoiceDrafts(true);
+  }, [loading, isAuthenticated, refreshInvoiceDrafts]);
 
   const refreshTracking = useCallback(async () => {
     if (!trackVehicle.trim()) return;
@@ -343,6 +458,12 @@ export default function AdminTrackingPage() {
     } else {
       toast.success('Trip created successfully.');
       setTrackVehicle(payload.truck_number);
+      setInvoiceDrafts((prev) =>
+        prev.filter((draft) => draft.id !== payload.internalInvoiceId),
+      );
+      if (payload.internalInvoiceId === selectedInvoiceDraftId) {
+        setSelectedInvoiceDraftId('');
+      }
     }
 
     setBusyFlag('createTrip', false);
@@ -504,6 +625,73 @@ export default function AdminTrackingPage() {
             Consents Created
           </button>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              Invoice Driver Details
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Latest insurance invoice is applied automatically. Source is supplier address, destination is buyer address.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void refreshInvoiceDrafts(true)}
+            disabled={invoiceDraftsLoading}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+          >
+            {invoiceDraftsLoading ? 'Refreshing...' : 'Refresh invoices'}
+          </button>
+        </div>
+
+        {invoiceDraftsError ? (
+          <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+            {invoiceDraftsError}
+          </div>
+        ) : invoiceDrafts.length === 0 ? (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700">
+            {invoiceDraftsLoading ? 'Loading invoice driver details...' : 'No recent invoice with driver number found.'}
+          </div>
+        ) : (
+          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+            {invoiceDrafts.slice(0, 6).map((draft) => {
+              const selected = selectedInvoiceDraftId === draft.id;
+              return (
+                <button
+                  key={draft.id}
+                  type="button"
+                  onClick={() => applyInvoiceDraft(draft)}
+                  className={`rounded-lg border p-3 text-left transition ${
+                    selected
+                      ? 'border-[#4309ac] bg-[#4309ac]/5 shadow-sm'
+                      : 'border-slate-200 bg-slate-50 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-slate-900">
+                      {draft.invoiceNumber || 'Invoice'}
+                    </span>
+                    {selected ? (
+                      <span className="rounded-full bg-[#4309ac] px-2 py-0.5 text-[11px] font-semibold text-white">
+                        Applied
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-2 space-y-1 text-xs text-slate-600">
+                    <div>Driver: <span className="font-semibold text-slate-900">{draft.driverPhone}</span></div>
+                    {draft.driverSecondaryPhone ? <div>Alt: {draft.driverSecondaryPhone}</div> : null}
+                    <div>Truck: {draft.vehicleNumber || '-'}</div>
+                    <div className="line-clamp-1">Source: {draft.sourceName || '-'}</div>
+                    <div className="line-clamp-1">Destination: {draft.destinationName || '-'}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">

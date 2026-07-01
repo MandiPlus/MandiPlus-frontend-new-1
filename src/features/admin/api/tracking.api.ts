@@ -40,6 +40,18 @@ export interface CreateTripPayload {
   internalTruckId?: string;
 }
 
+export interface TrackingInvoiceDraft {
+  id: string;
+  invoiceNumber: string;
+  driverPhone: string;
+  driverSecondaryPhone?: string | null;
+  vehicleNumber?: string | null;
+  sourceName?: string | null;
+  destinationName?: string | null;
+  consentStatus?: string | null;
+  createdAt?: string;
+}
+
 export interface TruckTrackingResponse {
   vehicleNumber: string;
   truckId: string;
@@ -69,6 +81,10 @@ export interface AdminTripRow {
   tel: string;
   src: string | null;
   dest: string | null;
+  srcname?: string | null;
+  destname?: string | null;
+  sourceName?: string | null;
+  destinationName?: string | null;
   status: "PENDING" | "ACTIVE" | "ENDED";
   createdAt: string;
   updatedAt: string;
@@ -80,6 +96,16 @@ export interface AdminTripRow {
   invoice: {
     id: string;
     invoiceNumber?: string;
+    driverPhone?: string | null;
+    driverSecondaryPhone?: string | null;
+    driverConsentStatus?: string | null;
+    driverConsentOperator?: string | null;
+    supplierName?: string | null;
+    supplierAddress?: string[] | null;
+    billToName?: string | null;
+    billToAddress?: string[] | null;
+    shipToName?: string | null;
+    shipToAddress?: string[] | null;
   } | null;
   recipientPhone?: string | null;
   alerts?: {
@@ -219,6 +245,26 @@ export async function createTrackingTrip(
     return {
       success: false,
       message: getErrorMessage(error, "Failed to create trip"),
+    };
+  }
+}
+
+export async function listInvoiceDriverDrafts(
+  limit = 20
+): Promise<AdminTrackingApiResponse<TrackingInvoiceDraft[]>> {
+  try {
+    const res = await axios.get<TrackingInvoiceDraft[]>(
+      `${API_BASE_URL}/traqo/invoice-driver-drafts`,
+      {
+        headers: getAuthHeaders(),
+        params: { limit },
+      }
+    );
+    return { success: true, data: Array.isArray(res.data) ? res.data : [] };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to fetch invoice driver details"),
     };
   }
 }

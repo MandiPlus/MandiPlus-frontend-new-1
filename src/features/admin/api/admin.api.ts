@@ -207,20 +207,36 @@ export interface AdminUpdateUserPayload {
 export interface InsuranceForm {
   _id: string;
   id?: string; // Handle both _id (mongoose) and id (typeorm) depending on backend
-  user: {
+  user?: {
     _id: string;
     mobileNumber: string;
     category?: string;
   };
   invoiceNumber: string;
-  supplier: string;
-  buyer: string;
-  item: string;
+  supplier?: string;
+  buyer?: string;
+  item?: string;
+  supplierName?: string;
+  supplierAddress?: string[] | string | null;
+  billToName?: string;
+  billToAddress?: string[] | string | null;
+  shipToName?: string;
+  shipToAddress?: string[] | string | null;
+  productName?: string[] | string;
   quantity: number;
   amount: number;
   date: string;
+  invoiceDate?: string;
   invoicePdfUrl?: string;
+  pdfUrl?: string;
+  pdfURL?: string;
   weightSlipPdfUrl?: string;
+  insuredPartyPhone?: string | null;
+  driverPhone?: string | null;
+  driverSecondaryPhone?: string | null;
+  driverConsentStatus?: string | null;
+  driverConsentOperator?: string | null;
+  driverConsentUpdatedAt?: string | null;
 
   // ✅ ADD THIS
   insurance?: {
@@ -473,6 +489,8 @@ export interface AdminCreateInvoicePayload {
   truckNumber?: string;
   weighmentSlipNote?: string;
   insuredPartyPhone?: string;
+  driverPhone?: string;
+  driverSecondaryPhone?: string;
   ownerName?: string;
   weighmentSlips?: File[];
 }
@@ -1395,6 +1413,8 @@ class AdminApi {
       if (payload.truckNumber) formData.append("truckNumber", payload.truckNumber);
       if (payload.weighmentSlipNote) formData.append("weighmentSlipNote", payload.weighmentSlipNote);
       if (payload.insuredPartyPhone) formData.append("insuredPartyPhone", payload.insuredPartyPhone);
+      if (payload.driverPhone) formData.append("driverPhone", payload.driverPhone);
+      if (payload.driverSecondaryPhone) formData.append("driverSecondaryPhone", payload.driverSecondaryPhone);
       if (payload.ownerName) formData.append("ownerName", payload.ownerName);
       payload.weighmentSlips?.forEach((file) => {
         formData.append("weighmentSlips", file);

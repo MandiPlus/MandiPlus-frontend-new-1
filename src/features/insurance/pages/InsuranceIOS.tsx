@@ -62,6 +62,8 @@ interface FormData {
     ownerName: string;
     cashOrCommission: string;
     invoiceType: string;
+    driverPhone: string;
+    driverSecondaryPhone: string;
     insuredPartyPhone: string;
     notes: string;
     addToCustomerAccount: string;
@@ -121,6 +123,9 @@ const resolveCustomerUserId = (account?: InvoiceCustomerAccount | null): string 
     return candidates.find((candidate) => isUuid(candidate)) || '';
 };
 
+const isOptionalPhoneSkip = (value: string) =>
+    ['na', 'n/a', 'no', 'none', 'skip', '-'].includes(value.trim().toLowerCase());
+
 // --- Constants ---
 
 const questions: Question[] = [
@@ -161,6 +166,17 @@ const questions: Question[] = [
             en: 'Invoice Date',
             hi: 'इनवॉइस की तारीख',
         },
+    },
+    {
+        field: 'driverPhone',
+        type: 'text',
+        text: { en: "Driver Mobile Number", hi: "ड्राइवर मोबाइल नंबर" }
+    },
+    {
+        field: 'driverSecondaryPhone',
+        type: 'text',
+        optional: true,
+        text: { en: "Alternate Driver Mobile (optional - type NA to skip)", hi: "वैकल्पिक ड्राइवर नंबर (नहीं हो तो NA लिखें)" }
     },
     {
         field: 'insuredPartyPhone',
@@ -212,6 +228,8 @@ const getQuestionsForMode = (notes?: string): Question[] => {
         byField('vehicleNumber'),
         byField('ownerName'),
         byField('invoiceDate'),
+        byField('driverPhone'),
+        byField('driverSecondaryPhone'),
         byField('insuredPartyPhone'),
         byField('weightmentSlip'),
         byField('addToCustomerAccount'),
@@ -298,6 +316,8 @@ const InsuranceIOS = () => {
         ownerName: '',
         cashOrCommission: '',
         invoiceType: 'BUYER_INVOICE',
+        driverPhone: '',
+        driverSecondaryPhone: '',
         insuredPartyPhone: '',
         notes: '',
         addToCustomerAccount: 'No',
@@ -821,6 +841,21 @@ const InsuranceIOS = () => {
 
             if (resolvedFormData.hsn) submitData.append('hsnCode', resolvedFormData.hsn);
             if (resolvedFormData.notes) submitData.append('weighmentSlipNote', resolvedFormData.notes);
+            const driverPhone = normalizePhoneInput(resolvedFormData.driverPhone);
+            if (driverPhone.length !== 10) {
+                throw new Error('Driver mobile number is required.');
+            }
+            submitData.append('driverPhone', driverPhone);
+            const driverSecondaryPhone = normalizePhoneInput(resolvedFormData.driverSecondaryPhone);
+            if (driverSecondaryPhone) {
+                if (driverSecondaryPhone.length !== 10) {
+                    throw new Error('Alternate driver mobile number must be 10 digits.');
+                }
+                if (driverSecondaryPhone === driverPhone) {
+                    throw new Error('Alternate driver mobile number must be different from primary driver number.');
+                }
+                submitData.append('driverSecondaryPhone', driverSecondaryPhone);
+            }
             const insuredPartyPhone = normalizePhoneInput(resolvedFormData.insuredPartyPhone);
             if (insuredPartyPhone) submitData.append('insuredPartyPhone', insuredPartyPhone);
             if (['CUSTOMER', 'TRANSPORTER'].includes(identity)) {
@@ -947,6 +982,14 @@ const InsuranceIOS = () => {
             return isCash
                 ? (language === 'hi' ? 'Buyer Ka WhatsApp Number' : 'Buyer Ka WhatsApp Number')
                 : (language === 'hi' ? 'Supplier Ka WhatsApp Number' : 'Supplier Ka WhatsApp Number');
+        }
+        if (question.field === 'driverPhone') {
+            return language === 'hi' ? 'ड्राइवर मोबाइल नंबर' : 'Driver Mobile Number';
+        }
+        if (question.field === 'driverSecondaryPhone') {
+            return language === 'hi'
+                ? 'वैकल्पिक ड्राइवर नंबर (नहीं हो तो NA लिखें)'
+                : 'Alternate Driver Mobile (optional - type NA to skip)';
         }
         if (question.field === 'invoiceDate') {
             return language === 'hi' ? 'इनवॉइस की तारीख' : 'Invoice Date';
@@ -1104,6 +1147,22 @@ const InsuranceIOS = () => {
             setError(language === 'hi' ? 'Valid 10 digit WhatsApp number dalein.' : 'Enter a valid 10 digit WhatsApp number.');
             return;
         }
+        if (q.field === 'driverPhone' && normalizePhoneInput(currentInput).length !== 10) {
+            setError(language === 'hi' ? 'Valid 10 digit driver mobile number dalein.' : 'Enter a valid 10 digit driver mobile number.');
+            return;
+        }
+        if (q.field === 'driverSecondaryPhone' && currentInput && !isOptionalPhoneSkip(currentInput)) {
+            const secondaryDriverPhone = normalizePhoneInput(currentInput);
+            const primaryDriverPhone = normalizePhoneInput(formData.driverPhone);
+            if (secondaryDriverPhone.length !== 10) {
+                setError(language === 'hi' ? 'Valid 10 digit alternate driver number dalein ya NA likhein.' : 'Enter a valid 10 digit alternate driver number or type NA.');
+                return;
+            }
+            if (primaryDriverPhone && secondaryDriverPhone === primaryDriverPhone) {
+                setError(language === 'hi' ? 'Alternate number primary driver number se alag hona chahiye.' : 'Alternate number must be different from primary driver number.');
+                return;
+            }
+        }
         if (
             q.field === 'notes' &&
             shouldUseDynamicQuestionFlow &&
@@ -1152,8 +1211,10 @@ const InsuranceIOS = () => {
         // Store Data
         if (isFormField(q.field)) {
             const valueToStore =
-                q.field === 'insuredPartyPhone'
+                q.field === 'insuredPartyPhone' || q.field === 'driverPhone'
                     ? normalizePhoneInput(currentInput)
+                    : q.field === 'driverSecondaryPhone'
+                        ? (isOptionalPhoneSkip(currentInput) ? '' : normalizePhoneInput(currentInput))
                     : (q.type === 'number' && currentInput) ? parseFloat(currentInput) : currentInput;
 
             // Logic to auto-select HSN if ItemName is selected

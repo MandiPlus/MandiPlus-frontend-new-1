@@ -25,6 +25,26 @@ type TrackModalState = {
   destinationName: string;
 };
 
+function joinAddressParts(value?: string[] | string | null): string {
+  return Array.isArray(value)
+    ? value.map((part) => String(part || '').trim()).filter(Boolean).join(', ')
+    : String(value || '').trim();
+}
+
+function getInvoiceSourceAddress(trip: AdminTripRow): string {
+  const invoice = trip.invoice;
+  if (!invoice) return '';
+  return joinAddressParts(invoice.supplierAddress);
+}
+
+function getInvoiceDestinationAddress(trip: AdminTripRow): string {
+  const invoice = trip.invoice;
+  if (!invoice) return '';
+  const shipTo = joinAddressParts(invoice.shipToAddress);
+  const billTo = joinAddressParts(invoice.billToAddress);
+  return shipTo || billTo;
+}
+
 function normalizeSearchValue(value?: string | null): string {
   return (value || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 }
@@ -84,6 +104,7 @@ export default function AdminTripsPage() {
   const [phoneOverrides, setPhoneOverrides] = useState<Record<string, string>>({});
   const [routeLabels, setRouteLabels] = useState<Record<string, string>>({});
   const [trackModal, setTrackModal] = useState<TrackModalState | null>(null);
+  const [detailsTrip, setDetailsTrip] = useState<AdminTripRow | null>(null);
   const [editingTrip, setEditingTrip] = useState<AdminTripRow | null>(null);
   const [editForm, setEditForm] = useState({ truck_number: '', tel: '', srcname: '', destname: '' });
   const [editSaving, setEditSaving] = useState(false);
@@ -163,6 +184,36 @@ export default function AdminTripsPage() {
     };
   }, [trips, routeLabels]);
 
+  const getRouteLabelForCoords = useCallback(
+    (coords?: string | null) => {
+      const normalized = normalizeCoordValue(coords);
+      return normalized ? routeLabels[normalized] || normalized : '';
+    },
+    [routeLabels],
+  );
+
+  const getTripSourceLabel = useCallback(
+    (trip: AdminTripRow) =>
+      trip.sourceName ||
+      trip.srcname ||
+      getRouteLabelForCoords(trip.src) ||
+      getInvoiceSourceAddress(trip) ||
+      trip.src ||
+      '',
+    [getRouteLabelForCoords],
+  );
+
+  const getTripDestinationLabel = useCallback(
+    (trip: AdminTripRow) =>
+      trip.destinationName ||
+      trip.destname ||
+      getRouteLabelForCoords(trip.dest) ||
+      getInvoiceDestinationAddress(trip) ||
+      trip.dest ||
+      '',
+    [getRouteLabelForCoords],
+  );
+
   const handleTrack = async (trip: AdminTripRow) => {
     const truckNumber = trip.truck?.truckNumber || trip.vehicleNumber;
     if (!truckNumber) {
@@ -193,10 +244,10 @@ export default function AdminTripsPage() {
           : null;
 
       const currentName = data.location?.address || '';
-      const sourceName = sourceCoords ? routeLabels[sourceCoords] || sourceCoords : '';
+      const sourceName = getTripSourceLabel(trip) || (sourceCoords ? routeLabels[sourceCoords] || sourceCoords : '');
       const destinationName = destinationCoords
-        ? routeLabels[destinationCoords] || destinationCoords
-        : '';
+        ? getTripDestinationLabel(trip) || routeLabels[destinationCoords] || destinationCoords
+        : getTripDestinationLabel(trip);
 
       setTrackModal({
         trip,
@@ -220,8 +271,8 @@ export default function AdminTripsPage() {
     setEditForm({
       truck_number: trip.truck?.truckNumber || trip.vehicleNumber || '',
       tel: trip.tel || '',
-      srcname: '',
-      destname: '',
+      srcname: getTripSourceLabel(trip),
+      destname: getTripDestinationLabel(trip),
     });
     setEditingTrip(trip);
   };
@@ -340,8 +391,16 @@ export default function AdminTripsPage() {
     const vehicleQuery = normalizeSearchValue(searchFilters.vehicleNumber);
 
     return trips.filter((trip) => {
-      const normalizedPhone = normalizeSearchValue(trip.tel);
-      const normalizedVehicle = normalizeSearchValue(trip.truck?.truckNumber);
+      const normalizedPhone = [
+        trip.tel,
+        trip.invoice?.driverPhone,
+        trip.invoice?.driverSecondaryPhone,
+      ]
+        .map((value) => normalizeSearchValue(value))
+        .join(' ');
+      const normalizedVehicle = normalizeSearchValue(
+        trip.truck?.truckNumber || trip.vehicleNumber,
+      );
       const matchesPhone = !phoneQuery || normalizedPhone.includes(phoneQuery);
       const matchesVehicle = !vehicleQuery || normalizedVehicle.includes(vehicleQuery);
 
@@ -575,7 +634,23 @@ export default function AdminTripsPage() {
                         ) : null}
                       </div>
                     </td>
-                    <td className="px-3 py-3 align-top text-gray-700">{trip.tel}</td>
+                    <td className="px-3 py-3 align-top text-gray-700">
+                      <div className="min-w-[150px] space-y-1 text-xs">
+                        <div className="font-medium text-slate-900">
+                          {trip.invoice?.driverPhone || trip.tel || '-'}
+                        </div>
+                        {trip.invoice?.driverSecondaryPhone ? (
+                          <div className="text-slate-500">
+                            Alt: {trip.invoice.driverSecondaryPhone}
+                          </div>
+                        ) : null}
+                        {trip.invoice?.driverConsentStatus ? (
+                          <div className="text-[11px] text-slate-500">
+                            Consent: {trip.invoice.driverConsentStatus}
+                          </div>
+                        ) : null}
+                      </div>
+                    </td>
                     <td className="px-3 py-3 align-top">
                       <span
                         className={`rounded px-2 py-1 text-xs font-semibold ${
@@ -711,13 +786,13 @@ export default function AdminTripsPage() {
                         <div>
                           <span className="font-semibold text-slate-700">Src:</span>{' '}
                           <span className="break-words">
-                            {routeLabels[normalizeCoordValue(trip.src) || ''] || trip.src || '-'}
+                            {getTripSourceLabel(trip) || '-'}
                           </span>
                         </div>
                         <div>
                           <span className="font-semibold text-slate-700">Dest:</span>{' '}
                           <span className="break-words">
-                            {routeLabels[normalizeCoordValue(trip.dest) || ''] || trip.dest || '-'}
+                            {getTripDestinationLabel(trip) || '-'}
                           </span>
                         </div>
                       </div>
@@ -736,6 +811,13 @@ export default function AdminTripsPage() {
                           className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
                         >
                           Track
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDetailsTrip(trip)}
+                          className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700"
+                        >
+                          Details
                         </button>
                         <button
                           type="button"
@@ -786,6 +868,85 @@ export default function AdminTripsPage() {
           </table>
         </div>
       </div>
+
+      {detailsTrip ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-2xl overflow-hidden rounded-xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-950">
+                  Driver Details
+                </h3>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {detailsTrip.invoice?.invoiceNumber || detailsTrip.vehicleNumber || detailsTrip.id}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailsTrip(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-lg text-slate-500"
+              >
+                ×
+              </button>
+            </div>
+            <div className="grid gap-4 p-5 sm:grid-cols-2">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="text-[11px] font-semibold uppercase text-slate-500">
+                  Primary Mobile
+                </div>
+                <div className="mt-1 break-all text-sm font-semibold text-slate-950">
+                  {detailsTrip.invoice?.driverPhone || detailsTrip.tel || '-'}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="text-[11px] font-semibold uppercase text-slate-500">
+                  Alternate Mobile
+                </div>
+                <div className="mt-1 break-all text-sm font-semibold text-slate-950">
+                  {detailsTrip.invoice?.driverSecondaryPhone || '-'}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <div className="text-[11px] font-semibold uppercase text-slate-500">
+                  Vehicle
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-950">
+                  {detailsTrip.truck?.truckNumber || detailsTrip.vehicleNumber || '-'}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <div className="text-[11px] font-semibold uppercase text-slate-500">
+                  Consent
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-950">
+                  {detailsTrip.invoice?.driverConsentStatus || 'Not available'}
+                </div>
+                {detailsTrip.invoice?.driverConsentOperator ? (
+                  <div className="mt-1 text-xs text-slate-500">
+                    Operator: {detailsTrip.invoice.driverConsentOperator}
+                  </div>
+                ) : null}
+              </div>
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3 sm:col-span-2">
+                <div className="text-[11px] font-semibold uppercase text-emerald-700">
+                  Source
+                </div>
+                <div className="mt-1 text-sm text-slate-900">
+                  {getTripSourceLabel(detailsTrip) || '-'}
+                </div>
+              </div>
+              <div className="rounded-lg border border-amber-100 bg-amber-50 p-3 sm:col-span-2">
+                <div className="text-[11px] font-semibold uppercase text-amber-700">
+                  Destination
+                </div>
+                <div className="mt-1 text-sm text-slate-900">
+                  {getTripDestinationLabel(detailsTrip) || '-'}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {trackModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">

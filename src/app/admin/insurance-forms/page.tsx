@@ -120,6 +120,8 @@ type AdminCreateInvoiceForm = {
     truckNumber: string;
     ownerName: string;
     insuredPartyPhone: string;
+    driverPhone: string;
+    driverSecondaryPhone: string;
 };
 
 const emptyAdminCreateInvoiceForm = (): AdminCreateInvoiceForm => ({
@@ -142,6 +144,8 @@ const emptyAdminCreateInvoiceForm = (): AdminCreateInvoiceForm => ({
     truckNumber: '',
     ownerName: '',
     insuredPartyPhone: '',
+    driverPhone: '',
+    driverSecondaryPhone: '',
 });
 
 const addressFieldsByIdentity: Record<string, string[]> = {
@@ -1018,6 +1022,25 @@ export default function InsuranceFormsPage() {
             toast.error('Insured party phone must be a valid Indian mobile number.');
             return;
         }
+        if (!isValidIndianPhone(createInvoiceForm.driverPhone)) {
+            toast.error('Driver mobile number must be a valid Indian mobile number.');
+            return;
+        }
+        if (
+            createInvoiceForm.driverSecondaryPhone.trim() &&
+            !isValidIndianPhone(createInvoiceForm.driverSecondaryPhone)
+        ) {
+            toast.error('Alternate driver mobile number must be a valid Indian mobile number.');
+            return;
+        }
+        if (
+            createInvoiceForm.driverSecondaryPhone.trim() &&
+            normalizePhoneInput(createInvoiceForm.driverPhone) ===
+                normalizePhoneInput(createInvoiceForm.driverSecondaryPhone)
+        ) {
+            toast.error('Alternate driver mobile number must be different from primary driver number.');
+            return;
+        }
 
         setCreateInvoiceSubmitting(true);
         try {
@@ -1042,6 +1065,10 @@ export default function InsuranceFormsPage() {
                 truckNumber: normalizeVehicleText(createInvoiceForm.truckNumber || createInvoiceForm.vehicleNumber),
                 ownerName: createInvoiceForm.ownerName.trim() || undefined,
                 insuredPartyPhone: normalizePhoneInput(createInvoiceForm.insuredPartyPhone),
+                driverPhone: normalizePhoneInput(createInvoiceForm.driverPhone),
+                driverSecondaryPhone: createInvoiceForm.driverSecondaryPhone.trim()
+                    ? normalizePhoneInput(createInvoiceForm.driverSecondaryPhone)
+                    : undefined,
                 weighmentSlipNote: createInvoiceForm.invoiceKind === 'cash' ? 'cash' : 'commission',
                 weighmentSlips: createWeighmentFiles,
             });
@@ -2115,6 +2142,28 @@ export default function InsuranceFormsPage() {
                                     <div className="grid gap-2 sm:grid-cols-2">
                                     <label className={createInvoiceLabelClass}>Invoice date<input disabled={createInvoiceParsing} type="date" value={createInvoiceForm.invoiceDate} onChange={(e) => updateCreateInvoiceForm({ invoiceDate: e.target.value })} className={createInvoiceFieldClass} /></label>
                                     <label className={createInvoiceLabelClass}>
+                                        Driver mobile
+                                        <input
+                                            disabled={createInvoiceParsing}
+                                            inputMode="numeric"
+                                            value={createInvoiceForm.driverPhone}
+                                            onChange={(e) => updateCreateInvoiceForm({ driverPhone: e.target.value })}
+                                            className={createInvoiceFieldClass}
+                                        />
+                                        <span className="mt-1 block text-xs text-slate-500">Traqo consent starts after invoice PDF creation.</span>
+                                    </label>
+                                    <label className={createInvoiceLabelClass}>
+                                        Alternate driver mobile
+                                        <input
+                                            disabled={createInvoiceParsing}
+                                            inputMode="numeric"
+                                            value={createInvoiceForm.driverSecondaryPhone}
+                                            onChange={(e) => updateCreateInvoiceForm({ driverSecondaryPhone: e.target.value })}
+                                            className={createInvoiceFieldClass}
+                                        />
+                                        <span className="mt-1 block text-xs text-slate-500">Optional backup number for tracking.</span>
+                                    </label>
+                                    <label className={createInvoiceLabelClass}>
                                         Insured party phone
                                         <input
                                             disabled={createInvoiceParsing}
@@ -2124,6 +2173,9 @@ export default function InsuranceFormsPage() {
                                         />
                                         <span className="mt-1 block text-xs text-slate-500">Invoice message will be sent to this number. You can edit it before creating.</span>
                                     </label>
+                                    <div className="sm:col-span-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+                                        Tracking route uses supplier address as source and buyer/ship-to address as destination.
+                                    </div>
                                     <label className={createInvoiceLabelClass}>Supplier name<input disabled={createInvoiceParsing} value={createInvoiceForm.supplierName} onChange={(e) => updateCreateInvoiceForm({ supplierName: e.target.value })} className={createInvoiceFieldClass} /></label>
                                     <label className={createInvoiceLabelClass}>Place of supply<input disabled={createInvoiceParsing} value={createInvoiceForm.placeOfSupply} onChange={(e) => updateCreateInvoiceForm({ placeOfSupply: e.target.value })} className={createInvoiceFieldClass} /></label>
                                     <label className={`${createInvoiceLabelClass} sm:col-span-2`}>Supplier address<textarea disabled={createInvoiceParsing} value={createInvoiceForm.supplierAddress} onChange={(e) => updateCreateInvoiceForm({ supplierAddress: e.target.value })} rows={1} className={createInvoiceTextareaClass} /></label>
