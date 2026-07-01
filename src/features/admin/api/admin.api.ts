@@ -2489,6 +2489,8 @@ class AdminApi {
     excludePaymentMethod?: string;
     paymentMethods?: string;
     productName?: string;
+    invoiceNumber?: string;
+    insuredPersonQuery?: string;
     searchQuery?: string;
     supplierQuery?: string;
     userId?: string;
@@ -2552,6 +2554,8 @@ class AdminApi {
     paymentMethod?: string;
     excludePaymentMethod?: string;
     paymentMethods?: string;
+    invoiceNumber?: string;
+    insuredPersonQuery?: string;
     searchQuery?: string;
     supplierQuery?: string;
     userId?: string;
@@ -2588,8 +2592,12 @@ class AdminApi {
     excludePaymentMethod?: string;
     paymentMethods?: string;
     productName?: string;
+    invoiceNumber?: string;
+    insuredPersonQuery?: string;
     searchQuery?: string;
     supplierQuery?: string;
+    userId?: string;
+    reportType?: "PAYMENT_DETAILS" | "USER_WISE_DETAILS";
   }): Promise<Blob> => {
     const response = await this.client.get('/insurance-payments/admin/export', {
       params: filters,
