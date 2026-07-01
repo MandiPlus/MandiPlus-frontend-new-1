@@ -1022,7 +1022,12 @@ export default function InsuranceFormsPage() {
             toast.error('Insured party phone must be a valid Indian mobile number.');
             return;
         }
-        if (!isValidIndianPhone(createInvoiceForm.driverPhone)) {
+        const normalizedDriverPhone = normalizePhoneInput(createInvoiceForm.driverPhone);
+        const normalizedDriverSecondaryPhone = normalizePhoneInput(createInvoiceForm.driverSecondaryPhone);
+        if (
+            createInvoiceForm.driverPhone.trim() &&
+            !isValidIndianPhone(createInvoiceForm.driverPhone)
+        ) {
             toast.error('Driver mobile number must be a valid Indian mobile number.');
             return;
         }
@@ -1035,8 +1040,8 @@ export default function InsuranceFormsPage() {
         }
         if (
             createInvoiceForm.driverSecondaryPhone.trim() &&
-            normalizePhoneInput(createInvoiceForm.driverPhone) ===
-                normalizePhoneInput(createInvoiceForm.driverSecondaryPhone)
+            normalizedDriverPhone &&
+            normalizedDriverPhone === normalizedDriverSecondaryPhone
         ) {
             toast.error('Alternate driver mobile number must be different from primary driver number.');
             return;
@@ -1065,9 +1070,9 @@ export default function InsuranceFormsPage() {
                 truckNumber: normalizeVehicleText(createInvoiceForm.truckNumber || createInvoiceForm.vehicleNumber),
                 ownerName: createInvoiceForm.ownerName.trim() || undefined,
                 insuredPartyPhone: normalizePhoneInput(createInvoiceForm.insuredPartyPhone),
-                driverPhone: normalizePhoneInput(createInvoiceForm.driverPhone),
-                driverSecondaryPhone: createInvoiceForm.driverSecondaryPhone.trim()
-                    ? normalizePhoneInput(createInvoiceForm.driverSecondaryPhone)
+                driverPhone: normalizedDriverPhone || undefined,
+                driverSecondaryPhone: normalizedDriverSecondaryPhone
+                    ? normalizedDriverSecondaryPhone
                     : undefined,
                 weighmentSlipNote: createInvoiceForm.invoiceKind === 'cash' ? 'cash' : 'commission',
                 weighmentSlips: createWeighmentFiles,
@@ -2142,7 +2147,7 @@ export default function InsuranceFormsPage() {
                                     <div className="grid gap-2 sm:grid-cols-2">
                                     <label className={createInvoiceLabelClass}>Invoice date<input disabled={createInvoiceParsing} type="date" value={createInvoiceForm.invoiceDate} onChange={(e) => updateCreateInvoiceForm({ invoiceDate: e.target.value })} className={createInvoiceFieldClass} /></label>
                                     <label className={createInvoiceLabelClass}>
-                                        Driver mobile
+                                        Driver mobile (optional)
                                         <input
                                             disabled={createInvoiceParsing}
                                             inputMode="numeric"
@@ -2150,10 +2155,10 @@ export default function InsuranceFormsPage() {
                                             onChange={(e) => updateCreateInvoiceForm({ driverPhone: e.target.value })}
                                             className={createInvoiceFieldClass}
                                         />
-                                        <span className="mt-1 block text-xs text-slate-500">Traqo consent starts after invoice PDF creation.</span>
+                                        <span className="mt-1 block text-xs text-slate-500">Leave blank to skip tracking automation for this invoice.</span>
                                     </label>
                                     <label className={createInvoiceLabelClass}>
-                                        Alternate driver mobile
+                                        Alternate driver mobile (optional)
                                         <input
                                             disabled={createInvoiceParsing}
                                             inputMode="numeric"

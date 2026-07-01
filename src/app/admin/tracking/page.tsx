@@ -60,14 +60,16 @@ function joinAddressParts(value: string[] | string | null | undefined) {
 }
 
 function toInvoiceDraft(form: InsuranceForm): TrackingInvoiceDraft | null {
-  const driverPhone = toTenDigitPhone(form.driverPhone || '');
+  const primaryDriverPhone = toTenDigitPhone(form.driverPhone || '');
+  const secondaryDriverPhone = toTenDigitPhone(form.driverSecondaryPhone || '');
+  const driverPhone = primaryDriverPhone || secondaryDriverPhone;
   if (driverPhone.length !== 10) return null;
 
   return {
     id: form.id || form._id,
     invoiceNumber: form.invoiceNumber || '',
     driverPhone,
-    driverSecondaryPhone: form.driverSecondaryPhone || null,
+    driverSecondaryPhone: primaryDriverPhone ? secondaryDriverPhone || null : null,
     vehicleNumber: form.truckNumber || form.vehicleNumber || null,
     sourceName: joinAddressParts(form.supplierAddress),
     destinationName:

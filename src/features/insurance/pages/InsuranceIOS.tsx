@@ -170,13 +170,14 @@ const questions: Question[] = [
     {
         field: 'driverPhone',
         type: 'text',
-        text: { en: "Driver Mobile Number", hi: "ड्राइवर मोबाइल नंबर" }
+        optional: true,
+        text: { en: "Driver Mobile Number (optional)", hi: "ड्राइवर मोबाइल नंबर (वैकल्पिक)" }
     },
     {
         field: 'driverSecondaryPhone',
         type: 'text',
         optional: true,
-        text: { en: "Alternate Driver Mobile (optional - type NA to skip)", hi: "वैकल्पिक ड्राइवर नंबर (नहीं हो तो NA लिखें)" }
+        text: { en: "Alternate Driver Mobile (optional)", hi: "वैकल्पिक ड्राइवर नंबर (वैकल्पिक)" }
     },
     {
         field: 'insuredPartyPhone',
@@ -842,16 +843,18 @@ const InsuranceIOS = () => {
             if (resolvedFormData.hsn) submitData.append('hsnCode', resolvedFormData.hsn);
             if (resolvedFormData.notes) submitData.append('weighmentSlipNote', resolvedFormData.notes);
             const driverPhone = normalizePhoneInput(resolvedFormData.driverPhone);
-            if (driverPhone.length !== 10) {
-                throw new Error('Driver mobile number is required.');
+            if (driverPhone) {
+                if (driverPhone.length !== 10) {
+                    throw new Error('Driver mobile number must be 10 digits.');
+                }
+                submitData.append('driverPhone', driverPhone);
             }
-            submitData.append('driverPhone', driverPhone);
             const driverSecondaryPhone = normalizePhoneInput(resolvedFormData.driverSecondaryPhone);
             if (driverSecondaryPhone) {
                 if (driverSecondaryPhone.length !== 10) {
                     throw new Error('Alternate driver mobile number must be 10 digits.');
                 }
-                if (driverSecondaryPhone === driverPhone) {
+                if (driverPhone && driverSecondaryPhone === driverPhone) {
                     throw new Error('Alternate driver mobile number must be different from primary driver number.');
                 }
                 submitData.append('driverSecondaryPhone', driverSecondaryPhone);
@@ -984,12 +987,12 @@ const InsuranceIOS = () => {
                 : (language === 'hi' ? 'Supplier Ka WhatsApp Number' : 'Supplier Ka WhatsApp Number');
         }
         if (question.field === 'driverPhone') {
-            return language === 'hi' ? 'ड्राइवर मोबाइल नंबर' : 'Driver Mobile Number';
+            return language === 'hi' ? 'ड्राइवर मोबाइल नंबर (वैकल्पिक)' : 'Driver Mobile Number (optional)';
         }
         if (question.field === 'driverSecondaryPhone') {
             return language === 'hi'
-                ? 'वैकल्पिक ड्राइवर नंबर (नहीं हो तो NA लिखें)'
-                : 'Alternate Driver Mobile (optional - type NA to skip)';
+                ? 'वैकल्पिक ड्राइवर नंबर (वैकल्पिक)'
+                : 'Alternate Driver Mobile (optional)';
         }
         if (question.field === 'invoiceDate') {
             return language === 'hi' ? 'इनवॉइस की तारीख' : 'Invoice Date';
@@ -1147,7 +1150,7 @@ const InsuranceIOS = () => {
             setError(language === 'hi' ? 'Valid 10 digit WhatsApp number dalein.' : 'Enter a valid 10 digit WhatsApp number.');
             return;
         }
-        if (q.field === 'driverPhone' && normalizePhoneInput(currentInput).length !== 10) {
+        if (q.field === 'driverPhone' && currentInput && !isOptionalPhoneSkip(currentInput) && normalizePhoneInput(currentInput).length !== 10) {
             setError(language === 'hi' ? 'Valid 10 digit driver mobile number dalein.' : 'Enter a valid 10 digit driver mobile number.');
             return;
         }
@@ -1155,7 +1158,7 @@ const InsuranceIOS = () => {
             const secondaryDriverPhone = normalizePhoneInput(currentInput);
             const primaryDriverPhone = normalizePhoneInput(formData.driverPhone);
             if (secondaryDriverPhone.length !== 10) {
-                setError(language === 'hi' ? 'Valid 10 digit alternate driver number dalein ya NA likhein.' : 'Enter a valid 10 digit alternate driver number or type NA.');
+                setError(language === 'hi' ? 'Valid 10 digit alternate driver number dalein ya Skip dabayein.' : 'Enter a valid 10 digit alternate driver number or tap Skip.');
                 return;
             }
             if (primaryDriverPhone && secondaryDriverPhone === primaryDriverPhone) {
@@ -1212,7 +1215,7 @@ const InsuranceIOS = () => {
         if (isFormField(q.field)) {
             const valueToStore =
                 q.field === 'insuredPartyPhone' || q.field === 'driverPhone'
-                    ? normalizePhoneInput(currentInput)
+                    ? (isOptionalPhoneSkip(currentInput) ? '' : normalizePhoneInput(currentInput))
                     : q.field === 'driverSecondaryPhone'
                         ? (isOptionalPhoneSkip(currentInput) ? '' : normalizePhoneInput(currentInput))
                     : (q.type === 'number' && currentInput) ? parseFloat(currentInput) : currentInput;
@@ -1290,7 +1293,9 @@ const InsuranceIOS = () => {
             }
         } else {
             setMessages(prev => [...prev, {
-                text: q.field === 'invoiceDate' ? formatDateForDisplay(currentInput) : currentInput,
+                text: currentInput
+                    ? (q.field === 'invoiceDate' ? formatDateForDisplay(currentInput) : currentInput)
+                    : (language === 'hi' ? 'Skip किया' : 'Skipped'),
                 sender: 'user',
                 field: q.field,
             }]);
@@ -1319,6 +1324,11 @@ const InsuranceIOS = () => {
     const handleInvoiceDateConfirm = () => {
         const selectedDate = formData.invoiceDate || getTodayDateInputValue();
         void processInput(selectedDate);
+    };
+
+    const handleSkipCurrentQuestion = () => {
+        setInputValue('');
+        void processInput('');
     };
 
     const handleSupplierLookupSubmit = () => {
@@ -1827,6 +1837,12 @@ const InsuranceIOS = () => {
     const isSupplierLookupQuestion = currentQuestion.field === 'supplierName';
     const isBuyerLookupQuestion = currentQuestion.field === 'buyerName';
     const isCashMode = String(formData.notes || '').toLowerCase() === 'cash';
+    const canSkipCurrentQuestion =
+        currentQuestion.optional &&
+        (currentQuestion.field === 'driverPhone' ||
+            currentQuestion.field === 'driverSecondaryPhone') &&
+        editingMessageIndex === null &&
+        !isSubmitting;
     const currentLookupUsesOwnProfile =
         !shouldRequireVerifiedParties && (isSupplierLookupQuestion || isBuyerLookupQuestion);
     const currentLookupUsesVerified =
@@ -2412,6 +2428,15 @@ const InsuranceIOS = () => {
                         </div>
                     ) : (
                         <form onSubmit={handleSubmit} className="flex items-center space-x-2">
+                            {canSkipCurrentQuestion && (
+                                <button
+                                    type="button"
+                                    onClick={handleSkipCurrentQuestion}
+                                    className="rounded-full border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm"
+                                >
+                                    Skip
+                                </button>
+                            )}
                             <div className="flex-1 relative">
                                 <input
                                     ref={textInputRef}
