@@ -6,7 +6,6 @@ import { toast } from 'react-toastify';
 import {
   CheckCheck,
   CircleCheck,
-  Copy,
   Download,
   FileText,
   Image as ImageIcon,
@@ -212,11 +211,6 @@ function getDaysOverdueLabel(days: number | null): string {
   return `${days} days`;
 }
 
-function getPaymentGatewayFlowLabel(flow?: string | null): string {
-  if (flow === 'STANDARD_CHECKOUT') return 'Checkout';
-  if (flow === 'PAYLINK') return 'Paylink';
-  return 'Gateway';
-}
 
 function normalizePhoneInput(value?: string | null) {
   return String(value || '').replace(/\D/g, '');
@@ -421,21 +415,6 @@ export default function AdminInsurancePaymentsPage() {
   const [serverTotal, setServerTotal] = useState(0);
   const [serverTotalPages, setServerTotalPages] = useState(1);
   const [summaryStats, setSummaryStats] = useState({ totalPremium: 0, totalPaid: 0, totalPending: 0, paidToday: 0, paidFromWallet: 0 });
-
-  const copyPaymentOrderId = async (row: InsurancePaymentRow) => {
-    const value = row.phonepeOrderId || row.paymentGatewayOrderId;
-    if (!value) {
-      toast.info('No PhonePe order ID available yet');
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(value);
-      toast.success('PhonePe order ID copied');
-    } catch {
-      toast.error('Failed to copy PhonePe order ID');
-    }
-  };
 
   const paymentMethodFilterKey = Array.from(paymentMethodFilter).sort().join(',');
   const paymentMethodParams = useMemo(() => {
@@ -1605,9 +1584,6 @@ export default function AdminInsurancePaymentsPage() {
                     Payment Method
                   </th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">
-                    PhonePe Order
-                  </th>
-                  <th className="px-4 py-3 text-left font-semibold text-gray-700">
                     Updated At
                   </th>
                   <th className="px-4 py-3 text-right font-semibold text-gray-700">
@@ -1619,7 +1595,7 @@ export default function AdminInsurancePaymentsPage() {
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={13}
+                      colSpan={12}
                       className="px-4 py-6 text-center text-sm text-gray-500"
                     >
                       Loading insurance payments...
@@ -1628,7 +1604,7 @@ export default function AdminInsurancePaymentsPage() {
                 ) : paginatedRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={13}
+                      colSpan={12}
                       className="px-4 py-6 text-center text-sm text-gray-500"
                     >
                       No records found.
@@ -1688,36 +1664,6 @@ export default function AdminInsurancePaymentsPage() {
                           </span>
                         ) : (
                           row.paymentMethod || '-'
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">
-                        {row.phonepeOrderId || row.paymentGatewayOrderId ? (
-                          <div className="flex min-w-44 max-w-56 items-center gap-2">
-                            <div className="min-w-0">
-                              <div className="mb-1">
-                                <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
-                                  {getPaymentGatewayFlowLabel(row.paymentGatewayFlow)}
-                                </span>
-                              </div>
-                              <div
-                                className="truncate font-mono text-xs text-gray-800"
-                                title={row.phonepeOrderId || row.paymentGatewayOrderId || ''}
-                              >
-                                {row.phonepeOrderId || row.paymentGatewayOrderId}
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => copyPaymentOrderId(row)}
-                              title="Copy PhonePe order ID"
-                              aria-label={`Copy PhonePe order ID for ${row.invoiceNumber}`}
-                              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                            >
-                              <Copy className="h-3.5 w-3.5" strokeWidth={2.2} />
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-gray-400">-</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-gray-700">
