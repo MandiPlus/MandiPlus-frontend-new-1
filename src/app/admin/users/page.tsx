@@ -243,9 +243,14 @@ export default function UsersPage() {
     const [serverTotal, setServerTotal] = useState(0);
     const [serverTotalPages, setServerTotalPages] = useState(1);
     const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [usersRefreshing, setUsersRefreshing] = useState(false);
     const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const paginatedUsersRequestRef = useRef(0);
+    const usersRefreshStateRef = useRef(0);
 
     const fetchPaginatedUsers = useCallback(async (pageNum: number, search: string, section: string) => {
+        const requestId = paginatedUsersRequestRef.current + 1;
+        paginatedUsersRequestRef.current = requestId;
         const response = await adminApi.getAdminUsersPaginated({
             page: pageNum,
             limit: ITEMS_PER_PAGE,
@@ -264,9 +269,11 @@ export default function UsersPage() {
             aliasNames: Array.isArray(u.aliasNames) ? u.aliasNames : [],
             aliasPhones: Array.isArray(u.aliasPhones) ? u.aliasPhones : [],
         })) as User[];
-        setFilteredUsers(users);
-        setServerTotal(Number(response.total) || 0);
-        setServerTotalPages(Math.max(1, Number(response.totalPages) || 1));
+        if (requestId === paginatedUsersRequestRef.current) {
+            setFilteredUsers(users);
+            setServerTotal(Number(response.total) || 0);
+            setServerTotalPages(Math.max(1, Number(response.totalPages) || 1));
+        }
         return users;
     }, []);
 
@@ -445,7 +452,7 @@ export default function UsersPage() {
         if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
         searchTimerRef.current = setTimeout(() => {
             setDebouncedSearch(searchTerm);
-        }, 400);
+        }, 650);
         return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
     }, [searchTerm]);
 
@@ -454,14 +461,20 @@ export default function UsersPage() {
         if (activeSection === 'ADMIN_REQUESTS') return;
         setCurrentPage(1);
         const loadPage = async () => {
+            const refreshId = usersRefreshStateRef.current + 1;
+            usersRefreshStateRef.current = refreshId;
             try {
-                setLoading(true);
+                setUsersRefreshing(true);
                 setError('');
                 await fetchPaginatedUsers(1, debouncedSearch, activeSection);
             } catch (err: any) {
-                setError(err?.message || 'Failed to load users');
+                if (refreshId === usersRefreshStateRef.current) {
+                    setError(err?.message || 'Failed to load users');
+                }
             } finally {
-                setLoading(false);
+                if (refreshId === usersRefreshStateRef.current) {
+                    setUsersRefreshing(false);
+                }
             }
         };
         loadPage();
@@ -471,13 +484,19 @@ export default function UsersPage() {
         if (!isAuthenticated || currentPage === 1) return;
         if (activeSection === 'ADMIN_REQUESTS') return;
         const loadPage = async () => {
+            const refreshId = usersRefreshStateRef.current + 1;
+            usersRefreshStateRef.current = refreshId;
             try {
-                setLoading(true);
+                setUsersRefreshing(true);
                 await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
             } catch (err: any) {
-                setError(err?.message || 'Failed to load users');
+                if (refreshId === usersRefreshStateRef.current) {
+                    setError(err?.message || 'Failed to load users');
+                }
             } finally {
-                setLoading(false);
+                if (refreshId === usersRefreshStateRef.current) {
+                    setUsersRefreshing(false);
+                }
             }
         };
         loadPage();
@@ -498,6 +517,7 @@ export default function UsersPage() {
     }, [currentPage, totalPages]);
 
     const paginatedUsers = filteredUsers;
+    const showUsersRefreshState = activeSection !== 'ADMIN_REQUESTS' && usersRefreshing;
 
     const handleWalletAdjust = async (user: User) => {
         const rawAmount = creditAmounts[user.id];
@@ -1376,13 +1396,25 @@ export default function UsersPage() {
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <h1 className="text-2xl font-semibold text-gray-900">{sectionTitle}</h1>
                     <div className="flex flex-row items-center gap-3 md:justify-end">
-                        <input
-                            type="text"
-                            placeholder={`Search ${sectionTitle.toLowerCase()} by Name or Mobile...`}
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="block min-w-0 flex-1 rounded-md border-gray-300 px-4 py-2 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm md:min-w-[320px] md:max-w-[420px] border"
-                        />
+                        <div className="relative min-w-0 flex-1 md:min-w-[320px] md:max-w-[420px]">
+                            <input
+                                type="text"
+                                placeholder={`Search ${sectionTitle.toLowerCase()} by Name or Mobile...`}
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="block w-full rounded-md border border-gray-300 px-4 py-2 pr-28 shadow-sm transition-colors focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                            />
+                            {showUsersRefreshState ? (
+                                <div
+                                    role="status"
+                                    aria-live="polite"
+                                    className="pointer-events-none absolute inset-y-0 right-3 flex items-center gap-2 text-xs font-medium text-gray-500"
+                                >
+                                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-300 border-t-green-600" />
+                                    Searching
+                                </div>
+                            ) : null}
+                        </div>
                         {activeSection !== 'ADMIN_REQUESTS' ? (
                             <button
                                 onClick={handleExportUsers}
