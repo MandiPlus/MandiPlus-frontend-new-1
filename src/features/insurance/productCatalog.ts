@@ -9,6 +9,7 @@ export const itemsData = [
     { name: "Guava (Amrood)", hsn: "08045010" },
     { name: "Muskmelon (Kastoori Tarbooj)", hsn: "08071910" },
     { name: "Watermelon (Tarbooj)", hsn: "08071100" },
+    { name: "Pista", hsn: "08025200" },
     { name: "Tomato", hsn: "07020000" },
     { name: "Onion", hsn: "07031010" },
     { name: "Potato", hsn: "07019000" },

@@ -147,7 +147,7 @@ function invoiceTypeFromDraftNote(note?: string | null) {
   if (normalized.includes('commission') || normalized.includes('commision')) {
     return 'SUPPLIER_INVOICE';
   }
-  return 'SUPPLIER_INVOICE';
+  return 'BUYER_INVOICE';
 }
 
 function firstText(...values: unknown[]): string {
@@ -174,13 +174,36 @@ function firstNumber(...values: unknown[]): number | undefined {
 function modeLabelFromInvoiceType(invoiceType?: string | null) {
   return String(invoiceType || '').toUpperCase() === 'BUYER_INVOICE'
     ? 'Cash'
-    : 'Commission';
+    : invoiceType
+    ? 'Commission'
+    : 'Cash';
 }
 
 function invoiceTypeFromMode(mode?: string | null) {
   return String(mode || '').trim().toLowerCase() === 'cash'
     ? 'BUYER_INVOICE'
     : 'SUPPLIER_INVOICE';
+}
+
+function getCalculatedAmount(draft?: AiDraft | null): number | undefined {
+  const qty = Number(draft?.quantity);
+  const rate = Number(draft?.rate);
+  if (Number.isFinite(qty) && qty > 0 && Number.isFinite(rate) && rate > 0) {
+    return Math.round(qty * rate * 100) / 100;
+  }
+  return firstNumber(draft?.total_amount, draft?.amount);
+}
+
+function getAmountMismatch(draft?: AiDraft | null) {
+  const declared = firstNumber(draft?.total_amount, draft?.amount);
+  const calculated = getCalculatedAmount(draft);
+  if (!declared || !calculated) return null;
+  if (Math.abs(declared - calculated) < 1) return null;
+  return { declared, calculated };
+}
+
+function isTomatoProduct(product?: string | null) {
+  return /\btomato\b/i.test(String(product || ''));
 }
 
 function normalizeApprovalDraft(draft: AiDraft = {}): AiDraft {
@@ -260,6 +283,14 @@ function openPdfInNewTab(url?: string | null) {
 
 function serializableDraft(draft: AiDraft) {
   const rest = normalizeApprovalDraft(draft);
+  const calculatedAmount = getCalculatedAmount(rest);
+  if (calculatedAmount) {
+    if (rest.total_amount && Math.abs(Number(rest.total_amount) - calculatedAmount) >= 1) {
+      rest.declared_total_amount = rest.total_amount;
+    }
+    rest.total_amount = calculatedAmount;
+    rest.amount = calculatedAmount;
+  }
   delete rest._weighment_slip_file;
   return rest;
 }
@@ -723,17 +754,17 @@ export default function InvoiceApprovalsPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-64px)] flex-col">
+    <div className="flex min-h-[calc(100vh-64px)] flex-col lg:h-[calc(100vh-64px)]">
       {/* Header + Insights + Filter bar */}
-      <div className="shrink-0 border-b border-gray-200 bg-white px-6 py-4">
-        <div className="flex items-center justify-between mb-3">
+      <div className="shrink-0 border-b border-gray-200 bg-white px-4 py-4 sm:px-6">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-xl font-bold text-gray-900">Invoice Approvals</h1>
             <p className="text-xs text-gray-500 mt-0.5">
               {pendingCount} pending &middot; {filteredCollections.length} shown
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               onClick={() => { setDateFrom(today); setDateTo(today); }}
               className="rounded-md bg-indigo-50 border border-indigo-200 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
@@ -749,7 +780,7 @@ export default function InvoiceApprovalsPage() {
           </div>
         </div>
         {/* Insight cards */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 mb-3">
+        <div className="mb-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
             <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Total Pending</div>
             <div className="mt-1 text-xl font-semibold text-slate-900">{pendingCount}</div>
@@ -769,32 +800,32 @@ export default function InvoiceApprovalsPage() {
         </div>
         {/* Horizontal filter bar */}
         <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end">
             <input
               type="text"
               placeholder="Search by name / phone"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-[180px] rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500 lg:w-[180px]"
             />
             <input
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="w-[140px] rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none lg:w-[140px]"
               title="From date"
             />
             <input
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="w-[140px] rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none lg:w-[140px]"
               title="To date"
             />
             <select
               value={confidenceFilter}
               onChange={(e) => setConfidenceFilter(e.target.value as any)}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none lg:w-auto"
             >
               <option value="all">All Confidence</option>
               <option value="high">High</option>
@@ -804,7 +835,7 @@ export default function InvoiceApprovalsPage() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none lg:w-auto"
             >
               <option value="pending">Pending</option>
               <option value="done">Approved</option>
@@ -824,9 +855,9 @@ export default function InvoiceApprovalsPage() {
       </div>
 
       {/* Main content: split pane */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-visible lg:flex-row lg:overflow-hidden">
         {/* Left: Queue list */}
-        <div className="w-80 shrink-0 overflow-y-auto border-r border-gray-200 bg-gray-50 lg:w-96">
+        <div className="max-h-[340px] w-full shrink-0 overflow-y-auto border-b border-gray-200 bg-gray-50 lg:max-h-none lg:w-96 lg:border-b-0 lg:border-r">
           {/* Active sessions - live collecting */}
           {activeSessions.length > 0 && (
             <div className="border-b border-indigo-100 bg-indigo-50/50 px-4 py-2">
@@ -901,14 +932,14 @@ export default function InvoiceApprovalsPage() {
         </div>
 
         {/* Right: Detail view with tabs */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-white">
+        <div className="flex min-h-0 flex-1 flex-col overflow-visible bg-white lg:overflow-hidden">
           {!selectedCollection ? (
             <div className="flex h-full items-center justify-center text-sm text-gray-400">
               Select a collection from the left to review
             </div>
           ) : (
             <>
-              <div className="flex border-b border-gray-200 px-6 pt-2 shrink-0">
+              <div className="flex shrink-0 overflow-x-auto border-b border-gray-200 px-4 pt-2 sm:px-6">
                 {(['review', 'history', 'chat'] as const).map((tab) => (
                   <button
                     key={tab}
@@ -923,7 +954,7 @@ export default function InvoiceApprovalsPage() {
                   </button>
                 ))}
               </div>
-              <div ref={detailRef} className="flex-1 overflow-y-auto">
+              <div ref={detailRef} className="flex-1 overflow-visible lg:overflow-y-auto">
                 {activeTab === 'review' && (
                   <ReviewTab
                     selectedCollection={selectedCollection}
@@ -1000,8 +1031,13 @@ function ReviewTab({
   rejectCollection: () => void; rejecting: boolean; approvedPdfUrl: string | null; handleDownload: () => void;
   postSendStatus: { invoiceNumber?: string; pdfGenerated?: boolean; whatsappSent?: boolean; paymentLink?: boolean } | null;
 }) {
+  const [showPreview, setShowPreview] = useState(false);
+  const amountMismatch = getAmountMismatch(editDraft);
+  const effectiveAmount = getCalculatedAmount(editDraft);
+  const showDriverFields = isTomatoProduct(editDraft?.commodity);
+
   return (
-    <div className="mx-auto max-w-4xl p-6">
+    <div className="mx-auto w-full max-w-4xl p-4 sm:p-6">
       {/* Source messages */}
       <div className="mb-6">
         <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">Customer Messages</h2>
@@ -1059,11 +1095,17 @@ function ReviewTab({
             )}
           </div>
         )}
-        <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-4">
+        {amountMismatch && (
+          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Customer message had total {formatCurrency(amountMismatch.declared)}, but quantity x rate is {formatCurrency(amountMismatch.calculated)}.
+            Invoice will follow quantity x rate like the /insurance form.
+          </div>
+        )}
+        <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-4 sm:p-4">
           {/* Section: Invoice Mode */}
           <div>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Invoice Mode</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">Cash ya Commission</label>
                 <select
@@ -1076,13 +1118,6 @@ function ReviewTab({
                   <option value="Commission">Commission</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Invoice Type</label>
-                <select value={editDraft?.invoice_type || 'SUPPLIER_INVOICE'} onChange={(e) => handleDraftChange('invoice_type', e.target.value)} disabled={selectedCollection.status !== 'pending'} className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-400 focus:outline-none disabled:bg-gray-50 disabled:text-gray-500">
-                  <option value="SUPPLIER_INVOICE">Supplier Invoice</option>
-                  <option value="BUYER_INVOICE">Buyer Invoice</option>
-                </select>
-              </div>
               <DraftField label="Invoice Date" value={editDraft?.invoice_date || ''} onChange={(v) => handleDraftChange('invoice_date', v)} placeholder="DD/MM/YYYY" disabled={selectedCollection.status !== 'pending'} />
             </div>
           </div>
@@ -1092,13 +1127,13 @@ function ReviewTab({
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Product & Pricing</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <ProductDraftField value={editDraft?.commodity || ''} onChange={(v) => handleDraftChange('commodity', v)} disabled={selectedCollection.status !== 'pending'} />
-              <DraftField label="HSN Code" value={editDraft?.hsn_code || ''} onChange={(v) => handleDraftChange('hsn_code', v)} disabled={selectedCollection.status !== 'pending'} />
-              <DraftField label="Total Amount" value={editDraft?.total_amount?.toString() || ''} onChange={(v) => handleDraftChange('total_amount', parseFloat(v) || 0)} type="number" disabled={selectedCollection.status !== 'pending'} />
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mt-3">
               <DraftField label="Quantity" value={editDraft?.quantity?.toString() || ''} onChange={(v) => handleDraftChange('quantity', parseFloat(v) || 0)} type="number" disabled={selectedCollection.status !== 'pending'} />
               <DraftField label="Rate" value={editDraft?.rate?.toString() || ''} onChange={(v) => handleDraftChange('rate', parseFloat(v) || 0)} type="number" disabled={selectedCollection.status !== 'pending'} />
             </div>
+            <p className="mt-2 text-xs text-gray-500">
+              Amount: <span className="font-medium text-gray-700">{formatCurrency(effectiveAmount)}</span>
+              {editDraft?.hsn_code ? <span> &middot; HSN mapped from product: {editDraft.hsn_code}</span> : null}
+            </p>
           </div>
 
           {/* Section: Buyer / Seller */}
@@ -1146,26 +1181,22 @@ function ReviewTab({
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mt-3">
               <DraftField label="Place of Supply" value={editDraft?.place_of_supply || ''} onChange={(v) => handleDraftChange('place_of_supply', v)} placeholder="e.g. KARNATAKA" disabled={selectedCollection.status !== 'pending'} />
-              <DraftField label="Customer Account ID" value={editDraft?.customer_user_id || editDraft?.customerUserId || ''} onChange={(v) => handleDraftChange('customer_user_id', v)} placeholder="Optional user id" disabled={selectedCollection.status !== 'pending'} />
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mt-3">
-              <DraftField label="Buyer WhatsApp Phone" value={editDraft?.buyer_phone || ''} onChange={(v) => handleDraftChange('buyer_phone', v)} placeholder="10-digit mobile" disabled={selectedCollection.status !== 'pending'} />
-              <DraftField label="Supplier WhatsApp Phone" value={editDraft?.seller_phone || ''} onChange={(v) => handleDraftChange('seller_phone', v)} placeholder="10-digit mobile" disabled={selectedCollection.status !== 'pending'} />
             </div>
           </div>
 
           {/* Section: Transport & Vehicle */}
           <div className="border-t border-gray-100 pt-4">
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Transport & Vehicle</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <DraftField label="Vehicle Number" value={editDraft?.vehicle_number || ''} onChange={(v) => handleDraftChange('vehicle_number', v)} placeholder="e.g. KA05MN3344" disabled={selectedCollection.status !== 'pending'} />
-              <DraftField label="Truck Number" value={editDraft?.truck_number || ''} onChange={(v) => handleDraftChange('truck_number', v)} placeholder="If different" disabled={selectedCollection.status !== 'pending'} />
               <DraftField label="Owner / Transporter Name" value={editDraft?.owner_name || ''} onChange={(v) => handleDraftChange('owner_name', v)} disabled={selectedCollection.status !== 'pending'} />
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mt-3">
-              <DraftField label="Driver Mobile Number" value={editDraft?.driver_phone || ''} onChange={(v) => handleDraftChange('driver_phone', v)} placeholder="Optional" disabled={selectedCollection.status !== 'pending'} />
-              <DraftField label="Alternate Driver Mobile" value={editDraft?.driver_secondary_phone || ''} onChange={(v) => handleDraftChange('driver_secondary_phone', v)} placeholder="Optional" disabled={selectedCollection.status !== 'pending'} />
-            </div>
+            {showDriverFields && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mt-3">
+                <DraftField label="Driver Mobile Number" value={editDraft?.driver_phone || ''} onChange={(v) => handleDraftChange('driver_phone', v)} placeholder="Required for Tomato if available" disabled={selectedCollection.status !== 'pending'} />
+                <DraftField label="Alternate Driver Mobile" value={editDraft?.driver_secondary_phone || ''} onChange={(v) => handleDraftChange('driver_secondary_phone', v)} placeholder="Optional" disabled={selectedCollection.status !== 'pending'} />
+              </div>
+            )}
             <div className="mt-3">
               <label className="block text-xs font-medium text-gray-500 mb-1">Weighment Slip (Upload)</label>
               <input
@@ -1186,17 +1217,30 @@ function ReviewTab({
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Insurance</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <DraftField label="Insured Party Phone" value={editDraft?.insured_party_phone || ''} onChange={(v) => handleDraftChange('insured_party_phone', v)} placeholder="10-digit mobile" disabled={selectedCollection.status !== 'pending'} />
-              <DraftField label="Premium Amount (0.2%)" value={editDraft?.total_amount ? (Number(editDraft.total_amount) * 0.002).toFixed(2) : ''} onChange={() => {}} disabled={true} />
+              <DraftField label="Premium Amount (0.2%)" value={effectiveAmount ? (Number(effectiveAmount) * 0.002).toFixed(2) : ''} onChange={() => {}} disabled={true} />
             </div>
           </div>
         </div>
       </div>
 
-      {/* Invoice Preview - Full PDF-style layout */}
+      {/* Invoice Preview - collapsed by default */}
       {editDraft?.commodity && (
         <div className="mb-6">
-          <h2 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-3">Invoice Preview</h2>
-          <InvoicePreviewCard draft={editDraft} />
+          <button
+            type="button"
+            onClick={() => setShowPreview((value) => !value)}
+            className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            <span>Invoice Preview</span>
+            <span className="text-xs text-gray-500">{showPreview ? 'Hide' : 'Show'}</span>
+          </button>
+          {showPreview && (
+            <div className="mt-3 overflow-x-auto">
+              <div className="min-w-[760px]">
+                <InvoicePreviewCard draft={editDraft} />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1221,7 +1265,7 @@ function ReviewTab({
       {/* Action buttons */}
       {selectedCollection.status === 'pending' && (
         <div className="border-t border-gray-100 pt-4">
-          <div className="flex items-center gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
             <button onClick={approveCollection} disabled={approving} className="inline-flex items-center rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
               {approving ? 'Sending...' : 'Send'}
             </button>
@@ -1265,7 +1309,8 @@ function ReviewTab({
 
 function InvoicePreviewCard({ draft }: { draft: AiDraft }) {
   const normalizedDraft = normalizeApprovalDraft(draft);
-  const insuranceAmount = normalizedDraft.total_amount ? (normalizedDraft.total_amount * 0.002).toFixed(2) : '0.00';
+  const previewAmount = getCalculatedAmount(normalizedDraft) || 0;
+  const insuranceAmount = previewAmount ? (previewAmount * 0.002).toFixed(2) : '0.00';
   const insuredName =
     normalizedDraft.invoice_type === 'BUYER_INVOICE'
       ? normalizedDraft.buyer_name || '-'
@@ -1332,7 +1377,7 @@ function InvoicePreviewCard({ draft }: { draft: AiDraft }) {
               <td className="px-3 py-3 border-r border-gray-300">{normalizedDraft.hsn_code || '-'}</td>
               <td className="px-3 py-3 text-center border-r border-gray-300">{normalizedDraft.quantity || 0}</td>
               <td className="px-3 py-3 text-right border-r border-gray-300">Rs. {Number(normalizedDraft.rate || 0).toFixed(2)}</td>
-              <td className="px-3 py-3 text-right font-semibold">Rs. {Number(normalizedDraft.total_amount || 0).toFixed(2)}</td>
+              <td className="px-3 py-3 text-right font-semibold">Rs. {Number(previewAmount || 0).toFixed(2)}</td>
             </tr>
           </tbody>
         </table>
@@ -1354,7 +1399,7 @@ function InvoicePreviewCard({ draft }: { draft: AiDraft }) {
         <div className="p-4 space-y-3">
           <div className="border border-gray-300 rounded p-3 text-center">
             <p className="text-[10px] text-gray-500 mb-0.5">Total</p>
-            <p className="text-base font-bold text-gray-900">Rs. {Number(normalizedDraft.total_amount || 0).toFixed(2)}</p>
+            <p className="text-base font-bold text-gray-900">Rs. {Number(previewAmount || 0).toFixed(2)}</p>
           </div>
           <div className="border border-gray-300 rounded p-3 text-center">
             <p className="text-[10px] text-gray-500 mb-0.5">Insurance Amount (0.2%)</p>
