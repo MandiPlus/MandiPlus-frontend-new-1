@@ -275,6 +275,25 @@ export async function listInvoiceDriverDrafts(
   }
 }
 
+export async function clearInvoiceDriverDraft(
+  invoiceId: string,
+): Promise<AdminTrackingApiResponse<GenericPayload>> {
+  try {
+    const res = await axios.delete(
+      `${API_BASE_URL}/traqo/invoice-driver-drafts/${encodeURIComponent(invoiceId)}`,
+      {
+        headers: getAuthHeaders(),
+      },
+    );
+    return { success: true, data: res.data };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to remove invoice driver details"),
+    };
+  }
+}
+
 export async function getTruckTracking(
   vehicleNumber: string,
 ): Promise<AdminTrackingApiResponse<TruckTrackingResponse>> {

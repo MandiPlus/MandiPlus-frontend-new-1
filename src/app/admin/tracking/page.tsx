@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import { Trash2 } from "lucide-react";
 import { useAdmin } from "@/features/admin/context/AdminContext";
 import { adminApi, InsuranceForm } from "@/features/admin/api/admin.api";
 import {
@@ -14,6 +15,7 @@ import {
   TruckTrackingResponse,
   addDriverNumber,
   checkDriverConsent,
+  clearInvoiceDriverDraft,
   createTrackingTrip,
   getTruckTracking,
   listInvoiceDriverDrafts,
@@ -162,6 +164,7 @@ export default function AdminTrackingPage() {
   const [selectedInvoiceDraftId, setSelectedInvoiceDraftId] = useState("");
   const [invoiceDraftsLoading, setInvoiceDraftsLoading] = useState(false);
   const [invoiceDraftsError, setInvoiceDraftsError] = useState("");
+  const [clearingInvoiceDraftId, setClearingInvoiceDraftId] = useState("");
 
   const [busy, setBusy] = useState({
     register: false,
@@ -270,6 +273,43 @@ export default function AdminTrackingPage() {
     },
     [applyInvoiceDraft],
   );
+
+  const handleClearInvoiceDraft = async (
+    event: { stopPropagation: () => void },
+    draft: TrackingInvoiceDraft,
+  ) => {
+    event.stopPropagation();
+
+    const confirmed = window.confirm(
+      `Remove driver tracking details for ${draft.invoiceNumber}? This keeps the invoice, but removes it from this tracking draft list.`,
+    );
+    if (!confirmed) return;
+
+    setClearingInvoiceDraftId(draft.id);
+    const response = await clearInvoiceDriverDraft(draft.id);
+    if (!response.success) {
+      toast.error(response.message || "Failed to remove invoice driver details.");
+    } else {
+      toast.success("Invoice driver details removed.");
+      setInvoiceDrafts((prev) => prev.filter((item) => item.id !== draft.id));
+      if (selectedInvoiceDraftId === draft.id) {
+        setSelectedInvoiceDraftId("");
+        setRegisterForm({ phone_number: "", name: "", operator: "" });
+        setConsentForm({ tel: "" });
+        setConsentState(null);
+        setTripForm((prev) => ({
+          ...prev,
+          tel: "",
+          truck_number: "",
+          srcname: "",
+          destname: "",
+          invoice: "",
+          internalInvoiceId: "",
+        }));
+      }
+    }
+    setClearingInvoiceDraftId("");
+  };
 
   useEffect(() => {
     if (loading || !isAuthenticated) return;
@@ -725,11 +765,18 @@ export default function AdminTrackingPage() {
             {invoiceDrafts.slice(0, 6).map((draft) => {
               const selected = selectedInvoiceDraftId === draft.id;
               return (
-                <button
+                <div
                   key={draft.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => applyInvoiceDraft(draft)}
-                  className={`rounded-lg border p-3 text-left transition ${
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      applyInvoiceDraft(draft);
+                    }
+                  }}
+                  className={`cursor-pointer rounded-lg border p-3 text-left transition ${
                     selected
                       ? "border-[#4309ac] bg-[#4309ac]/5 shadow-sm"
                       : "border-slate-200 bg-slate-50 hover:border-slate-300"
@@ -739,11 +786,29 @@ export default function AdminTrackingPage() {
                     <span className="text-sm font-semibold text-slate-900">
                       {draft.invoiceNumber || "Invoice"}
                     </span>
-                    {selected ? (
-                      <span className="rounded-full bg-[#4309ac] px-2 py-0.5 text-[11px] font-semibold text-white">
-                        Applied
-                      </span>
-                    ) : null}
+                    <div className="flex items-center gap-2">
+                      {selected ? (
+                        <span className="rounded-full bg-[#4309ac] px-2 py-0.5 text-[11px] font-semibold text-white">
+                          Applied
+                        </span>
+                      ) : null}
+                      <button
+                        type="button"
+                        title="Remove driver details"
+                        aria-label={`Remove driver details for ${draft.invoiceNumber}`}
+                        onClick={(event) =>
+                          void handleClearInvoiceDraft(event, draft)
+                        }
+                        disabled={clearingInvoiceDraftId === draft.id}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-red-200 bg-white text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-70"
+                      >
+                        {clearingInvoiceDraftId === draft.id ? (
+                          <span className="h-3 w-3 animate-spin rounded-full border-2 border-red-200 border-t-red-600" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    </div>
                   </div>
                   <div className="mt-2 space-y-1 text-xs text-slate-600">
                     <div className="line-clamp-1">
@@ -775,7 +840,7 @@ export default function AdminTrackingPage() {
                       Destination: {draft.destinationName || "-"}
                     </div>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
