@@ -43,8 +43,11 @@ export interface CreateTripPayload {
 export interface TrackingInvoiceDraft {
   id: string;
   invoiceNumber: string;
+  supplierName?: string | null;
   driverPhone: string;
   driverSecondaryPhone?: string | null;
+  driverOperator?: string | null;
+  driverSecondaryOperator?: string | null;
   vehicleNumber?: string | null;
   sourceName?: string | null;
   destinationName?: string | null;
@@ -164,7 +167,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 export async function addDriverNumber(
-  payload: AddDriverPayload
+  payload: AddDriverPayload,
 ): Promise<AdminTrackingApiResponse<GenericPayload>> {
   try {
     const res = await axios.post(`${API_BASE_URL}/traqo/add-number`, payload, {
@@ -180,7 +183,7 @@ export async function addDriverNumber(
 }
 
 export async function checkDriverConsent(
-  payload: CheckConsentPayload
+  payload: CheckConsentPayload,
 ): Promise<AdminTrackingApiResponse<GenericPayload>> {
   try {
     const res = await axios.post(
@@ -188,7 +191,7 @@ export async function checkDriverConsent(
       payload,
       {
         headers: getAuthHeaders(),
-      }
+      },
     );
     return { success: true, data: res.data };
   } catch (error) {
@@ -200,13 +203,13 @@ export async function checkDriverConsent(
 }
 
 export async function resendDriverConsentSms(
-  phoneNumber: string
+  phoneNumber: string,
 ): Promise<AdminTrackingApiResponse<GenericPayload>> {
   try {
     const res = await axios.post(
       `${API_BASE_URL}/traqo/resend-consent`,
       { phone_number: phoneNumber },
-      { headers: getAuthHeaders() }
+      { headers: getAuthHeaders() },
     );
     return { success: true, data: res.data };
   } catch (error) {
@@ -221,9 +224,12 @@ export async function listCreatedConsents(): Promise<
   AdminTrackingApiResponse<TraqoConsentRow[]>
 > {
   try {
-    const res = await axios.get<TraqoConsentRow[]>(`${API_BASE_URL}/traqo/consents`, {
-      headers: getAuthHeaders(),
-    });
+    const res = await axios.get<TraqoConsentRow[]>(
+      `${API_BASE_URL}/traqo/consents`,
+      {
+        headers: getAuthHeaders(),
+      },
+    );
     return { success: true, data: Array.isArray(res.data) ? res.data : [] };
   } catch (error) {
     return {
@@ -234,7 +240,7 @@ export async function listCreatedConsents(): Promise<
 }
 
 export async function createTrackingTrip(
-  payload: CreateTripPayload
+  payload: CreateTripPayload,
 ): Promise<AdminTrackingApiResponse<GenericPayload>> {
   try {
     const res = await axios.post(`${API_BASE_URL}/traqo/trips`, payload, {
@@ -250,7 +256,7 @@ export async function createTrackingTrip(
 }
 
 export async function listInvoiceDriverDrafts(
-  limit = 20
+  limit = 20,
 ): Promise<AdminTrackingApiResponse<TrackingInvoiceDraft[]>> {
   try {
     const res = await axios.get<TrackingInvoiceDraft[]>(
@@ -258,7 +264,7 @@ export async function listInvoiceDriverDrafts(
       {
         headers: getAuthHeaders(),
         params: { limit },
-      }
+      },
     );
     return { success: true, data: Array.isArray(res.data) ? res.data : [] };
   } catch (error) {
@@ -270,14 +276,14 @@ export async function listInvoiceDriverDrafts(
 }
 
 export async function getTruckTracking(
-  vehicleNumber: string
+  vehicleNumber: string,
 ): Promise<AdminTrackingApiResponse<TruckTrackingResponse>> {
   try {
     const res = await axios.get<TruckTrackingResponse>(
       `${API_BASE_URL}/trucks/track/${encodeURIComponent(vehicleNumber)}`,
       {
         headers: getAuthHeaders(),
-      }
+      },
     );
     return { success: true, data: res.data };
   } catch (error) {
@@ -305,13 +311,13 @@ export async function listTrips(): Promise<
 }
 
 export async function closeTrip(
-  traqoTripId: string
+  traqoTripId: string,
 ): Promise<AdminTrackingApiResponse<GenericPayload>> {
   try {
     const res = await axios.post(
       `${API_BASE_URL}/traqo/trips/end`,
       { id: traqoTripId },
-      { headers: getAuthHeaders() }
+      { headers: getAuthHeaders() },
     );
     return { success: true, data: res.data };
   } catch (error) {
@@ -324,7 +330,14 @@ export async function closeTrip(
 
 export async function editTrip(
   tripId: string,
-  updates: { truck_number?: string; tel?: string; src?: string; dest?: string; srcname?: string; destname?: string },
+  updates: {
+    truck_number?: string;
+    tel?: string;
+    src?: string;
+    dest?: string;
+    srcname?: string;
+    destname?: string;
+  },
 ): Promise<AdminTrackingApiResponse<GenericPayload>> {
   try {
     const res = await axios.patch(
@@ -343,13 +356,13 @@ export async function editTrip(
 
 export async function sendManualTripAlert(
   tripId: string,
-  payload: ManualTripAlertPayload
+  payload: ManualTripAlertPayload,
 ): Promise<AdminTrackingApiResponse<GenericPayload>> {
   try {
     const res = await axios.post(
       `${API_BASE_URL}/trucks/track/alerts/trip/${encodeURIComponent(tripId)}/send`,
       payload,
-      { headers: getAuthHeaders() }
+      { headers: getAuthHeaders() },
     );
     return { success: true, data: res.data };
   } catch (error) {
@@ -367,7 +380,7 @@ export async function sendCurrentPositionAlertsForActiveTrips(): Promise<
     const res = await axios.post<{ processed?: number; sent?: number }>(
       `${API_BASE_URL}/trucks/track/alerts/current-position/send-active`,
       {},
-      { headers: getAuthHeaders() }
+      { headers: getAuthHeaders() },
     );
     return { success: true, data: res.data };
   } catch (error) {
@@ -375,7 +388,7 @@ export async function sendCurrentPositionAlertsForActiveTrips(): Promise<
       success: false,
       message: getErrorMessage(
         error,
-        "Failed to send current-position alerts for active trips"
+        "Failed to send current-position alerts for active trips",
       ),
     };
   }

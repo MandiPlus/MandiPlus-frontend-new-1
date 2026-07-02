@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import toast from 'react-hot-toast';
-import { useAdmin } from '@/features/admin/context/AdminContext';
-import { adminApi, InsuranceForm } from '@/features/admin/api/admin.api';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import toast from "react-hot-toast";
+import { useAdmin } from "@/features/admin/context/AdminContext";
+import { adminApi, InsuranceForm } from "@/features/admin/api/admin.api";
 import {
   AddDriverPayload,
   CheckConsentPayload,
@@ -20,10 +20,10 @@ import {
   listTrips,
   listCreatedConsents,
   resendDriverConsentSms,
-} from '@/features/admin/api/tracking.api';
+} from "@/features/admin/api/tracking.api";
 
 function toTenDigitPhone(input: string) {
-  const digits = input.replace(/\D/g, '');
+  const digits = input.replace(/\D/g, "");
   if (digits.length >= 10) return digits.slice(-10);
   return digits;
 }
@@ -32,48 +32,56 @@ function consentApproved(consent: string | null) {
   if (!consent) return false;
   const value = consent.toLowerCase();
   return (
-    value.includes('allow') ||
-    value.includes('approve') ||
-    value.includes('granted') ||
-    value.includes('accepted') ||
-    value === 'true' ||
-    value === 'yes'
+    value.includes("allow") ||
+    value.includes("approve") ||
+    value.includes("granted") ||
+    value.includes("accepted") ||
+    value === "true" ||
+    value === "yes"
   );
 }
 
 function pickString(
   payload: Record<string, unknown>,
-  keys: string[]
+  keys: string[],
 ): string | null {
   for (const key of keys) {
     const value = payload[key];
-    if (typeof value === 'string' && value.trim()) return value;
+    if (typeof value === "string" && value.trim()) return value;
   }
   return null;
 }
 
 function joinAddressParts(value: string[] | string | null | undefined) {
   if (Array.isArray(value)) {
-    return value.map((part) => String(part || '').trim()).filter(Boolean).join(', ');
+    return value
+      .map((part) => String(part || "").trim())
+      .filter(Boolean)
+      .join(", ");
   }
-  return String(value || '').trim();
+  return String(value || "").trim();
 }
 
 function toInvoiceDraft(form: InsuranceForm): TrackingInvoiceDraft | null {
-  const primaryDriverPhone = toTenDigitPhone(form.driverPhone || '');
-  const secondaryDriverPhone = toTenDigitPhone(form.driverSecondaryPhone || '');
+  const primaryDriverPhone = toTenDigitPhone(form.driverPhone || "");
+  const secondaryDriverPhone = toTenDigitPhone(form.driverSecondaryPhone || "");
   const driverPhone = primaryDriverPhone || secondaryDriverPhone;
   if (driverPhone.length !== 10) return null;
 
   return {
     id: form.id || form._id,
-    invoiceNumber: form.invoiceNumber || '',
+    invoiceNumber: form.invoiceNumber || "",
+    supplierName: form.supplierName || null,
     driverPhone,
-    driverSecondaryPhone: primaryDriverPhone ? secondaryDriverPhone || null : null,
+    driverSecondaryPhone: primaryDriverPhone
+      ? secondaryDriverPhone || null
+      : null,
+    driverOperator: form.driverConsentOperator || null,
     vehicleNumber: form.truckNumber || form.vehicleNumber || null,
     sourceName: joinAddressParts(form.supplierAddress),
     destinationName:
-      joinAddressParts(form.shipToAddress) || joinAddressParts(form.billToAddress),
+      joinAddressParts(form.shipToAddress) ||
+      joinAddressParts(form.billToAddress),
     consentStatus: form.driverConsentStatus || null,
     createdAt: form.createdAt || form.invoiceDate || form.date,
   };
@@ -87,7 +95,7 @@ async function geocodeWithGoogle(address: string): Promise<string | null> {
 
   try {
     const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
-      query
+      query,
     )}&key=${encodeURIComponent(apiKey)}`;
 
     const response = await fetch(url);
@@ -100,11 +108,11 @@ async function geocodeWithGoogle(address: string): Promise<string | null> {
       }>;
     };
 
-    if (payload.status !== 'OK' || !payload.results?.length) return null;
+    if (payload.status !== "OK" || !payload.results?.length) return null;
     const location = payload.results[0]?.geometry?.location;
     if (
-      typeof location?.lat !== 'number' ||
-      typeof location?.lng !== 'number'
+      typeof location?.lat !== "number" ||
+      typeof location?.lng !== "number"
     ) {
       return null;
     }
@@ -120,37 +128,40 @@ export default function AdminTrackingPage() {
   const { isAuthenticated, loading } = useAdmin();
 
   const [registerForm, setRegisterForm] = useState<AddDriverPayload>({
-    phone_number: '',
-    name: '',
-    operator: '',
+    phone_number: "",
+    name: "",
+    operator: "",
   });
-  const [consentForm, setConsentForm] = useState<CheckConsentPayload>({ tel: '' });
+  const [consentForm, setConsentForm] = useState<CheckConsentPayload>({
+    tel: "",
+  });
   const [tripForm, setTripForm] = useState<CreateTripPayload>({
-    tel: '',
-    truck_number: '',
-    srcname: '',
-    destname: '',
-    src: '',
-    dest: '',
-    invoice: '',
+    tel: "",
+    truck_number: "",
+    srcname: "",
+    destname: "",
+    src: "",
+    dest: "",
+    invoice: "",
     eta_hrs: undefined,
-    internalTruckId: '',
-    internalInvoiceId: '',
+    internalTruckId: "",
+    internalInvoiceId: "",
   });
-  const [trackVehicle, setTrackVehicle] = useState('');
+  const [trackVehicle, setTrackVehicle] = useState("");
 
   const [consentState, setConsentState] = useState<string | null>(null);
-  const [trackingData, setTrackingData] = useState<TruckTrackingResponse | null>(
-    null
-  );
+  const [trackingData, setTrackingData] =
+    useState<TruckTrackingResponse | null>(null);
   const [consentsModalOpen, setConsentsModalOpen] = useState(false);
   const [consents, setConsents] = useState<TraqoConsentRow[]>([]);
   const [consentsLoading, setConsentsLoading] = useState(false);
-  const [consentsError, setConsentsError] = useState('');
-  const [invoiceDrafts, setInvoiceDrafts] = useState<TrackingInvoiceDraft[]>([]);
-  const [selectedInvoiceDraftId, setSelectedInvoiceDraftId] = useState('');
+  const [consentsError, setConsentsError] = useState("");
+  const [invoiceDrafts, setInvoiceDrafts] = useState<TrackingInvoiceDraft[]>(
+    [],
+  );
+  const [selectedInvoiceDraftId, setSelectedInvoiceDraftId] = useState("");
   const [invoiceDraftsLoading, setInvoiceDraftsLoading] = useState(false);
-  const [invoiceDraftsError, setInvoiceDraftsError] = useState('');
+  const [invoiceDraftsError, setInvoiceDraftsError] = useState("");
 
   const [busy, setBusy] = useState({
     register: false,
@@ -162,15 +173,18 @@ export default function AdminTrackingPage() {
   });
   const [autoRefresh, setAutoRefresh] = useState(true);
   const inputClass =
-    'rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-800 placeholder:text-slate-300';
+    "rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-800 placeholder:text-slate-300";
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.push('/admin/login');
+      router.push("/admin/login");
     }
   }, [loading, isAuthenticated, router]);
 
-  const isConsentOk = useMemo(() => consentApproved(consentState), [consentState]);
+  const isConsentOk = useMemo(
+    () => consentApproved(consentState),
+    [consentState],
+  );
 
   const setBusyFlag = useCallback((key: keyof typeof busy, value: boolean) => {
     setBusy((prev) => ({ ...prev, [key]: value }));
@@ -183,75 +197,79 @@ export default function AdminTrackingPage() {
     setRegisterForm({
       phone_number: phone,
       name: draft.vehicleNumber?.trim() || undefined,
-      operator: '',
+      operator: draft.driverOperator || "",
     });
     setConsentForm({ tel: phone });
     setConsentState(draft.consentStatus || null);
     setTripForm((prev) => ({
       ...prev,
       tel: phone,
-      truck_number: draft.vehicleNumber || '',
-      srcname: draft.sourceName || '',
-      destname: draft.destinationName || '',
+      truck_number: draft.vehicleNumber || "",
+      srcname: draft.sourceName || "",
+      destname: draft.destinationName || "",
       invoice: draft.invoiceNumber,
       internalInvoiceId: draft.id,
     }));
     if (draft.vehicleNumber) setTrackVehicle(draft.vehicleNumber);
   }, []);
 
-  const refreshInvoiceDrafts = useCallback(async (shouldAutoApply = false) => {
-    setInvoiceDraftsLoading(true);
-    setInvoiceDraftsError('');
+  const refreshInvoiceDrafts = useCallback(
+    async (shouldAutoApply = false) => {
+      setInvoiceDraftsLoading(true);
+      setInvoiceDraftsError("");
 
-    const response = await listInvoiceDriverDrafts(20);
-    if (!response.success) {
-      const [formsResponse, tripsResponse] = await Promise.all([
-        adminApi.getInsuranceForms(1, 50),
-        listTrips(),
-      ]);
-      if (!formsResponse.success) {
-        setInvoiceDrafts([]);
-        setInvoiceDraftsError(response.message || 'Failed to fetch invoice driver details.');
+      const response = await listInvoiceDriverDrafts(20);
+      if (!response.success) {
+        const [formsResponse, tripsResponse] = await Promise.all([
+          adminApi.getInsuranceForms(1, 50),
+          listTrips(),
+        ]);
+        if (!formsResponse.success) {
+          setInvoiceDrafts([]);
+          setInvoiceDraftsError(
+            response.message || "Failed to fetch invoice driver details.",
+          );
+          setInvoiceDraftsLoading(false);
+          return;
+        }
+
+        const tripInvoiceIds = new Set(
+          (tripsResponse.data || [])
+            .map((trip) => trip.invoice?.id)
+            .filter((id): id is string => Boolean(id)),
+        );
+        const fallbackDrafts = (formsResponse.data?.forms || [])
+          .filter((form) => !tripInvoiceIds.has(form.id || form._id))
+          .map(toInvoiceDraft)
+          .filter((draft): draft is TrackingInvoiceDraft => Boolean(draft));
+
+        setInvoiceDrafts(fallbackDrafts);
         setInvoiceDraftsLoading(false);
+
+        if (shouldAutoApply && fallbackDrafts[0]) {
+          applyInvoiceDraft(fallbackDrafts[0]);
+        }
+        if (fallbackDrafts.length === 0) {
+          setInvoiceDraftsError("");
+        }
         return;
       }
 
-      const tripInvoiceIds = new Set(
-        (tripsResponse.data || [])
-          .map((trip) => trip.invoice?.id)
-          .filter((id): id is string => Boolean(id)),
-      );
-      const fallbackDrafts = (formsResponse.data?.forms || [])
-        .filter((form) => !tripInvoiceIds.has(form.id || form._id))
-        .map(toInvoiceDraft)
-        .filter((draft): draft is TrackingInvoiceDraft => Boolean(draft));
-
-      setInvoiceDrafts(fallbackDrafts);
-      setInvoiceDraftsLoading(false);
-
-      if (shouldAutoApply && fallbackDrafts[0]) {
-        applyInvoiceDraft(fallbackDrafts[0]);
-      }
-      if (fallbackDrafts.length === 0) {
-        setInvoiceDraftsError('');
-      }
-      return;
-    }
-
-    const drafts = (response.data || [])
-      .sort((a, b) => {
+      const drafts = (response.data || []).sort((a, b) => {
         const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
         return bTime - aTime;
       });
 
-    setInvoiceDrafts(drafts);
-    setInvoiceDraftsLoading(false);
+      setInvoiceDrafts(drafts);
+      setInvoiceDraftsLoading(false);
 
-    if (shouldAutoApply && drafts[0]) {
-      applyInvoiceDraft(drafts[0]);
-    }
-  }, [applyInvoiceDraft]);
+      if (shouldAutoApply && drafts[0]) {
+        applyInvoiceDraft(drafts[0]);
+      }
+    },
+    [applyInvoiceDraft],
+  );
 
   useEffect(() => {
     if (loading || !isAuthenticated) return;
@@ -260,7 +278,7 @@ export default function AdminTrackingPage() {
 
   const refreshTracking = useCallback(async () => {
     if (!trackVehicle.trim()) return;
-    setBusyFlag('refreshTracking', true);
+    setBusyFlag("refreshTracking", true);
 
     const response = await getTruckTracking(trackVehicle.trim().toUpperCase());
     if (!response.success) {
@@ -269,7 +287,7 @@ export default function AdminTrackingPage() {
       setTrackingData(response.data || null);
     }
 
-    setBusyFlag('refreshTracking', false);
+    setBusyFlag("refreshTracking", false);
   }, [trackVehicle, setBusyFlag]);
 
   useEffect(() => {
@@ -282,12 +300,12 @@ export default function AdminTrackingPage() {
 
   const handleRegisterDriver = async (e: React.FormEvent) => {
     e.preventDefault();
-    setBusyFlag('register', true);
+    setBusyFlag("register", true);
 
     const phone = toTenDigitPhone(registerForm.phone_number);
     if (phone.length !== 10) {
-      toast.error('Driver phone number must be 10 digits.');
-      setBusyFlag('register', false);
+      toast.error("Driver phone number must be 10 digits.");
+      setBusyFlag("register", false);
       return;
     }
 
@@ -297,73 +315,73 @@ export default function AdminTrackingPage() {
       operator: registerForm.operator?.trim() || undefined,
     });
     if (!response.success) {
-      toast.error(response.message || 'Failed to register driver number.');
+      toast.error(response.message || "Failed to register driver number.");
     } else {
-      toast.success('Driver number registered. Consent SMS sent by Traqo.');
+      toast.success("Driver number registered. Consent SMS sent by Traqo.");
       setConsentForm({ tel: phone });
       setTripForm((prev) => ({ ...prev, tel: phone }));
     }
 
-    setBusyFlag('register', false);
+    setBusyFlag("register", false);
   };
 
   const handleCheckConsent = async () => {
-    setBusyFlag('checkConsent', true);
+    setBusyFlag("checkConsent", true);
 
     const tel = toTenDigitPhone(consentForm.tel);
     if (tel.length !== 10) {
-      toast.error('Consent check requires a valid 10-digit driver number.');
-      setBusyFlag('checkConsent', false);
+      toast.error("Consent check requires a valid 10-digit driver number.");
+      setBusyFlag("checkConsent", false);
       return;
     }
 
     const response = await checkDriverConsent({ tel });
     if (!response.success) {
-      toast.error(response.message || 'Failed to check consent.');
+      toast.error(response.message || "Failed to check consent.");
       setConsentState(null);
     } else {
       const raw = (response.data || {}) as Record<string, unknown>;
       const status = pickString(raw, [
-        'consent',
-        'status',
-        'consentStatus',
-        'consent_status',
+        "consent",
+        "status",
+        "consentStatus",
+        "consent_status",
       ]);
-      setConsentState(status || '');
-      toast.success(`Consent status: ${status || 'Unknown'}`);
+      setConsentState(status || "");
+      toast.success(`Consent status: ${status || "Unknown"}`);
       setTripForm((prev) => ({ ...prev, tel }));
     }
 
-    setBusyFlag('checkConsent', false);
+    setBusyFlag("checkConsent", false);
   };
 
   const handleResendConsent = async () => {
-    setBusyFlag('resendConsent', true);
+    setBusyFlag("resendConsent", true);
 
     const phone = toTenDigitPhone(consentForm.tel);
     if (phone.length !== 10) {
-      toast.error('Resend requires a valid 10-digit driver number.');
-      setBusyFlag('resendConsent', false);
+      toast.error("Resend requires a valid 10-digit driver number.");
+      setBusyFlag("resendConsent", false);
       return;
     }
 
     const response = await resendDriverConsentSms(phone);
     if (!response.success) {
-      toast.error(response.message || 'Failed to resend consent SMS.');
+      toast.error(response.message || "Failed to resend consent SMS.");
     } else {
-      toast.success('Consent SMS resent successfully.');
+      toast.success("Consent SMS resent successfully.");
     }
 
-    setBusyFlag('resendConsent', false);
+    setBusyFlag("resendConsent", false);
   };
 
   const handleCreateTrip = async (e: React.FormEvent) => {
     e.preventDefault();
-    setBusyFlag('createTrip', true);
+    setBusyFlag("createTrip", true);
 
     const payload: CreateTripPayload = {
       ...tripForm,
-      tel: toTenDigitPhone(tripForm.tel || ''),
+      tel: toTenDigitPhone(tripForm.tel || ""),
       truck_number: tripForm.truck_number.trim().toUpperCase(),
       src: tripForm.src?.trim() || undefined,
       dest: tripForm.dest?.trim() || undefined,
@@ -376,19 +394,22 @@ export default function AdminTrackingPage() {
     };
 
     if (!payload.tel || payload.tel.length !== 10) {
-      toast.error('Trip creation requires a valid 10-digit driver number.');
-      setBusyFlag('createTrip', false);
+      toast.error("Trip creation requires a valid 10-digit driver number.");
+      setBusyFlag("createTrip", false);
       return;
     }
     if (!payload.truck_number) {
-      toast.error('Truck number is required.');
-      setBusyFlag('createTrip', false);
+      toast.error("Truck number is required.");
+      setBusyFlag("createTrip", false);
       return;
     }
 
     // Auto resolve coordinates using Google Geocoding API when names are present.
-    if ((!payload.src && payload.srcname) || (!payload.dest && payload.destname)) {
-      setBusyFlag('geocode', true);
+    if (
+      (!payload.src && payload.srcname) ||
+      (!payload.dest && payload.destname)
+    ) {
+      setBusyFlag("geocode", true);
       const [resolvedSrc, resolvedDest] = await Promise.all([
         !payload.src && payload.srcname
           ? geocodeWithGoogle(payload.srcname)
@@ -397,7 +418,7 @@ export default function AdminTrackingPage() {
           ? geocodeWithGoogle(payload.destname)
           : Promise.resolve(payload.dest || null),
       ]);
-      setBusyFlag('geocode', false);
+      setBusyFlag("geocode", false);
 
       if (!payload.src && resolvedSrc) {
         payload.src = resolvedSrc;
@@ -411,13 +432,15 @@ export default function AdminTrackingPage() {
     }
 
     if (!payload.src && !payload.srcname) {
-      toast.error('Source Name is required to resolve source coordinates.');
-      setBusyFlag('createTrip', false);
+      toast.error("Source Name is required to resolve source coordinates.");
+      setBusyFlag("createTrip", false);
       return;
     }
     if (!payload.dest && !payload.destname) {
-      toast.error('Destination Name is required to resolve destination coordinates.');
-      setBusyFlag('createTrip', false);
+      toast.error(
+        "Destination Name is required to resolve destination coordinates.",
+      );
+      setBusyFlag("createTrip", false);
       return;
     }
 
@@ -426,9 +449,9 @@ export default function AdminTrackingPage() {
     if (!consentResponse.success) {
       toast.error(
         consentResponse.message ||
-          'Unable to verify consent. Trip creation stopped.'
+          "Unable to verify consent. Trip creation stopped.",
       );
-      setBusyFlag('createTrip', false);
+      setBusyFlag("createTrip", false);
       return;
     }
 
@@ -437,49 +460,49 @@ export default function AdminTrackingPage() {
       unknown
     >;
     const latestConsent = pickString(consentRawResponse, [
-      'consent',
-      'status',
-      'consentStatus',
-      'consent_status',
+      "consent",
+      "status",
+      "consentStatus",
+      "consent_status",
     ]);
-    setConsentState(latestConsent || '');
+    setConsentState(latestConsent || "");
 
     if (!consentApproved(latestConsent || null)) {
       toast.error(
         `Consent is not approved for ${payload.tel}. Current status: ${
-          latestConsent || 'UNKNOWN'
-        }.`
+          latestConsent || "UNKNOWN"
+        }.`,
       );
-      setBusyFlag('createTrip', false);
+      setBusyFlag("createTrip", false);
       return;
     }
 
     const response = await createTrackingTrip(payload);
     if (!response.success) {
-      toast.error(response.message || 'Failed to create trip.');
+      toast.error(response.message || "Failed to create trip.");
     } else {
-      toast.success('Trip created successfully.');
+      toast.success("Trip created successfully.");
       setTrackVehicle(payload.truck_number);
       setInvoiceDrafts((prev) =>
         prev.filter((draft) => draft.id !== payload.internalInvoiceId),
       );
       if (payload.internalInvoiceId === selectedInvoiceDraftId) {
-        setSelectedInvoiceDraftId('');
+        setSelectedInvoiceDraftId("");
       }
     }
 
-    setBusyFlag('createTrip', false);
+    setBusyFlag("createTrip", false);
   };
 
   const handleOpenConsents = async () => {
     setConsentsModalOpen(true);
     setConsentsLoading(true);
-    setConsentsError('');
+    setConsentsError("");
 
     const response = await listCreatedConsents();
     if (!response.success) {
       setConsents([]);
-      setConsentsError(response.message || 'Failed to fetch created consents.');
+      setConsentsError(response.message || "Failed to fetch created consents.");
     } else {
       setConsents(response.data || []);
     }
@@ -490,7 +513,7 @@ export default function AdminTrackingPage() {
   const handleTrackConsentVehicle = async (consent: TraqoConsentRow) => {
     const vehicleNumber = consent.name?.trim();
     if (!vehicleNumber) {
-      toast.error('Vehicle number is not available for this consent.');
+      toast.error("Vehicle number is not available for this consent.");
       return;
     }
 
@@ -518,9 +541,12 @@ export default function AdminTrackingPage() {
           <div className="relative max-h-[85vh] w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-black/10">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <div>
-                <h2 className="text-lg font-semibold text-slate-900">Created Consents</h2>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Created Consents
+                </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Live list fetched from Traqo number list, including operator details.
+                  Live list fetched from Traqo number list, including operator
+                  details.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -530,7 +556,7 @@ export default function AdminTrackingPage() {
                   disabled={consentsLoading}
                   className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
                 >
-                  {consentsLoading ? 'Refreshing...' : 'Refresh'}
+                  {consentsLoading ? "Refreshing..." : "Refresh"}
                 </button>
                 <button
                   type="button"
@@ -560,40 +586,72 @@ export default function AdminTrackingPage() {
                   <table className="min-w-full divide-y divide-slate-200 text-sm">
                     <thead className="bg-slate-50">
                       <tr>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Phone</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Name</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Operator</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Status</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Updated</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Location</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Last 24h</th>
-                        <th className="px-4 py-3 text-left font-semibold text-slate-600">Track</th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">
+                          Phone
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">
+                          Name
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">
+                          Operator
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">
+                          Status
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">
+                          Updated
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">
+                          Location
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">
+                          Last 24h
+                        </th>
+                        <th className="px-4 py-3 text-left font-semibold text-slate-600">
+                          Track
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 bg-white">
                       {consents.map((consent) => (
-                        <tr key={`${consent.phone_number}-${consent.update_at || ''}`}>
-                          <td className="px-4 py-3 font-medium text-slate-900">{consent.phone_number}</td>
-                          <td className="px-4 py-3 text-slate-700">{consent.name || '-'}</td>
-                          <td className="px-4 py-3 text-slate-700">{consent.operator || '-'}</td>
+                        <tr
+                          key={`${consent.phone_number}-${consent.update_at || ""}`}
+                        >
+                          <td className="px-4 py-3 font-medium text-slate-900">
+                            {consent.phone_number}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {consent.name || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {consent.operator || "-"}
+                          </td>
                           <td className="px-4 py-3">
                             <span
                               className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
                                 consentApproved(consent.status)
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : 'bg-amber-100 text-amber-700'
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-amber-100 text-amber-700"
                               }`}
                             >
-                              {consent.status || 'Unknown'}
+                              {consent.status || "Unknown"}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-slate-700">{consent.update_at || '-'}</td>
-                          <td className="max-w-sm px-4 py-3 text-slate-700">{consent.location || '-'}</td>
-                          <td className="px-4 py-3 text-slate-700">{consent.last_24h || '-'}</td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {consent.update_at || "-"}
+                          </td>
+                          <td className="max-w-sm px-4 py-3 text-slate-700">
+                            {consent.location || "-"}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {consent.last_24h || "-"}
+                          </td>
                           <td className="px-4 py-3">
                             <button
                               type="button"
-                              onClick={() => void handleTrackConsentVehicle(consent)}
+                              onClick={() =>
+                                void handleTrackConsentVehicle(consent)
+                              }
                               className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white"
                             >
                               Track
@@ -613,10 +671,12 @@ export default function AdminTrackingPage() {
       <div>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold text-gray-900">Tracking Setup</h1>
+            <h1 className="text-2xl font-semibold text-gray-900">
+              Tracking Setup
+            </h1>
             <p className="text-sm text-gray-600">
-              Admin flow: register driver number, confirm consent, then create trip for
-              vehicle tracking.
+              Admin flow: register driver number, confirm consent, then create
+              trip for vehicle tracking.
             </p>
           </div>
           <button
@@ -636,7 +696,8 @@ export default function AdminTrackingPage() {
               Invoice Driver Details
             </h2>
             <p className="mt-1 text-sm text-slate-600">
-              Latest insurance invoice is applied automatically. Source is supplier address, destination is buyer address.
+              Latest insurance invoice is applied automatically. Source is
+              supplier address, destination is buyer address.
             </p>
           </div>
           <button
@@ -645,7 +706,7 @@ export default function AdminTrackingPage() {
             disabled={invoiceDraftsLoading}
             className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
           >
-            {invoiceDraftsLoading ? 'Refreshing...' : 'Refresh invoices'}
+            {invoiceDraftsLoading ? "Refreshing..." : "Refresh invoices"}
           </button>
         </div>
 
@@ -655,7 +716,9 @@ export default function AdminTrackingPage() {
           </div>
         ) : invoiceDrafts.length === 0 ? (
           <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700">
-            {invoiceDraftsLoading ? 'Loading invoice driver details...' : 'No recent invoice with driver number found.'}
+            {invoiceDraftsLoading
+              ? "Loading invoice driver details..."
+              : "No recent invoice with driver number found."}
           </div>
         ) : (
           <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
@@ -668,13 +731,13 @@ export default function AdminTrackingPage() {
                   onClick={() => applyInvoiceDraft(draft)}
                   className={`rounded-lg border p-3 text-left transition ${
                     selected
-                      ? 'border-[#4309ac] bg-[#4309ac]/5 shadow-sm'
-                      : 'border-slate-200 bg-slate-50 hover:border-slate-300'
+                      ? "border-[#4309ac] bg-[#4309ac]/5 shadow-sm"
+                      : "border-slate-200 bg-slate-50 hover:border-slate-300"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-semibold text-slate-900">
-                      {draft.invoiceNumber || 'Invoice'}
+                      {draft.invoiceNumber || "Invoice"}
                     </span>
                     {selected ? (
                       <span className="rounded-full bg-[#4309ac] px-2 py-0.5 text-[11px] font-semibold text-white">
@@ -683,11 +746,34 @@ export default function AdminTrackingPage() {
                     ) : null}
                   </div>
                   <div className="mt-2 space-y-1 text-xs text-slate-600">
-                    <div>Driver: <span className="font-semibold text-slate-900">{draft.driverPhone}</span></div>
-                    {draft.driverSecondaryPhone ? <div>Alt: {draft.driverSecondaryPhone}</div> : null}
-                    <div>Truck: {draft.vehicleNumber || '-'}</div>
-                    <div className="line-clamp-1">Source: {draft.sourceName || '-'}</div>
-                    <div className="line-clamp-1">Destination: {draft.destinationName || '-'}</div>
+                    <div className="line-clamp-1">
+                      Supplier:{" "}
+                      <span className="font-medium text-slate-800">
+                        {draft.supplierName || "-"}
+                      </span>
+                    </div>
+                    <div>
+                      Driver:{" "}
+                      <span className="font-semibold text-slate-900">
+                        {draft.driverPhone}
+                      </span>
+                    </div>
+                    <div>Provider: {draft.driverOperator || "-"}</div>
+                    {draft.driverSecondaryPhone ? (
+                      <div>
+                        Alt: {draft.driverSecondaryPhone}
+                        {draft.driverSecondaryOperator
+                          ? ` (${draft.driverSecondaryOperator})`
+                          : ""}
+                      </div>
+                    ) : null}
+                    <div>Truck: {draft.vehicleNumber || "-"}</div>
+                    <div className="line-clamp-1">
+                      Source: {draft.sourceName || "-"}
+                    </div>
+                    <div className="line-clamp-1">
+                      Destination: {draft.destinationName || "-"}
+                    </div>
                   </div>
                 </button>
               );
@@ -701,7 +787,9 @@ export default function AdminTrackingPage() {
           onSubmit={handleRegisterDriver}
           className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
         >
-          <h2 className="text-lg font-semibold text-gray-900">1. Driver Registration</h2>
+          <h2 className="text-lg font-semibold text-gray-900">
+            1. Driver Registration
+          </h2>
           <p className="mt-1 text-xs text-gray-500">
             Adds driver number and sends initial consent SMS.
           </p>
@@ -711,13 +799,16 @@ export default function AdminTrackingPage() {
               placeholder="Driver Phone (10 digit)"
               value={registerForm.phone_number}
               onChange={(e) =>
-                setRegisterForm((prev) => ({ ...prev, phone_number: e.target.value }))
+                setRegisterForm((prev) => ({
+                  ...prev,
+                  phone_number: e.target.value,
+                }))
               }
             />
             <input
               className={inputClass}
               placeholder="Driver Name (optional)"
-              value={registerForm.name || ''}
+              value={registerForm.name || ""}
               onChange={(e) =>
                 setRegisterForm((prev) => ({ ...prev, name: e.target.value }))
               }
@@ -725,9 +816,12 @@ export default function AdminTrackingPage() {
             <input
               className={inputClass}
               placeholder="Operator (airtel/jio/etc, optional)"
-              value={registerForm.operator || ''}
+              value={registerForm.operator || ""}
               onChange={(e) =>
-                setRegisterForm((prev) => ({ ...prev, operator: e.target.value }))
+                setRegisterForm((prev) => ({
+                  ...prev,
+                  operator: e.target.value,
+                }))
               }
             />
           </div>
@@ -736,12 +830,14 @@ export default function AdminTrackingPage() {
             disabled={busy.register}
             className="mt-4 rounded-md bg-[#4309ac] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           >
-            {busy.register ? 'Registering...' : 'Register Driver'}
+            {busy.register ? "Registering..." : "Register Driver"}
           </button>
         </form>
 
         <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">2. Consent Check</h2>
+          <h2 className="text-lg font-semibold text-gray-900">
+            2. Consent Check
+          </h2>
           <p className="mt-1 text-xs text-gray-500">
             Consent must be approved before trip creation.
           </p>
@@ -759,7 +855,7 @@ export default function AdminTrackingPage() {
                 disabled={busy.checkConsent}
                 className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
               >
-                {busy.checkConsent ? 'Checking...' : 'Check Consent'}
+                {busy.checkConsent ? "Checking..." : "Check Consent"}
               </button>
               <button
                 type="button"
@@ -767,7 +863,7 @@ export default function AdminTrackingPage() {
                 disabled={busy.resendConsent}
                 className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 disabled:opacity-60"
               >
-                {busy.resendConsent ? 'Resending...' : 'Resend SMS'}
+                {busy.resendConsent ? "Resending..." : "Resend SMS"}
               </button>
             </div>
           </div>
@@ -777,11 +873,11 @@ export default function AdminTrackingPage() {
             <div
               className={`mt-1 inline-flex rounded px-2 py-1 text-xs font-semibold ${
                 isConsentOk
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : 'bg-amber-100 text-amber-700'
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-amber-100 text-amber-700"
               }`}
             >
-              {consentState || 'Not checked'}
+              {consentState || "Not checked"}
             </div>
           </div>
         </div>
@@ -793,7 +889,9 @@ export default function AdminTrackingPage() {
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">3. Create Trip</h2>
+            <h2 className="text-lg font-semibold text-gray-900">
+              3. Create Trip
+            </h2>
             <p className="mt-1 text-xs text-gray-500">
               Admin can submit directly. Consent is validated automatically at
               create time. If coords are blank, backend resolves from source and
@@ -802,10 +900,12 @@ export default function AdminTrackingPage() {
           </div>
           <span
             className={`rounded px-2 py-1 text-xs font-semibold ${
-              isConsentOk ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+              isConsentOk
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-red-100 text-red-700"
             }`}
           >
-            {isConsentOk ? 'Consent Approved' : 'Consent Required'}
+            {isConsentOk ? "Consent Approved" : "Consent Required"}
           </span>
         </div>
 
@@ -814,7 +914,9 @@ export default function AdminTrackingPage() {
             className={inputClass}
             placeholder="Driver Phone"
             value={tripForm.tel}
-            onChange={(e) => setTripForm((prev) => ({ ...prev, tel: e.target.value }))}
+            onChange={(e) =>
+              setTripForm((prev) => ({ ...prev, tel: e.target.value }))
+            }
           />
           <input
             className={inputClass}
@@ -827,7 +929,7 @@ export default function AdminTrackingPage() {
           <input
             className={inputClass}
             placeholder="Source Name "
-            value={tripForm.srcname || ''}
+            value={tripForm.srcname || ""}
             onChange={(e) =>
               setTripForm((prev) => ({ ...prev, srcname: e.target.value }))
             }
@@ -835,7 +937,7 @@ export default function AdminTrackingPage() {
           <input
             className={inputClass}
             placeholder="Destination Name "
-            value={tripForm.destname || ''}
+            value={tripForm.destname || ""}
             onChange={(e) =>
               setTripForm((prev) => ({ ...prev, destname: e.target.value }))
             }
@@ -843,8 +945,10 @@ export default function AdminTrackingPage() {
           <input
             className={inputClass}
             placeholder="Invoice Ref (optional)"
-            value={tripForm.invoice || ''}
-            onChange={(e) => setTripForm((prev) => ({ ...prev, invoice: e.target.value }))}
+            value={tripForm.invoice || ""}
+            onChange={(e) =>
+              setTripForm((prev) => ({ ...prev, invoice: e.target.value }))
+            }
           />
         </div>
 
@@ -855,19 +959,20 @@ export default function AdminTrackingPage() {
             className="rounded-md bg-[#4309ac] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           >
             {busy.geocode
-              ? 'Fetching Coords...'
+              ? "Fetching Coords..."
               : busy.createTrip
-              ? 'Creating Trip...'
-              : 'Create Trip'}
+                ? "Creating Trip..."
+                : "Create Trip"}
           </button>
         </div>
-
       </form>
 
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Live Tracking</h2>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Live Tracking
+            </h2>
             <p className="mt-1 text-xs text-gray-500">
               Fetches current tracking state for a vehicle.
             </p>
@@ -895,7 +1000,7 @@ export default function AdminTrackingPage() {
             disabled={busy.refreshTracking}
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
           >
-            {busy.refreshTracking ? 'Refreshing...' : 'Refresh'}
+            {busy.refreshTracking ? "Refreshing..." : "Refresh"}
           </button>
         </div>
 
@@ -903,74 +1008,85 @@ export default function AdminTrackingPage() {
           <div className="mt-4 grid grid-cols-1 gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4 md:grid-cols-2 lg:grid-cols-3">
             <div>
               <div className="text-xs text-gray-500">Vehicle</div>
-              <div className="text-sm font-semibold text-gray-900">{trackingData.vehicleNumber}</div>
+              <div className="text-sm font-semibold text-gray-900">
+                {trackingData.vehicleNumber}
+              </div>
             </div>
             <div>
               <div className="text-xs text-gray-500">Status</div>
-              <div className="text-sm font-semibold text-gray-900">{trackingData.status}</div>
+              <div className="text-sm font-semibold text-gray-900">
+                {trackingData.status}
+              </div>
             </div>
             <div>
               <div className="text-xs text-gray-500">Trip ID</div>
-              <div className="text-sm font-semibold text-gray-900">{trackingData.tripId || '-'}</div>
+              <div className="text-sm font-semibold text-gray-900">
+                {trackingData.tripId || "-"}
+              </div>
             </div>
             <div>
               <div className="text-xs text-gray-500">Trip Status</div>
-              <div className="text-sm font-semibold text-gray-900">{trackingData.tripStatus || '-'}</div>
+              <div className="text-sm font-semibold text-gray-900">
+                {trackingData.tripStatus || "-"}
+              </div>
             </div>
             <div>
               <div className="text-xs text-gray-500">Consent Status</div>
-              <div className="text-sm font-semibold text-gray-900">{trackingData.consentStatus || '-'}</div>
+              <div className="text-sm font-semibold text-gray-900">
+                {trackingData.consentStatus || "-"}
+              </div>
             </div>
             <div>
               <div className="text-xs text-gray-500">ETA</div>
-              <div className="text-sm font-semibold text-gray-900">{trackingData.eta || '-'}</div>
+              <div className="text-sm font-semibold text-gray-900">
+                {trackingData.eta || "-"}
+              </div>
             </div>
             <div>
               <div className="text-xs text-gray-500">Latitude</div>
               <div className="text-sm font-semibold text-gray-900">
-                {trackingData.location?.lat ?? '-'}
+                {trackingData.location?.lat ?? "-"}
               </div>
             </div>
             <div>
               <div className="text-xs text-gray-500">Longitude</div>
               <div className="text-sm font-semibold text-gray-900">
-                {trackingData.location?.lng ?? '-'}
+                {trackingData.location?.lng ?? "-"}
               </div>
             </div>
             <div>
               <div className="text-xs text-gray-500">Last Recorded</div>
               <div className="text-sm font-semibold text-gray-900">
-                {trackingData.location?.timeRecorded || '-'}
+                {trackingData.location?.timeRecorded || "-"}
               </div>
             </div>
             <div className="md:col-span-2 lg:col-span-3">
               <div className="text-xs text-gray-500">Address</div>
               <div className="text-sm font-semibold text-gray-900">
-                {trackingData.location?.address || '-'}
+                {trackingData.location?.address || "-"}
               </div>
             </div>
             <div>
               <div className="text-xs text-gray-500">Distance Remaining</div>
               <div className="text-sm font-semibold text-gray-900">
-                {trackingData.location?.distanceRemained || '-'}
+                {trackingData.location?.distanceRemained || "-"}
               </div>
             </div>
             <div>
               <div className="text-xs text-gray-500">Time Remaining</div>
               <div className="text-sm font-semibold text-gray-900">
-                {trackingData.location?.timeRemained || '-'}
+                {trackingData.location?.timeRemained || "-"}
               </div>
             </div>
             <div>
               <div className="text-xs text-gray-500">Message</div>
               <div className="text-sm font-semibold text-gray-900">
-                {trackingData.message || '-'}
+                {trackingData.message || "-"}
               </div>
             </div>
           </div>
         ) : null}
       </div>
-
     </div>
   );
 }
