@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin } from '@/features/admin/context/AdminContext';
-import { adminApi } from '@/features/admin/api/admin.api';
+import { adminApi, type InvoiceApprovalAutofillChange } from '@/features/admin/api/admin.api';
 import AsyncSearchableSelect from '@/features/admin/components/AsyncSearchableSelect';
+import { itemsData } from '@/features/insurance/productCatalog';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
@@ -29,18 +30,58 @@ interface InvoiceCollection {
 
 interface AiDraft {
   commodity?: string;
+  itemName?: string;
+  productName?: string;
   quantity?: number;
   rate?: number;
   total_amount?: number;
+  amount?: number;
   buyer_name?: string;
+  billToName?: string;
+  shipToName?: string;
   seller_name?: string;
+  supplierName?: string;
   vehicle_number?: string;
+  vehicleNumber?: string;
   invoice_date?: string;
+  invoiceDate?: string;
   hsn_code?: string;
+  hsn?: string;
+  hsnCode?: string;
   confidence?: string;
   buyer_id?: string;
+  customerUserId?: string;
+  customer_user_id?: string;
   seller_id?: string;
-  [key: string]: any;
+  buyer_phone?: string;
+  seller_phone?: string;
+  buyer_address?: string;
+  buyerAddress?: string;
+  billToAddress?: string | string[];
+  shipToAddress?: string | string[];
+  supplier_address?: string;
+  supplierAddress?: string | string[];
+  place_of_supply?: string;
+  placeOfSupply?: string;
+  invoice_type?: string;
+  invoiceType?: string;
+  truck_number?: string;
+  truckNumber?: string;
+  owner_name?: string;
+  ownerName?: string;
+  weighment_slip_note?: string;
+  weighmentSlipNote?: string;
+  notes?: string;
+  insured_party_phone?: string;
+  insuredPartyPhone?: string;
+  driver_phone?: string;
+  driverPhone?: string;
+  driver_secondary_phone?: string;
+  driverSecondaryPhone?: string;
+  invoice_number?: string;
+  _weighment_slip_file?: File;
+  autofill_meta?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 interface CollectionMessage {
@@ -109,10 +150,118 @@ function invoiceTypeFromDraftNote(note?: string | null) {
   return 'SUPPLIER_INVOICE';
 }
 
+function firstText(...values: unknown[]): string {
+  for (const value of values) {
+    if (Array.isArray(value)) {
+      const text = firstText(...value);
+      if (text) return text;
+      continue;
+    }
+    const text = String(value ?? '').trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num > 0) return num;
+  }
+  return undefined;
+}
+
+function modeLabelFromInvoiceType(invoiceType?: string | null) {
+  return String(invoiceType || '').toUpperCase() === 'BUYER_INVOICE'
+    ? 'Cash'
+    : 'Commission';
+}
+
+function invoiceTypeFromMode(mode?: string | null) {
+  return String(mode || '').trim().toLowerCase() === 'cash'
+    ? 'BUYER_INVOICE'
+    : 'SUPPLIER_INVOICE';
+}
+
+function normalizeApprovalDraft(draft: AiDraft = {}): AiDraft {
+  const invoiceType =
+    firstText(draft.invoice_type, draft.invoiceType) ||
+    invoiceTypeFromDraftNote(firstText(draft.notes, draft.weighment_slip_note, draft.weighmentSlipNote));
+  const mode = firstText(draft.notes, draft.weighment_slip_note, draft.weighmentSlipNote) || modeLabelFromInvoiceType(invoiceType);
+  const product = firstText(draft.commodity, draft.itemName, draft.productName);
+  const hsn = firstText(draft.hsn_code, draft.hsn, draft.hsnCode);
+  const amount = firstNumber(draft.total_amount, draft.amount);
+  const buyerAddress = firstText(draft.buyer_address, draft.buyerAddress, draft.billToAddress, draft.shipToAddress);
+  const supplierAddress = firstText(draft.supplier_address, draft.supplierAddress);
+  const placeOfSupply = firstText(draft.place_of_supply, draft.placeOfSupply);
+  const vehicle = firstText(draft.vehicle_number, draft.vehicleNumber, draft.truck_number, draft.truckNumber);
+  const truck = firstText(draft.truck_number, draft.truckNumber, draft.vehicle_number, draft.vehicleNumber);
+  const owner = firstText(draft.owner_name, draft.ownerName);
+  const invoiceDate = firstText(draft.invoice_date, draft.invoiceDate);
+  const insuredPhone = firstText(draft.insured_party_phone, draft.insuredPartyPhone);
+  const driverPhone = firstText(draft.driver_phone, draft.driverPhone);
+  const driverSecondaryPhone = firstText(draft.driver_secondary_phone, draft.driverSecondaryPhone);
+  const supplierName = firstText(draft.seller_name, draft.supplierName);
+  const buyerName = firstText(draft.buyer_name, draft.billToName, draft.shipToName);
+  const customerId = firstText(draft.customer_user_id, draft.customerUserId, draft.buyer_id);
+
+  return {
+    ...draft,
+    commodity: product,
+    itemName: product,
+    productName: product,
+    hsn_code: hsn,
+    hsn,
+    hsnCode: hsn,
+    total_amount: amount,
+    amount,
+    buyer_name: buyerName,
+    billToName: buyerName,
+    shipToName: buyerName,
+    seller_name: supplierName,
+    supplierName,
+    buyer_address: buyerAddress,
+    buyerAddress,
+    billToAddress: buyerAddress ? [buyerAddress] : draft.billToAddress,
+    shipToAddress: buyerAddress ? [buyerAddress] : draft.shipToAddress,
+    supplier_address: supplierAddress,
+    supplierAddress: supplierAddress ? [supplierAddress] : draft.supplierAddress,
+    place_of_supply: placeOfSupply,
+    placeOfSupply,
+    invoice_type: invoiceType,
+    invoiceType,
+    notes: mode,
+    weighment_slip_note: mode,
+    weighmentSlipNote: mode,
+    vehicle_number: vehicle,
+    vehicleNumber: vehicle,
+    truck_number: truck,
+    truckNumber: truck,
+    owner_name: owner,
+    ownerName: owner,
+    invoice_date: invoiceDate,
+    invoiceDate,
+    insured_party_phone: insuredPhone,
+    insuredPartyPhone: insuredPhone,
+    driver_phone: driverPhone,
+    driverPhone,
+    driver_secondary_phone: driverSecondaryPhone,
+    driverSecondaryPhone,
+    customer_user_id: customerId,
+    customerUserId: customerId,
+  };
+}
+
 function openPdfInNewTab(url?: string | null) {
   if (!url) return;
   if (typeof window === 'undefined') return;
   window.open(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`, '_blank', 'noopener,noreferrer');
+}
+
+function serializableDraft(draft: AiDraft) {
+  const rest = normalizeApprovalDraft(draft);
+  delete rest._weighment_slip_file;
+  return rest;
 }
 
 async function searchUsersForSelect(query: string) {
@@ -132,12 +281,18 @@ export default function InvoiceApprovalsPage() {
   const [messages, setMessages] = useState<CollectionMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [editDraft, setEditDraft] = useState<AiDraft | null>(null);
+  const [autofillLoading, setAutofillLoading] = useState(false);
+  const [autofillSummary, setAutofillSummary] = useState<{
+    collectionId: string;
+    changes: InvoiceApprovalAutofillChange[];
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'pending' | 'done' | 'rejected' | 'all'>('pending');
   const [approvedPdfUrl, setApprovedPdfUrl] = useState<string | null>(null);
   const detailRef = useRef<HTMLDivElement>(null);
+  const autofillRequestRef = useRef(0);
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -269,20 +424,80 @@ export default function InvoiceApprovalsPage() {
     }
   }, []);
 
+  const autofillDraftForCollection = useCallback(async (col: InvoiceCollection) => {
+    const requestId = autofillRequestRef.current + 1;
+    autofillRequestRef.current = requestId;
+
+    if (col.status !== 'pending') {
+      setAutofillLoading(false);
+      setAutofillSummary(null);
+      return;
+    }
+
+    const baseDraft = col.ai_draft ? serializableDraft({ ...col.ai_draft }) : {};
+    setAutofillLoading(true);
+    setAutofillSummary(null);
+
+    try {
+      const result = await adminApi.autofillInvoiceApprovalDraft({
+        draft: baseDraft,
+        phone: col.phone,
+      });
+
+      if (autofillRequestRef.current !== requestId) return;
+      const payload = result.data;
+      if (!result.success || !payload?.draft) {
+        setAutofillSummary({ collectionId: col.id, changes: [] });
+        return;
+      }
+
+      const enrichedDraft = normalizeApprovalDraft(payload.draft as AiDraft);
+      setEditDraft((prev) => {
+        if (autofillRequestRef.current !== requestId) return prev;
+        return { ...(prev || {}), ...enrichedDraft };
+      });
+      setAutofillSummary({ collectionId: col.id, changes: payload.changes || [] });
+
+      if ((payload.changes || []).length > 0) {
+        const saveRes = await axios.patch(
+          `${BOT_BASE_URL}/admin/invoice-collections/${col.id}/draft`,
+          { ai_draft: serializableDraft(enrichedDraft) },
+          { headers: botHeaders() }
+        );
+        if (autofillRequestRef.current !== requestId) return;
+        setCollections((prev) =>
+          prev.map((item) =>
+            item.id === col.id ? { ...item, ai_draft: saveRes.data.ai_draft } : item
+          )
+        );
+      }
+    } catch {
+      if (autofillRequestRef.current === requestId) {
+        setAutofillSummary({ collectionId: col.id, changes: [] });
+      }
+    } finally {
+      if (autofillRequestRef.current === requestId) {
+        setAutofillLoading(false);
+      }
+    }
+  }, []);
+
   const selectCollection = useCallback(
     (col: InvoiceCollection) => {
       setSelectedId(col.id);
-      setEditDraft(col.ai_draft ? { ...col.ai_draft } : {});
+      setEditDraft(col.ai_draft ? normalizeApprovalDraft({ ...col.ai_draft }) : {});
+      setAutofillSummary(null);
       setActiveTab('review');
       setApprovedPdfUrl(null);
       setCustomerInvoices([]);
       setFullChatMessages([]);
       fetchMessages(col.id);
+      void autofillDraftForCollection(col);
       if (detailRef.current) {
         detailRef.current.scrollTo({ top: 0 });
       }
     },
-    [fetchMessages]
+    [autofillDraftForCollection, fetchMessages]
   );
 
   const selectedCollection = useMemo(
@@ -303,11 +518,54 @@ export default function InvoiceApprovalsPage() {
 
   const handleDraftChange = (field: string, value: any) => {
     setEditDraft((prev) => {
-      const next = prev ? { ...prev, [field]: value } : { [field]: value };
-      if (field === 'weighment_slip_note') {
-        next.invoice_type = invoiceTypeFromDraftNote(value);
+      const next = normalizeApprovalDraft(prev ? { ...prev } : {});
+      if (field === 'commodity' || field === 'itemName' || field === 'productName') {
+        const product = String(value || '');
+        const catalogItem = itemsData.find(
+          (item) => item.name.trim().toLowerCase() === product.trim().toLowerCase()
+        );
+        next.commodity = product;
+        next.itemName = product;
+        next.productName = product;
+        if (catalogItem?.hsn) {
+          next.hsn_code = catalogItem.hsn;
+          next.hsn = catalogItem.hsn;
+          next.hsnCode = catalogItem.hsn;
+        }
+        return normalizeApprovalDraft(next);
       }
-      return next;
+      if (field === 'hsn_code' || field === 'hsn' || field === 'hsnCode') {
+        next.hsn_code = value;
+        next.hsn = value;
+        next.hsnCode = value;
+        return normalizeApprovalDraft(next);
+      }
+      if (field === 'total_amount' || field === 'amount') {
+        next.total_amount = value;
+        next.amount = value;
+        return normalizeApprovalDraft(next);
+      }
+      if (field === 'invoice_type' || field === 'invoiceType') {
+        const invoiceType = String(value || 'SUPPLIER_INVOICE');
+        const mode = modeLabelFromInvoiceType(invoiceType);
+        next.invoice_type = invoiceType;
+        next.invoiceType = invoiceType;
+        next.notes = mode;
+        next.weighment_slip_note = mode;
+        next.weighmentSlipNote = mode;
+        return normalizeApprovalDraft(next);
+      }
+      if (field === 'notes' || field === 'weighment_slip_note' || field === 'weighmentSlipNote') {
+        const mode = String(value || '');
+        const invoiceType = invoiceTypeFromMode(mode);
+        next.notes = mode;
+        next.weighment_slip_note = mode;
+        next.weighmentSlipNote = mode;
+        next.invoice_type = invoiceType;
+        next.invoiceType = invoiceType;
+        return normalizeApprovalDraft(next);
+      }
+      return normalizeApprovalDraft({ ...next, [field]: value });
     });
   };
 
@@ -317,7 +575,7 @@ export default function InvoiceApprovalsPage() {
     try {
       const res = await axios.patch(
         `${BOT_BASE_URL}/admin/invoice-collections/${selectedId}/draft`,
-        { ai_draft: editDraft },
+        { ai_draft: serializableDraft(editDraft) },
         { headers: botHeaders() }
       );
       setCollections((prev) =>
@@ -338,7 +596,18 @@ export default function InvoiceApprovalsPage() {
     setApproving(true);
     setPostSendStatus(null);
     try {
-      // Step 1: Create invoice via bot
+      if (editDraft) {
+        const saveRes = await axios.patch(
+          `${BOT_BASE_URL}/admin/invoice-collections/${selectedId}/draft`,
+          { ai_draft: serializableDraft(editDraft) },
+          { headers: botHeaders() }
+        );
+        setCollections((prev) =>
+          prev.map((c) => (c.id === selectedId ? { ...c, ai_draft: saveRes.data.ai_draft } : c))
+        );
+      }
+
+      // Step 1: Create invoice via bot using the latest visible draft
       const res = await axios.post(
         `${BOT_BASE_URL}/admin/invoice-collections/${selectedId}/approve`,
         { approved_by: 'admin_dashboard' },
@@ -350,7 +619,12 @@ export default function InvoiceApprovalsPage() {
         setApprovedPdfUrl(invoiceData.pdfUrl);
       }
 
-      let status: any = { invoiceNumber: invoiceData?.invoiceNumber, pdfGenerated: !!invoiceData?.pdfUrl };
+      const status: {
+        invoiceNumber?: string;
+        pdfGenerated?: boolean;
+        whatsappSent?: boolean;
+        paymentLink?: boolean;
+      } = { invoiceNumber: invoiceData?.invoiceNumber, pdfGenerated: !!invoiceData?.pdfUrl };
 
       // Step 2: Upload weighment slip if present
       if (invoiceId && editDraft?._weighment_slip_file instanceof File) {
@@ -656,6 +930,12 @@ export default function InvoiceApprovalsPage() {
                     messages={messages}
                     messagesLoading={messagesLoading}
                     editDraft={editDraft}
+                    autofillLoading={autofillLoading}
+                    autofillChanges={
+                      autofillSummary?.collectionId === selectedCollection.id
+                        ? autofillSummary.changes
+                        : []
+                    }
                     handleDraftChange={handleDraftChange}
                     saveDraft={saveDraft}
                     saving={saving}
@@ -710,11 +990,12 @@ export default function InvoiceApprovalsPage() {
 // ─── Review Tab ─────────────────────────────────────────────────────────────
 
 function ReviewTab({
-  selectedCollection, messages, messagesLoading, editDraft, handleDraftChange,
+  selectedCollection, messages, messagesLoading, editDraft, autofillLoading, autofillChanges, handleDraftChange,
   saveDraft, saving, approveCollection, approving, rejectCollection, rejecting, approvedPdfUrl, handleDownload, postSendStatus,
 }: {
   selectedCollection: InvoiceCollection; messages: CollectionMessage[]; messagesLoading: boolean;
-  editDraft: AiDraft | null; handleDraftChange: (field: string, value: any) => void;
+  editDraft: AiDraft | null; autofillLoading: boolean; autofillChanges: InvoiceApprovalAutofillChange[];
+  handleDraftChange: (field: string, value: any) => void;
   saveDraft: () => void; saving: boolean; approveCollection: () => void; approving: boolean;
   rejectCollection: () => void; rejecting: boolean; approvedPdfUrl: string | null; handleDownload: () => void;
   postSendStatus: { invoiceNumber?: string; pdfGenerated?: boolean; whatsappSent?: boolean; paymentLink?: boolean } | null;
@@ -764,19 +1045,59 @@ function ReviewTab({
             </span>
           )}
         </div>
+        {(autofillLoading || autofillChanges.length > 0) && (
+          <div className="mb-3 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
+            {autofillLoading ? (
+              <span>Checking insurance learning and invoice history...</span>
+            ) : (
+              <span>
+                Auto-filled {autofillChanges.length} blank field{autofillChanges.length === 1 ? '' : 's'} from history:
+                {' '}
+                {autofillChanges.slice(0, 6).map((change) => change.field.replace(/_/g, ' ')).join(', ')}
+                {autofillChanges.length > 6 ? '...' : ''}
+              </span>
+            )}
+          </div>
+        )}
         <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-4">
-          {/* Section: Product & Pricing */}
+          {/* Section: Invoice Mode */}
           <div>
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Product & Pricing</p>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Invoice Mode</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <DraftField label="Commodity / Product" value={editDraft?.commodity || ''} onChange={(v) => handleDraftChange('commodity', v)} disabled={selectedCollection.status !== 'pending'} />
-              <DraftField label="HSN Code" value={editDraft?.hsn_code || ''} onChange={(v) => handleDraftChange('hsn_code', v)} disabled={selectedCollection.status !== 'pending'} />
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Cash ya Commission</label>
+                <select
+                  value={editDraft?.notes || modeLabelFromInvoiceType(editDraft?.invoice_type)}
+                  onChange={(e) => handleDraftChange('notes', e.target.value)}
+                  disabled={selectedCollection.status !== 'pending'}
+                  className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-400 focus:outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="Commission">Commission</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Invoice Type</label>
+                <select value={editDraft?.invoice_type || 'SUPPLIER_INVOICE'} onChange={(e) => handleDraftChange('invoice_type', e.target.value)} disabled={selectedCollection.status !== 'pending'} className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-400 focus:outline-none disabled:bg-gray-50 disabled:text-gray-500">
+                  <option value="SUPPLIER_INVOICE">Supplier Invoice</option>
+                  <option value="BUYER_INVOICE">Buyer Invoice</option>
+                </select>
+              </div>
               <DraftField label="Invoice Date" value={editDraft?.invoice_date || ''} onChange={(v) => handleDraftChange('invoice_date', v)} placeholder="DD/MM/YYYY" disabled={selectedCollection.status !== 'pending'} />
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 mt-3">
+          </div>
+
+          {/* Section: Product & Pricing */}
+          <div className="border-t border-gray-100 pt-4">
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Product & Pricing</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <ProductDraftField value={editDraft?.commodity || ''} onChange={(v) => handleDraftChange('commodity', v)} disabled={selectedCollection.status !== 'pending'} />
+              <DraftField label="HSN Code" value={editDraft?.hsn_code || ''} onChange={(v) => handleDraftChange('hsn_code', v)} disabled={selectedCollection.status !== 'pending'} />
+              <DraftField label="Total Amount" value={editDraft?.total_amount?.toString() || ''} onChange={(v) => handleDraftChange('total_amount', parseFloat(v) || 0)} type="number" disabled={selectedCollection.status !== 'pending'} />
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mt-3">
               <DraftField label="Quantity" value={editDraft?.quantity?.toString() || ''} onChange={(v) => handleDraftChange('quantity', parseFloat(v) || 0)} type="number" disabled={selectedCollection.status !== 'pending'} />
               <DraftField label="Rate" value={editDraft?.rate?.toString() || ''} onChange={(v) => handleDraftChange('rate', parseFloat(v) || 0)} type="number" disabled={selectedCollection.status !== 'pending'} />
-              <DraftField label="Total Amount" value={editDraft?.total_amount?.toString() || ''} onChange={(v) => handleDraftChange('total_amount', parseFloat(v) || 0)} type="number" disabled={selectedCollection.status !== 'pending'} />
             </div>
           </div>
 
@@ -785,7 +1106,7 @@ function ReviewTab({
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Buyer & Seller</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Buyer Name</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Party Ka Naam / Buyer Name</label>
                 {selectedCollection.status === 'pending' ? (
                   <AsyncSearchableSelect
                     label=""
@@ -802,7 +1123,7 @@ function ReviewTab({
                 <input type="text" value={editDraft?.buyer_name || ''} onChange={(e) => handleDraftChange('buyer_name', e.target.value)} placeholder="Or type manually" disabled={selectedCollection.status !== 'pending'} className="mt-1 w-full rounded-md border border-gray-100 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 placeholder:text-gray-300 focus:border-indigo-400 focus:outline-none disabled:text-gray-400" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Seller / Supplier Name</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Supplier Kaun / Seller Name</label>
                 {selectedCollection.status === 'pending' ? (
                   <AsyncSearchableSelect
                     label=""
@@ -820,18 +1141,16 @@ function ReviewTab({
               </div>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mt-3">
-              <DraftField label="Buyer Address" value={editDraft?.buyer_address || ''} onChange={(v) => handleDraftChange('buyer_address', v)} placeholder="State / City" disabled={selectedCollection.status !== 'pending'} />
-              <DraftField label="Supplier Address" value={editDraft?.supplier_address || ''} onChange={(v) => handleDraftChange('supplier_address', v)} placeholder="State / City" disabled={selectedCollection.status !== 'pending'} />
+              <DraftField label="Party Address / Destination" value={editDraft?.buyer_address || ''} onChange={(v) => handleDraftChange('buyer_address', v)} placeholder="State / City" disabled={selectedCollection.status !== 'pending'} />
+              <DraftField label="Supplier Address / Source" value={editDraft?.supplier_address || ''} onChange={(v) => handleDraftChange('supplier_address', v)} placeholder="State / City" disabled={selectedCollection.status !== 'pending'} />
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mt-3">
               <DraftField label="Place of Supply" value={editDraft?.place_of_supply || ''} onChange={(v) => handleDraftChange('place_of_supply', v)} placeholder="e.g. KARNATAKA" disabled={selectedCollection.status !== 'pending'} />
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Invoice Type</label>
-                <select value={editDraft?.invoice_type || invoiceTypeFromDraftNote(editDraft?.weighment_slip_note)} onChange={(e) => handleDraftChange('invoice_type', e.target.value)} disabled={selectedCollection.status !== 'pending'} className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-400 focus:outline-none disabled:bg-gray-50 disabled:text-gray-500">
-                  <option value="SUPPLIER_INVOICE">Supplier Invoice</option>
-                  <option value="BUYER_INVOICE">Buyer Invoice</option>
-                </select>
-              </div>
+              <DraftField label="Customer Account ID" value={editDraft?.customer_user_id || editDraft?.customerUserId || ''} onChange={(v) => handleDraftChange('customer_user_id', v)} placeholder="Optional user id" disabled={selectedCollection.status !== 'pending'} />
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mt-3">
+              <DraftField label="Buyer WhatsApp Phone" value={editDraft?.buyer_phone || ''} onChange={(v) => handleDraftChange('buyer_phone', v)} placeholder="10-digit mobile" disabled={selectedCollection.status !== 'pending'} />
+              <DraftField label="Supplier WhatsApp Phone" value={editDraft?.seller_phone || ''} onChange={(v) => handleDraftChange('seller_phone', v)} placeholder="10-digit mobile" disabled={selectedCollection.status !== 'pending'} />
             </div>
           </div>
 
@@ -843,8 +1162,9 @@ function ReviewTab({
               <DraftField label="Truck Number" value={editDraft?.truck_number || ''} onChange={(v) => handleDraftChange('truck_number', v)} placeholder="If different" disabled={selectedCollection.status !== 'pending'} />
               <DraftField label="Owner / Transporter Name" value={editDraft?.owner_name || ''} onChange={(v) => handleDraftChange('owner_name', v)} disabled={selectedCollection.status !== 'pending'} />
             </div>
-            <div className="mt-3">
-              <DraftField label="Weighment Slip Note" value={editDraft?.weighment_slip_note || ''} onChange={(v) => handleDraftChange('weighment_slip_note', v)} placeholder="Any notes about weighment" disabled={selectedCollection.status !== 'pending'} />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 mt-3">
+              <DraftField label="Driver Mobile Number" value={editDraft?.driver_phone || ''} onChange={(v) => handleDraftChange('driver_phone', v)} placeholder="Optional" disabled={selectedCollection.status !== 'pending'} />
+              <DraftField label="Alternate Driver Mobile" value={editDraft?.driver_secondary_phone || ''} onChange={(v) => handleDraftChange('driver_secondary_phone', v)} placeholder="Optional" disabled={selectedCollection.status !== 'pending'} />
             </div>
             <div className="mt-3">
               <label className="block text-xs font-medium text-gray-500 mb-1">Weighment Slip (Upload)</label>
@@ -944,7 +1264,12 @@ function ReviewTab({
 // ─── Invoice Preview Card (matches actual PDF layout) ───────────────────────
 
 function InvoicePreviewCard({ draft }: { draft: AiDraft }) {
-  const insuranceAmount = draft.total_amount ? (draft.total_amount * 0.002).toFixed(2) : '0.00';
+  const normalizedDraft = normalizeApprovalDraft(draft);
+  const insuranceAmount = normalizedDraft.total_amount ? (normalizedDraft.total_amount * 0.002).toFixed(2) : '0.00';
+  const insuredName =
+    normalizedDraft.invoice_type === 'BUYER_INVOICE'
+      ? normalizedDraft.buyer_name || '-'
+      : normalizedDraft.seller_name || '-';
 
   return (
     <div className="border border-gray-400 bg-white overflow-hidden text-xs" style={{ fontFamily: 'serif' }}>
@@ -963,13 +1288,13 @@ function InvoicePreviewCard({ draft }: { draft: AiDraft }) {
       {/* Meta: Invoice details + Supplier */}
       <div className="grid grid-cols-2 border-b border-gray-400">
         <div className="border-r border-gray-400 p-4 space-y-1.5">
-          <div><span className="font-semibold">Invoice Number &nbsp;&nbsp;: &nbsp;</span><span className="font-bold">{draft.invoice_number || 'INV-XXXX-XXXXXX'}</span></div>
-          <div><span className="font-semibold">Invoice Date &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: &nbsp;</span><span className="font-bold">{draft.invoice_date || '-'}</span></div>
+          <div><span className="font-semibold">Invoice Number &nbsp;&nbsp;: &nbsp;</span><span className="font-bold">{normalizedDraft.invoice_number || 'INV-XXXX-XXXXXX'}</span></div>
+          <div><span className="font-semibold">Invoice Date &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: &nbsp;</span><span className="font-bold">{normalizedDraft.invoice_date || '-'}</span></div>
           <div><span className="font-semibold">Terms &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: &nbsp;</span><span className="font-bold">CUSTOM</span></div>
         </div>
         <div className="p-4 space-y-1.5">
-          <div><span className="font-semibold">Supplier Name &nbsp;&nbsp;&nbsp;: &nbsp;</span><span className="font-bold">{draft.seller_name || '-'}</span></div>
-          <div><span className="font-semibold">Place of Supply &nbsp;: &nbsp;</span><span className="font-bold">KARNATAKA</span></div>
+          <div><span className="font-semibold">Supplier Name &nbsp;&nbsp;&nbsp;: &nbsp;</span><span className="font-bold">{normalizedDraft.seller_name || '-'}</span></div>
+          <div><span className="font-semibold">Place of Supply &nbsp;: &nbsp;</span><span className="font-bold">{normalizedDraft.place_of_supply || '-'}</span></div>
         </div>
       </div>
 
@@ -977,13 +1302,13 @@ function InvoicePreviewCard({ draft }: { draft: AiDraft }) {
       <div className="grid grid-cols-2 border-b border-gray-400">
         <div className="border-r border-gray-400 p-4">
           <p className="text-[10px] font-semibold text-gray-600 uppercase mb-1">Bill To</p>
-          <p className="font-bold text-gray-900 text-sm">{draft.buyer_name || '-'}</p>
-          <p className="text-gray-700">KARNATAKA</p>
+          <p className="font-bold text-gray-900 text-sm">{normalizedDraft.buyer_name || '-'}</p>
+          <p className="text-gray-700">{normalizedDraft.buyer_address || '-'}</p>
         </div>
         <div className="p-4">
           <p className="text-[10px] font-semibold text-gray-600 uppercase mb-1">Ship To</p>
-          <p className="font-bold text-gray-900 text-sm">{draft.buyer_name || '-'}</p>
-          <p className="text-gray-700">KARNATAKA</p>
+          <p className="font-bold text-gray-900 text-sm">{normalizedDraft.buyer_name || '-'}</p>
+          <p className="text-gray-700">{normalizedDraft.buyer_address || '-'}</p>
         </div>
       </div>
 
@@ -1003,11 +1328,11 @@ function InvoicePreviewCard({ draft }: { draft: AiDraft }) {
           <tbody>
             <tr>
               <td className="px-3 py-3 border-r border-gray-300">1</td>
-              <td className="px-3 py-3 border-r border-gray-300">{draft.commodity || '-'}</td>
-              <td className="px-3 py-3 border-r border-gray-300">{draft.hsn_code || '-'}</td>
-              <td className="px-3 py-3 text-center border-r border-gray-300">{draft.quantity || 0}</td>
-              <td className="px-3 py-3 text-right border-r border-gray-300">Rs. {Number(draft.rate || 0).toFixed(2)}</td>
-              <td className="px-3 py-3 text-right font-semibold">Rs. {Number(draft.total_amount || 0).toFixed(2)}</td>
+              <td className="px-3 py-3 border-r border-gray-300">{normalizedDraft.commodity || '-'}</td>
+              <td className="px-3 py-3 border-r border-gray-300">{normalizedDraft.hsn_code || '-'}</td>
+              <td className="px-3 py-3 text-center border-r border-gray-300">{normalizedDraft.quantity || 0}</td>
+              <td className="px-3 py-3 text-right border-r border-gray-300">Rs. {Number(normalizedDraft.rate || 0).toFixed(2)}</td>
+              <td className="px-3 py-3 text-right font-semibold">Rs. {Number(normalizedDraft.total_amount || 0).toFixed(2)}</td>
             </tr>
           </tbody>
         </table>
@@ -1017,19 +1342,19 @@ function InvoicePreviewCard({ draft }: { draft: AiDraft }) {
       <div className="grid grid-cols-2 border-b border-gray-400">
         <div className="border-r border-gray-400 p-4">
           <p className="font-bold text-gray-900 mb-2">Notes</p>
-          <p>Vehicle No : <span className="font-semibold">{draft.vehicle_number || '-'}</span></p>
-          <p>Transporter Name : -</p>
+          <p>Vehicle No : <span className="font-semibold">{normalizedDraft.vehicle_number || '-'}</span></p>
+          <p>Transporter Name : <span className="font-semibold">{normalizedDraft.owner_name || '-'}</span></p>
           <p className="mt-2 text-[10px] text-gray-700 leading-relaxed">
-            This vehicle is transporting {draft.commodity} from Supplier: {draft.seller_name || '-'} to Buyer: {draft.buyer_name || '-'}.
+            This vehicle is transporting {normalizedDraft.commodity} from Supplier: {normalizedDraft.seller_name || '-'} to Buyer: {normalizedDraft.buyer_name || '-'}.
           </p>
           <p className="mt-1 text-[10px] text-gray-700 leading-relaxed">
-            In case of any accident, loss, or damage during transit, {draft.seller_name || '-'} shall be treated as the insured person and will be entitled to receive all claim amounts for the damaged goods.
+            In case of any accident, loss, or damage during transit, {insuredName} shall be treated as the insured person and will be entitled to receive all claim amounts for the damaged goods.
           </p>
         </div>
         <div className="p-4 space-y-3">
           <div className="border border-gray-300 rounded p-3 text-center">
             <p className="text-[10px] text-gray-500 mb-0.5">Total</p>
-            <p className="text-base font-bold text-gray-900">Rs. {Number(draft.total_amount || 0).toFixed(2)}</p>
+            <p className="text-base font-bold text-gray-900">Rs. {Number(normalizedDraft.total_amount || 0).toFixed(2)}</p>
           </div>
           <div className="border border-gray-300 rounded p-3 text-center">
             <p className="text-[10px] text-gray-500 mb-0.5">Insurance Amount (0.2%)</p>
@@ -1156,6 +1481,32 @@ function ChatTab({ messages, chatLoading }: { messages: CollectionMessage[]; cha
 }
 
 // ─── Shared ─────────────────────────────────────────────────────────────────
+
+function ProductDraftField({ value, onChange, disabled }: {
+  value: string; onChange: (v: string) => void; disabled?: boolean;
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 mb-1">Select Item</label>
+      <input
+        list="invoice-approval-product-catalog"
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Commodity / Product"
+        disabled={disabled}
+        className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-300 focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:bg-gray-50 disabled:text-gray-500"
+      />
+      <datalist id="invoice-approval-product-catalog">
+        {itemsData.map((item) => (
+          <option key={`${item.name}-${item.hsn}`} value={item.name}>
+            {item.hsn}
+          </option>
+        ))}
+      </datalist>
+    </div>
+  );
+}
 
 function DraftField({ label, value, onChange, type = 'text', placeholder, disabled }: {
   label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; disabled?: boolean;

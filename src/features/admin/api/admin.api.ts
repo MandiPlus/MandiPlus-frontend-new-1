@@ -165,6 +165,21 @@ export interface InsuranceLearningSummary {
   }>;
 }
 
+export interface InvoiceApprovalAutofillChange {
+  field: string;
+  previousValue?: unknown;
+  value: unknown;
+  source: string;
+  confidence: "high" | "medium" | "low";
+  support?: number;
+}
+
+export interface InvoiceApprovalAutofillResult {
+  draft: Record<string, unknown>;
+  changes: InvoiceApprovalAutofillChange[];
+  suggestions?: Record<string, unknown>;
+}
+
 export interface PossibleDuplicateUserRow {
   id: string;
   score: number;
@@ -1380,6 +1395,27 @@ class AdminApi {
       return { success: true, ...response.data };
     } catch (error: any) {
       return { success: false };
+    }
+  };
+
+  public autofillInvoiceApprovalDraft = async (body: {
+    draft: Record<string, unknown>;
+    phone?: string;
+  }): Promise<ApiResponse<InvoiceApprovalAutofillResult>> => {
+    try {
+      const response = await this.client.post(
+        "/invoices/admin/approval-draft-autofill",
+        body,
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to autofill invoice approval draft",
+        error: error.message,
+      };
     }
   };
 
