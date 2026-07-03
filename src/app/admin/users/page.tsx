@@ -174,6 +174,7 @@ export default function UsersPage() {
     const [walletLogs, setWalletLogs] = useState<AdminWalletStatementItem[]>([]);
     const [exportingWalletByUser, setExportingWalletByUser] = useState<Record<string, boolean>>({});
     const [exportingUnpaidWalletReport, setExportingUnpaidWalletReport] = useState(false);
+    const [exportingUsers, setExportingUsers] = useState(false);
     const showUnpaidWalletPaymentColumns = walletLogUser?.walletType === 'UNPAID';
     const getCleanWalletNarration = (tx: AdminWalletStatementItem) => {
         const narration = tx.narration || tx.type || '-';
@@ -1045,51 +1046,93 @@ export default function UsersPage() {
         }
     };
 
-    const handleExportUsers = () => {
+    const handleExportUsers = async () => {
         if (activeSection === 'ADMIN_REQUESTS') return;
-        if (filteredUsers.length === 0) {
-            toast.info('No users to export');
-            return;
-        }
+        if (exportingUsers) return;
 
-        const rows = filteredUsers.map((user) => ({
-            Name: user.name || '',
-            'Mobile Number': formatIndianMobile(user.mobileNumber),
-            'Alternate Number': user.secondaryMobileNumber
-                ? formatIndianMobile(user.secondaryMobileNumber)
-                : '',
-            State: user.state || '',
-            'Registered Date': formatDate(user.createdAt),
-            Identity: user.identity || '',
-            'Billing Type':
-                user.identity === 'TRANSPORTER'
-                    ? user.billingType === 'PER_POLICY'
-                        ? 'Per Policy'
-                        : 'Bulk'
+        setExportingUsers(true);
+        try {
+            const exportLimit = 100;
+            let exportPage = 1;
+            let exportTotalPages = 1;
+            const usersToExport: User[] = [];
+
+            do {
+                const response = await adminApi.getAdminUsersPaginated({
+                    page: exportPage,
+                    limit: exportLimit,
+                    search: debouncedSearch,
+                    section: activeSection,
+                });
+
+                if (!response.success) {
+                    throw new Error(response.message || 'Failed to export users');
+                }
+
+                const users = (response.data || []).map((u: any) => ({
+                    ...u,
+                    id: String(u.id || u._id || ''),
+                    canonicalUserId: String(u.canonicalUserId || u.id || ''),
+                    isLedgerMasterVerified: Boolean(u.isLedgerMasterVerified),
+                    duplicateCount: Number(u.duplicateCount || 0),
+                    aliasNames: Array.isArray(u.aliasNames) ? u.aliasNames : [],
+                    aliasPhones: Array.isArray(u.aliasPhones) ? u.aliasPhones : [],
+                })) as User[];
+
+                usersToExport.push(...users);
+                exportTotalPages = Math.max(1, Number(response.totalPages) || 1);
+                exportPage += 1;
+            } while (exportPage <= exportTotalPages);
+
+            if (usersToExport.length === 0) {
+                toast.info('No users to export');
+                return;
+            }
+
+            const rows = usersToExport.map((user) => ({
+                Name: user.name || '',
+                'Mobile Number': formatIndianMobile(user.mobileNumber),
+                'Alternate Number': user.secondaryMobileNumber
+                    ? formatIndianMobile(user.secondaryMobileNumber)
                     : '',
-            'Wallet Type': user.walletType || '',
-            'Wallet Balance': Number(user.walletBalance || 0).toFixed(2),
-            'Verified Master': user.isLedgerMasterVerified ? 'Yes' : 'No',
-            'Merged User': user.isMerged ? 'Yes' : 'No',
-            'Master User': user.canonicalMasterName || '',
-            'GCA Member': String(user.unionMember || '').toUpperCase() === 'GCA' ? 'Yes' : 'No',
-        }));
+                State: user.state || '',
+                'Registered Date': formatDate(user.createdAt),
+                Identity: user.identity || '',
+                'Billing Type':
+                    user.identity === 'TRANSPORTER'
+                        ? user.billingType === 'PER_POLICY'
+                            ? 'Per Policy'
+                            : 'Bulk'
+                        : '',
+                'Wallet Type': user.walletType || '',
+                'Wallet Balance': Number(user.walletBalance || 0).toFixed(2),
+                'Verified Master': user.isLedgerMasterVerified ? 'Yes' : 'No',
+                'Merged User': user.isMerged ? 'Yes' : 'No',
+                'Master User': user.canonicalMasterName || '',
+                'GCA Member': String(user.unionMember || '').toUpperCase() === 'GCA' ? 'Yes' : 'No',
+            }));
 
-        const headers = Object.keys(rows[0]);
-        const csv = [headers, ...rows.map((row) => headers.map((header) => row[header as keyof typeof row]))]
-            .map((row) => row.map(escapeCsvCell).join(','))
-            .join('\n');
-        const blob = new Blob([`\ufeff${csv}`], {
-            type: 'text/csv;charset=utf-8;',
-        });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `users-${sectionTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`;
-        document.body.appendChild(link);
-        link.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(link);
+            const headers = Object.keys(rows[0]);
+            const csv = [headers, ...rows.map((row) => headers.map((header) => row[header as keyof typeof row]))]
+                .map((row) => row.map(escapeCsvCell).join(','))
+                .join('\n');
+            const blob = new Blob([`\ufeff${csv}`], {
+                type: 'text/csv;charset=utf-8;',
+            });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `users-${sectionTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(link);
+            toast.success(`Exported ${usersToExport.length} ${sectionTitle.toLowerCase()}`);
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to export users');
+        } finally {
+            setExportingUsers(false);
+        }
     };
 
     const handleImpersonateUser = async (user: User) => {
@@ -1398,9 +1441,10 @@ export default function UsersPage() {
                         {activeSection !== 'ADMIN_REQUESTS' ? (
                             <button
                                 onClick={handleExportUsers}
-                                className="whitespace-nowrap rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-800"
+                                disabled={exportingUsers}
+                                className="whitespace-nowrap rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                                Export Excel
+                                {exportingUsers ? 'Exporting...' : 'Export Excel'}
                             </button>
                         ) : null}
                         {activeSection === 'UNPAID_WALLETS' ? (
