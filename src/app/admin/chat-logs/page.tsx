@@ -214,6 +214,17 @@ function payloadPreview(payload: unknown): string | null {
     const listTitle = src?.interactive?.list_reply?.title;
     if (typeof listTitle === 'string' && listTitle.trim()) return listTitle.trim();
 
+    const interactive = src?.interactive;
+    if (interactive && typeof interactive === 'object') {
+      const interactiveType = String(interactive?.type || '').toLowerCase();
+      const bodyText = interactive?.body?.text;
+      if (typeof bodyText === 'string' && bodyText.trim()) return bodyText.trim();
+      if (interactiveType.includes('call') || interactiveType === 'call_permission_request') {
+        return 'WhatsApp Voice Call';
+      }
+      return 'Interactive message';
+    }
+
     const imageCaption = src?.image?.caption;
     if (typeof imageCaption === 'string' && imageCaption.trim()) return `[image] ${imageCaption.trim()}`;
     if (src?.image) return '[image]';
@@ -269,6 +280,10 @@ function payloadPreview(payload: unknown): string | null {
       const first = errors[0] || {};
       const title = first?.title || first?.message || first?.details;
       const code = first?.code;
+      const errorText = `${title || ''} ${code || ''}`.toLowerCase();
+      if (errorText.includes('131051') || errorText.includes('message type unknown')) {
+        return 'WhatsApp Voice Call';
+      }
       if (title && code !== undefined) return `[error] ${title} (code ${code})`;
       if (title) return `[error] ${title}`;
     }
@@ -348,6 +363,13 @@ function previewText(
   }
   if (text && text.trim()) {
     const raw = text.trim();
+    if (/^\[interactive\]$/i.test(raw)) {
+      const fromPayload = payloadPreview(payload);
+      return fromPayload && fromPayload !== '[interactive]' ? fromPayload : 'Interactive message';
+    }
+    if (/^WhatsApp Voice Call$/i.test(raw)) {
+      return 'WhatsApp Voice Call';
+    }
     if (/\{\{\d+\}\}/.test(raw) && payload) {
       const params = extractTemplateBodyParameters(payload);
       if (params.length > 0) {
@@ -934,20 +956,12 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     || (accessProfile?.isFullAdmin ? 'admin@mandiplus.com' : '');
 
   const axiosConfig = useMemo(
-    () =>
-      adminJwt
-        ? {
-          headers: {
-            Authorization: `Bearer ${adminJwt}`,
-          },
-        }
-        : botAdminToken
-        ? {
-          headers: {
-            'x-admin-token': botAdminToken,
-          },
-        }
-        : {},
+    () => ({
+      headers: {
+        ...(adminJwt ? { Authorization: `Bearer ${adminJwt}` } : {}),
+        ...(botAdminToken ? { 'x-admin-token': botAdminToken } : {}),
+      },
+    }),
     [adminJwt, botAdminToken]
   );
 
@@ -1377,19 +1391,26 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
         targets.map(async (item) => {
           const media = item.media as MediaInfo;
           try {
-            if (media.directUrl) {
+            if (media.directUrl && media.kind !== 'audio') {
               if (cancelled) return;
               setMediaUrls((prev) => ({ ...prev, [item.message.id]: media.directUrl as string }));
               return;
             }
             if (!media.mediaId) {
+              if (media.directUrl) {
+                if (!cancelled) {
+                  setMediaUrls((prev) => ({ ...prev, [item.message.id]: media.directUrl as string }));
+                }
+                return;
+              }
               if (!cancelled) {
                 setMediaFailures((prev) => ({ ...prev, [item.message.id]: true }));
               }
               return;
             }
+            const mediaUrl = `${botBaseUrl}/admin/chat/media/${media.mediaId}${media.kind === 'audio' ? '?format=m4a' : ''}`;
             const response = await axios.get(
-              `${botBaseUrl}/admin/chat/media/${media.mediaId}`,
+              mediaUrl,
               {
                 ...axiosConfig,
                 responseType: 'blob',
@@ -2561,6 +2582,9 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                               {media.kind === 'audio' ? (
                                 mediaUrl ? (
                                   <div className="space-y-2">
+                                    <p className="text-xs font-medium text-slate-600">
+                                      {media.isVoice ? 'Voice note' : 'Audio message'}
+                                    </p>
                                     <audio src={mediaUrl} controls className="w-full min-w-[240px]" />
                                     <div className="flex flex-wrap gap-2">
                                       <button
