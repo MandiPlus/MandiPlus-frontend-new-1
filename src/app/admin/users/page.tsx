@@ -113,12 +113,11 @@ const normalizePhoneForMatch = (value: string | undefined) => {
     return digits;
 };
 
-const escapeExcelCell = (value: unknown) =>
-    String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+const escapeCsvCell = (value: unknown) => {
+    const text = String(value ?? '');
+    const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+    return `"${safeText.replaceAll('"', '""')}"`;
+};
 
 const getSimilarityScore = (leftRaw: string, rightRaw: string) => {
     const left = leftRaw.replace(/\s+/g, '');
@@ -1077,35 +1076,16 @@ export default function UsersPage() {
         }));
 
         const headers = Object.keys(rows[0]);
-        const worksheet = `
-            <html>
-                <head><meta charset="utf-8" /></head>
-                <body>
-                    <table>
-                        <thead>
-                            <tr>${headers.map((header) => `<th>${escapeExcelCell(header)}</th>`).join('')}</tr>
-                        </thead>
-                        <tbody>
-                            ${rows
-                                .map(
-                                    (row) =>
-                                        `<tr>${headers
-                                            .map((header) => `<td>${escapeExcelCell(row[header as keyof typeof row])}</td>`)
-                                            .join('')}</tr>`,
-                                )
-                                .join('')}
-                        </tbody>
-                    </table>
-                </body>
-            </html>
-        `;
-        const blob = new Blob([worksheet], {
-            type: 'application/vnd.ms-excel;charset=utf-8;',
+        const csv = [headers, ...rows.map((row) => headers.map((header) => row[header as keyof typeof row]))]
+            .map((row) => row.map(escapeCsvCell).join(','))
+            .join('\n');
+        const blob = new Blob([`\ufeff${csv}`], {
+            type: 'text/csv;charset=utf-8;',
         });
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `users-${sectionTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.xls`;
+        link.download = `users-${sectionTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`;
         document.body.appendChild(link);
         link.click();
         window.URL.revokeObjectURL(url);
