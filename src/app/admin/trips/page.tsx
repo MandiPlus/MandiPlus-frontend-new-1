@@ -637,7 +637,7 @@ export default function AdminTripsPage() {
                     <td className="px-3 py-3 align-top text-gray-700">
                       <div className="min-w-[150px] space-y-1 text-xs">
                         <div className="font-medium text-slate-900">
-                          {trip.invoice?.driverPhone || trip.tel || '-'}
+                          {trip.tel || trip.invoice?.driverPhone || '-'}
                         </div>
                         {trip.invoice?.driverSecondaryPhone ? (
                           <div className="text-slate-500">
@@ -895,7 +895,7 @@ export default function AdminTripsPage() {
                   Primary Mobile
                 </div>
                 <div className="mt-1 break-all text-sm font-semibold text-slate-950">
-                  {detailsTrip.invoice?.driverPhone || detailsTrip.tel || '-'}
+                  {detailsTrip.tel || detailsTrip.invoice?.driverPhone || '-'}
                 </div>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
