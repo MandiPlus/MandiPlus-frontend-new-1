@@ -1584,6 +1584,9 @@ export default function AdminInsurancePaymentsPage() {
                     Payment Method
                   </th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">
+                    Remarks
+                  </th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700">
                     Updated At
                   </th>
                   <th className="px-4 py-3 text-right font-semibold text-gray-700">
@@ -1595,7 +1598,7 @@ export default function AdminInsurancePaymentsPage() {
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={12}
+                      colSpan={13}
                       className="px-4 py-6 text-center text-sm text-gray-500"
                     >
                       Loading insurance payments...
@@ -1604,7 +1607,7 @@ export default function AdminInsurancePaymentsPage() {
                 ) : paginatedRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={12}
+                      colSpan={13}
                       className="px-4 py-6 text-center text-sm text-gray-500"
                     >
                       No records found.
@@ -1664,6 +1667,18 @@ export default function AdminInsurancePaymentsPage() {
                           </span>
                         ) : (
                           row.paymentMethod || '-'
+                        )}
+                      </td>
+                      <td
+                        className="max-w-[260px] px-4 py-3 text-gray-700"
+                        title={row.remarks || undefined}
+                      >
+                        {row.remarks ? (
+                          <div className="line-clamp-3 whitespace-pre-line break-words">
+                            {row.remarks}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">-</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-gray-700">
