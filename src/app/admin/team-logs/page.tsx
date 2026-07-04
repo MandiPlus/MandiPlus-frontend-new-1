@@ -210,25 +210,38 @@ export default function TeamDailyLogsPage() {
   }, [isAuthenticated]);
 
   const fetchTeamData = async () => {
-    try {
-      setLoading(true);
-      setLoadingAiSummary(true);
-      const params: Record<string, string> = {};
-      if (filterDate) {
-        params.startDate = filterDate;
-        params.endDate = filterDate;
+    setLoading(true);
+    setLoadingAiSummary(true);
+    setAiSummary(null); // Clear previous AI summary to prevent displaying stale data
+
+    const params: Record<string, string> = {};
+    if (filterDate) {
+      params.startDate = filterDate;
+      params.endDate = filterDate;
+    }
+    if (filterMember) params.submitterEmail = filterMember;
+    if (filterCategory) params.category = filterCategory;
+
+    // Fetch database logs and overview in parallel, and resolve immediately
+    const fetchDbLogs = async () => {
+      try {
+        const [logsRes, overviewRes] = await Promise.all([
+          axios.get(`${API_BASE}/team-daily-logs/all`, { headers: getHeaders(), params }),
+          axios.get(`${API_BASE}/team-daily-logs/overview`, { headers: getHeaders(), params: { date: filterDate || todayStr() } }),
+        ]);
+
+        if (logsRes.data?.success) setLogs(logsRes.data.data || []);
+        if (overviewRes.data?.success) setOverview(overviewRes.data.data || null);
+      } catch (err) {
+        console.error('Failed to load team daily logs/overview:', err);
+        toast.error('Failed to load team logs data');
+      } finally {
+        setLoading(false);
       }
-      if (filterMember) params.submitterEmail = filterMember;
-      if (filterCategory) params.category = filterCategory;
+    };
 
-      const [logsRes, overviewRes] = await Promise.all([
-        axios.get(`${API_BASE}/team-daily-logs/all`, { headers: getHeaders(), params }),
-        axios.get(`${API_BASE}/team-daily-logs/overview`, { headers: getHeaders(), params: { date: filterDate || todayStr() } }),
-      ]);
-
-      if (logsRes.data?.success) setLogs(logsRes.data.data || []);
-      if (overviewRes.data?.success) setOverview(overviewRes.data.data || null);
-
+    // Fetch the slower AI daily summary in the background
+    const fetchAiSummary = async () => {
       try {
         const aiRes = await axios.get(`${API_BASE}/team-daily-logs/ai-summary`, {
           headers: getHeaders(),
@@ -236,17 +249,20 @@ export default function TeamDailyLogsPage() {
         });
         if (aiRes.data?.success) {
           setAiSummary(aiRes.data.data);
+        } else {
+          setAiSummary(null);
         }
       } catch (aiErr) {
         console.error('Failed to fetch AI daily summary:', aiErr);
         setAiSummary(null);
+      } finally {
+        setLoadingAiSummary(false);
       }
-    } catch {
-      toast.error('Failed to load team data');
-    } finally {
-      setLoading(false);
-      setLoadingAiSummary(false);
-    }
+    };
+
+    // Trigger both asynchronous requests concurrently
+    fetchDbLogs();
+    fetchAiSummary();
   };
 
   useEffect(() => {
