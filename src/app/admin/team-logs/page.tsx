@@ -472,12 +472,12 @@ export default function TeamDailyLogsPage() {
                     <div className="flex items-center gap-3 text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-100 rounded-full px-3 py-1.5 self-start md:self-auto shadow-sm">
                       <span className="flex items-center gap-1 text-emerald-600">
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                        09:00 AM Standup
+                        10:00 AM Standup
                       </span>
                       <span className="text-slate-300">|</span>
                       <span className="flex items-center gap-1 text-emerald-600">
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                        06:00 PM Checkout
+                        06:30 PM Checkout
                       </span>
                       <span className="text-slate-300">|</span>
                       <span className="flex items-center gap-1 text-[#4309ac] animate-pulse">
