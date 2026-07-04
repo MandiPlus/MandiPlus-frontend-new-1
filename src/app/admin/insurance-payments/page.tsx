@@ -155,7 +155,8 @@ function wasPaymentMarkedPaidToday(row: InsurancePaymentRow, referenceDate = new
 }
 
 function getEffectivePaidAmount(row: InsurancePaymentRow): number {
-  if (row.paymentStatus !== 'PAID' && row.paymentStatus !== 'PARTIAL') return 0;
+  const status = String(row.paymentStatus || '').toUpperCase();
+  if (status !== 'PAID' && status !== 'PARTIAL') return 0;
   const paymentAmount = Number(row.paymentAmount || 0);
   const premiumAmount = Number(row.premiumAmount || 0);
   return paymentAmount > 0 ? paymentAmount : premiumAmount;
@@ -570,14 +571,14 @@ export default function AdminInsurancePaymentsPage() {
       selectedRows.filter(
         (row) =>
           String(row.paymentStatus || '').toUpperCase() !== 'PAID' &&
-          Number(row.premiumAmount || 0) > 0,
+          getEffectiveBalance(row) > 0,
       ),
     [selectedRows],
   );
   const selectedPendingTotal = useMemo(
     () =>
       selectedPendingRows.reduce(
-        (sum, row) => sum + Number(row.premiumAmount || 0),
+        (sum, row) => sum + getEffectiveBalance(row),
         0,
       ),
     [selectedPendingRows],
@@ -587,7 +588,7 @@ export default function AdminInsurancePaymentsPage() {
       paginatedRows.filter(
         (row) =>
           String(row.paymentStatus || '').toUpperCase() !== 'PAID' &&
-          Number(row.premiumAmount || 0) > 0,
+          getEffectiveBalance(row) > 0,
       ),
     [paginatedRows],
   );
@@ -709,7 +710,7 @@ export default function AdminInsurancePaymentsPage() {
       const selectableRows = allRows.filter(
         (row) =>
           String(row.paymentStatus || '').toUpperCase() !== 'PAID' &&
-          Number(row.premiumAmount || 0) > 0 &&
+          getEffectiveBalance(row) > 0 &&
           (minAmt <= 0 || Number(row.premiumAmount || 0) >= minAmt),
       );
       setSelectedInvoiceIds(new Set(selectableRows.map((row) => row.invoiceId)));
