@@ -65,7 +65,7 @@ const CATEGORIES: { value: LogCategory; label: string; icon: typeof Phone; color
   { value: 'DOCUMENTATION', label: 'Documentation', icon: FileText, color: 'text-violet-700', bg: 'bg-violet-50 border-violet-200' },
   { value: 'CUSTOMER_SUPPORT', label: 'Customer Support', icon: Headphones, color: 'text-rose-700', bg: 'bg-rose-50 border-rose-200' },
   { value: 'OPERATIONS', label: 'Operations', icon: Settings, color: 'text-slate-700', bg: 'bg-slate-50 border-slate-200' },
-  { value: 'OTHER', label: 'Other', icon: MoreHorizontal, color: 'text-gray-700', bg: 'bg-gray-50 border-gray-200' },
+  { value: 'OTHER', label: 'General Tasks', icon: FileText, color: 'text-slate-500', bg: 'bg-slate-50 border-slate-200' },
 ];
 
 function getCategoryMeta(category: LogCategory) {
@@ -447,93 +447,128 @@ export default function TeamDailyLogsPage() {
                     <div className="h-4 bg-slate-100 rounded w-2/3" />
                   </div>
                 </div>
-              ) : aiSummary && (aiSummary.keyMilestones.length > 0 || aiSummary.executiveSummary.length > 30) ? (
+              ) : (
                 <div className="rounded-3xl border border-violet-100 bg-gradient-to-br from-violet-50/40 via-white to-indigo-50/20 p-6 shadow-sm relative overflow-hidden backdrop-blur-sm">
                   <div className="absolute top-0 right-0 h-40 w-40 bg-gradient-to-bl from-violet-300/10 to-indigo-400/0 rounded-full blur-3xl pointer-events-none" />
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-600 text-white shadow-sm shadow-violet-500/20">
-                      <span className="text-sm font-semibold">✨</span>
+                  
+                  {/* Top Bar with standup pipeline status tracker */}
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#4309ac] text-white shadow-sm shadow-[#4309ac]/20">
+                        <span className="text-xs font-semibold">✨</span>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                          AI Standup Digest
+                          <span className="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 ring-1 ring-inset ring-violet-700/10">
+                            Gemini 2.5
+                          </span>
+                        </h3>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Automated standup tracker & executive summary</p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                        AI Standup Digest
-                        <span className="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 ring-1 ring-inset ring-violet-700/10">
-                          Gemini Powered
-                        </span>
-                      </h3>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Automated synthesis of team focus and progress for {filterDate}</p>
+
+                    {/* Standup Pipeline Timeline */}
+                    <div className="flex items-center gap-3 text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-100 rounded-full px-3 py-1.5 self-start md:self-auto shadow-sm">
+                      <span className="flex items-center gap-1 text-emerald-600">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        09:00 AM Standup
+                      </span>
+                      <span className="text-slate-300">|</span>
+                      <span className="flex items-center gap-1 text-emerald-600">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        06:00 PM Checkout
+                      </span>
+                      <span className="text-slate-300">|</span>
+                      <span className="flex items-center gap-1 text-[#4309ac] animate-pulse">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#4309ac]" />
+                        09:00 PM EOD synthesis
+                      </span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Executive Summary */}
-                    <div className="lg:col-span-2 space-y-4">
-                      <div>
-                        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Executive Summary</h4>
-                        <p className="text-sm text-slate-700 font-medium leading-relaxed">{aiSummary.executiveSummary}</p>
-                      </div>
-
-                      {/* Milestones list */}
-                      {aiSummary.keyMilestones && aiSummary.keyMilestones.length > 0 && (
+                  {aiSummary && (aiSummary.keyMilestones.length > 0 || aiSummary.executiveSummary.length > 40) ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      {/* Executive Summary */}
+                      <div className="lg:col-span-2 space-y-4">
                         <div>
-                          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 font-bold text-slate-500">Key Achievements</h4>
-                          <ul className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
-                            {aiSummary.keyMilestones.map((m, idx) => (
-                              <li key={idx} className="flex items-start gap-2 bg-white/60 p-2.5 rounded-xl border border-slate-100 shadow-sm hover:border-violet-200 transition">
-                                <span className="text-violet-600 shrink-0">🏆</span>
-                                <span className="leading-snug">{m}</span>
-                              </li>
-                            ))}
-                          </ul>
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Executive Summary</h4>
+                            <span className="inline-flex items-center rounded-full bg-violet-50 px-1.5 py-0.2 text-[9px] font-medium text-violet-600 ring-1 ring-inset ring-violet-600/10">
+                              Live Draft
+                            </span>
+                          </div>
+                          <p className="text-sm text-slate-705 font-medium leading-relaxed text-slate-700">{aiSummary.executiveSummary}</p>
                         </div>
-                      )}
-                    </div>
 
-                    {/* Blockers and Category Hour Distribution */}
-                    <div className="space-y-4 bg-slate-50/50 p-4.5 rounded-2xl border border-slate-100/80">
-                      {/* Category Breakdown visual */}
-                      <div>
-                        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Hours Distribution</h4>
-                        <div className="space-y-2">
-                          {Object.entries(aiSummary.categoryBreakdown || {}).map(([cat, hours]) => {
-                            const meta = getCategoryMeta(cat as LogCategory);
-                            const percentage = totalHours > 0 ? Math.round((hours / totalHours) * 100) : 0;
-                            return (
-                              <div key={cat} className="space-y-1">
-                                <div className="flex items-center justify-between text-[11px] font-semibold">
-                                  <span className="text-slate-600">{meta.label}</span>
-                                  <span className="text-slate-400 font-bold">{hours}h ({percentage}%)</span>
-                                </div>
-                                <div className="h-1.5 w-full bg-slate-200/50 rounded-full overflow-hidden">
-                                  <div 
-                                    className={`h-full rounded-full ${meta.bg.replace('bg-', 'bg-').split(' ')[0]} bg-[#4309ac]`} 
-                                    style={{ width: `${percentage}%` }} 
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                        {/* Milestones list */}
+                        {aiSummary.keyMilestones && aiSummary.keyMilestones.length > 0 && (
+                          <div>
+                            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5 font-bold text-slate-500">Key Achievements</h4>
+                            <ul className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+                              {aiSummary.keyMilestones.map((m, idx) => (
+                                <li key={idx} className="flex items-start gap-2 bg-white/60 p-2.5 rounded-xl border border-slate-100 shadow-sm hover:border-violet-200 transition">
+                                  <span className="text-violet-600 shrink-0">🏆</span>
+                                  <span className="leading-snug">{m}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Risks / Blockers */}
-                      {aiSummary.blockersOrRisks && aiSummary.blockersOrRisks.length > 0 && (
-                        <div className="pt-2 border-t border-slate-200">
-                          <h4 className="text-xs font-semibold text-red-500 uppercase tracking-wider mb-1.5 font-bold">Attention Required</h4>
-                          <ul className="space-y-1.5 text-xs text-slate-600 font-medium">
-                            {aiSummary.blockersOrRisks.map((b, idx) => (
-                              <li key={idx} className="flex items-start gap-1.5 bg-red-50/40 p-2 rounded-lg border border-red-100/50">
-                                <span className="text-red-500 shrink-0">⚠️</span>
-                                <span>{b}</span>
-                              </li>
-                            ))}
-                          </ul>
+                      {/* Blockers and Category Hour Distribution */}
+                      <div className="space-y-4 bg-slate-50/50 p-4.5 rounded-2xl border border-slate-100/80">
+                        {/* Category Breakdown visual */}
+                        <div>
+                          <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Hours Distribution</h4>
+                          <div className="space-y-2">
+                            {Object.entries(aiSummary.categoryBreakdown || {}).map(([cat, hours]) => {
+                              const meta = getCategoryMeta(cat as LogCategory);
+                              const percentage = totalHours > 0 ? Math.round((hours / totalHours) * 100) : 0;
+                              return (
+                                <div key={cat} className="space-y-1">
+                                  <div className="flex items-center justify-between text-[11px] font-semibold">
+                                    <span className="text-slate-600">{meta.label}</span>
+                                    <span className="text-slate-400 font-bold">{hours}h ({percentage}%)</span>
+                                  </div>
+                                  <div className="h-1.5 w-full bg-slate-200/50 rounded-full overflow-hidden">
+                                    <div 
+                                      className="h-full rounded-full bg-[#4309ac]" 
+                                      style={{ width: `${percentage}%` }} 
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      )}
+
+                        {/* Risks / Blockers */}
+                        {aiSummary.blockersOrRisks && aiSummary.blockersOrRisks.length > 0 && (
+                          <div className="pt-2 border-t border-slate-200">
+                            <h4 className="text-xs font-semibold text-red-500 uppercase tracking-wider mb-1.5 font-bold">Attention Required</h4>
+                            <ul className="space-y-1.5 text-xs text-slate-600 font-medium">
+                              {aiSummary.blockersOrRisks.map((b, idx) => (
+                                <li key={idx} className="flex items-start gap-1.5 bg-red-50/40 p-2 rounded-lg border border-red-100/50">
+                                  <span className="text-red-500 shrink-0">⚠️</span>
+                                  <span>{b}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="text-center py-8">
+                      <span className="text-2xl mb-1.5 block">📡</span>
+                      <p className="text-xs text-slate-500 font-bold">Awaiting team standup submissions</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Live draft report compiles automatically as team members check in.</p>
+                    </div>
+                  )}
                 </div>
-              ) : null}
+              )}
 
               {/* Team Feed */}
               {loading ? (
@@ -573,11 +608,11 @@ export default function TeamDailyLogsPage() {
                               <p className="text-sm font-semibold text-slate-900 truncate">{name}</p>
                               {status.morning && status.evening ? (
                                 <span className="inline-flex items-center rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/10">
-                                  Done
+                                  Completed
                                 </span>
                               ) : status.morning ? (
                                 <span className="inline-flex items-center rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold text-amber-700 ring-1 ring-inset ring-amber-600/10 animate-pulse">
-                                  In Progress
+                                  Checked In
                                 </span>
                               ) : null}
                             </div>
@@ -597,56 +632,82 @@ export default function TeamDailyLogsPage() {
 
                         {/* Logs */}
                         <div className="divide-y divide-slate-50">
-                          {personLogs.map((log) => (
-                            <div key={log.id} className="px-5 py-4">
-                              <div className="flex items-start gap-3">
-                                <div className="mt-0.5 shrink-0">
-                                  <CategoryBadge category={log.category} />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm text-slate-800 leading-relaxed font-semibold">{log.summary || 'Logged progress'}</p>
-                                  {log.notes && (
-                                    <p className="mt-1 text-xs text-slate-500 italic">{log.notes}</p>
-                                  )}
-                                  
-                                  <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {/* Morning plan card */}
-                                    <div className={`rounded-2xl border p-4 transition ${
-                                      log.morningWins 
-                                        ? 'border-emerald-100 bg-emerald-50/20' 
-                                        : 'border-dashed border-slate-200 bg-slate-50/50'
-                                    }`}>
-                                      <div className="flex items-center gap-1.5 mb-2">
-                                        <span className="text-emerald-600 text-xs">🎯</span>
-                                        <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Morning Plan</span>
-                                      </div>
-                                      <p className={`text-xs leading-relaxed font-medium ${log.morningWins ? 'text-slate-700' : 'text-slate-400 italic'}`}>
-                                        {log.morningWins || 'No morning plans logged today.'}
+                          {personLogs.map((log) => {
+                            // Check if summary is distinct to avoid redundant AI slop text representation
+                            const cleanEvening = (log.eveningDone || '').trim();
+                            const cleanMorning = (log.morningWins || '').trim();
+                            const cleanSummary = (log.summary || '').trim();
+                            const hasUniqueSummary = cleanSummary && 
+                              cleanSummary !== cleanEvening && 
+                              cleanSummary !== cleanMorning &&
+                              !cleanEvening.includes(cleanSummary);
+
+                            return (
+                              <div key={log.id} className="px-5 py-4">
+                                <div className="flex items-start gap-3">
+                                  <div className="mt-0.5 shrink-0">
+                                    <CategoryBadge category={log.category} />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    {hasUniqueSummary && (
+                                      <p className="text-xs font-bold text-violet-800 bg-violet-50/50 border border-violet-100 rounded-lg px-3 py-1.5 mb-3 leading-relaxed inline-block">
+                                        📌 {log.summary}
                                       </p>
+                                    )}
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      {/* Morning plan card */}
+                                      <div className={`rounded-2xl border p-4 transition ${
+                                        log.morningWins 
+                                          ? 'border-emerald-100 bg-emerald-50/20' 
+                                          : 'border-dashed border-slate-200 bg-slate-50/50'
+                                      }`}>
+                                        <div className="flex items-center gap-1.5 mb-2">
+                                          <span className="text-emerald-600 text-xs">🎯</span>
+                                          <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Morning Plan</span>
+                                        </div>
+                                        <p className={`text-xs leading-relaxed font-medium ${log.morningWins ? 'text-slate-700' : 'text-slate-455 text-slate-400 italic'}`}>
+                                          {log.morningWins || 'No morning plan was logged.'}
+                                        </p>
+                                      </div>
+
+                                      {/* Evening done card */}
+                                      <div className={`rounded-2xl border p-4 transition ${
+                                        log.eveningDone 
+                                          ? 'border-blue-100 bg-blue-50/20' 
+                                          : 'border-dashed border-blue-200 bg-blue-50/10 animate-pulse'
+                                      }`}>
+                                        <div className="flex items-center gap-1.5 mb-2">
+                                          <span className="text-blue-600 text-xs">🌅</span>
+                                          <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Evening Accomplishments</span>
+                                        </div>
+                                        <p className={`text-xs leading-relaxed font-medium ${log.eveningDone ? 'text-slate-700' : 'text-blue-600/80 font-bold italic'}`}>
+                                          {log.eveningDone || 'Awaiting checkout report... ⏳'}
+                                        </p>
+                                      </div>
                                     </div>
 
-                                    {/* Evening done card */}
-                                    <div className={`rounded-2xl border p-4 transition ${
-                                      log.eveningDone 
-                                        ? 'border-blue-100 bg-blue-50/20' 
-                                        : 'border-dashed border-blue-200 bg-blue-50/10 animate-pulse'
-                                    }`}>
-                                      <div className="flex items-center gap-1.5 mb-2">
-                                        <span className="text-blue-600 text-xs">🌅</span>
-                                        <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Evening Accomplishments</span>
+                                    {/* Morale Booster speech bubble */}
+                                    {log.notes && (
+                                      <div className="mt-3.5 flex items-start gap-2.5 rounded-2xl bg-gradient-to-r from-violet-50/40 via-violet-50/20 to-transparent border border-violet-100/60 p-3 text-xs text-violet-700 shadow-sm">
+                                        <span className="text-sm shrink-0">💬</span>
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-1.5 mb-0.5">
+                                            <span className="font-bold text-violet-900">Bot Interaction Feedback</span>
+                                            <span className="inline-flex h-1.5 w-1.5 rounded-full bg-violet-400"></span>
+                                          </div>
+                                          <p className="italic font-semibold text-violet-850">"{log.notes}"</p>
+                                        </div>
                                       </div>
-                                      <p className={`text-xs leading-relaxed font-medium ${log.eveningDone ? 'text-slate-700' : 'text-blue-600/80 font-semibold italic'}`}>
-                                        {log.eveningDone || 'Awaiting evening log updates... ⏳'}
-                                      </p>
-                                    </div>
+                                    )}
                                   </div>
+                                  {log.hoursSpent > 0 && (
+                                    <span className="shrink-0 text-xs text-slate-500 font-bold bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">{log.hoursSpent}h</span>
+                                  )}
                                 </div>
-                                {log.hoursSpent > 0 && (
-                                  <span className="shrink-0 text-xs text-slate-500 font-bold bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">{log.hoursSpent}h</span>
-                                )}
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     );
