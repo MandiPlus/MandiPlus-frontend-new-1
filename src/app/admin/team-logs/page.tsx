@@ -114,7 +114,10 @@ interface AiSummaryData {
 
 export default function TeamDailyLogsPage() {
   const router = useRouter();
-  const { isAuthenticated } = useAdmin();
+  const { isAuthenticated, accessProfile, loading: authLoading } = useAdmin();
+  const username = accessProfile?.account?.username?.toLowerCase()?.trim() || '';
+  const isAllowedAdmin = ['admin@mandiplus.com', 'om@mandiplus.com'].includes(username);
+
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -137,10 +140,10 @@ export default function TeamDailyLogsPage() {
   const [loadingAiSummary, setLoadingAiSummary] = useState(false);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!authLoading && !isAuthenticated) {
       router.push('/admin/login');
     }
-  }, [isAuthenticated, router]);
+  }, [authLoading, isAuthenticated, router]);
 
   const fetchMembers = async () => {
     try {
@@ -204,10 +207,10 @@ export default function TeamDailyLogsPage() {
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && isAllowedAdmin) {
       fetchMembers();
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, isAllowedAdmin]);
 
   const fetchTeamData = async () => {
     setLoading(true);
@@ -266,8 +269,8 @@ export default function TeamDailyLogsPage() {
   };
 
   useEffect(() => {
-    if (isAuthenticated) fetchTeamData();
-  }, [isAuthenticated, filterDate, filterMember, filterCategory]);
+    if (isAuthenticated && isAllowedAdmin) fetchTeamData();
+  }, [isAuthenticated, isAllowedAdmin, filterDate, filterMember, filterCategory]);
 
   const uniqueMembers = useMemo(() => {
     const map = new Map<string, string>();
@@ -309,7 +312,44 @@ export default function TeamDailyLogsPage() {
   const totalHours = overview?.memberStats.reduce((sum, m) => sum + m.totalHours, 0) || 0;
   const avgHours = overview?.memberStats.length ? Math.round(totalHours / overview.memberStats.length) : 0;
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#4309ac] border-t-transparent mx-auto" />
+          <p className="mt-3 text-sm text-slate-500 font-medium">Verifying admin access...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) return null;
+
+  if (!isAllowedAdmin) {
+    return (
+      <div className="min-h-screen py-12 px-4 bg-slate-50 flex items-center justify-center">
+        <div className="max-w-md w-full bg-white rounded-3xl border border-slate-200 p-8 shadow-xl text-center space-y-6">
+          <div className="h-16 w-16 bg-rose-50 border border-rose-100 rounded-full flex items-center justify-center mx-auto text-rose-500">
+            <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0 0v2m0-2h2m-2 0H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Access Restricted</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              Only authorized administrators (<code className="bg-slate-100 px-1.5 py-0.5 rounded text-rose-600 font-mono text-xs">admin@mandiplus.com</code> & <code className="bg-slate-100 px-1.5 py-0.5 rounded text-rose-600 font-mono text-xs">om@mandiplus.com</code>) have permission to view team daily logs.
+            </p>
+          </div>
+          <button
+            onClick={() => router.push('/admin/dashboard')}
+            className="w-full inline-flex items-center justify-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-900 transition shadow-sm"
+          >
+            Return to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const publicUrl = typeof window !== 'undefined' ? `${window.location.origin}/daily-log` : '/daily-log';
 
