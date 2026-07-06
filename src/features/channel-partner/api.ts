@@ -36,3 +36,21 @@ export async function getMyChannelPartnerDashboard(): Promise<ChannelPartnerDeta
   );
   return response.data?.data ?? response.data;
 }
+
+export async function onboardChannelPartnerCustomer(data: {
+  name: string;
+  mobileNumber: string;
+  secondaryMobileNumber?: string;
+  state: string;
+  mandiName?: string;
+  products: string[];
+  identity?: string;
+}): Promise<any> {
+  const response = await withAuthRetry(() =>
+    axios.post(`${API_BASE_URL}/channel-partners/me/customers`, data, {
+      headers: getAuthHeader(),
+    }),
+  );
+  return response.data;
+}
+

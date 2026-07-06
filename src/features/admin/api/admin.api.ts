@@ -625,6 +625,53 @@ export interface ChannelPartnerDetailPayload {
   message?: string;
 }
 
+export interface AdminCustomerDetailPayload {
+  customer: {
+    id: string;
+    name: string;
+    mobileNumber: string;
+    secondaryMobileNumber?: string | null;
+    identity?: string | null;
+    state: string;
+    mandiName?: string | null;
+    products: string[];
+    walletBalance: number;
+    createdAt: string;
+  };
+  link: {
+    id: string;
+    status: string;
+    source: string;
+    approvedAt?: string | null;
+    partner: {
+      id: string;
+      code: string;
+      name?: string;
+      mobileNumber?: string;
+    };
+  } | null;
+  summary: {
+    invoices: number;
+    premiumTotal: number;
+    pendingPayments: number;
+    activeTrips: number;
+    commissionTotal: number;
+  };
+  invoices: ChannelPartnerInvoicePayload[];
+  trips: ChannelPartnerTripPayload[];
+  commissions: Array<{
+    id: string;
+    invoiceNumber?: string;
+    invoiceDate?: string | null;
+    premiumAmount: number;
+    commissionRate: number;
+    commissionAmount: number;
+    status: string;
+    paidAt?: string | null;
+    createdAt: string;
+  }>;
+}
+
 export interface AdminChannelPartnerListRow extends ChannelPartnerProfilePayload {
   summary: ChannelPartnerSummary;
 }
@@ -1717,6 +1764,24 @@ class AdminApi {
         success: false,
         message:
           error.response?.data?.message || 'Failed to update customer link',
+        error: error.message,
+      };
+    }
+  };
+
+  public getChannelPartnerCustomerDetail = async (
+    customerId: string,
+  ): Promise<ApiResponse<AdminCustomerDetailPayload>> => {
+    try {
+      const response = await this.client.get<ApiResponse<AdminCustomerDetailPayload>>(
+        `/channel-partners/admin/customers/${customerId}`,
+      );
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to load customer detail',
         error: error.message,
       };
     }

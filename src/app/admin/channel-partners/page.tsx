@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import toast from "react-hot-toast";
 import {
   BadgeIndianRupee,
@@ -584,7 +585,15 @@ function CustomersTable({
         {rows.map((row) => (
           <tr key={row.linkId} className="hover:bg-slate-50">
             <Td>
-              <p className="font-semibold text-slate-950">{row.customer.name}</p>
+              <p>
+                <Link
+                  href={`/admin/channel-partners/customer/${row.customer.id}`}
+                  target="_blank"
+                  className="font-semibold text-blue-700 hover:text-blue-900 hover:underline"
+                >
+                  {row.customer.name}
+                </Link>
+              </p>
               <p className="text-xs text-slate-500">
                 {row.customer.mobileNumber} · {row.customer.identity || "No identity"}
               </p>

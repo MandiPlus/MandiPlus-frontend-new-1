@@ -28,6 +28,20 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
 
+function getAdminEmailFromToken(): string {
+  if (typeof window === 'undefined') return '';
+  const token = localStorage.getItem('adminToken');
+  if (!token) return '';
+  try {
+    const payloadBase64 = token.split('.')[1];
+    if (!payloadBase64) return '';
+    const decoded = JSON.parse(atob(payloadBase64.replace(/-/g, '+').replace(/_/g, '/')));
+    return (decoded?.sub || '').toLowerCase().trim();
+  } catch {
+    return '';
+  }
+}
+
 type LogCategory = 'CALLS' | 'MEETINGS' | 'FIELD_VISITS' | 'DOCUMENTATION' | 'CUSTOMER_SUPPORT' | 'OPERATIONS' | 'OTHER';
 
 interface DailyLog {
@@ -114,9 +128,16 @@ interface AiSummaryData {
 
 export default function TeamDailyLogsPage() {
   const router = useRouter();
-  const { isAuthenticated, accessProfile, loading: authLoading } = useAdmin();
-  const username = accessProfile?.account?.username?.toLowerCase()?.trim() || '';
-  const isAllowedAdmin = ['admin@mandiplus.com', 'om@mandiplus.com'].includes(username);
+  const { isAuthenticated, loading: authLoading } = useAdmin();
+  const [adminEmail, setAdminEmail] = useState('');
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      setAdminEmail(getAdminEmailFromToken());
+    }
+  }, [isAuthenticated]);
+
+  const isAllowedAdmin = ['admin@mandiplus.com', 'om@mandiplus.com'].includes(adminEmail);
 
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -138,6 +159,12 @@ export default function TeamDailyLogsPage() {
   // AI summary state
   const [aiSummary, setAiSummary] = useState<AiSummaryData | null>(null);
   const [loadingAiSummary, setLoadingAiSummary] = useState(false);
+
+  useEffect(() => {
+    if (!isAllowedAdmin) {
+      setActiveTab('logs');
+    }
+  }, [isAllowedAdmin]);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -325,32 +352,6 @@ export default function TeamDailyLogsPage() {
 
   if (!isAuthenticated) return null;
 
-  if (!isAllowedAdmin) {
-    return (
-      <div className="min-h-screen py-12 px-4 bg-slate-50 flex items-center justify-center">
-        <div className="max-w-md w-full bg-white rounded-3xl border border-slate-200 p-8 shadow-xl text-center space-y-6">
-          <div className="h-16 w-16 bg-rose-50 border border-rose-100 rounded-full flex items-center justify-center mx-auto text-rose-500">
-            <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m0 0v2m0-2h2m-2 0H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">Access Restricted</h2>
-            <p className="mt-2 text-sm text-slate-500">
-              Only authorized administrators (<code className="bg-slate-100 px-1.5 py-0.5 rounded text-rose-600 font-mono text-xs">admin@mandiplus.com</code> & <code className="bg-slate-100 px-1.5 py-0.5 rounded text-rose-600 font-mono text-xs">om@mandiplus.com</code>) have permission to view team daily logs.
-            </p>
-          </div>
-          <button
-            onClick={() => router.push('/admin/dashboard')}
-            className="w-full inline-flex items-center justify-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-900 transition shadow-sm"
-          >
-            Return to Dashboard
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const publicUrl = typeof window !== 'undefined' ? `${window.location.origin}/daily-log` : '/daily-log';
 
   return (
@@ -374,47 +375,51 @@ export default function TeamDailyLogsPage() {
         </div>
 
         {/* Tabs Switcher */}
-        <div className="mb-6 flex gap-2 border-b border-slate-200">
-          <button
-            onClick={() => setActiveTab('logs')}
-            className={`pb-2 px-4 text-sm font-semibold transition ${
-              activeTab === 'logs'
-                ? 'border-b-2 border-[#4309ac] text-[#4309ac]'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            Daily Logs Feed
-          </button>
-          <button
-            onClick={() => setActiveTab('members')}
-            className={`pb-2 px-4 text-sm font-semibold transition ${
-              activeTab === 'members'
-                ? 'border-b-2 border-[#4309ac] text-[#4309ac]'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            Team Members
-          </button>
-        </div>
+        {isAllowedAdmin && (
+          <div className="mb-6 flex gap-2 border-b border-slate-200">
+            <button
+              onClick={() => setActiveTab('logs')}
+              className={`pb-2 px-4 text-sm font-semibold transition ${
+                activeTab === 'logs'
+                  ? 'border-b-2 border-[#4309ac] text-[#4309ac]'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Daily Logs Feed
+            </button>
+            <button
+              onClick={() => setActiveTab('members')}
+              className={`pb-2 px-4 text-sm font-semibold transition ${
+                activeTab === 'members'
+                  ? 'border-b-2 border-[#4309ac] text-[#4309ac]'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Team Members
+            </button>
+          </div>
+        )}
 
         {activeTab === 'logs' && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {/* Main Logs Feed & AI Digest (3 Cols) */}
-            <div className="lg:col-span-3 space-y-6">
+          <div className={`grid grid-cols-1 ${isAllowedAdmin ? 'lg:grid-cols-4' : ''} gap-6`}>
+            {/* Main Logs Feed & AI Digest */}
+            <div className={`${isAllowedAdmin ? 'lg:col-span-3' : ''} space-y-6`}>
               {/* Share URL */}
-              <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
-                <p className="text-xs font-medium text-blue-800 mb-1">Share this link with your team to submit daily logs (no login required):</p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 rounded-lg bg-white border border-blue-200 px-3 py-1.5 text-sm text-blue-900 font-mono truncate">{publicUrl}</code>
-                  <button
-                    type="button"
-                    onClick={() => { navigator.clipboard.writeText(publicUrl); toast.success('Link copied!'); }}
-                    className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
-                  >
-                    Copy
-                  </button>
+              {isAllowedAdmin && (
+                <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
+                  <p className="text-xs font-medium text-blue-800 mb-1">Share this link with your team to submit daily logs (no login required):</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 rounded-lg bg-white border border-blue-200 px-3 py-1.5 text-sm text-blue-900 font-mono truncate">{publicUrl}</code>
+                    <button
+                      type="button"
+                      onClick={() => { navigator.clipboard.writeText(publicUrl); toast.success('Link copied!'); }}
+                      className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                    >
+                      Copy
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Filters */}
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -422,23 +427,25 @@ export default function TeamDailyLogsPage() {
                   <Filter className="h-4 w-4 text-slate-500" />
                   <span className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Filters</span>
                 </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className={`grid grid-cols-1 gap-3 ${isAllowedAdmin ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
                   <input
                     type="date"
                     value={filterDate}
                     onChange={(e) => setFilterDate(e.target.value)}
                     className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-[#4309ac] focus:outline-none"
                   />
-                  <select
-                    value={filterMember}
-                    onChange={(e) => setFilterMember(e.target.value)}
-                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-[#4309ac] focus:outline-none"
-                  >
-                    <option value="">All Members</option>
-                    {uniqueMembers.map(([email, name]) => (
-                      <option key={email} value={email}>{name}</option>
-                    ))}
-                  </select>
+                  {isAllowedAdmin && (
+                    <select
+                      value={filterMember}
+                      onChange={(e) => setFilterMember(e.target.value)}
+                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-[#4309ac] focus:outline-none"
+                    >
+                      <option value="">All Members</option>
+                      {uniqueMembers.map(([email, name]) => (
+                        <option key={email} value={email}>{name}</option>
+                      ))}
+                    </select>
+                  )}
                   <select
                     value={filterCategory}
                     onChange={(e) => setFilterCategory(e.target.value)}
@@ -773,83 +780,85 @@ export default function TeamDailyLogsPage() {
             </div>
 
             {/* Check-In Radar Sidebar (1 Col) */}
-            <div className="lg:col-span-1 space-y-6">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sticky top-6">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-slate-600">📡</span>
-                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Check-in Radar</h3>
+            {isAllowedAdmin && (
+              <div className="lg:col-span-1 space-y-6">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sticky top-6">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-600">📡</span>
+                      <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Check-in Radar</h3>
+                    </div>
+                    <span className="flex h-2 w-2 relative">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
                   </div>
-                  <span className="flex h-2 w-2 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                  </span>
-                </div>
 
-                {loading ? (
-                  <div className="space-y-3">
-                    <div className="h-8 bg-slate-50 animate-pulse rounded-lg" />
-                    <div className="h-8 bg-slate-50 animate-pulse rounded-lg" />
-                    <div className="h-8 bg-slate-50 animate-pulse rounded-lg" />
-                  </div>
-                ) : members.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic text-center py-4">No team members registered.</p>
-                ) : (
-                  <div className="space-y-3.5">
-                    {members.map((member) => {
-                      const status = memberStatusMap.get(member.username.toLowerCase().trim()) || { morning: false, evening: false, hours: 0 };
-                      let dotColor = 'bg-slate-300';
-                      let ringColor = 'ring-slate-300/10';
-                      let statusText = 'Pending';
-                      let badgeBg = 'bg-slate-50 text-slate-400';
+                  {loading ? (
+                    <div className="space-y-3">
+                      <div className="h-8 bg-slate-50 animate-pulse rounded-lg" />
+                      <div className="h-8 bg-slate-50 animate-pulse rounded-lg" />
+                      <div className="h-8 bg-slate-50 animate-pulse rounded-lg" />
+                    </div>
+                  ) : members.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic text-center py-4">No team members registered.</p>
+                  ) : (
+                    <div className="space-y-3.5">
+                      {members.map((member) => {
+                        const status = memberStatusMap.get(member.username.toLowerCase().trim()) || { morning: false, evening: false, hours: 0 };
+                        let dotColor = 'bg-slate-300';
+                        let ringColor = 'ring-slate-300/10';
+                        let statusText = 'Pending';
+                        let badgeBg = 'bg-slate-50 text-slate-400';
 
-                      if (status.morning && status.evening) {
-                        dotColor = 'bg-emerald-500';
-                        ringColor = 'ring-emerald-500/20';
-                        statusText = 'Completed';
-                        badgeBg = 'bg-emerald-50 text-emerald-700 border-emerald-100';
-                      } else if (status.morning && !status.evening) {
-                        dotColor = 'bg-amber-500 animate-pulse';
-                        ringColor = 'ring-amber-500/30';
-                        statusText = 'Plan Logged';
-                        badgeBg = 'bg-amber-50 text-amber-700 border-amber-100';
-                      } else if (!status.morning && status.evening) {
-                        dotColor = 'bg-blue-500';
-                        ringColor = 'ring-blue-500/20';
-                        statusText = 'Done Logged';
-                        badgeBg = 'bg-blue-50 text-blue-700 border-blue-100';
-                      }
+                        if (status.morning && status.evening) {
+                          dotColor = 'bg-emerald-500';
+                          ringColor = 'ring-emerald-500/20';
+                          statusText = 'Completed';
+                          badgeBg = 'bg-emerald-50 text-emerald-700 border-emerald-100';
+                        } else if (status.morning && !status.evening) {
+                          dotColor = 'bg-amber-500 animate-pulse';
+                          ringColor = 'ring-amber-500/30';
+                          statusText = 'Plan Logged';
+                          badgeBg = 'bg-amber-50 text-amber-700 border-amber-100';
+                        } else if (!status.morning && status.evening) {
+                          dotColor = 'bg-blue-500';
+                          ringColor = 'ring-blue-500/20';
+                          statusText = 'Done Logged';
+                          badgeBg = 'bg-blue-50 text-blue-700 border-blue-100';
+                        }
 
-                      return (
-                        <div key={member.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-50 bg-slate-50/20 hover:bg-slate-50/60 transition group">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="relative flex h-3 w-3 shrink-0">
-                              {status.morning && !status.evening && (
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                        return (
+                          <div key={member.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-50 bg-slate-50/20 hover:bg-slate-50/60 transition group">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="relative flex h-3 w-3 shrink-0">
+                                {status.morning && !status.evening && (
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                )}
+                                <span className={`relative inline-flex rounded-full h-3 w-3 ${dotColor}`}></span>
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-slate-800 truncate group-hover:text-[#4309ac] transition">{member.fullName}</p>
+                                <span className="text-[9px] font-semibold text-slate-400 block truncate">{member.username}</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${badgeBg}`}>
+                                {statusText}
+                              </span>
+                              {status.hours > 0 && (
+                                <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-100 px-1 py-0.5 rounded-md">{status.hours}h</span>
                               )}
-                              <span className={`relative inline-flex rounded-full h-3 w-3 ${dotColor}`}></span>
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold text-slate-800 truncate group-hover:text-[#4309ac] transition">{member.fullName}</p>
-                              <span className="text-[9px] font-semibold text-slate-400 block truncate">{member.username}</span>
                             </div>
                           </div>
-
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${badgeBg}`}>
-                              {statusText}
-                            </span>
-                            {status.hours > 0 && (
-                              <span className="text-[10px] font-bold text-slate-500 bg-white border border-slate-100 px-1 py-0.5 rounded-md">{status.hours}h</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 

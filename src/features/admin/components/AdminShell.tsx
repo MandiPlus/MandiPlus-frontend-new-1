@@ -14,7 +14,8 @@ export default function AdminShell({
   if (
     pathname === '/admin/login' ||
     pathname === '/admin/signup' ||
-    pathname === '/admin/impersonate'
+    pathname === '/admin/impersonate' ||
+    pathname?.startsWith('/admin/channel-partners/customer/')
   ) {
     return <>{children}</>;
   }
