@@ -111,8 +111,8 @@ export default function AgentDashboardPage() {
                       Channel Partner Addon Active
                     </p>
                     <h2 className="mt-1 text-lg font-bold text-emerald-950">
-                      {channelPartner.summary.customers} customers · {channelPartner.summary.invoices} invoices ·{" "}
-                      {formatMoneyINR(channelPartner.summary.commissionPayable)} payable
+                      {channelPartner.summary?.customers} customers · {channelPartner.summary?.invoices} invoices ·{" "}
+                      {formatMoneyINR(channelPartner.summary?.commissionPayable ?? 0)} payable
                     </h2>
                     <p className="mt-1 text-sm text-emerald-800">
                       Code {channelPartner.profile.code}. This is separate from your agent commission summary below.

@@ -50,15 +50,15 @@ function formatDate(value?: string | null) {
 function pillClass(status?: string | null) {
   const norm = String(status || "").toUpperCase();
   if (norm === "ACTIVE" || norm === "APPROVED" || norm === "PAYABLE" || norm === "PAID" || norm === "COMPLETED") {
-    return "bg-emerald-50 text-emerald-700 ring-emerald-200";
+    return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/80";
   }
   if (norm === "PENDING" || norm === "PARTIAL" || norm === "IN_PROGRESS") {
-    return "bg-amber-50 text-amber-700 ring-amber-200";
+    return "bg-amber-50 text-amber-700 ring-1 ring-amber-200/80";
   }
   if (norm === "SUSPENDED" || norm === "REMOVED" || norm === "VOID" || norm === "REJECTED" || norm === "FAILED" || norm === "CANCELLED") {
-    return "bg-rose-50 text-rose-700 ring-rose-200";
+    return "bg-rose-50 text-rose-700 ring-1 ring-rose-200/80";
   }
-  return "bg-slate-100 text-slate-600 ring-slate-200";
+  return "bg-slate-100 text-slate-600 ring-1 ring-slate-200/80";
 }
 
 function searchable(value: unknown) {
@@ -77,7 +77,6 @@ export default function CustomerDetailPage() {
   // Filter States
   const [searchTerm, setSearchTerm] = useState("");
   const [invoiceStatus, setInvoiceStatus] = useState("ALL");
-  const [invoiceType, setInvoiceType] = useState("ALL");
   const [commissionStatus, setCommissionStatus] = useState("ALL");
   const [tripStatus, setTripStatus] = useState("ALL");
 
@@ -154,7 +153,7 @@ export default function CustomerDetailPage() {
       <div className="flex h-screen items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3">
           <RefreshCw className="h-8 w-8 animate-spin text-blue-700" />
-          <p className="text-sm font-semibold text-slate-500">Loading customer profile...</p>
+          <p className="text-sm font-semibold text-slate-500 font-sans">Loading customer profile...</p>
         </div>
       </div>
     );
@@ -162,7 +161,7 @@ export default function CustomerDetailPage() {
 
   if (!customer) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-slate-50">
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-slate-50 font-sans">
         <p className="text-slate-500">Customer profile not found.</p>
         <button
           onClick={() => router.push("/admin/channel-partners")}
@@ -175,40 +174,34 @@ export default function CustomerDetailPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100/50 px-6 py-6 sm:px-8 lg:px-10">
+    <div className="min-h-screen bg-slate-50 px-6 py-8 sm:px-8 lg:px-12 font-sans text-slate-900">
       {/* Header */}
-      <div className="mx-auto w-full max-w-[1700px]">
+      <div className="mx-auto w-full max-w-[1600px] space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <button
               onClick={() => router.back()}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 shadow-sm"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 shadow-sm transition"
               title="Go Back"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white font-black text-lg shadow-sm">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white font-extrabold text-lg shadow-md shadow-blue-500/10">
               M+
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold tracking-tight text-slate-950">{customer.name}</h1>
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-2xl font-bold tracking-tight text-slate-955">{customer.name}</h1>
                 <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${pillClass(customer.identity)}`}>
                   {customer.identity || "CUSTOMER"}
                 </span>
               </div>
-              <p className="text-xs text-slate-500 font-medium">
+              <p className="text-xs text-slate-500 font-semibold mt-0.5">
                 MandiPlus Partner Customer · Registered on {formatDate(customer.createdAt)}
               </p>
             </div>
           </div>
-          <button
-            onClick={() => void loadCustomerDetail()}
-            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 shadow-sm transition"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh Data
-          </button>
+
         </div>
 
         {/* Dynamic Details Grid */}
@@ -216,42 +209,42 @@ export default function CustomerDetailPage() {
           {/* Customer Bio & Partner */}
           <div className="space-y-6">
             {/* Bio Card */}
-            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-400">
+            <div className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm space-y-4">
+              <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
                 <User className="h-4 w-4" /> Profile Details
               </h2>
-              <div className="mt-4 space-y-3 text-sm">
+              <div className="space-y-3.5 text-sm">
                 <div>
-                  <p className="text-slate-500">Primary Phone</p>
-                  <p className="font-semibold text-slate-950">{customer.mobileNumber}</p>
+                  <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Primary Phone</p>
+                  <p className="font-semibold text-slate-950 mt-0.5">{customer.mobileNumber}</p>
                 </div>
                 {customer.secondaryMobileNumber && (
                   <div>
-                    <p className="text-slate-500">Secondary Phone</p>
-                    <p className="font-semibold text-slate-950">{customer.secondaryMobileNumber}</p>
+                    <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Secondary Phone</p>
+                    <p className="font-semibold text-slate-950 mt-0.5">{customer.secondaryMobileNumber}</p>
                   </div>
                 )}
                 <div>
-                  <p className="text-slate-500">State / Region</p>
-                  <p className="font-semibold text-slate-950">{customer.state.replace("_", " ")}</p>
+                  <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">State / Region</p>
+                  <p className="font-semibold text-slate-950 mt-0.5">{customer.state.replace("_", " ")}</p>
                 </div>
                 {customer.mandiName && (
                   <div>
-                    <p className="text-slate-500">Mandi Association</p>
-                    <p className="font-semibold text-slate-950">{customer.mandiName}</p>
+                    <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Mandi Association</p>
+                    <p className="font-semibold text-slate-950 mt-0.5">{customer.mandiName}</p>
                   </div>
                 )}
                 <div>
-                  <p className="text-slate-500">Commodities Traded</p>
-                  <div className="mt-1 flex flex-wrap gap-1">
+                  <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">Commodities Traded</p>
+                  <div className="flex flex-wrap gap-1">
                     {customer.products?.length ? (
                       customer.products.map((p) => (
-                        <span key={p} className="rounded bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                        <span key={p} className="rounded bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700 ring-1 ring-blue-100">
                           {p}
                         </span>
                       ))
                     ) : (
-                      <span className="text-slate-400 italic">No commodities recorded</span>
+                      <span className="text-slate-400 italic text-xs">No commodities recorded</span>
                     )}
                   </div>
                 </div>
@@ -259,48 +252,48 @@ export default function CustomerDetailPage() {
             </div>
 
             {/* Wallet Balance Card */}
-            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-400">
+            <div className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm">
+              <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
                 <Wallet className="h-4 w-4" /> Wallet Health
               </h2>
               <div className="mt-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-slate-500">Current Balance</p>
-                  <p className="text-2xl font-extrabold text-slate-950">
+                  <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Current Balance</p>
+                  <p className="text-2xl font-black text-slate-950 mt-1">
                     {formatCurrency(customer.walletBalance)}
                   </p>
                 </div>
-                <div className="rounded-full bg-emerald-50 p-3 text-emerald-600">
+                <div className="rounded-xl bg-emerald-50 p-3.5 text-emerald-600 ring-1 ring-emerald-100">
                   <Wallet className="h-6 w-6" />
                 </div>
               </div>
             </div>
 
             {/* Channel Partner Card */}
-            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-400">
+            <div className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm space-y-4">
+              <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
                 <BadgeIndianRupee className="h-4 w-4" /> Channel Partner Link
               </h2>
               {link ? (
-                <div className="mt-4 space-y-3 text-sm">
+                <div className="space-y-3.5 text-sm">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-semibold text-slate-950">{link.partner.name || "Unnamed Partner"}</p>
-                      <p className="text-xs text-slate-500">Code: {link.partner.code}</p>
+                      <p className="font-bold text-slate-900">{link.partner.name || "Unnamed Partner"}</p>
+                      <p className="text-xs text-slate-500 font-semibold mt-0.5">Code: {link.partner.code}</p>
                     </div>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${pillClass(link.status)}`}>
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${pillClass(link.status)}`}>
                       {link.status}
                     </span>
                   </div>
-                  <div className="border-t border-slate-100 pt-2 text-xs text-slate-500">
-                    <p>Source: <span className="font-semibold">{link.source}</span></p>
+                  <div className="border-t border-slate-100 pt-3 text-xs text-slate-400 font-medium space-y-1">
+                    <p>Source: <span className="font-semibold text-slate-600">{link.source}</span></p>
                     {link.approvedAt && (
-                      <p>Linked at: <span className="font-semibold">{formatDate(link.approvedAt)}</span></p>
+                      <p>Linked at: <span className="font-semibold text-slate-600">{formatDate(link.approvedAt)}</span></p>
                     )}
                   </div>
                 </div>
               ) : (
-                <p className="mt-3 text-sm text-slate-500 italic">No channel partner assigned</p>
+                <p className="text-sm text-slate-400 italic">No channel partner assigned</p>
               )}
             </div>
           </div>
@@ -309,17 +302,17 @@ export default function CustomerDetailPage() {
           <div className="lg:col-span-2 space-y-6">
             {/* Quick Metrics */}
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              <MetricBox icon={FileText} label="Total Invoices" value={String(summary?.invoices ?? 0)} />
-              <MetricBox icon={BadgeIndianRupee} label="Total Premium" value={formatCurrency(summary?.premiumTotal ?? 0)} />
-              <MetricBox icon={BadgeIndianRupee} label="Commissions" value={formatCurrency(summary?.commissionTotal ?? 0)} />
-              <MetricBox icon={MapPin} label="Active Trips" value={String(summary?.activeTrips ?? 0)} />
+              <MetricBox icon={FileText} label="Total Invoices" value={String(summary?.invoices ?? 0)} color="slate" />
+              <MetricBox icon={BadgeIndianRupee} label="Total Premium" value={formatCurrency(summary?.premiumTotal ?? 0)} color="emerald" />
+              <MetricBox icon={BadgeIndianRupee} label="Commissions" value={formatCurrency(summary?.commissionTotal ?? 0)} color="indigo" />
+              <MetricBox icon={MapPin} label="Active Trips" value={String(summary?.activeTrips ?? 0)} color="violet" />
             </div>
 
             {/* Detailed Transaction View with Advanced Filters */}
-            <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+            <div className="rounded-2xl border border-slate-200/60 bg-white shadow-sm overflow-hidden">
               {/* Tabs */}
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="inline-flex rounded-md border border-slate-200 bg-white p-1">
+                <div className="inline-flex rounded-xl border border-slate-200/60 bg-slate-100 p-1 gap-1">
                   {tabs.map((tab) => (
                     <button
                       key={tab.key}
@@ -327,10 +320,10 @@ export default function CustomerDetailPage() {
                         setActiveTab(tab.key);
                         setSearchTerm("");
                       }}
-                      className={`rounded px-3 py-1.5 text-sm font-semibold transition-all ${
+                      className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
                         activeTab === tab.key
-                          ? "bg-slate-950 text-white shadow-sm"
-                          : "text-slate-600 hover:bg-slate-100"
+                          ? "bg-white text-slate-900 shadow-sm border border-slate-200/30"
+                          : "text-slate-600 hover:text-slate-900 hover:bg-white/40"
                       }`}
                     >
                       {tab.label}
@@ -338,13 +331,13 @@ export default function CustomerDetailPage() {
                   ))}
                 </div>
                 {/* Search Bar */}
-                <div className="flex flex-1 items-center gap-2 max-w-xs rounded-md border border-slate-200 bg-white px-3 py-1.5">
+                <div className="flex flex-1 items-center gap-2 max-w-xs rounded-xl border border-slate-200 bg-white px-3 py-1.5">
                   <Search className="h-4 w-4 text-slate-400" />
                   <input
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     placeholder={`Search ${activeTab}...`}
-                    className="w-full bg-transparent text-sm outline-none"
+                    className="w-full bg-transparent text-sm outline-none text-slate-700"
                   />
                 </div>
               </div>
@@ -352,23 +345,21 @@ export default function CustomerDetailPage() {
               {/* Filtering Controls Sub-Header */}
               <div className="flex flex-wrap gap-3 border-b border-slate-100 bg-slate-50/50 px-4 py-2 text-xs">
                 {activeTab === "invoices" && (
-                  <>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-slate-500 font-semibold">Payment:</span>
-                      <select
-                        value={invoiceStatus}
-                        onChange={(e) => setInvoiceStatus(e.target.value)}
-                        className="rounded border border-slate-200 bg-white px-2 py-1 font-semibold text-slate-700 outline-none"
-                      >
-                        <option value="ALL">All Statuses</option>
-                        <option value="PAID">PAID</option>
-                        <option value="PENDING">PENDING</option>
-                        <option value="PARTIAL">PARTIAL</option>
-                        <option value="FAILED">FAILED</option>
-                        <option value="NOT_REQUIRED">NOT REQUIRED</option>
-                      </select>
-                    </div>
-                  </>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-slate-500 font-semibold">Payment:</span>
+                    <select
+                      value={invoiceStatus}
+                      onChange={(e) => setInvoiceStatus(e.target.value)}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 font-semibold text-slate-700 outline-none"
+                    >
+                      <option value="ALL">All Statuses</option>
+                      <option value="PAID">PAID</option>
+                      <option value="PENDING">PENDING</option>
+                      <option value="PARTIAL">PARTIAL</option>
+                      <option value="FAILED">FAILED</option>
+                      <option value="NOT_REQUIRED">NOT REQUIRED</option>
+                    </select>
+                  </div>
                 )}
 
                 {activeTab === "commissions" && (
@@ -377,7 +368,7 @@ export default function CustomerDetailPage() {
                     <select
                       value={commissionStatus}
                       onChange={(e) => setCommissionStatus(e.target.value)}
-                      className="rounded border border-slate-200 bg-white px-2 py-1 font-semibold text-slate-700 outline-none"
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 font-semibold text-slate-700 outline-none"
                     >
                       <option value="ALL">All Statuses</option>
                       <option value="PAID">PAID</option>
@@ -394,7 +385,7 @@ export default function CustomerDetailPage() {
                     <select
                       value={tripStatus}
                       onChange={(e) => setTripStatus(e.target.value)}
-                      className="rounded border border-slate-200 bg-white px-2 py-1 font-semibold text-slate-700 outline-none"
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 font-semibold text-slate-700 outline-none"
                     >
                       <option value="ALL">All Statuses</option>
                       <option value="ACTIVE">ACTIVE</option>
@@ -410,20 +401,20 @@ export default function CustomerDetailPage() {
               {/* Data Table */}
               <div className="overflow-x-auto">
                 {activeTab === "invoices" ? (
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <table className="min-w-full divide-y divide-slate-200/80 text-sm">
+                    <thead className="bg-slate-50/70 border-b border-slate-200/60 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       <tr>
-                        <th className="px-4 py-3">Invoice Number</th>
-                        <th className="px-4 py-3">Product Name</th>
-                        <th className="px-4 py-3">Vehicle</th>
-                        <th className="px-4 py-3">Date</th>
-                        <th className="px-4 py-3">Payment</th>
-                        <th className="px-4 py-3 text-right">Premium</th>
+                        <th className="px-4 py-3.5">Invoice Number</th>
+                        <th className="px-4 py-3.5">Product Name</th>
+                        <th className="px-4 py-3.5">Vehicle</th>
+                        <th className="px-4 py-3.5">Date</th>
+                        <th className="px-4 py-3.5">Payment</th>
+                        <th className="px-4 py-3.5 text-right">Premium</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredInvoices.map((inv) => (
-                        <tr key={inv.id} className="hover:bg-slate-50">
+                        <tr key={inv.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">
                             {inv.invoiceNumber}
                           </td>
@@ -442,7 +433,7 @@ export default function CustomerDetailPage() {
                       ))}
                       {!filteredInvoices.length && (
                         <tr>
-                          <td colSpan={6} className="px-4 py-10 text-center text-slate-400">
+                          <td colSpan={6} className="px-4 py-12 text-center text-slate-400 font-semibold">
                             No invoices match the filters.
                           </td>
                         </tr>
@@ -450,20 +441,20 @@ export default function CustomerDetailPage() {
                     </tbody>
                   </table>
                 ) : activeTab === "commissions" ? (
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <table className="min-w-full divide-y divide-slate-200/80 text-sm">
+                    <thead className="bg-slate-50/70 border-b border-slate-200/60 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       <tr>
-                        <th className="px-4 py-3">Invoice</th>
-                        <th className="px-4 py-3">Premium</th>
-                        <th className="px-4 py-3">Rate</th>
-                        <th className="px-4 py-3">Commission</th>
-                        <th className="px-4 py-3">Status</th>
-                        <th className="px-4 py-3">Paid Date</th>
+                        <th className="px-4 py-3.5">Invoice</th>
+                        <th className="px-4 py-3.5">Premium</th>
+                        <th className="px-4 py-3.5">Rate</th>
+                        <th className="px-4 py-3.5">Commission</th>
+                        <th className="px-4 py-3.5">Status</th>
+                        <th className="px-4 py-3.5">Paid Date</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredCommissions.map((comm) => (
-                        <tr key={comm.id} className="hover:bg-slate-50">
+                        <tr key={comm.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="px-4 py-3 font-semibold text-slate-900">
                             {comm.invoiceNumber || "N/A"}
                           </td>
@@ -480,7 +471,7 @@ export default function CustomerDetailPage() {
                       ))}
                       {!filteredCommissions.length && (
                         <tr>
-                          <td colSpan={6} className="px-4 py-10 text-center text-slate-400">
+                          <td colSpan={6} className="px-4 py-12 text-center text-slate-400 font-semibold">
                             No commissions recorded.
                           </td>
                         </tr>
@@ -488,25 +479,25 @@ export default function CustomerDetailPage() {
                     </tbody>
                   </table>
                 ) : (
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <table className="min-w-full divide-y divide-slate-200/80 text-sm">
+                    <thead className="bg-slate-50/70 border-b border-slate-200/60 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       <tr>
-                        <th className="px-4 py-3">Vehicle Number</th>
-                        <th className="px-4 py-3">Invoice</th>
-                        <th className="px-4 py-3">Route</th>
-                        <th className="px-4 py-3">Status</th>
-                        <th className="px-4 py-3">Last Address</th>
+                        <th className="px-4 py-3.5">Vehicle Number</th>
+                        <th className="px-4 py-3.5">Invoice</th>
+                        <th className="px-4 py-3.5">Route</th>
+                        <th className="px-4 py-3.5">Status</th>
+                        <th className="px-4 py-3.5">Last Address</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredTrips.map((trip) => (
-                        <tr key={trip.id} className="hover:bg-slate-50">
+                        <tr key={trip.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">
                             {trip.vehicleNumber || "Vehicle Pending"}
                           </td>
                           <td className="px-4 py-3 text-slate-600">{trip.invoice?.invoiceNumber || "-"}</td>
                           <td className="px-4 py-3 text-slate-600">
-                            {trip.src || "-"} → {trip.dest || "-"}
+                            {trip.src || "-"} <span className="text-slate-400 mx-1">→</span> {trip.dest || "-"}
                           </td>
                           <td className="px-4 py-3">
                             <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${pillClass(trip.status)}`}>
@@ -520,7 +511,7 @@ export default function CustomerDetailPage() {
                       ))}
                       {!filteredTrips.length && (
                         <tr>
-                          <td colSpan={5} className="px-4 py-10 text-center text-slate-400">
+                          <td colSpan={5} className="px-4 py-12 text-center text-slate-400 font-semibold">
                             No trips tracked for this customer.
                           </td>
                         </tr>
@@ -541,16 +532,29 @@ function MetricBox({
   icon: Icon,
   label,
   value,
+  color = "slate",
 }: {
   icon: React.ElementType;
   label: string;
   value: string;
+  color?: "slate" | "blue" | "emerald" | "amber" | "indigo" | "violet";
 }) {
+  const bgMap = {
+    slate: "bg-slate-50 text-slate-600",
+    blue: "bg-blue-50 text-blue-600",
+    emerald: "bg-emerald-50 text-emerald-600",
+    amber: "bg-amber-50 text-amber-600",
+    indigo: "bg-indigo-50 text-indigo-600",
+    violet: "bg-violet-50 text-violet-600",
+  };
+
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 flex flex-col justify-between">
       <div className="flex items-center justify-between text-slate-400">
-        <span className="text-xs font-bold uppercase tracking-wider">{label}</span>
-        <Icon className="h-4 w-4" />
+        <span className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}</span>
+        <div className={`p-2 rounded-xl ${bgMap[color] || bgMap.slate}`}>
+          <Icon className="h-4 w-4" />
+        </div>
       </div>
       <p className="mt-2 text-xl font-extrabold text-slate-950">{value}</p>
     </div>

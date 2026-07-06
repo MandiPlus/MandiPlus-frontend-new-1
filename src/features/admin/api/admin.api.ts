@@ -577,6 +577,7 @@ export interface ChannelPartnerInvoicePayload {
   pdfUrl?: string | null;
   insuranceUrl?: string | null;
   createdAt: string;
+  customerId?: string | null;
 }
 
 export interface ChannelPartnerTripPayload {
@@ -594,6 +595,7 @@ export interface ChannelPartnerTripPayload {
     timeRemained?: string | null;
   } | null;
   updatedAt: string;
+  customerId?: string | null;
 }
 
 export interface ChannelPartnerCommissionPayload {
@@ -617,11 +619,21 @@ export interface ChannelPartnerCommissionPayload {
 
 export interface ChannelPartnerDetailPayload {
   profile: ChannelPartnerProfilePayload | null;
-  summary: ChannelPartnerSummary;
-  customers: ChannelPartnerCustomerPayload[];
-  invoices: ChannelPartnerInvoicePayload[];
-  trips: ChannelPartnerTripPayload[];
-  commissions: ChannelPartnerCommissionPayload[];
+  summary?: ChannelPartnerSummary;
+  customers?: ChannelPartnerCustomerPayload[];
+  customerStats?: Record<string, {
+    invoices: number;
+    premiumTotal: number;
+    pendingPayments: number;
+    activeTrips: number;
+    lastInvoiceDate: string | null;
+  }>;
+  invoices?: ChannelPartnerInvoicePayload[];
+  trips?: ChannelPartnerTripPayload[];
+  commissions?: ChannelPartnerCommissionPayload[];
+  total?: number;
+  totalPages?: number;
+  page?: number;
   message?: string;
 }
 
@@ -1696,13 +1708,22 @@ class AdminApi {
 
   public getChannelPartnerDetail = async (
     partnerId: string,
+    filters?: { customerId?: string; startDate?: string; endDate?: string; status?: string; invoiceSearch?: string; scope?: string; page?: number; limit?: number },
+    options?: { signal?: AbortSignal },
   ): Promise<ApiResponse<ChannelPartnerDetailPayload>> => {
     try {
       const response = await this.client.get<ApiResponse<ChannelPartnerDetailPayload>>(
         `/channel-partners/admin/${partnerId}`,
+        {
+          params: filters,
+          signal: options?.signal,
+        },
       );
       return response.data;
     } catch (error: any) {
+      if (axios.isCancel(error) || error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
+        throw error;
+      }
       return {
         success: false,
         message:

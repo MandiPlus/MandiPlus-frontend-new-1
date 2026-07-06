@@ -33,6 +33,9 @@ const tabs: Array<{ key: TabKey; label: string }> = [
   { key: "commissions", label: "Commissions" },
   { key: "tracking", label: "Tracking" },
 ];
+const INVOICE_STATUS_OPTIONS = ["NOT_REQUIRED", "PENDING", "PARTIAL", "PAID", "FAILED", "REFUNDED"];
+const COMMISSION_STATUS_OPTIONS = ["PENDING", "PAYABLE", "PAID", "VOID"];
+const TRACKING_STATUS_OPTIONS = ["PENDING", "ACTIVE", "IN_PROGRESS", "ENDED"];
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-IN", {
@@ -79,7 +82,9 @@ export default function AdminChannelPartnersPage() {
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("customers");
   const [tableSearch, setTableSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("ALL");
+  const [commissionStatusFilter, setCommissionStatusFilter] = useState("ALL");
+  const [trackingStatusFilter, setTrackingStatusFilter] = useState("ALL");
   const [userSearch, setUserSearch] = useState("");
   const [userResults, setUserResults] = useState<AdminLedgerUser[]>([]);
   const [assigningUserId, setAssigningUserId] = useState("");
@@ -126,7 +131,9 @@ export default function AdminChannelPartnersPage() {
     if (!selectedPartnerId) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTableSearch("");
-    setStatusFilter("ALL");
+    setInvoiceStatusFilter("ALL");
+    setCommissionStatusFilter("ALL");
+    setTrackingStatusFilter("ALL");
     void loadDetail(selectedPartnerId);
   }, [selectedPartnerId, loadDetail]);
 
@@ -165,7 +172,7 @@ export default function AdminChannelPartnersPage() {
 
   const invoiceRows = useMemo(() => {
     let rows = detail?.invoices || [];
-    if (statusFilter !== "ALL") rows = rows.filter((row) => row.paymentStatus === statusFilter);
+    if (invoiceStatusFilter !== "ALL") rows = rows.filter((row) => row.paymentStatus === invoiceStatusFilter);
     if (!q) return rows;
     return rows.filter((row) =>
       [
@@ -177,11 +184,11 @@ export default function AdminChannelPartnersPage() {
         row.paymentStatus,
       ].some((item) => searchable(item).includes(q)),
     );
-  }, [detail?.invoices, q, statusFilter]);
+  }, [detail?.invoices, q, invoiceStatusFilter]);
 
   const commissionRows = useMemo(() => {
     let rows = detail?.commissions || [];
-    if (statusFilter !== "ALL") rows = rows.filter((row) => row.status === statusFilter);
+    if (commissionStatusFilter !== "ALL") rows = rows.filter((row) => row.status === commissionStatusFilter);
     if (!q) return rows;
     return rows.filter((row) =>
       [
@@ -192,10 +199,13 @@ export default function AdminChannelPartnersPage() {
         row.status,
       ].some((item) => searchable(item).includes(q)),
     );
-  }, [detail?.commissions, q, statusFilter]);
+  }, [detail?.commissions, q, commissionStatusFilter]);
 
   const tripRows = useMemo(() => {
-    const rows = detail?.trips || [];
+    let rows = detail?.trips || [];
+    if (trackingStatusFilter !== "ALL") {
+      rows = rows.filter((row) => row.status === trackingStatusFilter);
+    }
     if (!q) return rows;
     return rows.filter((row) =>
       [
@@ -207,17 +217,33 @@ export default function AdminChannelPartnersPage() {
         row.lastLocation?.address,
       ].some((item) => searchable(item).includes(q)),
     );
-  }, [detail?.trips, q]);
+  }, [detail?.trips, q, trackingStatusFilter]);
 
   const availableStatuses = useMemo(() => {
     if (activeTab === "invoices") {
-      return Array.from(new Set((detail?.invoices || []).map((row) => row.paymentStatus).filter(Boolean)));
+      return INVOICE_STATUS_OPTIONS;
     }
     if (activeTab === "commissions") {
-      return Array.from(new Set((detail?.commissions || []).map((row) => row.status).filter(Boolean)));
+      return COMMISSION_STATUS_OPTIONS;
+    }
+    if (activeTab === "tracking") {
+      return TRACKING_STATUS_OPTIONS;
     }
     return [];
-  }, [activeTab, detail?.commissions, detail?.invoices]);
+  }, [activeTab]);
+
+  const activeStatusFilter = useMemo(() => {
+    if (activeTab === "invoices") return invoiceStatusFilter;
+    if (activeTab === "commissions") return commissionStatusFilter;
+    if (activeTab === "tracking") return trackingStatusFilter;
+    return "ALL";
+  }, [activeTab, invoiceStatusFilter, commissionStatusFilter, trackingStatusFilter]);
+
+  const setActiveStatusFilter = useCallback((value: string) => {
+    if (activeTab === "invoices") setInvoiceStatusFilter(value);
+    else if (activeTab === "commissions") setCommissionStatusFilter(value);
+    else if (activeTab === "tracking") setTrackingStatusFilter(value);
+  }, [activeTab]);
 
   const handleStatus = async (status: ChannelPartnerStatus) => {
     if (!selectedPartner?.id) return;
@@ -295,10 +321,10 @@ export default function AdminChannelPartnersPage() {
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
             {filteredPartners.map((partner) => (
-              <button
+              <Link
                 key={partner.id}
-                type="button"
-                onClick={() => setSelectedPartnerId(partner.id)}
+                href={`/admin/channel-partners/partner/${partner.id}`}
+                target="_blank"
                 className={`block w-full border-b border-slate-100 p-4 text-left hover:bg-slate-50 ${
                   selectedPartnerId === partner.id ? "bg-blue-50" : "bg-white"
                 }`}
@@ -306,7 +332,7 @@ export default function AdminChannelPartnersPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-slate-950">
-                      {partner.partnerUser?.name || "Unnamed partner"}
+                       {partner.partnerUser?.name || "Unnamed partner"}
                     </p>
                     <p className="truncate text-xs text-slate-500">
                       {partner.partnerUser?.mobileNumber || "-"} · {partner.code}
@@ -319,7 +345,7 @@ export default function AdminChannelPartnersPage() {
                   <MiniStat label="Premium" value={formatCurrency(partner.summary.premiumTotal)} />
                   <MiniStat label="Payable" value={formatCurrency(partner.summary.commissionPayable)} />
                 </div>
-              </button>
+              </Link>
             ))}
             {!filteredPartners.length ? (
               <div className="p-8 text-center text-sm text-slate-500">
@@ -374,12 +400,12 @@ export default function AdminChannelPartnersPage() {
                 </div>
 
                 <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6">
-                  <Metric icon={Users} label="Customers" value={String(detail.summary.customers)} />
-                  <Metric icon={FileText} label="Invoices" value={String(detail.summary.invoices)} />
-                  <Metric icon={BadgeIndianRupee} label="Premium" value={formatCurrency(detail.summary.premiumTotal)} />
-                  <Metric icon={BadgeIndianRupee} label="Pending" value={formatCurrency(detail.summary.commissionPending)} />
-                  <Metric icon={BadgeIndianRupee} label="Payable" value={formatCurrency(detail.summary.commissionPayable)} />
-                  <Metric icon={MapPin} label="Active Trips" value={String(detail.summary.activeTrips)} />
+                  <Metric icon={Users} label="Customers" value={String(detail.summary?.customers ?? 0)} />
+                  <Metric icon={FileText} label="Invoices" value={String(detail.summary?.invoices ?? 0)} />
+                  <Metric icon={BadgeIndianRupee} label="Premium" value={formatCurrency(detail.summary?.premiumTotal ?? 0)} />
+                  <Metric icon={BadgeIndianRupee} label="Pending" value={formatCurrency(detail.summary?.commissionPending ?? 0)} />
+                  <Metric icon={BadgeIndianRupee} label="Payable" value={formatCurrency(detail.summary?.commissionPayable ?? 0)} />
+                  <Metric icon={MapPin} label="Active Trips" value={String(detail.summary?.activeTrips ?? 0)} />
                 </div>
 
                 <div className="mt-4 grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 lg:grid-cols-[1fr_auto_auto]">
@@ -444,7 +470,6 @@ export default function AdminChannelPartnersPage() {
                       onClick={() => {
                         setActiveTab(tab.key);
                         setTableSearch("");
-                        setStatusFilter("ALL");
                       }}
                       className={`rounded px-3 py-1.5 text-sm font-semibold ${
                         activeTab === tab.key
@@ -459,8 +484,8 @@ export default function AdminChannelPartnersPage() {
                 <div className="flex flex-1 flex-wrap justify-end gap-2">
                   {availableStatuses.length ? (
                     <select
-                      value={statusFilter}
-                      onChange={(event) => setStatusFilter(event.target.value)}
+                      value={activeStatusFilter}
+                      onChange={(event) => setActiveStatusFilter(event.target.value)}
                       className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
                     >
                       <option value="ALL">All statuses</option>
@@ -565,7 +590,7 @@ function CustomersTable({
   rows,
   onUpdateLink,
 }: {
-  rows: ChannelPartnerDetailPayload["customers"];
+  rows: NonNullable<ChannelPartnerDetailPayload["customers"]>;
   onUpdateLink: (linkId: string, status: "APPROVED" | "REMOVED") => void;
 }) {
   return (
@@ -582,7 +607,7 @@ function CustomersTable({
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
-        {rows.map((row) => (
+        {(rows ?? []).map((row) => (
           <tr key={row.linkId} className="hover:bg-slate-50">
             <Td>
               <p>

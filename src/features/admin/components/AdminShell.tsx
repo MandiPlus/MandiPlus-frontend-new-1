@@ -15,7 +15,8 @@ export default function AdminShell({
     pathname === '/admin/login' ||
     pathname === '/admin/signup' ||
     pathname === '/admin/impersonate' ||
-    pathname?.startsWith('/admin/channel-partners/customer/')
+    pathname?.startsWith('/admin/channel-partners/customer/') ||
+    pathname?.startsWith('/admin/channel-partners/partner/')
   ) {
     return <>{children}</>;
   }
