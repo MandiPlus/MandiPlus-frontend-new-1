@@ -25,6 +25,7 @@ import {
   WalletSummary,
   getCustomerDashboardInvoices,
 } from "../customer/api";
+import { getMyChannelPartnerDashboard } from "../channel-partner/api";
 import 'cropperjs/dist/cropper.css';
 import Cropper, { ReactCropperElement } from "react-cropper";
 import { ArrowPathIcon, Bars3Icon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
@@ -37,6 +38,7 @@ const HomePage = () => {
   const [isMounted, setIsMounted] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [wallet, setWallet] = useState<WalletSummary | null>(null);
+  const [channelPartnerProfile, setChannelPartnerProfile] = useState<any>(null);
 
   // Invoice states
   const [invoices, setInvoices] = useState<InsuranceForm[]>([]);
@@ -159,6 +161,22 @@ const HomePage = () => {
     loadWalletData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCustomer]);
+
+  useEffect(() => {
+    const checkChannelPartnerStatus = async () => {
+      try {
+        const data = await getMyChannelPartnerDashboard();
+        if (data && data.profile && data.profile.status === "ACTIVE") {
+          setChannelPartnerProfile(data.profile);
+        }
+      } catch (err) {
+        console.error("Failed to fetch channel partner profile:", err);
+      }
+    };
+    if (user) {
+      checkChannelPartnerStatus();
+    }
+  }, [user]);
 
   // Fetch invoices when modal opens
   const fetchInvoices = async () => {
@@ -668,6 +686,23 @@ const HomePage = () => {
                 >
                   Terms &amp; Conditions
                 </Link>
+
+                {channelPartnerProfile && (
+                  <a
+                    href="/channel-partner/dashboard"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setMenuOpen(false)}
+                    className="px-5 py-3.5 text-slate-800 hover:bg-[#e0d7fc]/50 hover:text-[#4309ac] transition-colors duration-200 flex items-center gap-2 font-medium"
+                  >
+                    <span>Partner Portal</span>
+                    <span className="text-[10px] bg-[#4309ac] text-white px-2 py-0.5 rounded-full font-semibold">Active</span>
+                    <svg className="w-4 h-4 ml-auto text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                )}
+
                 <div className="border-t border-slate-100 my-2" />
                 <button
                   type="button"
@@ -686,6 +721,38 @@ const HomePage = () => {
             </div>
           </div>
         </div>
+
+        {channelPartnerProfile && (
+          <div className="px-5 mt-5">
+            <div
+              className="bg-white border border-[#e0d7fc] rounded-3xl p-5 shadow-sm hover:shadow-md cursor-pointer transition-all duration-200 flex items-center justify-between gap-4 group"
+              onClick={() => window.open("/channel-partner/dashboard", "_blank")}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="text-lg font-bold text-slate-800 group-hover:underline">
+                    Partner Portal
+                  </h3>
+                  <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-100">
+                    Code: {channelPartnerProfile.code}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 truncate sm:whitespace-normal">
+                  Manage your onboarded customers, check analytics, and view commissions.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 bg-[#4309ac] hover:bg-[#320686] text-white text-xs font-semibold px-4 py-2 rounded-2xl flex items-center gap-1.5 transition-all shadow-sm group-hover:shadow group-hover:scale-[1.02] active:scale-95"
+              >
+                <span>Dashboard</span>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* SERVICES */}
         <div className="px-5 mt-5">
