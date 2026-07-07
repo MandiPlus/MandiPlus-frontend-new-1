@@ -163,7 +163,9 @@ function buildInvoiceRecords(invoiceRows: RawInvoice[], claimByInvoiceId: Map<st
             ? String(row.productName[0] || 'Unknown')
             : String(row.productName || 'Unknown');
         const baseAmount = toNum(row.amount);
-        const premiumBase = toNum(row.premiumAmount || row.paymentAmount || baseAmount * 0.002);
+        const premiumBase = baseAmount > 0
+            ? Number((baseAmount * 0.002).toFixed(2))
+            : toNum(row.premiumAmount || row.paymentAmount);
         const commissionRate = toNum(row.user?.commissionRate);
         const commissionAmount = String(row.user?.identity || '').toUpperCase() === 'AGENT'
             ? (premiumBase * commissionRate) / 100

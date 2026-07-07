@@ -1065,8 +1065,6 @@ export default function AdminInsurancePaymentsPage() {
     try {
       setSaving(true);
       const payload: UpdateInsurancePaymentPayload = {
-        premiumAmount:
-          form.premiumAmount === undefined ? undefined : Number(form.premiumAmount),
         paymentAmount:
           form.paymentAmount === undefined ? undefined : Number(form.paymentAmount),
         paymentStatus: form.paymentStatus,

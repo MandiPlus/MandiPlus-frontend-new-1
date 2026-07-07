@@ -69,9 +69,11 @@ function formatDateTime(dateStr?: string) {
 }
 
 function getPremiumAmount(invoice: InsuranceForm) {
+  const amount = Number(invoice.amount || 0);
+  if (amount > 0) return Number((amount * 0.002).toFixed(2));
   const premium = (invoice as InsuranceForm & { premiumAmount?: number }).premiumAmount;
   if (typeof premium === "number") return premium;
-  return Number(invoice.amount || 0) * 0.002;
+  return 0;
 }
 
 function getProductLabel(invoice: InsuranceForm) {
@@ -2293,7 +2295,6 @@ function PolicyDonutChart({ items }: { items: Array<{ label: string; count: numb
     </div>
   );
 }
-
 
 
 
