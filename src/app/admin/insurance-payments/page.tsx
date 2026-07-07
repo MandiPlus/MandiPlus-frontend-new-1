@@ -362,8 +362,8 @@ export default function AdminInsurancePaymentsPage() {
     useState<(typeof EXPORT_REPORT_TYPE_OPTIONS)[number]['value']>('PAYMENT_DETAILS');
   const [invoiceNumberQuery, setInvoiceNumberQuery] = useState('');
   const [debouncedInvoiceNumberQuery, setDebouncedInvoiceNumberQuery] = useState('');
-  const [insuredPersonQuery, setInsuredPersonQuery] = useState('');
-  const [debouncedInsuredPersonQuery, setDebouncedInsuredPersonQuery] = useState('');
+  const [buyerQuery, setBuyerQuery] = useState('');
+  const [debouncedBuyerQuery, setDebouncedBuyerQuery] = useState('');
   const [supplierQuery, setSupplierQuery] = useState('');
   const [debouncedSupplierQuery, setDebouncedSupplierQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -459,7 +459,7 @@ export default function AdminInsurancePaymentsPage() {
         ...paymentMethodParams,
         productName: productName || undefined,
         invoiceNumber: debouncedInvoiceNumberQuery.trim() || undefined,
-        insuredPersonQuery: debouncedInsuredPersonQuery.trim() || undefined,
+        buyerQuery: debouncedBuyerQuery.trim() || undefined,
         supplierQuery: debouncedSupplierQuery.trim() || undefined,
         userId: selectedUserId || undefined,
         page: pageNum,
@@ -470,7 +470,7 @@ export default function AdminInsurancePaymentsPage() {
       }
       return response;
     },
-    [fromDate, effectiveToDate, effectivePaymentStatus, paymentMethodParams, productName, debouncedInvoiceNumberQuery, debouncedInsuredPersonQuery, debouncedSupplierQuery, selectedUserId],
+    [fromDate, effectiveToDate, effectivePaymentStatus, paymentMethodParams, productName, debouncedInvoiceNumberQuery, debouncedBuyerQuery, debouncedSupplierQuery, selectedUserId],
   );
 
   const fetchRows = useCallback(async () => {
@@ -484,7 +484,7 @@ export default function AdminInsurancePaymentsPage() {
         paymentStatus: effectivePaymentStatus || undefined,
         ...paymentMethodParams,
         invoiceNumber: debouncedInvoiceNumberQuery.trim() || undefined,
-        insuredPersonQuery: debouncedInsuredPersonQuery.trim() || undefined,
+        buyerQuery: debouncedBuyerQuery.trim() || undefined,
         supplierQuery: debouncedSupplierQuery.trim() || undefined,
       };
       const [pageResponse, summaryResponse] = await Promise.all([
@@ -513,7 +513,7 @@ export default function AdminInsurancePaymentsPage() {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchPage, currentPage, fromDate, toDate, productName, paymentStatus, paymentMethodFilterKey, debouncedInvoiceNumberQuery, debouncedInsuredPersonQuery, debouncedSupplierQuery, selectedUserId, debouncedOverdueDays, debouncedMinAmount]);
+  }, [fetchPage, currentPage, fromDate, toDate, productName, paymentStatus, paymentMethodFilterKey, debouncedInvoiceNumberQuery, debouncedBuyerQuery, debouncedSupplierQuery, selectedUserId, debouncedOverdueDays, debouncedMinAmount]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -616,7 +616,7 @@ export default function AdminInsurancePaymentsPage() {
     paymentMethodFilterKey,
     productName,
     debouncedInvoiceNumberQuery,
-    debouncedInsuredPersonQuery,
+    debouncedBuyerQuery,
     debouncedSupplierQuery,
     selectedUserId,
     debouncedOverdueDays,
@@ -631,9 +631,9 @@ export default function AdminInsurancePaymentsPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-    const timer = setTimeout(() => setDebouncedInsuredPersonQuery(insuredPersonQuery), 400);
+    const timer = setTimeout(() => setDebouncedBuyerQuery(buyerQuery), 400);
     return () => clearTimeout(timer);
-  }, [insuredPersonQuery]);
+  }, [buyerQuery]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -696,7 +696,7 @@ export default function AdminInsurancePaymentsPage() {
         ...paymentMethodParams,
         productName: productName || undefined,
         invoiceNumber: debouncedInvoiceNumberQuery.trim() || undefined,
-        insuredPersonQuery: debouncedInsuredPersonQuery.trim() || undefined,
+        buyerQuery: debouncedBuyerQuery.trim() || undefined,
         supplierQuery: debouncedSupplierQuery.trim() || undefined,
         userId: selectedUserId || undefined,
         page: 1,
@@ -1005,7 +1005,7 @@ export default function AdminInsurancePaymentsPage() {
         ...paymentMethodParams,
         productName: productName || undefined,
         invoiceNumber: invoiceNumberQuery.trim() || undefined,
-        insuredPersonQuery: insuredPersonQuery.trim() || undefined,
+        buyerQuery: buyerQuery.trim() || undefined,
         supplierQuery: supplierQuery.trim() || undefined,
         userId: selectedUserId || undefined,
         reportType: exportReportType,
@@ -1027,7 +1027,7 @@ export default function AdminInsurancePaymentsPage() {
         ...paymentMethodParams,
         productName: productName || undefined,
         invoiceNumber: invoiceNumberQuery.trim() || undefined,
-        insuredPersonQuery: insuredPersonQuery.trim() || undefined,
+        buyerQuery: buyerQuery.trim() || undefined,
         supplierQuery: supplierQuery.trim() || undefined,
         userId: selectedUserId || undefined,
         reportType: exportReportType,
@@ -1309,9 +1309,9 @@ export default function AdminInsurancePaymentsPage() {
             />
             <input
               type="text"
-              placeholder="Insured person"
-              value={insuredPersonQuery}
-              onChange={(e) => setInsuredPersonQuery(e.target.value)}
+              placeholder="Buyer name"
+              value={buyerQuery}
+              onChange={(e) => setBuyerQuery(e.target.value)}
               className="w-[170px] rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
             <input
@@ -1355,7 +1355,7 @@ export default function AdminInsurancePaymentsPage() {
                 setPaymentMethodFilter(new Set());
                 setProductName('');
                 setInvoiceNumberQuery('');
-                setInsuredPersonQuery('');
+                setBuyerQuery('');
                 setSupplierQuery('');
                 setSelectedUserId('');
                 setOverdueDaysInput('');

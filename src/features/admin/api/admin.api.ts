@@ -2628,6 +2628,7 @@ class AdminApi {
     productName?: string;
     invoiceNumber?: string;
     insuredPersonQuery?: string;
+    buyerQuery?: string;
     searchQuery?: string;
     supplierQuery?: string;
     userId?: string;
@@ -2693,6 +2694,7 @@ class AdminApi {
     paymentMethods?: string;
     invoiceNumber?: string;
     insuredPersonQuery?: string;
+    buyerQuery?: string;
     searchQuery?: string;
     supplierQuery?: string;
     userId?: string;
@@ -2731,6 +2733,7 @@ class AdminApi {
     productName?: string;
     invoiceNumber?: string;
     insuredPersonQuery?: string;
+    buyerQuery?: string;
     searchQuery?: string;
     supplierQuery?: string;
     userId?: string;
