@@ -368,6 +368,8 @@ export default function AdminInsurancePaymentsPage() {
   const [debouncedBuyerQuery, setDebouncedBuyerQuery] = useState('');
   const [supplierQuery, setSupplierQuery] = useState('');
   const [debouncedSupplierQuery, setDebouncedSupplierQuery] = useState('');
+  const [utrQuery, setUtrQuery] = useState('');
+  const [debouncedUtrQuery, setDebouncedUtrQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [jumpPageInput, setJumpPageInput] = useState('1');
   const [selectedUserId, setSelectedUserId] = useState('');
@@ -463,6 +465,7 @@ export default function AdminInsurancePaymentsPage() {
         invoiceNumber: debouncedInvoiceNumberQuery.trim() || undefined,
         buyerQuery: debouncedBuyerQuery.trim() || undefined,
         supplierQuery: debouncedSupplierQuery.trim() || undefined,
+        utrQuery: debouncedUtrQuery.trim() || undefined,
         userId: selectedUserId || undefined,
         page: pageNum,
         limit: ITEMS_PER_PAGE,
@@ -472,7 +475,7 @@ export default function AdminInsurancePaymentsPage() {
       }
       return response;
     },
-    [fromDate, effectiveToDate, effectivePaymentStatus, paymentMethodParams, productName, debouncedInvoiceNumberQuery, debouncedBuyerQuery, debouncedSupplierQuery, selectedUserId],
+    [fromDate, effectiveToDate, effectivePaymentStatus, paymentMethodParams, productName, debouncedInvoiceNumberQuery, debouncedBuyerQuery, debouncedSupplierQuery, debouncedUtrQuery, selectedUserId],
   );
 
   const fetchRows = useCallback(async () => {
@@ -488,6 +491,7 @@ export default function AdminInsurancePaymentsPage() {
         invoiceNumber: debouncedInvoiceNumberQuery.trim() || undefined,
         buyerQuery: debouncedBuyerQuery.trim() || undefined,
         supplierQuery: debouncedSupplierQuery.trim() || undefined,
+        utrQuery: debouncedUtrQuery.trim() || undefined,
       };
       const [pageResponse, summaryResponse] = await Promise.all([
         fetchPage(currentPage),
@@ -515,7 +519,7 @@ export default function AdminInsurancePaymentsPage() {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchPage, currentPage, fromDate, toDate, productName, paymentStatus, paymentMethodFilterKey, debouncedInvoiceNumberQuery, debouncedBuyerQuery, debouncedSupplierQuery, selectedUserId, debouncedOverdueDays, debouncedMinAmount]);
+  }, [fetchPage, currentPage, fromDate, toDate, productName, paymentStatus, paymentMethodFilterKey, debouncedInvoiceNumberQuery, debouncedBuyerQuery, debouncedSupplierQuery, debouncedUtrQuery, selectedUserId, debouncedOverdueDays, debouncedMinAmount]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -620,6 +624,7 @@ export default function AdminInsurancePaymentsPage() {
     debouncedInvoiceNumberQuery,
     debouncedBuyerQuery,
     debouncedSupplierQuery,
+    debouncedUtrQuery,
     selectedUserId,
     debouncedOverdueDays,
     debouncedMinAmount,
@@ -642,6 +647,12 @@ export default function AdminInsurancePaymentsPage() {
     const timer = setTimeout(() => setDebouncedSupplierQuery(supplierQuery), 400);
     return () => clearTimeout(timer);
   }, [supplierQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    const timer = setTimeout(() => setDebouncedUtrQuery(utrQuery), 400);
+    return () => clearTimeout(timer);
+  }, [utrQuery]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -700,6 +711,7 @@ export default function AdminInsurancePaymentsPage() {
         invoiceNumber: debouncedInvoiceNumberQuery.trim() || undefined,
         buyerQuery: debouncedBuyerQuery.trim() || undefined,
         supplierQuery: debouncedSupplierQuery.trim() || undefined,
+        utrQuery: debouncedUtrQuery.trim() || undefined,
         userId: selectedUserId || undefined,
         page: 1,
         limit: Math.max(serverTotal || ITEMS_PER_PAGE, ITEMS_PER_PAGE),
@@ -1009,6 +1021,7 @@ export default function AdminInsurancePaymentsPage() {
         invoiceNumber: invoiceNumberQuery.trim() || undefined,
         buyerQuery: buyerQuery.trim() || undefined,
         supplierQuery: supplierQuery.trim() || undefined,
+        utrQuery: utrQuery.trim() || undefined,
         userId: selectedUserId || undefined,
         reportType: exportReportType,
       },
@@ -1031,6 +1044,7 @@ export default function AdminInsurancePaymentsPage() {
         invoiceNumber: invoiceNumberQuery.trim() || undefined,
         buyerQuery: buyerQuery.trim() || undefined,
         supplierQuery: supplierQuery.trim() || undefined,
+        utrQuery: utrQuery.trim() || undefined,
         userId: selectedUserId || undefined,
         reportType: exportReportType,
       },
@@ -1321,6 +1335,13 @@ export default function AdminInsurancePaymentsPage() {
               onChange={(e) => setSupplierQuery(e.target.value)}
               className="w-[160px] rounded-md border border-gray-300 px-3 py-2 text-sm"
             />
+            <input
+              type="text"
+              placeholder="Search UTR"
+              value={utrQuery}
+              onChange={(e) => setUtrQuery(e.target.value)}
+              className="w-[160px] rounded-md border border-gray-300 px-3 py-2 text-sm"
+            />
             <select
               value={exportReportType}
               onChange={(e) =>
@@ -1357,6 +1378,7 @@ export default function AdminInsurancePaymentsPage() {
                 setInvoiceNumberQuery('');
                 setBuyerQuery('');
                 setSupplierQuery('');
+                setUtrQuery('');
                 setSelectedUserId('');
                 setOverdueDaysInput('');
                 setMinAmountInput('');

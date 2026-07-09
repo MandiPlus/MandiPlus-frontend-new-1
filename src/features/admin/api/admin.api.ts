@@ -2631,6 +2631,7 @@ class AdminApi {
     buyerQuery?: string;
     searchQuery?: string;
     supplierQuery?: string;
+    utrQuery?: string;
     userId?: string;
     page?: number;
     limit?: number;
@@ -2697,6 +2698,7 @@ class AdminApi {
     buyerQuery?: string;
     searchQuery?: string;
     supplierQuery?: string;
+    utrQuery?: string;
     userId?: string;
   }): Promise<{
     success: boolean;
@@ -2736,6 +2738,7 @@ class AdminApi {
     buyerQuery?: string;
     searchQuery?: string;
     supplierQuery?: string;
+    utrQuery?: string;
     userId?: string;
     reportType?: "PAYMENT_DETAILS" | "USER_WISE_DETAILS";
   }): Promise<Blob> => {
