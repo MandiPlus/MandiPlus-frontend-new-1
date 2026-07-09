@@ -38,6 +38,7 @@ const PAYMENT_METHOD_OPTIONS = [
   'CASH',
   'GCA',
   'WALLET',
+  'PHONEPE',
   'NONE',
 ] as const;
 
@@ -48,6 +49,7 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
   CASH: 'Cash',
   GCA: 'GCA',
   WALLET: 'Wallet',
+  PHONEPE: 'PhonePe',
   NONE: '- (No Method)',
 };
 const REPORT_PERIOD_OPTIONS = [
@@ -1663,6 +1665,10 @@ export default function AdminInsurancePaymentsPage() {
                         {row.paymentMethod === 'WALLET' ? (
                           <span className="inline-flex items-center rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700">
                             WALLET
+                          </span>
+                        ) : row.paymentMethod === 'PHONEPE' ? (
+                          <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                            PHONEPE
                           </span>
                         ) : (
                           row.paymentMethod || '-'
