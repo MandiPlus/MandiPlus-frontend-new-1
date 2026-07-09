@@ -89,6 +89,24 @@ export interface TrackingResponse {
   message?: string;
 }
 
+export interface TrackingLinkContext {
+  vehicleNumber: string;
+  maskedPhone: string;
+  expiresAt?: string;
+}
+
+export interface TrackingLinkOtpResponse {
+  success: boolean;
+  vehicleNumber: string;
+  maskedPhone: string;
+  message?: string;
+}
+
+export interface TrackingLinkVerifyResponse extends TrackingLinkOtpResponse {
+  accessToken: string;
+  expiresIn?: string;
+}
+
 export interface ApiError {
   success: boolean;
   message: string;
@@ -104,11 +122,13 @@ export interface ApiError {
  * @param vehicleNumber - The vehicle registration number (e.g. UP32AB1234)
  */
 export const trackVehicle = async (
-  vehicleNumber: string
+  vehicleNumber: string,
+  options?: { accessToken?: string | null }
 ): Promise<TrackingResponse> => {
   try {
     const token =
-      typeof window !== "undefined" ? getStoredAuthToken() : null;
+      options?.accessToken ??
+      (typeof window !== "undefined" ? getStoredAuthToken() : null);
 
     const response = await axios.get<TrackingResponse>(
       `${API_BASE_URL}/trucks/track/${encodeURIComponent(vehicleNumber)}`,
@@ -154,5 +174,66 @@ export const trackVehicle = async (
       (err.response?.data as any)?.error ||
       "Failed to fetch vehicle location";
     throw { message };
+  }
+};
+
+export const getTrackingLinkContext = async (
+  token: string
+): Promise<TrackingLinkContext> => {
+  try {
+    const response = await axios.get<TrackingLinkContext>(
+      `${API_BASE_URL}/trucks/track/link/${encodeURIComponent(token)}/context`
+    );
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError<ApiError | any>;
+    if (err.response?.status === 404) {
+      throw new Error(
+        "Tracking unlock is not available right now. Please try again in a few minutes."
+      );
+    }
+    throw new Error(
+      (err.response?.data as any)?.message ||
+        (err.response?.data as any)?.error ||
+        "Tracking link expired or invalid"
+    );
+  }
+};
+
+export const sendTrackingLinkOtp = async (
+  token: string
+): Promise<TrackingLinkOtpResponse> => {
+  try {
+    const response = await axios.post<TrackingLinkOtpResponse>(
+      `${API_BASE_URL}/trucks/track/link/${encodeURIComponent(token)}/send-otp`
+    );
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError<ApiError | any>;
+    throw new Error(
+      (err.response?.data as any)?.message ||
+        (err.response?.data as any)?.error ||
+        "OTP send nahi ho paya"
+    );
+  }
+};
+
+export const verifyTrackingLinkOtp = async (
+  token: string,
+  otp: string
+): Promise<TrackingLinkVerifyResponse> => {
+  try {
+    const response = await axios.post<TrackingLinkVerifyResponse>(
+      `${API_BASE_URL}/trucks/track/link/${encodeURIComponent(token)}/verify-otp`,
+      { otp }
+    );
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError<ApiError | any>;
+    throw new Error(
+      (err.response?.data as any)?.message ||
+        (err.response?.data as any)?.error ||
+        "Invalid OTP"
+    );
   }
 };
