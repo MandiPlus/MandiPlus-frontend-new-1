@@ -238,6 +238,17 @@ const LoginPage = () => {
             </form>
 
             <div className="mt-7 border-t border-[#c9bb96] pt-5 text-center">
+              <div className="mb-5 rounded-md border border-[#c9bb96] bg-white/70 p-3 text-left">
+                <p className="text-xs font-black uppercase tracking-[0.12em] text-[#2f6c3e]">
+                  Test login for reviewers
+                </p>
+                <p className="mt-2 text-sm font-bold text-[#1f271b]">
+                  Mobile: 9000000000
+                </p>
+                <p className="mt-1 text-sm font-bold text-[#1f271b]">
+                  OTP: 123456
+                </p>
+              </div>
               <p className="text-sm font-medium text-[#645640]">
                 Mandiplus par naye ho?{" "}
                 <Link href="/register" className="font-black text-[#1f8b4c]">

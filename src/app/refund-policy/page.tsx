@@ -35,6 +35,17 @@ const RefundPolicyPage = () => {
 
           <div className="border-t border-slate-100 pt-5 mt-5">
             <h2 className="text-lg font-semibold text-slate-800 mb-2">
+              Refund Processing Timeline
+            </h2>
+            <p className="text-slate-600 text-sm leading-relaxed">
+              Once a refund request is approved, MandiPlus processes the refund within 7 working days.
+              The credited amount will reflect in the original payment method or registered bank account within
+              7 to 10 working days, depending on the bank or payment partner.
+            </p>
+          </div>
+
+          <div className="border-t border-slate-100 pt-5 mt-5">
+            <h2 className="text-lg font-semibold text-slate-800 mb-2">
               Dispute Resolution &amp; Communication
             </h2>
             <p className="text-slate-600 text-sm leading-relaxed">

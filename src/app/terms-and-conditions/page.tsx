@@ -77,7 +77,7 @@ const TermsAndConditionsPage = () => {
 
           <h3 className="text-sm font-semibold text-slate-800 mt-5 mb-2">Instructions to Register Your Claim</h3>
           <p className="text-slate-600 text-sm mb-4">
-            In the event of loss or damage which may involve a claim under this insurance, immediate notice of such loss or damage should be given to the MandiPlus company&apos;s representative or contact us at 91 xxxxx.
+            In the event of loss or damage which may involve a claim under this insurance, immediate notice of such loss or damage should be given to the MandiPlus company&apos;s representative or contact us at +91 99001 86757.
           </p>
 
           <h3 className="text-sm font-semibold text-slate-800 mt-5 mb-2">Documentation of Claims</h3>
