@@ -108,6 +108,31 @@ export interface AdminAppCustomersSummary {
   inactiveCustomers: number;
 }
 
+export interface AdminQuickDetailMedia {
+  url: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  kind: "image" | "pdf" | "audio" | "file";
+}
+
+export interface AdminQuickDetail {
+  id: string;
+  details?: string | null;
+  media: AdminQuickDetailMedia[];
+  audioDurationMillis?: number | null;
+  sourceSurface?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  user?: {
+    id: string;
+    name?: string | null;
+    mobileNumber?: string | null;
+    identity?: string | null;
+    state?: string | null;
+  } | null;
+}
+
 export interface AdminMasterLedgerLinkedUser {
   id: string;
   name: string;
@@ -1736,6 +1761,30 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || 'Failed to fetch app customers',
+      };
+    }
+  };
+
+  public getAdminQuickDetails = async (params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+  }): Promise<{
+    success: boolean;
+    data?: AdminQuickDetail[];
+    total?: number;
+    page?: number;
+    limit?: number;
+    totalPages?: number;
+    message?: string;
+  }> => {
+    try {
+      const response = await this.client.get('/quick-details/admin', { params });
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to fetch quick details',
       };
     }
   };

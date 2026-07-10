@@ -43,6 +43,7 @@ const adminTitles: Record<string, string> = {
     '/admin/users': 'Users',
     '/admin/app-customers': 'App Customers',
     '/admin/app-invoices': 'App Invoices',
+    '/admin/quick-details': 'Quick Details',
     '/admin/insurance-forms': 'Invoice / Insurance Forms',
     '/admin/claims': 'Claim Requests',
     '/admin/tracking': 'Tracking',
