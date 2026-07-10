@@ -436,6 +436,7 @@ export interface InvoiceFilterParams {
   paymentStatus?: string;
   isVerified?: boolean;
   isRejected?: boolean;
+  excludeUnverifiedAppSubmissions?: boolean;
   advancedFilters?: string;
 }
 

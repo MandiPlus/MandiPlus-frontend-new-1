@@ -95,7 +95,7 @@ interface Invoice {
 }
 
 interface InsuranceFormFilters extends InvoiceFilterParams {
-    verificationStatus?: '' | 'verified' | 'rejected';
+    verificationStatus?: '' | 'pending' | 'verified' | 'rejected';
 }
 
 type InsuranceFormsPageProps = {
@@ -500,7 +500,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         buyerName: '',
         productName: '',
         sourceSurface: appQueueMode ? 'USER_APP' : '',
-        verificationStatus: '',
+        verificationStatus: appQueueMode ? 'pending' : '',
     });
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 20;
@@ -511,6 +511,10 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
 
     const buildActiveFilters = useCallback((sourceFilters: InsuranceFormFilters): InvoiceFilterParams => {
         const activeFilters: InvoiceFilterParams = {};
+
+        if (!appQueueMode) {
+            activeFilters.excludeUnverifiedAppSubmissions = true;
+        }
 
         if (sourceFilters.invoiceType) {
             activeFilters.invoiceType = sourceFilters.invoiceType;
@@ -555,12 +559,15 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         if (sourceFilters.verificationStatus === 'verified') {
             activeFilters.isVerified = true;
             activeFilters.isRejected = false;
+        } else if (sourceFilters.verificationStatus === 'pending') {
+            activeFilters.isVerified = false;
+            activeFilters.isRejected = false;
         } else if (sourceFilters.verificationStatus === 'rejected') {
             activeFilters.isRejected = true;
         }
 
         return activeFilters;
-    }, []);
+    }, [appQueueMode]);
 
     const normalizeInvoices = useCallback((rawInvoices: any[]) => {
         return rawInvoices.map((raw: any) => {
@@ -2371,7 +2378,8 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                             onChange={handleFilterChange}
                             className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
                         >
-                            <option value="">Status</option>
+                            <option value="">{appQueueMode ? 'All app statuses' : 'Status'}</option>
+                            <option value="pending">Pending review</option>
                             <option value="verified">Verified</option>
                             <option value="rejected">Rejected</option>
                         </select>
