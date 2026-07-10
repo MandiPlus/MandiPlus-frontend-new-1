@@ -126,9 +126,13 @@ export const trackVehicle = async (
   options?: { accessToken?: string | null }
 ): Promise<TrackingResponse> => {
   try {
-    const token =
-      options?.accessToken ??
-      (typeof window !== "undefined" ? getStoredAuthToken() : null);
+    const hasExplicitAccessToken =
+      options && Object.prototype.hasOwnProperty.call(options, "accessToken");
+    const token = hasExplicitAccessToken
+      ? options.accessToken
+      : typeof window !== "undefined"
+        ? getStoredAuthToken()
+        : null;
 
     const response = await axios.get<TrackingResponse>(
       `${API_BASE_URL}/trucks/track/${encodeURIComponent(vehicleNumber)}`,

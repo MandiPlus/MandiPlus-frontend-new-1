@@ -178,9 +178,16 @@ const TrackingPage = () => {
     ]);
 
     try {
-      const response = await trackVehicle(vehicleNum, {
-        accessToken: options?.accessToken ?? trackingAccessToken,
-      });
+      const hasExplicitAccessToken =
+        options && Object.prototype.hasOwnProperty.call(options, 'accessToken');
+      const response = await trackVehicle(
+        vehicleNum,
+        hasExplicitAccessToken
+          ? { accessToken: options.accessToken }
+          : trackingAccessToken
+            ? { accessToken: trackingAccessToken }
+            : undefined,
+      );
       const data: TrackingData = response.data;
 
       const statusLabel =
