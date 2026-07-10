@@ -136,7 +136,7 @@ function MetricCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</p>
-          <p className="mt-2 text-3xl font-black tracking-tight text-slate-950">{value.toLocaleString('en-IN')}</p>
+          <p className="mt-2 text-3xl font-black tracking-tight text-slate-950">{Number(value || 0).toLocaleString('en-IN')}</p>
         </div>
         <span className={classNames('rounded-md border px-2.5 py-1 text-xs font-bold', tones[tone])}>{detail}</span>
       </div>
@@ -156,7 +156,7 @@ function RoleSplit({ summary }: { summary: AdminAppCustomersSummary }) {
     <div className="flex flex-wrap gap-2">
       {items.map(([label, value]) => (
         <span key={label} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600">
-          {label}: <span className="text-slate-950">{value.toLocaleString('en-IN')}</span>
+          {label}: <span className="text-slate-950">{Number(value || 0).toLocaleString('en-IN')}</span>
         </span>
       ))}
     </div>
