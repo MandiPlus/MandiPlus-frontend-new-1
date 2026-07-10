@@ -68,6 +68,40 @@ function formatDateTime(dateStr?: string) {
   return `${date} | ${time}`;
 }
 
+function normalizeClaimStatusKey(status?: string) {
+  return String(status || "pending").replace(/-/g, "_").toLowerCase();
+}
+
+function claimStatusLabel(status?: string) {
+  const key = normalizeClaimStatusKey(status);
+  switch (key) {
+    case "inprogress":
+    case "in_progress":
+      return "In progress";
+    case "surveyor_assigned":
+      return "Surveyor assigned";
+    case "approved":
+      return "Approved";
+    case "rejected":
+      return "Rejected";
+    case "settled":
+      return "Settled";
+    case "completed":
+      return "Completed";
+    case "pending":
+    default:
+      return "Pending";
+  }
+}
+
+function isClosedClaimStatus(status?: string) {
+  return ["rejected", "settled", "completed"].includes(normalizeClaimStatusKey(status));
+}
+
+function isPendingClaimStatus(status?: string) {
+  return ["pending", "inprogress", "in_progress", "surveyor_assigned"].includes(normalizeClaimStatusKey(status));
+}
+
 function getPremiumAmount(invoice: InsuranceForm) {
   const amount = Number(invoice.amount || 0);
   if (amount > 0) return Number((amount * 0.002).toFixed(2));
@@ -487,9 +521,9 @@ export default function TransporterDashboardPage() {
   }, []);
 
   const stats = useMemo(() => {
-    const activeClaims = claims.filter((c) => c.status !== "REJECTED").length;
-    const approvedClaims = claims.filter((c) => c.status === "APPROVED").length;
-    const pendingClaims = claims.filter((c) => c.status === "PENDING").length;
+    const activeClaims = claims.filter((c) => !isClosedClaimStatus(c.status)).length;
+    const approvedClaims = claims.filter((c) => normalizeClaimStatusKey(c.status) === "approved").length;
+    const pendingClaims = claims.filter((c) => isPendingClaimStatus(c.status)).length;
     return {
       totalForms: invoices.length,
       activeClaims,
@@ -563,16 +597,16 @@ export default function TransporterDashboardPage() {
 
   const totalClaimsDelta = deltaPct(currentClaims.length, previousClaims.length);
   const activeClaimsDelta = deltaPct(
-    currentClaims.filter((c) => c.status !== "REJECTED").length,
-    previousClaims.filter((c) => c.status !== "REJECTED").length,
+    currentClaims.filter((c) => !isClosedClaimStatus(c.status)).length,
+    previousClaims.filter((c) => !isClosedClaimStatus(c.status)).length,
   );
   const approvedClaimsDelta = deltaPct(
-    currentClaims.filter((c) => c.status === "APPROVED").length,
-    previousClaims.filter((c) => c.status === "APPROVED").length,
+    currentClaims.filter((c) => normalizeClaimStatusKey(c.status) === "approved").length,
+    previousClaims.filter((c) => normalizeClaimStatusKey(c.status) === "approved").length,
   );
   const pendingClaimsDelta = deltaPct(
-    currentClaims.filter((c) => c.status === "PENDING").length,
-    previousClaims.filter((c) => c.status === "PENDING").length,
+    currentClaims.filter((c) => isPendingClaimStatus(c.status)).length,
+    previousClaims.filter((c) => isPendingClaimStatus(c.status)).length,
   );
 
   const totalCreditsDisplay = useMemo(
@@ -1427,7 +1461,7 @@ export default function TransporterDashboardPage() {
                               <td className="px-3 py-3.5">{formatDate(claim.createdAt)}</td>
                               <td className="px-3 py-3.5">{claim.invoice?.vehicleNumber || "-"}</td>
                               <td className="px-3 py-3.5">
-                                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{claim.status}</span>
+                                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{claimStatusLabel(claim.status)}</span>
                               </td>
                               <td className="px-3 py-3.5">
                                 {claim.claimFormUrl ? (
@@ -2295,9 +2329,6 @@ function PolicyDonutChart({ items }: { items: Array<{ label: string; count: numb
     </div>
   );
 }
-
-
-
 
 
 

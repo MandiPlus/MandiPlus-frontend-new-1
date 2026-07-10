@@ -25,6 +25,27 @@ type ClaimMediaType =
     | 'insurancePolicy'
     | 'damageForm';
 
+function claimStatusLabel(status: ClaimStatus | string) {
+    switch (status) {
+        case ClaimStatus.PENDING:
+            return 'Pending';
+        case ClaimStatus.INPROGRESS:
+            return 'In progress';
+        case ClaimStatus.SURVEYOR_ASSIGNED:
+            return 'Surveyor assigned';
+        case ClaimStatus.COMPLETED:
+            return 'Completed';
+        case ClaimStatus.APPROVED:
+            return 'Approved';
+        case ClaimStatus.REJECTED:
+            return 'Rejected';
+        case ClaimStatus.SETTLED:
+            return 'Settled';
+        default:
+            return String(status || 'Pending').replace(/_/g, ' ');
+    }
+}
+
 export default function ClaimsPage() {
     const [claims, setClaims] = useState<ClaimRequest[]>([]);
     const [loading, setLoading] = useState(true);
@@ -89,7 +110,7 @@ export default function ClaimsPage() {
             if (!response.success) {
                 throw new Error(response.message || 'Failed to update status');
             }
-            alert(response.message || 'Status updated successfully');
+            alert(response.message || 'Claim status updated');
             setShowUpdateModal(false);
             fetchClaims();
         } catch (error) {
@@ -214,7 +235,7 @@ export default function ClaimsPage() {
             case 'settled':
                 return adminChipClasses.success;
             case 'rejected':
-                return adminChipClasses.info;
+                return 'border-red-200 bg-red-50 text-red-700';
             case 'inprogress':
                 return adminChipClasses.pending;
             case 'surveyor_assigned':
@@ -269,7 +290,7 @@ export default function ClaimsPage() {
                     >
                         <option value="">All Statuses</option>
                         {Object.values(ClaimStatus).map((status) => (
-                            <option key={status} value={status}>{status.replace('_', ' ')}</option>
+                            <option key={status} value={status}>{claimStatusLabel(status)}</option>
                         ))}
                     </select>
                 </div>
@@ -321,7 +342,7 @@ export default function ClaimsPage() {
                                                 </td>
                                                 <td className="whitespace-nowrap px-3 py-4 text-sm">
                                                     <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${getStatusColor(claim.status)}`}>
-                                                        {claim.status.replace('_', ' ')}
+                                                        {claimStatusLabel(claim.status)}
                                                     </span>
                                                 </td>
                                                 <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
@@ -377,7 +398,7 @@ export default function ClaimsPage() {
                                                     onChange={(e) => setUpdateForm({ ...updateForm, status: e.target.value as ClaimStatus })}
                                                 >
                                                     {Object.values(ClaimStatus).map(s => (
-                                                        <option key={s} value={s}>{s.replace('_', ' ')}</option>
+                                                        <option key={s} value={s}>{claimStatusLabel(s)}</option>
                                                     ))}
                                                 </select>
                                             </div>
@@ -458,7 +479,7 @@ export default function ClaimsPage() {
                                             <div>
                                                 <span className="font-medium text-slate-600">Status:</span>
                                                 <span className={`ml-2 inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusColor(selectedClaim.status)}`}>
-                                                    {selectedClaim.status.replace('_', ' ')}
+                                                    {claimStatusLabel(selectedClaim.status)}
                                                 </span>
                                             </div>
                                             <div>

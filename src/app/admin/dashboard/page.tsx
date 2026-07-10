@@ -22,7 +22,14 @@ import {
 import { Download, FileText, Filter, IndianRupee, Timer, Users, UserSquare2 } from 'lucide-react';
 
 type InvoiceStatus = 'Verified' | 'Pending' | 'Rejected';
-type ClaimStatus = 'Pending' | 'Surveyor Assigned' | 'Completed';
+type ClaimStatus =
+    | 'Pending'
+    | 'In Progress'
+    | 'Surveyor Assigned'
+    | 'Completed'
+    | 'Approved'
+    | 'Rejected'
+    | 'Settled';
 type PaymentStatus = 'Paid' | 'Not Required' | 'Pending';
 type TopProductsMetric = 'premium' | 'invoices';
 
@@ -239,9 +246,17 @@ function normalizePaymentStatus(raw: unknown): PaymentStatus {
 
 function normalizeClaimStatus(raw: unknown): ClaimStatus {
     const v = String(raw || '').toLowerCase();
+    if (v === 'inprogress' || v === 'in_progress') return 'In Progress';
+    if (v === 'approved') return 'Approved';
+    if (v === 'rejected') return 'Rejected';
+    if (v === 'settled') return 'Settled';
     if (v === 'completed') return 'Completed';
     if (v === 'surveyor_assigned') return 'Surveyor Assigned';
     return 'Pending';
+}
+
+function isPendingClaimStatus(status: ClaimStatus) {
+    return status === 'Pending' || status === 'In Progress' || status === 'Surveyor Assigned';
 }
 
 function ChartCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
@@ -524,7 +539,7 @@ export default function AnalyticsDashboardPage() {
         const averagePremiumValue = premiumEligibleRecords.length ? totalSalesAmount / premiumEligibleRecords.length : 0;
         const uniqueSuppliers = new Set(filteredRecords.map((r) => r.supplier)).size;
         const uniqueBuyers = new Set(filteredRecords.map((r) => r.buyer)).size;
-        const pendingClaims = filteredClaimRecords.filter((r) => r.status === 'Pending').length;
+        const pendingClaims = filteredClaimRecords.filter((r) => isPendingClaimStatus(r.status)).length;
         const currentMonthAveragePremium = currentMonthPremiumRecords.length
             ? currentMonthPremiumRecords.reduce((sum, r) => sum + r.salesAmount, 0) / currentMonthPremiumRecords.length
             : 0;
@@ -563,10 +578,10 @@ export default function AnalyticsDashboardPage() {
             previousUniqueSuppliers = new Set(comparisonFilteredRecords.map((r) => r.supplier)).size;
             trendUniqueBuyers = uniqueBuyers;
             previousUniqueBuyers = new Set(comparisonFilteredRecords.map((r) => r.buyer)).size;
-            previousPendingClaims = comparisonClaimRecords.filter((r) => r.status === 'Pending').length;
+            previousPendingClaims = comparisonClaimRecords.filter((r) => isPendingClaimStatus(r.status)).length;
         } else {
             const previousMonthInvoiceIds = new Set(previousMonthInvoiceRecords.map((r) => r.id).filter(Boolean));
-            previousPendingClaims = claimRecords.filter((r) => previousMonthInvoiceIds.has(r.invoiceId) && r.status === 'Pending').length;
+            previousPendingClaims = claimRecords.filter((r) => previousMonthInvoiceIds.has(r.invoiceId) && isPendingClaimStatus(r.status)).length;
         }
 
         const prev = {
@@ -705,7 +720,7 @@ export default function AnalyticsDashboardPage() {
     }, [filteredRecords]);
 
     const claimsStatusDistribution = useMemo<DonutDatum[]>(() => {
-        const statuses: ClaimStatus[] = ['Pending', 'Surveyor Assigned', 'Completed'];
+        const statuses: ClaimStatus[] = ['Pending', 'In Progress', 'Surveyor Assigned', 'Approved', 'Settled', 'Completed', 'Rejected'];
         return statuses.map((status, i) => ({
             name: status,
             value: filteredClaimRecords.filter((r) => r.status === status).length,
