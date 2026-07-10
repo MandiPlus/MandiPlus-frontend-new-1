@@ -111,6 +111,7 @@ export interface AdminAppCustomersSummary {
   inactiveCustomers: number;
   excludedNonAppRecords: number;
   buyerCustomers: number;
+  customerCustomers: number;
   supplierCustomers: number;
   transporterCustomers: number;
   releaseDate: string;

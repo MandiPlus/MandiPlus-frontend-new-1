@@ -59,6 +59,7 @@ const emptySummary: AdminAppCustomersSummary = {
   inactiveCustomers: 0,
   excludedNonAppRecords: 0,
   buyerCustomers: 0,
+  customerCustomers: 0,
   supplierCustomers: 0,
   transporterCustomers: 0,
   releaseDate: '2026-07-08T00:00:00+05:30',
@@ -145,6 +146,7 @@ function MetricCard({
 
 function RoleSplit({ summary }: { summary: AdminAppCustomersSummary }) {
   const items = [
+    ['Customers', summary.customerCustomers],
     ['Buyers', summary.buyerCustomers],
     ['Suppliers', summary.supplierCustomers],
     ['Transporters', summary.transporterCustomers],
