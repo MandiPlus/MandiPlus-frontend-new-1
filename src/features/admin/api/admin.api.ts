@@ -101,11 +101,19 @@ export interface AdminAppCustomer {
 
 export interface AdminAppCustomersSummary {
   totalCustomers: number;
+  todayCustomers: number;
+  weekCustomers: number;
+  monthCustomers: number;
   newCustomers: number;
   activeCustomers: number;
   onboardingPending: number;
   customersWithAppForms: number;
   inactiveCustomers: number;
+  excludedNonAppRecords: number;
+  buyerCustomers: number;
+  supplierCustomers: number;
+  transporterCustomers: number;
+  releaseDate: string;
 }
 
 export interface AdminQuickDetailMedia {

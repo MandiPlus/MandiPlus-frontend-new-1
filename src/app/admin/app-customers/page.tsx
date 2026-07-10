@@ -49,11 +49,19 @@ const statusClasses: Record<AdminAppCustomer['status'], string> = {
 
 const emptySummary: AdminAppCustomersSummary = {
   totalCustomers: 0,
+  todayCustomers: 0,
+  weekCustomers: 0,
+  monthCustomers: 0,
   newCustomers: 0,
   activeCustomers: 0,
   onboardingPending: 0,
   customersWithAppForms: 0,
   inactiveCustomers: 0,
+  excludedNonAppRecords: 0,
+  buyerCustomers: 0,
+  supplierCustomers: 0,
+  transporterCustomers: 0,
+  releaseDate: '2026-07-08T00:00:00+05:30',
 };
 
 function classNames(...classes: Array<string | false | null | undefined>) {
@@ -131,6 +139,24 @@ function MetricCard({
         </div>
         <span className={classNames('rounded-md border px-2.5 py-1 text-xs font-bold', tones[tone])}>{detail}</span>
       </div>
+    </div>
+  );
+}
+
+function RoleSplit({ summary }: { summary: AdminAppCustomersSummary }) {
+  const items = [
+    ['Buyers', summary.buyerCustomers],
+    ['Suppliers', summary.supplierCustomers],
+    ['Transporters', summary.transporterCustomers],
+  ] as const;
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {items.map(([label, value]) => (
+        <span key={label} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600">
+          {label}: <span className="text-slate-950">{value.toLocaleString('en-IN')}</span>
+        </span>
+      ))}
     </div>
   );
 }
@@ -359,8 +385,11 @@ export default function AdminAppCustomersPage() {
             <p className="text-xs font-black uppercase tracking-[0.16em] text-[#4309ac]">App</p>
             <h1 className="mt-1 text-3xl font-black tracking-tight text-slate-950">Customers</h1>
             <p className="mt-2 max-w-3xl text-sm font-medium text-slate-600">
-              Track customer signups, logins, onboarding data, mobile app submissions, files, and follow-up risk.
+              Customers who signed in through the app after 08 Jul 2026.
             </p>
+            <div className="mt-3">
+              <RoleSplit summary={summary} />
+            </div>
           </div>
           <button
             type="button"
@@ -373,12 +402,13 @@ export default function AdminAppCustomersPage() {
           </button>
         </div>
 
-        <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
           <MetricCard label="App customers" value={summary.totalCustomers} detail="total" tone="slate" />
-          <MetricCard label="New" value={summary.newCustomers} detail="7 days" tone="blue" />
-          <MetricCard label="Active" value={summary.activeCustomers} detail="recent" tone="green" />
+          <MetricCard label="Today" value={summary.todayCustomers} detail="IST" tone="green" />
+          <MetricCard label="This week" value={summary.weekCustomers} detail="7 days" tone="blue" />
+          <MetricCard label="This month" value={summary.monthCustomers} detail="30 days" tone="blue" />
           <MetricCard label="Onboarding pending" value={summary.onboardingPending} detail="needs data" tone="amber" />
-          <MetricCard label="Inactive" value={summary.inactiveCustomers} detail="14+ days" tone="rose" />
+          <MetricCard label="Hidden records" value={summary.excludedNonAppRecords} detail="non-app" tone="rose" />
         </div>
 
         <div className="mt-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
