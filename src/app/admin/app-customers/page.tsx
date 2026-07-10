@@ -62,6 +62,8 @@ const emptySummary: AdminAppCustomersSummary = {
   customerCustomers: 0,
   supplierCustomers: 0,
   transporterCustomers: 0,
+  agentCustomers: 0,
+  otherRoleCustomers: 0,
   releaseDate: '2026-07-08T00:00:00+05:30',
 };
 
@@ -150,6 +152,8 @@ function RoleSplit({ summary }: { summary: AdminAppCustomersSummary }) {
     ['Buyers', summary.buyerCustomers],
     ['Suppliers', summary.supplierCustomers],
     ['Transporters', summary.transporterCustomers],
+    ['Agents / partners', summary.agentCustomers],
+    ['Other roles', summary.otherRoleCustomers],
   ] as const;
 
   return (
@@ -214,7 +218,7 @@ function CustomerDrawer({
           <div className="grid grid-cols-2 gap-3">
             <DetailStat label="Status" value={statusLabels[customer.status]} />
             <DetailStat label="State" value={customer.state || '-'} />
-            <DetailStat label="Signed up" value={formatCompactDate(customer.createdAt)} />
+            <DetailStat label="App signup" value={formatCompactDate(customer.appSignupAt || customer.createdAt)} />
             <DetailStat label="Last login" value={formatDateTime(customer.lastLoginAt)} />
           </div>
 
@@ -387,7 +391,7 @@ export default function AdminAppCustomersPage() {
             <p className="text-xs font-black uppercase tracking-[0.16em] text-[#4309ac]">App</p>
             <h1 className="mt-1 text-3xl font-black tracking-tight text-slate-950">Customers</h1>
             <p className="mt-2 max-w-3xl text-sm font-medium text-slate-600">
-              Customers who signed in through the app after 08 Jul 2026.
+              People who signed in through the app after 08 Jul 2026.
             </p>
             <div className="mt-3">
               <RoleSplit summary={summary} />
@@ -461,7 +465,7 @@ export default function AdminAppCustomersPage() {
                 <tr>
                   <TableHeader>Customer</TableHeader>
                   <TableHeader>Status</TableHeader>
-                  <TableHeader>Signup</TableHeader>
+                  <TableHeader>App signup</TableHeader>
                   <TableHeader>Last login</TableHeader>
                   <TableHeader>Last activity</TableHeader>
                   <TableHeader>Onboarding</TableHeader>
@@ -507,7 +511,7 @@ export default function AdminAppCustomersPage() {
                       </td>
                       <td className="whitespace-nowrap px-4 py-3"><StatusPill status={customer.status} /></td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold text-slate-700">
-                        {formatCompactDate(customer.createdAt)}
+                        {formatCompactDate(customer.appSignupAt || customer.createdAt)}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm font-semibold text-slate-700">
                         {formatDateTime(customer.lastLoginAt)}

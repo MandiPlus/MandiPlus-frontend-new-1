@@ -73,6 +73,7 @@ export interface AdminAppCustomer {
   identity?: string | null;
   createdAt: string;
   updatedAt: string;
+  appSignupAt?: string | null;
   lastLoginAt?: string | null;
   lastActivityAt?: string | null;
   status: AdminAppCustomerStatus;
@@ -114,6 +115,8 @@ export interface AdminAppCustomersSummary {
   customerCustomers: number;
   supplierCustomers: number;
   transporterCustomers: number;
+  agentCustomers?: number;
+  otherRoleCustomers?: number;
   releaseDate: string;
 }
 
