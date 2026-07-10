@@ -29,6 +29,7 @@ type TopProductsMetric = 'premium' | 'invoices';
 interface InvoiceRecord {
     id: string;
     invoiceNumber: string;
+    invoiceDate: string;
     createdAt: string;
     supplier: string;
     buyer: string;
@@ -88,6 +89,13 @@ interface DonutDatum {
 }
 
 const PALETTE = ['#1d4ed8', '#0f766e', '#b45309', '#be123c', '#7c3aed', '#475569'];
+const DASHBOARD_TIME_ZONE = 'Asia/Kolkata';
+const dashboardDateFormatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: DASHBOARD_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+});
 
 const PRODUCT_CATEGORY: Record<string, string> = {
     Onion: 'Vegetables',
@@ -120,8 +128,20 @@ function safePct(current: number, previous: number) {
     return ((current - previous) / previous) * 100;
 }
 
-function monthKey(d: Date) {
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+function dashboardDateKey(value: Date | string | null | undefined) {
+    const date = value instanceof Date ? value : new Date(String(value || ''));
+    if (Number.isNaN(date.getTime())) return '';
+
+    const parts = dashboardDateFormatter.formatToParts(date).reduce<Record<string, string>>((acc, part) => {
+        if (part.type !== 'literal') acc[part.type] = part.value;
+        return acc;
+    }, {});
+
+    return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function monthKey(value: Date | string | null | undefined) {
+    return dashboardDateKey(value).slice(0, 7);
 }
 
 function monthLabel(d: Date) {
@@ -140,21 +160,39 @@ function getErrorMessage(error: unknown) {
     return 'Failed to run tender coconut report.';
 }
 
-function startOfDay(value: string) {
-    const date = new Date(`${value}T00:00:00`);
-    date.setHours(0, 0, 0, 0);
-    return date;
+function dateKeyToUtcDate(value: string) {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day));
 }
 
-function endOfDay(value: string) {
-    const date = new Date(`${value}T00:00:00`);
-    date.setHours(23, 59, 59, 999);
-    return date;
+function addDaysToDateKey(value: string, days: number) {
+    const date = dateKeyToUtcDate(value);
+    date.setUTCDate(date.getUTCDate() + days);
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
-function diffDaysInclusive(start: Date, end: Date) {
+function diffDaysInclusive(startKey: string, endKey: string) {
     const msPerDay = 24 * 60 * 60 * 1000;
+    const start = dateKeyToUtcDate(startKey);
+    const end = dateKeyToUtcDate(endKey);
     return Math.max(1, Math.floor((end.getTime() - start.getTime()) / msPerDay) + 1);
+}
+
+function addMonthsToMonthKey(value: string, months: number) {
+    const [year, month] = value.split('-').map(Number);
+    const date = new Date(Date.UTC(year, month - 1 + months, 1));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function daysInMonthKey(value: string) {
+    const [year, month] = value.split('-').map(Number);
+    return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function startOfWeekKey(value: string) {
+    const date = dateKeyToUtcDate(value);
+    const diffToMonday = (date.getUTCDay() + 6) % 7;
+    return addDaysToDateKey(value, -diffToMonday);
 }
 
 function buildInvoiceRecords(invoiceRows: RawInvoice[], claimByInvoiceId: Map<string, ClaimStatus>): InvoiceRecord[] {
@@ -175,7 +213,8 @@ function buildInvoiceRecords(invoiceRows: RawInvoice[], claimByInvoiceId: Map<st
         return {
             id: String(row.id || ''),
             invoiceNumber: String(row.invoiceNumber || 'NA'),
-            createdAt: String(row.invoiceDate || row.createdAt || new Date().toISOString()),
+            invoiceDate: String(row.invoiceDate || row.createdAt || ''),
+            createdAt: String(row.createdAt || row.invoiceDate || ''),
             supplier: String(row.supplierName || 'Unknown'),
             buyer: String(row.billToName || 'Unknown'),
             product,
@@ -261,8 +300,8 @@ function DonutChartCard({
                                 contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 10 }}
                                 labelStyle={{ color: '#0f172a', fontWeight: 600 }}
                                 itemStyle={{ color: '#0f172a' }}
-                                formatter={(raw: number | string | undefined, name: string | number | undefined) => {
-                                    const value = Number(raw) || 0;
+                                formatter={(raw: unknown, name: unknown) => {
+                                    const value = Number(Array.isArray(raw) ? raw[0] : raw) || 0;
                                     const pct = total ? (value / total) * 100 : 0;
                                     return [`${valueFormatter(value)} (${pct.toFixed(1)}%)`, String(name || '')];
                                 }}
@@ -340,28 +379,22 @@ export default function AnalyticsDashboardPage() {
                 const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
 
                 const invoiceParams: Record<string, string> = {};
-                if (fromDate) invoiceParams.startDate = new Date(fromDate).toISOString();
-                if (toDate) invoiceParams.endDate = new Date(`${toDate}T23:59:59.999Z`).toISOString();
+                if (fromDate) invoiceParams.startDate = fromDate;
+                if (toDate) invoiceParams.endDate = toDate;
                 if (supplier) invoiceParams.supplierName = supplier;
                 if (buyer) invoiceParams.buyerName = buyer;
                 const hasExplicitDateRange = Boolean(fromDate && toDate);
 
                 let comparisonInvoiceParams: Record<string, string> | undefined;
                 if (hasExplicitDateRange) {
-                    const rangeStart = startOfDay(fromDate);
-                    const rangeEnd = endOfDay(toDate);
-                    const rangeDays = diffDaysInclusive(rangeStart, rangeEnd);
-                    const previousRangeEnd = new Date(rangeStart);
-                    previousRangeEnd.setDate(previousRangeEnd.getDate() - 1);
-                    previousRangeEnd.setHours(23, 59, 59, 999);
-                    const previousRangeStart = new Date(previousRangeEnd);
-                    previousRangeStart.setDate(previousRangeStart.getDate() - (rangeDays - 1));
-                    previousRangeStart.setHours(0, 0, 0, 0);
+                    const rangeDays = diffDaysInclusive(fromDate, toDate);
+                    const previousRangeEnd = addDaysToDateKey(fromDate, -1);
+                    const previousRangeStart = addDaysToDateKey(previousRangeEnd, -(rangeDays - 1));
 
                     comparisonInvoiceParams = {
                         ...invoiceParams,
-                        startDate: previousRangeStart.toISOString(),
-                        endDate: previousRangeEnd.toISOString()
+                        startDate: previousRangeStart,
+                        endDate: previousRangeEnd
                     };
                 }
 
@@ -468,63 +501,53 @@ export default function AnalyticsDashboardPage() {
         [claimRecords, comparisonInvoiceIds]
     );
 
-    const currentMonthKey = monthKey(new Date());
-    const previousMonthDate = new Date();
-    previousMonthDate.setMonth(previousMonthDate.getMonth() - 1);
-    const previousMonthKey = monthKey(previousMonthDate);
-    const previousMonthDays = new Date(previousMonthDate.getFullYear(), previousMonthDate.getMonth() + 1, 0).getDate();
+    const todayKey = dashboardDateKey(new Date());
+    const yesterdayKey = addDaysToDateKey(todayKey, -1);
+    const currentWeekStartKey = startOfWeekKey(todayKey);
+    const currentMonthKey = todayKey.slice(0, 7);
+    const previousMonthKey = addMonthsToMonthKey(currentMonthKey, -1);
+    const previousMonthDays = daysInMonthKey(previousMonthKey);
     const summaryCompareLabel = fromDate && toDate ? 'vs previous period' : 'vs last month';
 
-    const currentMonthRecords = premiumEligibleRecords.filter((r) => monthKey(new Date(r.createdAt)) === currentMonthKey);
-    const previousMonthRecords = premiumEligibleRecords.filter((r) => monthKey(new Date(r.createdAt)) === previousMonthKey);
+    const currentMonthInvoiceRecords = filteredRecords.filter((r) => monthKey(r.invoiceDate) === currentMonthKey);
+    const previousMonthInvoiceRecords = filteredRecords.filter((r) => monthKey(r.invoiceDate) === previousMonthKey);
+    const currentMonthPremiumRecords = premiumEligibleRecords.filter((r) => monthKey(r.invoiceDate) === currentMonthKey);
+    const previousMonthPremiumRecords = premiumEligibleRecords.filter((r) => monthKey(r.invoiceDate) === previousMonthKey);
 
     const kpis = useMemo(() => {
-        const now = new Date();
-        const todayStart = new Date(now);
-        todayStart.setHours(0, 0, 0, 0);
-        const yesterdayStart = new Date(todayStart);
-        yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-        const currentMonthDaysElapsed = Math.max(1, now.getDate());
+        const currentMonthDaysElapsed = Math.max(1, Number(todayKey.slice(8, 10)) || 1);
 
         const totalInvoices = filteredRecords.length;
-        const todayInvoices = filteredRecords.filter((r) => {
-            const created = new Date(r.createdAt);
-            return created >= todayStart && created <= now;
-        }).length;
-        const yesterdayInvoices = filteredRecords.filter((r) => {
-            const created = new Date(r.createdAt);
-            return created >= yesterdayStart && created < todayStart;
-        }).length;
+        const todayInvoices = filteredRecords.filter((r) => dashboardDateKey(r.createdAt) === todayKey).length;
+        const yesterdayInvoices = filteredRecords.filter((r) => dashboardDateKey(r.createdAt) === yesterdayKey).length;
         const totalSalesAmount = premiumEligibleRecords.reduce((sum, r) => sum + r.salesAmount, 0);
         const averagePremiumValue = premiumEligibleRecords.length ? totalSalesAmount / premiumEligibleRecords.length : 0;
         const uniqueSuppliers = new Set(filteredRecords.map((r) => r.supplier)).size;
         const uniqueBuyers = new Set(filteredRecords.map((r) => r.buyer)).size;
         const pendingClaims = filteredClaimRecords.filter((r) => r.status === 'Pending').length;
-        const currentMonthAveragePremium = currentMonthRecords.length
-            ? currentMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0) / currentMonthRecords.length
+        const currentMonthAveragePremium = currentMonthPremiumRecords.length
+            ? currentMonthPremiumRecords.reduce((sum, r) => sum + r.salesAmount, 0) / currentMonthPremiumRecords.length
             : 0;
         const hasExplicitDateRange = Boolean(fromDate && toDate);
 
-        let averageDailyInvoices = currentMonthRecords.length / currentMonthDaysElapsed;
-        let previousAverageDailyInvoices = previousMonthRecords.length / Math.max(1, previousMonthDays);
-        let trendTotalInvoices = currentMonthRecords.length;
-        let previousTotalInvoices = previousMonthRecords.length;
-        let trendTotalSalesAmount = currentMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0);
-        let previousTotalSalesAmount = previousMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0);
+        let averageDailyInvoices = currentMonthInvoiceRecords.length / currentMonthDaysElapsed;
+        let previousAverageDailyInvoices = previousMonthInvoiceRecords.length / Math.max(1, previousMonthDays);
+        let trendTotalInvoices = currentMonthInvoiceRecords.length;
+        let previousTotalInvoices = previousMonthInvoiceRecords.length;
+        let trendTotalSalesAmount = currentMonthPremiumRecords.reduce((sum, r) => sum + r.salesAmount, 0);
+        let previousTotalSalesAmount = previousMonthPremiumRecords.reduce((sum, r) => sum + r.salesAmount, 0);
         let trendAveragePremiumValue = currentMonthAveragePremium;
-        let previousAveragePremiumValue = previousMonthRecords.length
-            ? previousMonthRecords.reduce((sum, r) => sum + r.salesAmount, 0) / previousMonthRecords.length
+        let previousAveragePremiumValue = previousMonthPremiumRecords.length
+            ? previousMonthPremiumRecords.reduce((sum, r) => sum + r.salesAmount, 0) / previousMonthPremiumRecords.length
             : 0;
-        let trendUniqueSuppliers = new Set(currentMonthRecords.map((r) => r.supplier)).size;
-        let previousUniqueSuppliers = new Set(previousMonthRecords.map((r) => r.supplier)).size;
-        let trendUniqueBuyers = new Set(currentMonthRecords.map((r) => r.buyer)).size;
-        let previousUniqueBuyers = new Set(previousMonthRecords.map((r) => r.buyer)).size;
+        let trendUniqueSuppliers = new Set(currentMonthInvoiceRecords.map((r) => r.supplier)).size;
+        let previousUniqueSuppliers = new Set(previousMonthInvoiceRecords.map((r) => r.supplier)).size;
+        let trendUniqueBuyers = new Set(currentMonthInvoiceRecords.map((r) => r.buyer)).size;
+        let previousUniqueBuyers = new Set(previousMonthInvoiceRecords.map((r) => r.buyer)).size;
         let previousPendingClaims = 0;
 
         if (hasExplicitDateRange) {
-            const rangeStart = startOfDay(fromDate);
-            const rangeEnd = endOfDay(toDate);
-            const rangeDays = diffDaysInclusive(rangeStart, rangeEnd);
+            const rangeDays = diffDaysInclusive(fromDate, toDate);
 
             averageDailyInvoices = filteredRecords.length / rangeDays;
             previousAverageDailyInvoices = comparisonFilteredRecords.length / rangeDays;
@@ -542,7 +565,7 @@ export default function AnalyticsDashboardPage() {
             previousUniqueBuyers = new Set(comparisonFilteredRecords.map((r) => r.buyer)).size;
             previousPendingClaims = comparisonClaimRecords.filter((r) => r.status === 'Pending').length;
         } else {
-            const previousMonthInvoiceIds = new Set(previousMonthRecords.map((r) => r.id).filter(Boolean));
+            const previousMonthInvoiceIds = new Set(previousMonthInvoiceRecords.map((r) => r.id).filter(Boolean));
             previousPendingClaims = claimRecords.filter((r) => previousMonthInvoiceIds.has(r.invoiceId) && r.status === 'Pending').length;
         }
 
@@ -589,14 +612,18 @@ export default function AnalyticsDashboardPage() {
         comparisonClaimRecords,
         comparisonFilteredRecords,
         comparisonPremiumEligibleRecords,
-        currentMonthRecords,
+        currentMonthInvoiceRecords,
+        currentMonthPremiumRecords,
         filteredClaimRecords,
         filteredRecords,
         fromDate,
         premiumEligibleRecords,
         previousMonthDays,
-        previousMonthRecords,
-        toDate
+        previousMonthInvoiceRecords,
+        previousMonthPremiumRecords,
+        todayKey,
+        toDate,
+        yesterdayKey
     ]);
 
     const monthlySalesTrend = useMemo(() => {
@@ -608,7 +635,7 @@ export default function AnalyticsDashboardPage() {
         }
 
         premiumEligibleRecords.forEach((r) => {
-            const key = monthKey(new Date(r.createdAt));
+            const key = monthKey(r.invoiceDate);
             if (buckets.has(key)) buckets.set(key, (buckets.get(key) || 0) + r.salesAmount);
         });
 
@@ -687,26 +714,13 @@ export default function AnalyticsDashboardPage() {
     }, [filteredClaimRecords]);
 
     const invoiceCreatedPeriodDistribution = useMemo<DonutDatum[]>(() => {
-        const now = new Date();
-        const dayStart = new Date(now);
-        dayStart.setHours(0, 0, 0, 0);
-        const yesterdayStart = new Date(dayStart);
-        yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-
-        const weekStart = new Date(dayStart);
-        const day = weekStart.getDay();
-        const diffToMonday = (day + 6) % 7;
-        weekStart.setDate(weekStart.getDate() - diffToMonday);
-
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-        const daily = filteredRecords.filter((r) => new Date(r.createdAt) >= dayStart).length;
-        const yesterday = filteredRecords.filter((r) => {
-            const created = new Date(r.createdAt);
-            return created >= yesterdayStart && created < dayStart;
+        const daily = filteredRecords.filter((r) => dashboardDateKey(r.createdAt) === todayKey).length;
+        const yesterday = filteredRecords.filter((r) => dashboardDateKey(r.createdAt) === yesterdayKey).length;
+        const weekly = filteredRecords.filter((r) => {
+            const key = dashboardDateKey(r.createdAt);
+            return key >= currentWeekStartKey && key <= todayKey;
         }).length;
-        const weekly = filteredRecords.filter((r) => new Date(r.createdAt) >= weekStart).length;
-        const monthly = filteredRecords.filter((r) => new Date(r.createdAt) >= monthStart).length;
+        const monthly = filteredRecords.filter((r) => monthKey(r.createdAt) === currentMonthKey).length;
 
         return [
             { name: 'Daily', value: daily, color: PALETTE[0] },
@@ -714,28 +728,20 @@ export default function AnalyticsDashboardPage() {
             { name: 'Weekly', value: weekly, color: PALETTE[2] },
             { name: 'Monthly', value: monthly, color: PALETTE[3] }
         ];
-    }, [filteredRecords]);
+    }, [currentMonthKey, currentWeekStartKey, filteredRecords, todayKey, yesterdayKey]);
 
     const invoicePremiumPeriodDistribution = useMemo<DonutDatum[]>(() => {
-        const now = new Date();
-        const dayStart = new Date(now);
-        dayStart.setHours(0, 0, 0, 0);
-
-        const weekStart = new Date(dayStart);
-        const day = weekStart.getDay();
-        const diffToMonday = (day + 6) % 7;
-        weekStart.setDate(weekStart.getDate() - diffToMonday);
-
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
         const daily = premiumEligibleRecords
-            .filter((r) => new Date(r.createdAt) >= dayStart)
+            .filter((r) => dashboardDateKey(r.invoiceDate) === todayKey)
             .reduce((sum, r) => sum + r.salesAmount, 0);
         const weekly = premiumEligibleRecords
-            .filter((r) => new Date(r.createdAt) >= weekStart)
+            .filter((r) => {
+                const key = dashboardDateKey(r.invoiceDate);
+                return key >= currentWeekStartKey && key <= todayKey;
+            })
             .reduce((sum, r) => sum + r.salesAmount, 0);
         const monthly = premiumEligibleRecords
-            .filter((r) => new Date(r.createdAt) >= monthStart)
+            .filter((r) => monthKey(r.invoiceDate) === currentMonthKey)
             .reduce((sum, r) => sum + r.salesAmount, 0);
 
         return [
@@ -743,7 +749,7 @@ export default function AnalyticsDashboardPage() {
             { name: 'Weekly', value: weekly, color: PALETTE[1] },
             { name: 'Monthly', value: monthly, color: PALETTE[2] }
         ];
-    }, [premiumEligibleRecords]);
+    }, [currentMonthKey, currentWeekStartKey, premiumEligibleRecords, todayKey]);
 
     const agentPerformance = useMemo(() => {
         const bucket = new Map<string, { commission: number; invoices: number }>();
@@ -943,7 +949,7 @@ export default function AnalyticsDashboardPage() {
                                             contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 10 }}
                                             labelStyle={{ color: '#0f172a', fontWeight: 600 }}
                                             itemStyle={{ color: '#0f172a' }}
-                                            formatter={(v: number | string | undefined) => formatCurrency(Number(v) || 0)}
+                                            formatter={(v: unknown) => formatCurrency(Number(Array.isArray(v) ? v[0] : v) || 0)}
                                         />
                                         <Line type="monotone" dataKey="sales" stroke="#1d4ed8" strokeWidth={2.5} dot={{ r: 3 }} />
                                     </LineChart>
@@ -993,10 +999,10 @@ export default function AnalyticsDashboardPage() {
                                             contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 10 }}
                                             labelStyle={{ color: '#0f172a', fontWeight: 600 }}
                                             itemStyle={{ color: '#0f172a' }}
-                                            formatter={(v: number | string | undefined) =>
+                                            formatter={(v: unknown) =>
                                                 topProductsMetric === 'premium'
-                                                    ? formatCurrency(Number(v) || 0)
-                                                    : `${Math.round(Number(v) || 0).toLocaleString('en-IN')} invoices`
+                                                    ? formatCurrency(Number(Array.isArray(v) ? v[0] : v) || 0)
+                                                    : `${Math.round(Number(Array.isArray(v) ? v[0] : v) || 0).toLocaleString('en-IN')} invoices`
                                             }
                                         />
                                         <Bar dataKey="value" radius={[8, 8, 0, 0]} fill="#0f766e" />
@@ -1016,7 +1022,7 @@ export default function AnalyticsDashboardPage() {
                                             contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #cbd5e1', borderRadius: 10 }}
                                             labelStyle={{ color: '#0f172a', fontWeight: 600 }}
                                             itemStyle={{ color: '#0f172a' }}
-                                            formatter={(v: number | string | undefined) => formatCurrency(Number(v) || 0)}
+                                            formatter={(v: unknown) => formatCurrency(Number(Array.isArray(v) ? v[0] : v) || 0)}
                                         />
                                         <Bar dataKey="revenue" radius={[0, 8, 8, 0]} fill="#b45309" />
                                     </BarChart>
