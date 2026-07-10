@@ -68,6 +68,7 @@ interface Invoice {
     pdfURL?: string;
     createdAt: string;
     terms?: string;
+    sourceSurface?: string | null;
     insuredPersonNameSnapshot?: string;
     insuredPersonUserId?: string;
     insuredPersonDisplayName?: string;
@@ -96,6 +97,10 @@ interface Invoice {
 interface InsuranceFormFilters extends InvoiceFilterParams {
     verificationStatus?: '' | 'verified' | 'rejected';
 }
+
+type InsuranceFormsPageProps = {
+    appQueueMode?: boolean;
+};
 
 type SendPhoneMode = 'payment_link' | 'invoice_created_template';
 type AdminInvoiceKind = 'cash' | 'commission';
@@ -403,7 +408,7 @@ const EXPORTABLE_INVOICE_COLUMNS = [
     { key: 'createdAt', label: 'Created At' },
 ] as const;
 
-export default function InsuranceFormsPage() {
+export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFormsPageProps) {
     const router = useRouter();
     const { isAuthenticated } = useAdmin();
 
@@ -494,6 +499,7 @@ export default function InsuranceFormsPage() {
         supplierName: '',
         buyerName: '',
         productName: '',
+        sourceSurface: appQueueMode ? 'USER_APP' : '',
         verificationStatus: '',
     });
     const [currentPage, setCurrentPage] = useState(1);
@@ -540,6 +546,10 @@ export default function InsuranceFormsPage() {
 
         if (sourceFilters.productName?.trim()) {
             activeFilters.productName = sourceFilters.productName.trim();
+        }
+
+        if (sourceFilters.sourceSurface?.trim()) {
+            activeFilters.sourceSurface = sourceFilters.sourceSurface.trim();
         }
 
         if (sourceFilters.verificationStatus === 'verified') {
@@ -2230,19 +2240,28 @@ export default function InsuranceFormsPage() {
             <div className="w-full max-w-none px-3 sm:px-4 lg:px-6 xl:px-8 2xl:px-10">
                 {/* Header - Responsive */}
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
-                    <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">
-                        Invoices / Insurance Forms
-                    </h1>
+                    <div>
+                        <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">
+                            {appQueueMode ? 'App Invoices' : 'Invoices / Insurance Forms'}
+                        </h1>
+                        {appQueueMode ? (
+                            <p className="mt-1 text-sm text-slate-500">
+                                Review invoices submitted from the mobile app, edit details, regenerate PDFs, and send updates from the existing invoice flow.
+                            </p>
+                        ) : null}
+                    </div>
 
                     <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                        <button
-                            onClick={openCreateInvoiceModal}
-                            disabled={loading}
-                            className="bg-slate-800 hover:bg-slate-900 text-white px-3 sm:px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
-                        >
-                            <FileText className="w-4 h-4" />
-                            Create Invoice
-                        </button>
+                        {!appQueueMode ? (
+                            <button
+                                onClick={openCreateInvoiceModal}
+                                disabled={loading}
+                                className="bg-slate-800 hover:bg-slate-900 text-white px-3 sm:px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
+                            >
+                                <FileText className="w-4 h-4" />
+                                Create Invoice
+                            </button>
+                        ) : null}
                         <button
                             onClick={openExportModal}
                             disabled={exporting || loading}
@@ -2359,7 +2378,7 @@ export default function InsuranceFormsPage() {
                     </div>
 
                     <div className="mt-3 flex items-center justify-between gap-3 text-xs sm:text-sm text-slate-500">
-                        <span>Showing {invoices.length} invoices</span>
+                        <span>Showing {invoices.length} {appQueueMode ? 'app invoices' : 'invoices'}</span>
                     </div>
                 </div>
 
@@ -3746,4 +3765,8 @@ export default function InsuranceFormsPage() {
             )}
         </div>
     );
+}
+
+export default function InsuranceFormsPage() {
+    return <InsuranceFormsPageContent />;
 }

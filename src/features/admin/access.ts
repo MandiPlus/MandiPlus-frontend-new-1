@@ -22,12 +22,16 @@ import {
   PhoneIcon,
   UserGroupIcon,
   SparklesIcon,
+  DevicePhoneMobileIcon,
+  UserCircleIcon,
 } from '@heroicons/react/24/outline';
 
 export const ADMIN_SECTIONS = [
   'dashboard',
   'users',
   'ledger',
+  'app-customers',
+  'app-invoices',
   'insurance-forms',
   'claims',
   'tracking',
@@ -80,6 +84,8 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Dashboard', href: '/admin/dashboard', icon: HomeIcon, section: 'dashboard' },
   { name: 'Users', href: '/admin/users', icon: UsersIcon, section: 'users' },
   { name: 'Ledger', href: '/admin/ledger', icon: DocumentTextIcon, section: 'ledger' },
+  { name: 'Customers', href: '/admin/app-customers', icon: UserCircleIcon, section: 'app-customers' },
+  { name: 'Invoices', href: '/admin/app-invoices', icon: DevicePhoneMobileIcon, section: 'app-invoices' },
   { name: 'Invoice / Insurance Forms', href: '/admin/insurance-forms', icon: FolderIcon, section: 'insurance-forms' },
   { name: 'Claim Requests', href: '/admin/claims', icon: ClipboardDocumentListIcon, section: 'claims' },
   { name: 'Tracking', href: '/admin/tracking', icon: MapPinIcon, section: 'tracking' },
@@ -111,6 +117,10 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
     sections: ['users', 'channel-partners', 'team-logs', 'access-monitor'],
   },
   {
+    name: 'App',
+    sections: ['app-customers', 'app-invoices'],
+  },
+  {
     name: 'Invoices',
     sections: ['insurance-forms', 'invoice-approvals', 'invoice-tracking', 'insurance-learning', 'pdf-editor'],
   },
@@ -136,6 +146,8 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/dashboard': 'dashboard',
   '/admin/users': 'users',
   '/admin/ledger': 'ledger',
+  '/admin/app-customers': 'app-customers',
+  '/admin/app-invoices': 'app-invoices',
   '/admin/insurance-forms': 'insurance-forms',
   '/admin/claims': 'claims',
   '/admin/tracking': 'tracking',

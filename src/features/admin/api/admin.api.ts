@@ -57,6 +57,57 @@ export interface AdminLedgerUser extends User {
   aliasPhones: string[];
 }
 
+export type AdminAppCustomerStatus =
+  | "new"
+  | "active"
+  | "onboarding_pending"
+  | "engaged"
+  | "inactive";
+
+export interface AdminAppCustomer {
+  id: string;
+  name: string;
+  mobileNumber: string;
+  secondaryMobileNumber?: string | null;
+  state?: string | null;
+  identity?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lastLoginAt?: string | null;
+  lastActivityAt?: string | null;
+  status: AdminAppCustomerStatus;
+  onboarding: {
+    completed: boolean;
+    products: string[];
+    fleetSize?: string | null;
+    location: string[];
+    verifiedLedgerMaster: boolean;
+  };
+  stats: {
+    loginCount: number;
+    formsSubmitted: number;
+    appFormsSubmitted: number;
+    filesSubmitted: number;
+    claimsSubmitted: number;
+    pendingClaims: number;
+    walletTransactionCount: number;
+    walletBalance: number;
+    walletType?: "PAID" | "UNPAID" | null;
+    lastFormSubmittedAt?: string | null;
+    lastClaimSubmittedAt?: string | null;
+    lastWalletActivityAt?: string | null;
+  };
+}
+
+export interface AdminAppCustomersSummary {
+  totalCustomers: number;
+  newCustomers: number;
+  activeCustomers: number;
+  onboardingPending: number;
+  customersWithAppForms: number;
+  inactiveCustomers: number;
+}
+
 export interface AdminMasterLedgerLinkedUser {
   id: string;
   name: string;
@@ -380,6 +431,7 @@ export interface InvoiceFilterParams {
   buyerName?: string;
   productName?: string;
   userId?: string;
+  sourceSurface?: string;
   exportType?: "all" | "payment";
   paymentStatus?: string;
   isVerified?: boolean;
@@ -498,6 +550,7 @@ export interface AdminCreateInvoicePayload {
   vehicleNumber?: string;
   truckNumber?: string;
   weighmentSlipNote?: string;
+  sourceSurface?: string;
   insuredPartyPhone?: string;
   driverPhone?: string;
   driverSecondaryPhone?: string;
@@ -1502,6 +1555,7 @@ class AdminApi {
       if (payload.vehicleNumber) formData.append("vehicleNumber", payload.vehicleNumber);
       if (payload.truckNumber) formData.append("truckNumber", payload.truckNumber);
       if (payload.weighmentSlipNote) formData.append("weighmentSlipNote", payload.weighmentSlipNote);
+      if (payload.sourceSurface) formData.append("sourceSurface", payload.sourceSurface);
       if (payload.insuredPartyPhone) formData.append("insuredPartyPhone", payload.insuredPartyPhone);
       if (payload.driverPhone) formData.append("driverPhone", payload.driverPhone);
       if (payload.driverSecondaryPhone) formData.append("driverSecondaryPhone", payload.driverSecondaryPhone);
@@ -1655,6 +1709,32 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || 'Failed to fetch users',
+      };
+    }
+  };
+
+  public getAdminAppCustomers = async (params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    status?: string;
+  }): Promise<{
+    success: boolean;
+    data?: AdminAppCustomer[];
+    summary?: AdminAppCustomersSummary;
+    total?: number;
+    page?: number;
+    limit?: number;
+    totalPages?: number;
+    message?: string;
+  }> => {
+    try {
+      const response = await this.client.get('/users/admin/app-customers', { params });
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to fetch app customers',
       };
     }
   };

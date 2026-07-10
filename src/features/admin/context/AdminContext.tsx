@@ -198,6 +198,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     };
 
     const canAccessSection = (section: AdminSection) => {
+        if (section === 'app-invoices') {
+            return Boolean(accessProfile?.allowedSections?.includes('insurance-forms'));
+        }
+
         if (section === 'fssai-leads') {
             return Boolean(accessProfile?.isFullAdmin);
         }

@@ -41,6 +41,8 @@ const LAST_SEEN_STORAGE_KEY = 'adminNotificationsLastSeenAt';
 const adminTitles: Record<string, string> = {
     '/admin/dashboard': 'Admin Panel',
     '/admin/users': 'Users',
+    '/admin/app-customers': 'App Customers',
+    '/admin/app-invoices': 'App Invoices',
     '/admin/insurance-forms': 'Invoice / Insurance Forms',
     '/admin/claims': 'Claim Requests',
     '/admin/tracking': 'Tracking',
