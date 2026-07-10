@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Button from "@/shared/components/Button";
@@ -47,9 +47,12 @@ const roleOptions = [
   { value: "BUYER", label: "Buyer" },
   { value: "AGENT", label: "Agent" },
   { value: "SUPPLIER", label: "Supplier" },
-  { value: "CUSTOMER", label: "Customer" },
   { value: "TRANSPORTER", label: "Transporter" },
 ];
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  return error instanceof Error ? error.message : fallback;
+};
 
 const RegisterPage = () => {
   const searchParams = useSearchParams();
@@ -68,12 +71,6 @@ const RegisterPage = () => {
     isChannelPartner: false,
     referredByChannelPartner: "",
   });
-
-  useEffect(() => {
-    if (initialMobile) {
-      setFormData(prev => ({ ...prev, mobileNumber: initialMobile }));
-    }
-  }, [initialMobile]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,8 +117,8 @@ const RegisterPage = () => {
         toast.success("Account created successfully!");
       }
 
-    } catch (error: any) {
-      toast.error(error.message || "Registration failed");
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error, "Registration failed"));
     } finally {
       setIsLoading(false);
     }
