@@ -518,8 +518,8 @@ export default function AnalyticsDashboardPage() {
         const currentMonthDaysElapsed = Math.max(1, Number(todayKey.slice(8, 10)) || 1);
 
         const totalInvoices = filteredRecords.length;
-        const todayInvoices = filteredRecords.filter((r) => dashboardDateKey(r.createdAt) === todayKey).length;
-        const yesterdayInvoices = filteredRecords.filter((r) => dashboardDateKey(r.createdAt) === yesterdayKey).length;
+        const todayInvoices = filteredRecords.filter((r) => dashboardDateKey(r.invoiceDate) === todayKey).length;
+        const yesterdayInvoices = filteredRecords.filter((r) => dashboardDateKey(r.invoiceDate) === yesterdayKey).length;
         const totalSalesAmount = premiumEligibleRecords.reduce((sum, r) => sum + r.salesAmount, 0);
         const averagePremiumValue = premiumEligibleRecords.length ? totalSalesAmount / premiumEligibleRecords.length : 0;
         const uniqueSuppliers = new Set(filteredRecords.map((r) => r.supplier)).size;
@@ -714,13 +714,13 @@ export default function AnalyticsDashboardPage() {
     }, [filteredClaimRecords]);
 
     const invoiceCreatedPeriodDistribution = useMemo<DonutDatum[]>(() => {
-        const daily = filteredRecords.filter((r) => dashboardDateKey(r.createdAt) === todayKey).length;
-        const yesterday = filteredRecords.filter((r) => dashboardDateKey(r.createdAt) === yesterdayKey).length;
+        const daily = filteredRecords.filter((r) => dashboardDateKey(r.invoiceDate) === todayKey).length;
+        const yesterday = filteredRecords.filter((r) => dashboardDateKey(r.invoiceDate) === yesterdayKey).length;
         const weekly = filteredRecords.filter((r) => {
-            const key = dashboardDateKey(r.createdAt);
+            const key = dashboardDateKey(r.invoiceDate);
             return key >= currentWeekStartKey && key <= todayKey;
         }).length;
-        const monthly = filteredRecords.filter((r) => monthKey(r.createdAt) === currentMonthKey).length;
+        const monthly = filteredRecords.filter((r) => monthKey(r.invoiceDate) === currentMonthKey).length;
 
         return [
             { name: 'Daily', value: daily, color: PALETTE[0] },
