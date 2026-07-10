@@ -47,6 +47,29 @@ const statusClasses: Record<AdminAppCustomer['status'], string> = {
   inactive: 'bg-rose-50 text-rose-700 ring-rose-200',
 };
 
+const defaultStats: AdminAppCustomer['stats'] = {
+  loginCount: 0,
+  formsSubmitted: 0,
+  appFormsSubmitted: 0,
+  filesSubmitted: 0,
+  claimsSubmitted: 0,
+  pendingClaims: 0,
+  walletTransactionCount: 0,
+  walletBalance: 0,
+  walletType: null,
+  lastFormSubmittedAt: null,
+  lastClaimSubmittedAt: null,
+  lastWalletActivityAt: null,
+};
+
+const defaultOnboarding: AdminAppCustomer['onboarding'] = {
+  completed: false,
+  products: [],
+  fleetSize: null,
+  location: [],
+  verifiedLedgerMaster: false,
+};
+
 const emptySummary: AdminAppCustomersSummary = {
   totalCustomers: 0,
   todayCustomers: 0,
@@ -69,6 +92,31 @@ const emptySummary: AdminAppCustomersSummary = {
 
 function classNames(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ');
+}
+
+function toCount(value?: number | null) {
+  return Number(value || 0);
+}
+
+function normalizeSummary(summary?: AdminAppCustomersSummary): AdminAppCustomersSummary {
+  return { ...emptySummary, ...(summary || {}) };
+}
+
+function normalizeCustomer(customer: AdminAppCustomer): AdminAppCustomer {
+  return {
+    ...customer,
+    status: statusLabels[customer.status] ? customer.status : 'engaged',
+    onboarding: {
+      ...defaultOnboarding,
+      ...(customer.onboarding || {}),
+      products: customer.onboarding?.products || [],
+      location: customer.onboarding?.location || [],
+    },
+    stats: {
+      ...defaultStats,
+      ...(customer.stats || {}),
+    },
+  };
 }
 
 function formatDateTime(value?: string | null) {
@@ -138,7 +186,7 @@ function MetricCard({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</p>
-          <p className="mt-2 text-3xl font-black tracking-tight text-slate-950">{Number(value || 0).toLocaleString('en-IN')}</p>
+          <p className="mt-2 text-3xl font-black tracking-tight text-slate-950">{toCount(value).toLocaleString('en-IN')}</p>
         </div>
         <span className={classNames('rounded-md border px-2.5 py-1 text-xs font-bold', tones[tone])}>{detail}</span>
       </div>
@@ -160,7 +208,7 @@ function RoleSplit({ summary }: { summary: AdminAppCustomersSummary }) {
     <div className="flex flex-wrap gap-2">
       {items.map(([label, value]) => (
         <span key={label} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600">
-          {label}: <span className="text-slate-950">{Number(value || 0).toLocaleString('en-IN')}</span>
+          {label}: <span className="text-slate-950">{toCount(value).toLocaleString('en-IN')}</span>
         </span>
       ))}
     </div>
@@ -296,7 +344,7 @@ function TimelineRow({ label, value, at }: { label: string; value: number; at?: 
         <p className="text-sm font-bold text-slate-900">{label}</p>
         {at ? <p className="mt-0.5 text-xs font-medium text-slate-500">{formatDateTime(at)}</p> : null}
       </div>
-      <p className="text-lg font-black text-slate-950">{value.toLocaleString('en-IN')}</p>
+      <p className="text-lg font-black text-slate-950">{toCount(value).toLocaleString('en-IN')}</p>
     </div>
   );
 }
@@ -347,8 +395,8 @@ export default function AdminAppCustomersPage() {
     if (requestId !== requestRef.current) return;
 
     if (response.success) {
-      setCustomers(response.data || []);
-      setSummary(response.summary || emptySummary);
+      setCustomers((response.data || []).map(normalizeCustomer));
+      setSummary(normalizeSummary(response.summary));
       setTotal(response.total || 0);
       setTotalPages(response.totalPages || 1);
     } else {
@@ -543,7 +591,7 @@ export default function AdminAppCustomersPage() {
 
           <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm font-semibold text-slate-600">
-              Showing {shownRange} of {total.toLocaleString('en-IN')}
+              Showing {shownRange} of {toCount(total).toLocaleString('en-IN')}
             </p>
             <div className="flex gap-2">
               <button
@@ -595,7 +643,7 @@ function TableHeader({
 function TableNumber({ value }: { value: number }) {
   return (
     <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-black text-slate-950">
-      {value.toLocaleString('en-IN')}
+      {toCount(value).toLocaleString('en-IN')}
     </td>
   );
 }
