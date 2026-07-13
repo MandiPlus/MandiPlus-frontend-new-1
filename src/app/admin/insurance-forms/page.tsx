@@ -552,7 +552,9 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
             activeFilters.productName = sourceFilters.productName.trim();
         }
 
-        if (sourceFilters.sourceSurface?.trim()) {
+        if (appQueueMode && sourceFilters.sourceSurface === 'USER_APP') {
+            activeFilters.sourceSurfaces = 'USER_APP,ADMIN_QUICK_DETAILS';
+        } else if (sourceFilters.sourceSurface?.trim()) {
             activeFilters.sourceSurface = sourceFilters.sourceSurface.trim();
         }
 
@@ -1069,6 +1071,8 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
             const response = await adminApi.createAdminInvoice({
                 userId: insuredUser.id,
                 customerUserId: insuredUser.id,
+                buyerUserId: createInvoiceForm.invoiceKind === 'cash' ? insuredUser.id : undefined,
+                supplierUserId: createInvoiceForm.invoiceKind === 'commission' ? insuredUser.id : undefined,
                 invoiceDate: createInvoiceForm.invoiceDate,
                 invoiceType: createInvoiceForm.invoiceKind === 'cash' ? 'BUYER_INVOICE' : 'SUPPLIER_INVOICE',
                 supplierName: createInvoiceForm.supplierName.trim(),

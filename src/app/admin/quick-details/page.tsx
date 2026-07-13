@@ -1,12 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   ArrowPathIcon,
+  Bars3Icon,
   DocumentTextIcon,
   MagnifyingGlassIcon,
   MicrophoneIcon,
   PhotoIcon,
+  Squares2X2Icon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import {
@@ -16,6 +20,7 @@ import {
 } from '@/features/admin/api/admin.api';
 
 const ITEMS_PER_PAGE = 30;
+type ViewMode = 'list' | 'grid';
 
 function formatDateTime(value?: string | null) {
   if (!value) return '-';
@@ -78,11 +83,31 @@ function MediaTile({ media }: { media: AdminQuickDetailMedia }) {
   );
 }
 
-function QuickDetailCard({ row }: { row: AdminQuickDetail }) {
+function QuickDetailCard({
+  row,
+  viewMode,
+  onOpen,
+  onDelete,
+  deleting,
+}: {
+  row: AdminQuickDetail;
+  viewMode: ViewMode;
+  onOpen: () => void;
+  onDelete: () => void;
+  deleting: boolean;
+}) {
   const hasDetails = Boolean(String(row.details || '').trim());
 
   return (
-    <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') onOpen();
+      }}
+      className="cursor-pointer rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-200 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -93,11 +118,26 @@ function QuickDetailCard({ row }: { row: AdminQuickDetail }) {
           </div>
           <p className="mt-1 text-sm font-semibold text-slate-500">{formatPhone(row.user?.mobileNumber)}</p>
         </div>
-        <p className="text-sm font-bold text-slate-500">{formatDateTime(row.createdAt)}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-bold text-slate-500">{formatDateTime(row.createdAt)}</p>
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete();
+            }}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-rose-100 bg-rose-50 text-rose-600 transition hover:bg-rose-100 disabled:opacity-50"
+            title="Delete quick detail"
+            aria-label="Delete quick detail"
+          >
+            <TrashIcon className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {hasDetails ? (
-        <p className="mt-4 whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-sm font-semibold leading-6 text-slate-800">
+        <p className={`mt-4 whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-sm font-semibold leading-6 text-slate-800 ${viewMode === 'grid' ? 'line-clamp-5' : ''}`}>
           {row.details}
         </p>
       ) : null}
@@ -112,7 +152,9 @@ function QuickDetailCard({ row }: { row: AdminQuickDetail }) {
       {row.media?.length ? (
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {row.media.map((media, index) => (
-            <MediaTile key={`${row.id}-${media.url}-${index}`} media={media} />
+            <div key={`${row.id}-${media.url}-${index}`} onClick={(event) => event.stopPropagation()}>
+              <MediaTile media={media} />
+            </div>
           ))}
         </div>
       ) : null}
@@ -122,12 +164,19 @@ function QuickDetailCard({ row }: { row: AdminQuickDetail }) {
 
 export default function AdminQuickDetailsPage() {
   const { isAuthenticated, loading: authLoading, canAccessSection } = useAdmin();
+  const router = useRouter();
   const [rows, setRows] = useState<AdminQuickDetail[]>([]);
   const [search, setSearch] = useState('');
+  const [userFilter, setUserFilter] = useState('');
+  const [mobileFilter, setMobileFilter] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadRows = useCallback(async () => {
@@ -138,6 +187,10 @@ export default function AdminQuickDetailsPage() {
       page,
       limit: ITEMS_PER_PAGE,
       search: search.trim() || undefined,
+      user: userFilter.trim() || undefined,
+      mobileNumber: mobileFilter.trim() || undefined,
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
     });
     if (response.success) {
       setRows(response.data || []);
@@ -147,11 +200,34 @@ export default function AdminQuickDetailsPage() {
       setError(response.message || 'Failed to load quick details.');
     }
     setLoading(false);
-  }, [canAccessSection, isAuthenticated, page, search]);
+  }, [canAccessSection, endDate, isAuthenticated, mobileFilter, page, search, startDate, userFilter]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadRows();
   }, [loadRows]);
+
+  const deleteRow = async (row: AdminQuickDetail) => {
+    if (!window.confirm(`Delete quick detail from ${row.user?.name || 'this user'}?`)) return;
+    setDeletingId(row.id);
+    const response = await adminApi.deleteAdminQuickDetail(row.id);
+    if (response.success) {
+      setRows((current) => current.filter((item) => item.id !== row.id));
+      setTotal((current) => Math.max(0, current - 1));
+    } else {
+      setError(response.message || 'Failed to delete quick detail.');
+    }
+    setDeletingId(null);
+  };
+
+  const resetFilters = () => {
+    setSearch('');
+    setUserFilter('');
+    setMobileFilter('');
+    setStartDate('');
+    setEndDate('');
+    setPage(1);
+  };
 
   if (!authLoading && (!isAuthenticated || !canAccessSection('app-quick-details'))) {
     return (
@@ -171,27 +247,92 @@ export default function AdminQuickDetailsPage() {
             <h1 className="text-2xl font-black text-slate-950">Quick Details</h1>
             <p className="mt-1 text-sm font-semibold text-slate-500">{total.toLocaleString('en-IN')} submissions</p>
           </div>
-          <button
-            type="button"
-            onClick={() => loadRows()}
-            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
-          >
-            <ArrowPathIcon className="h-4 w-4" />
-            Refresh
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-md border border-slate-200 bg-slate-50 p-1">
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm font-bold ${viewMode === 'list' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+              >
+                <Bars3Icon className="h-4 w-4" />
+                List
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm font-bold ${viewMode === 'grid' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}
+              >
+                <Squares2X2Icon className="h-4 w-4" />
+                Grid
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => loadRows()}
+              className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+            >
+              <ArrowPathIcon className="h-4 w-4" />
+              Refresh
+            </button>
+          </div>
         </div>
 
-        <div className="mt-4 flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-          <MagnifyingGlassIcon className="h-5 w-5 text-slate-400" />
+        <div className="mt-4 grid gap-3 lg:grid-cols-[1.4fr_1fr_1fr_0.8fr_0.8fr_auto]">
+          <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+            <MagnifyingGlassIcon className="h-5 w-5 text-slate-400" />
+            <input
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setPage(1);
+              }}
+              placeholder="Search details"
+              className="w-full bg-transparent text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-400"
+            />
+          </label>
           <input
-            value={search}
+            value={userFilter}
             onChange={(event) => {
-              setSearch(event.target.value);
+              setUserFilter(event.target.value);
               setPage(1);
             }}
-            placeholder="Search name, phone, details"
-            className="w-full bg-transparent text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-400"
+            placeholder="User name"
+            className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-400"
           />
+          <input
+            value={mobileFilter}
+            onChange={(event) => {
+              setMobileFilter(event.target.value);
+              setPage(1);
+            }}
+            placeholder="Mobile number"
+            className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-400"
+          />
+          <input
+            type="date"
+            value={startDate}
+            onChange={(event) => {
+              setStartDate(event.target.value);
+              setPage(1);
+            }}
+            className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none"
+          />
+          <input
+            type="date"
+            value={endDate}
+            onChange={(event) => {
+              setEndDate(event.target.value);
+              setPage(1);
+            }}
+            className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900 outline-none"
+          />
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+          >
+            Reset
+          </button>
         </div>
       </div>
 
@@ -202,9 +343,16 @@ export default function AdminQuickDetailsPage() {
       {loading ? (
         <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-sm font-bold text-slate-500">Loading quick details</div>
       ) : rows.length ? (
-        <div className="space-y-3">
+        <div className={viewMode === 'grid' ? 'grid gap-3 lg:grid-cols-2' : 'space-y-3'}>
           {rows.map((row) => (
-            <QuickDetailCard key={row.id} row={row} />
+            <QuickDetailCard
+              key={row.id}
+              row={row}
+              viewMode={viewMode}
+              deleting={deletingId === row.id}
+              onOpen={() => router.push(`/admin/quick-details/${row.id}`)}
+              onDelete={() => void deleteRow(row)}
+            />
           ))}
         </div>
       ) : (
