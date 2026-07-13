@@ -469,6 +469,7 @@ export interface InvoiceFilterParams {
   productName?: string;
   userId?: string;
   sourceSurface?: string;
+  sourceSurfaces?: string;
   exportType?: "all" | "payment";
   paymentStatus?: string;
   isVerified?: boolean;
@@ -571,6 +572,8 @@ export interface AdminWalletRebuildResult {
 export interface AdminCreateInvoicePayload {
   userId: string;
   customerUserId: string;
+  supplierUserId?: string;
+  buyerUserId?: string;
   invoiceDate: string;
   invoiceType: "SUPPLIER_INVOICE" | "BUYER_INVOICE";
   supplierName: string;
@@ -1576,6 +1579,8 @@ class AdminApi {
       const formData = new FormData();
       formData.append("userId", payload.userId);
       formData.append("customerUserId", payload.customerUserId);
+      if (payload.supplierUserId) formData.append("supplierUserId", payload.supplierUserId);
+      if (payload.buyerUserId) formData.append("buyerUserId", payload.buyerUserId);
       formData.append("invoiceDate", payload.invoiceDate);
       formData.append("invoiceType", payload.invoiceType);
       formData.append("supplierName", payload.supplierName);
@@ -1781,6 +1786,10 @@ class AdminApi {
     page?: number;
     limit?: number;
     search?: string;
+    user?: string;
+    mobileNumber?: string;
+    startDate?: string;
+    endDate?: string;
   }): Promise<{
     success: boolean;
     data?: AdminQuickDetail[];
@@ -1797,6 +1806,34 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || 'Failed to fetch quick details',
+      };
+    }
+  };
+
+  public getAdminQuickDetail = async (
+    id: string,
+  ): Promise<ApiResponse<AdminQuickDetail>> => {
+    try {
+      const response = await this.client.get(`/quick-details/admin/${id}`);
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to fetch quick detail',
+      };
+    }
+  };
+
+  public deleteAdminQuickDetail = async (
+    id: string,
+  ): Promise<ApiResponse<null>> => {
+    try {
+      const response = await this.client.delete(`/quick-details/admin/${id}`);
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to delete quick detail',
       };
     }
   };
@@ -2763,6 +2800,7 @@ class AdminApi {
   public getInsurancePayments = async (filters?: {
     fromDate?: string;
     toDate?: string;
+    dateFilterField?: "invoiceDate" | "createdAt";
     paymentStatus?: string;
     paymentMethod?: string;
     excludePaymentMethod?: string;
@@ -2830,6 +2868,7 @@ class AdminApi {
   public getInsurancePaymentsSummary = async (filters?: {
     fromDate?: string;
     toDate?: string;
+    dateFilterField?: "invoiceDate" | "createdAt";
     productName?: string;
     paymentStatus?: string;
     paymentMethod?: string;
@@ -2870,6 +2909,7 @@ class AdminApi {
   public exportInsurancePayments = async (filters?: {
     fromDate?: string;
     toDate?: string;
+    dateFilterField?: "invoiceDate" | "createdAt";
     paymentStatus?: string;
     paymentMethod?: string;
     excludePaymentMethod?: string;
