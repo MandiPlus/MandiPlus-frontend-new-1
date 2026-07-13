@@ -210,6 +210,15 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             return true;
         }
 
+        if (section === 'notifications') {
+            return Boolean(
+                accessProfile?.isFullAdmin ||
+                accessProfile?.allowedSections?.some((allowedSection) =>
+                    ['app-customers', 'app-invoices', 'insurance-payments', 'users'].includes(allowedSection),
+                ),
+            );
+        }
+
         return Boolean(accessProfile?.allowedSections?.includes(section));
     };
 

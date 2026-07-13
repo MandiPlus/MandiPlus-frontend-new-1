@@ -24,6 +24,7 @@ import {
   SparklesIcon,
   DevicePhoneMobileIcon,
   UserCircleIcon,
+  BellAlertIcon,
 } from '@heroicons/react/24/outline';
 
 export const ADMIN_SECTIONS = [
@@ -43,6 +44,7 @@ export const ADMIN_SECTIONS = [
   'field-operations',
   'fssai-leads',
   'chat-logs',
+  'notifications',
   'pdf-editor',
   'access-monitor',
   'invoice-tracking',
@@ -98,6 +100,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Field Operations', href: '/admin/field-operations', icon: CalendarIcon, section: 'field-operations' },
   { name: 'FSSAI Leads', href: '/admin/fssai-leads', icon: IdentificationIcon, section: 'fssai-leads' },
   { name: 'WhatsApp Chats', href: '/admin/chat-logs', icon: ChatBubbleLeftRightIcon, section: 'chat-logs' },
+  { name: 'Notifications', href: '/admin/notifications', icon: BellAlertIcon, section: 'notifications' },
   { name: 'Invoice Approvals', href: '/admin/invoice-approvals', icon: InboxArrowDownIcon, section: 'invoice-approvals' },
   { name: 'Invoice Tracking', href: '/admin/invoice-tracking', icon: PaperAirplaneIcon, section: 'invoice-tracking' },
   { name: 'Insurance Learning', href: '/admin/insurance-learning', icon: SparklesIcon, section: 'insurance-learning' },
@@ -140,7 +143,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   },
   {
     name: 'Communications',
-    sections: ['chat-logs', 'call-routing'],
+    sections: ['chat-logs', 'notifications', 'call-routing'],
   },
 ];
 
@@ -161,6 +164,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/field-operations': 'field-operations',
   '/admin/fssai-leads': 'fssai-leads',
   '/admin/chat-logs': 'chat-logs',
+  '/admin/notifications': 'notifications',
   '/admin/pdf-editor': 'pdf-editor',
   '/admin/access-monitor': 'access-monitor',
   '/admin/invoice-tracking': 'invoice-tracking',

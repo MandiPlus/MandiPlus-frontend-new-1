@@ -120,6 +120,38 @@ export interface AdminAppCustomersSummary {
   releaseDate: string;
 }
 
+export type AdminCustomerNotificationDeliveryStatus =
+  | "pending"
+  | "sent"
+  | "failed"
+  | "no_token";
+
+export interface AdminCustomerNotification {
+  id: string;
+  title: string;
+  body: string;
+  type: string;
+  payload: Record<string, unknown>;
+  readAt?: string | null;
+  deliveryStatus: AdminCustomerNotificationDeliveryStatus;
+  sentAt?: string | null;
+  errorMessage?: string | null;
+  createdAt: string;
+  user?: {
+    id: string;
+    name?: string | null;
+    mobileNumber?: string | null;
+  };
+}
+
+export interface SendCustomerNotificationPayload {
+  mobileNumber: string;
+  title: string;
+  body: string;
+  type?: string;
+  payload?: Record<string, unknown>;
+}
+
 export interface AdminQuickDetailMedia {
   url: string;
   name: string;
@@ -1778,6 +1810,52 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || 'Failed to fetch app customers',
+      };
+    }
+  };
+
+  public getAdminNotifications = async (
+    limit: number = 50,
+  ): Promise<ApiResponse<AdminCustomerNotification[]>> => {
+    try {
+      const response = await this.client.get("/admin/notifications", {
+        params: { limit },
+      });
+      const payload = response.data as
+        | AdminCustomerNotification[]
+        | { data?: AdminCustomerNotification[] };
+      const rows = Array.isArray(payload) ? payload : (payload.data ?? []);
+      return { success: true, data: rows };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message || "Failed to fetch notifications",
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  };
+
+  public sendCustomerNotification = async (
+    payload: SendCustomerNotificationPayload,
+  ): Promise<ApiResponse<AdminCustomerNotification>> => {
+    try {
+      const response = await this.client.post("/admin/notifications/send", payload);
+      const responsePayload = response.data as
+        | AdminCustomerNotification
+        | { data?: AdminCustomerNotification };
+      const data = "data" in responsePayload && responsePayload.data
+        ? responsePayload.data
+        : (responsePayload as AdminCustomerNotification);
+      return { success: true, data };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message || "Failed to send notification",
+        error: error instanceof Error ? error.message : "Unknown error",
       };
     }
   };
