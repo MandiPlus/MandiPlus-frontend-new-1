@@ -100,7 +100,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Field Operations', href: '/admin/field-operations', icon: CalendarIcon, section: 'field-operations' },
   { name: 'FSSAI Leads', href: '/admin/fssai-leads', icon: IdentificationIcon, section: 'fssai-leads' },
   { name: 'WhatsApp Chats', href: '/admin/chat-logs', icon: ChatBubbleLeftRightIcon, section: 'chat-logs' },
-  { name: 'Notifications', href: '/admin/notifications', icon: BellAlertIcon, section: 'notifications' },
+  { name: 'Notifications', href: '/admin/app/notifications', icon: BellAlertIcon, section: 'notifications' },
   { name: 'Invoice Approvals', href: '/admin/invoice-approvals', icon: InboxArrowDownIcon, section: 'invoice-approvals' },
   { name: 'Invoice Tracking', href: '/admin/invoice-tracking', icon: PaperAirplaneIcon, section: 'invoice-tracking' },
   { name: 'Insurance Learning', href: '/admin/insurance-learning', icon: SparklesIcon, section: 'insurance-learning' },
@@ -123,7 +123,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   },
   {
     name: 'App',
-    sections: ['app-customers', 'app-invoices', 'app-quick-details'],
+    sections: ['app-customers', 'app-invoices', 'app-quick-details', 'notifications'],
   },
   {
     name: 'Invoices',
@@ -143,7 +143,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   },
   {
     name: 'Communications',
-    sections: ['chat-logs', 'notifications', 'call-routing'],
+    sections: ['chat-logs', 'call-routing'],
   },
 ];
 
@@ -153,6 +153,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/ledger': 'ledger',
   '/admin/app-customers': 'app-customers',
   '/admin/app-invoices': 'app-invoices',
+  '/admin/app/notifications': 'notifications',
   '/admin/quick-details': 'app-quick-details',
   '/admin/insurance-forms': 'insurance-forms',
   '/admin/claims': 'claims',
