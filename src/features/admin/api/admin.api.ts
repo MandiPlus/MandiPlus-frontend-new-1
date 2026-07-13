@@ -2763,6 +2763,7 @@ class AdminApi {
   public getInsurancePayments = async (filters?: {
     fromDate?: string;
     toDate?: string;
+    dateFilterField?: "invoiceDate" | "createdAt";
     paymentStatus?: string;
     paymentMethod?: string;
     excludePaymentMethod?: string;
@@ -2830,6 +2831,7 @@ class AdminApi {
   public getInsurancePaymentsSummary = async (filters?: {
     fromDate?: string;
     toDate?: string;
+    dateFilterField?: "invoiceDate" | "createdAt";
     productName?: string;
     paymentStatus?: string;
     paymentMethod?: string;
@@ -2870,6 +2872,7 @@ class AdminApi {
   public exportInsurancePayments = async (filters?: {
     fromDate?: string;
     toDate?: string;
+    dateFilterField?: "invoiceDate" | "createdAt";
     paymentStatus?: string;
     paymentMethod?: string;
     excludePaymentMethod?: string;

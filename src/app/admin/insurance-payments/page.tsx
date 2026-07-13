@@ -1029,6 +1029,30 @@ export default function AdminInsurancePaymentsPage() {
     );
   };
 
+  const exportByCreatedAt = () => {
+    const filePrefix =
+      exportReportType === 'USER_WISE_DETAILS'
+        ? 'insurance-payments-user-wise-details-created-at'
+        : 'insurance-payments-created-at';
+    exportWithParams(
+      {
+        fromDate: normalizeDateForApi(fromDate),
+        toDate: normalizeDateForApi(effectiveToDate),
+        dateFilterField: 'createdAt',
+        paymentStatus: effectivePaymentStatus || undefined,
+        ...paymentMethodParams,
+        productName: productName || undefined,
+        invoiceNumber: invoiceNumberQuery.trim() || undefined,
+        buyerQuery: buyerQuery.trim() || undefined,
+        supplierQuery: supplierQuery.trim() || undefined,
+        utrQuery: utrQuery.trim() || undefined,
+        userId: selectedUserId || undefined,
+        reportType: exportReportType,
+      },
+      `${filePrefix}-${new Date().toISOString().slice(0, 10)}.xlsx`,
+    );
+  };
+
   const exportPresetReport = () => {
     const { fromDate: presetFromDate, toDate: presetToDate } =
       getReportDateRange(reportPeriod);
@@ -1364,6 +1388,14 @@ export default function AdminInsurancePaymentsPage() {
               className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               {exporting ? 'Exporting...' : 'Export to Excel'}
+            </button>
+            <button
+              type="button"
+              onClick={exportByCreatedAt}
+              disabled={exporting}
+              className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100"
+            >
+              {exporting ? 'Exporting...' : 'Export by Created At'}
             </button>
             <button
               type="button"
