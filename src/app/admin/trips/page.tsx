@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { GoogleMap, MarkerF, useLoadScript } from '@react-google-maps/api';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import {
   AdminTripRow,
@@ -17,6 +17,15 @@ import {
 } from '@/features/admin/api/tracking.api';
 
 type Coord = { lat: number; lng: number };
+
+const TripLeafletMap = dynamic(() => import('@/components/maps/TripLeafletMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full items-center justify-center p-6 text-sm text-slate-600">
+      Loading map...
+    </div>
+  ),
+});
 
 type TrackModalState = {
   trip: AdminTripRow;
@@ -91,10 +100,6 @@ async function reverseGeocodeWithGoogle(
 export default function AdminTripsPage() {
   const router = useRouter();
   const { isAuthenticated, loading } = useAdmin();
-  const mapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
-  const { isLoaded: isMapLoaded } = useLoadScript({
-    googleMapsApiKey: mapsApiKey,
-  });
 
   const [trips, setTrips] = useState<AdminTripRow[]>([]);
   const [searchFilters, setSearchFilters] = useState({
@@ -436,60 +441,24 @@ export default function AdminTripsPage() {
     return null;
   }, [trackModal]);
 
+  const trackSource = useMemo<Coord | null>(() => {
+    if (
+      trackModal?.tracking.origin &&
+      typeof trackModal.tracking.origin.lat === 'number' &&
+      typeof trackModal.tracking.origin.lng === 'number'
+    ) {
+      return {
+        lat: trackModal.tracking.origin.lat,
+        lng: trackModal.tracking.origin.lng,
+      };
+    }
+    return null;
+  }, [trackModal]);
+
   const trackCenter = useMemo<Coord>(
-    () => trackCurrent || trackDestination || { lat: 22.9734, lng: 78.6569 },
-    [trackCurrent, trackDestination]
+    () => trackCurrent || trackDestination || trackSource || { lat: 22.9734, lng: 78.6569 },
+    [trackCurrent, trackDestination, trackSource]
   );
-
-  const truckIcon = useMemo(() => {
-    if (!isMapLoaded || typeof window === 'undefined' || !window.google?.maps) {
-      return undefined;
-    }
-
-    return {
-      url: '/images/truck-marker.svg',
-      scaledSize: new window.google.maps.Size(52, 52),
-      anchor: new window.google.maps.Point(26, 26),
-    };
-  }, [isMapLoaded]);
-
-  const sourceFlagIcon = useMemo(() => {
-    if (!isMapLoaded || typeof window === 'undefined' || !window.google?.maps) {
-      return undefined;
-    }
-
-    const svg = encodeURIComponent(`
-      <svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34">
-        <path d="M9 4v25" stroke="#166534" stroke-width="2.5" stroke-linecap="round"/>
-        <path d="M10 5h13l-3 6 3 6H10z" fill="#22c55e" stroke="#166534" stroke-width="1.5" stroke-linejoin="round"/>
-      </svg>
-    `);
-
-    return {
-      url: `data:image/svg+xml;charset=UTF-8,${svg}`,
-      scaledSize: new window.google.maps.Size(30, 30),
-      anchor: new window.google.maps.Point(10, 26),
-    };
-  }, [isMapLoaded]);
-
-  const destinationFlagIcon = useMemo(() => {
-    if (!isMapLoaded || typeof window === 'undefined' || !window.google?.maps) {
-      return undefined;
-    }
-
-    const svg = encodeURIComponent(`
-      <svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34">
-        <path d="M9 4v25" stroke="#991b1b" stroke-width="2.5" stroke-linecap="round"/>
-        <path d="M10 5h13l-3 6 3 6H10z" fill="#ef4444" stroke="#991b1b" stroke-width="1.5" stroke-linejoin="round"/>
-      </svg>
-    `);
-
-    return {
-      url: `data:image/svg+xml;charset=UTF-8,${svg}`,
-      scaledSize: new window.google.maps.Size(30, 30),
-      anchor: new window.google.maps.Point(10, 26),
-    };
-  }, [isMapLoaded]);
 
   if (loading || !isAuthenticated) {
     return (
@@ -961,46 +930,16 @@ export default function AdminTripsPage() {
 
             <div className="min-h-[420px] flex-1 bg-white p-4">
               <div className="h-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-                {!mapsApiKey ? (
-                  <div className="flex h-full items-center justify-center p-6 text-sm text-red-600">
-                    Google Maps key is missing. Set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
-                  </div>
-                ) : !isMapLoaded ? (
-                  <div className="flex h-full items-center justify-center p-6 text-sm text-slate-600">
-                    Loading map...
-                  </div>
-                ) : (
-                  <GoogleMap
-                    zoom={6}
-                    center={trackCenter}
-                    mapContainerStyle={{ width: '100%', height: '100%' }}
-                    options={{
-                      streetViewControl: false,
-                      mapTypeControl: true,
-                      fullscreenControl: true,
-                    }}
-                  >
-                    {trackCurrent ? (
-                      <MarkerF position={trackCurrent} title="Current location" icon={truckIcon} />
-                    ) : null}
-                    {trackDestination ? (
-                      <MarkerF
-                        position={trackDestination}
-                        title="Destination"
-                        icon={destinationFlagIcon}
-                      />
-                    ) : null}
-                    {trackModal.tracking.origin &&
-                    typeof trackModal.tracking.origin.lat === 'number' &&
-                    typeof trackModal.tracking.origin.lng === 'number' ? (
-                      <MarkerF
-                        position={trackModal.tracking.origin}
-                        title="Source"
-                        icon={sourceFlagIcon}
-                      />
-                    ) : null}
-                  </GoogleMap>
-                )}
+                <TripLeafletMap
+                  center={trackCenter}
+                  current={trackCurrent}
+                  source={trackSource}
+                  destination={trackDestination}
+                  currentLabel={trackModal.tracking.location?.address || 'Current location'}
+                  sourceLabel={trackModal.sourceName || 'Source'}
+                  destinationLabel={trackModal.destinationName || 'Destination'}
+                  zoom={6}
+                />
               </div>
             </div>
 

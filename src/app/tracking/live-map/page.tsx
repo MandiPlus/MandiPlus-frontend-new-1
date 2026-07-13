@@ -1,11 +1,20 @@
 'use client';
 
 import { useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { GoogleMap, MarkerF, useLoadScript } from '@react-google-maps/api';
 
 type Coord = { lat: number; lng: number };
+
+const TripLeafletMap = dynamic(() => import('@/components/maps/TripLeafletMap'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-full items-center justify-center rounded-xl border border-white/10 bg-[#171a21] text-sm text-slate-200 shadow-xl">
+      Loading map...
+    </div>
+  ),
+});
 
 function toNumber(value: string | null): number | null {
   if (!value) return null;
@@ -17,59 +26,33 @@ export default function LiveMapPage() {
   const searchParams = useSearchParams();
   const currentLat = toNumber(searchParams.get('clat'));
   const currentLng = toNumber(searchParams.get('clng'));
+  const destinationLat = toNumber(searchParams.get('dlat'));
+  const destinationLng = toNumber(searchParams.get('dlng'));
   const vehicle = searchParams.get('vehicle') ?? 'Vehicle';
   const currentName = searchParams.get('currentName') ?? 'Not available';
   const sourceName = searchParams.get('sourceName') ?? 'Not available';
   const destinationName = searchParams.get('destinationName') ?? 'Not available';
 
-  const current: Coord | null =
-    currentLat !== null && currentLng !== null
-      ? { lat: currentLat, lng: currentLng }
-      : null;
+  const current: Coord | null = useMemo(
+    () =>
+      currentLat !== null && currentLng !== null
+        ? { lat: currentLat, lng: currentLng }
+        : null,
+    [currentLat, currentLng],
+  );
 
-  const center = useMemo(() => current ?? { lat: 22.9734, lng: 78.6569 }, [current]);
+  const destination: Coord | null = useMemo(
+    () =>
+      destinationLat !== null && destinationLng !== null
+        ? { lat: destinationLat, lng: destinationLng }
+        : null,
+    [destinationLat, destinationLng],
+  );
 
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-  const { isLoaded } = useLoadScript({
-    googleMapsApiKey: apiKey || '',
-  });
-
-  const truckIcon = useMemo(() => {
-    if (!isLoaded || typeof window === 'undefined' || !window.google?.maps) {
-      return undefined;
-    }
-
-    return {
-      url: '/images/truck-marker.svg',
-      scaledSize: new window.google.maps.Size(52, 52),
-      anchor: new window.google.maps.Point(26, 26),
-    };
-  }, [isLoaded]);
-
-  if (!apiKey) {
-    return (
-      <main className="min-h-screen bg-[#121317] p-4 sm:p-8">
-        <section className="mx-auto max-w-5xl rounded-2xl border border-white/10 bg-[#171a21] p-5 shadow-2xl">
-          <p className="text-sm text-red-600">
-            Google Maps key is missing. Set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`.
-          </p>
-          <Link href="/tracking" className="mt-4 inline-block text-sm font-medium text-cyan-300">
-            Back to Tracking
-          </Link>
-        </section>
-      </main>
-    );
-  }
-
-  if (!isLoaded) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-[#121317]">
-        <div className="rounded-xl border border-white/10 bg-[#171a21] px-4 py-3 text-sm text-slate-200 shadow-xl">
-          Loading map...
-        </div>
-      </main>
-    );
-  }
+  const center = useMemo(
+    () => current ?? destination ?? { lat: 22.9734, lng: 78.6569 },
+    [current, destination],
+  );
 
   return (
     <main className="h-screen w-screen overflow-hidden bg-[radial-gradient(circle_at_top,#252831_0%,#17191f_45%,#121317_100%)]">
@@ -99,28 +82,15 @@ export default function LiveMapPage() {
         </header>
 
         <div className="relative flex-1 p-1.5 sm:p-2">
-          <GoogleMap
-            zoom={11}
+          <TripLeafletMap
             center={center}
-            mapContainerStyle={{
-              width: '100%',
-              height: '100%',
-              borderRadius: '12px',
-            }}
-            options={{
-              streetViewControl: false,
-              mapTypeControl: false,
-              fullscreenControl: true,
-            }}
-          >
-            {current ? (
-              <MarkerF
-                position={current}
-                title="Current location"
-                icon={truckIcon}
-              />
-            ) : null}
-          </GoogleMap>
+            current={current}
+            destination={destination}
+            currentLabel={currentName || 'Current location'}
+            destinationLabel={destinationName || 'Destination'}
+            zoom={11}
+            className="rounded-xl"
+          />
 
           <div className="pointer-events-none absolute inset-x-4 bottom-4 flex flex-col gap-3 sm:inset-x-auto sm:bottom-5 sm:left-5 sm:max-w-[500px]">
             <div
