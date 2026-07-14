@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { ArrowRight, Download, MessageCircle, Phone } from "lucide-react";
+import { ArrowRight, Download, MessageCircle, Phone, Route, Truck } from "lucide-react";
 import { useAuth } from "@/features/auth/context/AuthContext";
 
 const WHATSAPP_URL = "https://wa.me/919900186757?text=Hi%20Mandiplus";
@@ -39,6 +39,8 @@ const brochures = [
     href: "/brochures/mandi-plus-brochure-kannada.pdf",
   },
 ];
+
+const tenderCoconutRoutes = ["Mandya", "Nanjangud", "Chamarajanagar", "Talavadi", "Pollachi"];
 
 const LandingPage = () => {
   const router = useRouter();
@@ -160,26 +162,83 @@ const LandingPage = () => {
       </section>
 
       <section className="px-4 py-10 sm:px-6 lg:px-8">
-        <div className="mx-auto grid max-w-6xl overflow-hidden rounded-md border border-[#c9bb96] bg-[#0b3f2a] lg:grid-cols-[0.92fr_1.08fr]">
-          <div className="relative min-h-[24rem]">
-            <Image
-              src="/images/mandiplus-minimal-mandi-hero.png"
-              alt="Mandi truck, goods, bill and phone"
-              fill
-              sizes="(min-width: 1024px) 42vw, 100vw"
-              className="object-cover object-[68%_center]"
-            />
+        <div className="mx-auto grid max-w-6xl overflow-hidden rounded-md border border-[#c9bb96] bg-[#0b3f2a] lg:grid-cols-[1.04fr_0.96fr]">
+          <div className="relative min-h-[25rem] overflow-hidden bg-[#fbf5e7] p-5 sm:p-7">
+            <div className="absolute inset-0 opacity-[0.18] [background-image:linear-gradient(#8f7d55_1px,transparent_1px),linear-gradient(90deg,#8f7d55_1px,transparent_1px)] [background-size:42px_42px]" />
+            <div className="relative flex h-full min-h-[21rem] flex-col justify-between">
+              <div className="flex items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-2 rounded-md bg-[#d9f4b5] px-3 py-2 text-xs font-black uppercase tracking-[0.16em] text-[#0b3f2a]">
+                  <Route className="h-4 w-4" />
+                  Tender Coconut Lane
+                </span>
+              </div>
+
+              <div className="relative mx-auto mt-8 h-[15.5rem] w-full max-w-[32rem]">
+                <svg
+                  viewBox="0 0 520 248"
+                  aria-hidden="true"
+                  className="absolute inset-0 h-full w-full"
+                >
+                  <path
+                    d="M42 175 C118 106 173 208 236 132 C290 66 332 134 386 88 C421 58 456 50 492 68"
+                    fill="none"
+                    stroke="#246b3d"
+                    strokeLinecap="round"
+                    strokeWidth="16"
+                  />
+                  <path
+                    d="M42 175 C118 106 173 208 236 132 C290 66 332 134 386 88 C421 58 456 50 492 68"
+                    fill="none"
+                    stroke="#d9f4b5"
+                    strokeDasharray="3 26"
+                    strokeLinecap="round"
+                    strokeWidth="5"
+                  />
+                </svg>
+
+                {tenderCoconutRoutes.map((route, index) => {
+                  const positions = [
+                    "left-[4%] top-[58%]",
+                    "left-[21%] top-[30%]",
+                    "left-[40%] top-[52%]",
+                    "left-[60%] top-[23%]",
+                    "left-[76%] top-[36%]",
+                  ];
+
+                  return (
+                    <span
+                      key={route}
+                      className={`absolute ${positions[index]} inline-flex -translate-y-1/2 items-center gap-1.5 rounded-md border border-[#8f7d55] bg-[#f2c94c] px-3 py-2 text-xs font-black text-[#1f271b] shadow-[0_8px_0_-5px_rgba(31,39,27,0.32)] sm:text-sm`}
+                    >
+                      <span className="h-2.5 w-2.5 rounded-full bg-[#d92727] ring-2 ring-white" />
+                      {route}
+                    </span>
+                  );
+                })}
+
+                <div className="absolute bottom-1 right-2 flex h-16 w-16 items-center justify-center rounded-full border border-[#c9bb96] bg-white text-[#0b3f2a] shadow-[0_18px_36px_-28px_rgba(31,39,27,0.72)]">
+                  <Truck className="h-8 w-8" />
+                </div>
+              </div>
+
+              <div />
+            </div>
           </div>
+
           <div className="flex flex-col justify-center p-6 text-white sm:p-8 lg:p-10">
-            <p className="text-sm font-black uppercase tracking-[0.16em] text-[#d9f4b5]">
-              Seedha kaam
-            </p>
-            <h2 className="mt-3 text-4xl font-black tracking-tight sm:text-5xl">
-              Bill bhejo, cover chalu.
+            <h2 className="text-4xl font-black tracking-tight sm:text-5xl">
+              Tender Coconut load nikla? Mandiplus saath hai.
             </h2>
             <p className="mt-5 max-w-xl text-lg font-semibold leading-8 text-white/76">
-              WhatsApp par bill bhejo. Team baaki dekh legi.
+              Bill WhatsApp par bhejo. Route, tracking aur issue support team dekhegi.
             </p>
+            <a
+              href={WHATSAPP_URL}
+              className="mt-7 inline-flex w-fit items-center justify-center gap-2 rounded-md bg-[#25d366] px-5 py-4 text-base font-black text-[#062f17] shadow-[0_24px_54px_-30px_rgba(37,211,102,0.95)] transition hover:-translate-y-0.5 hover:bg-[#35e277]"
+            >
+              <MessageCircle className="h-5 w-5" />
+              WhatsApp par bill bhejo
+            </a>
           </div>
         </div>
       </section>
