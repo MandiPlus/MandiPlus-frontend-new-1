@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import toast from "react-hot-toast";
@@ -12,6 +12,10 @@ import {
   Search,
   UserPlus,
   Users,
+  Clock3,
+  ChevronLeft,
+  ChevronRight,
+  Route,
 } from "lucide-react";
 import {
   AdminChannelPartnerListRow,
@@ -19,6 +23,7 @@ import {
   ChannelPartnerCommissionPayload,
   ChannelPartnerDetailPayload,
   ChannelPartnerInvoicePayload,
+  ChannelPartnerSummary,
   ChannelPartnerStatus,
   ChannelPartnerTripPayload,
   adminApi,
@@ -36,6 +41,16 @@ const tabs: Array<{ key: TabKey; label: string }> = [
 const INVOICE_STATUS_OPTIONS = ["NOT_REQUIRED", "PENDING", "PARTIAL", "PAID", "FAILED", "REFUNDED"];
 const COMMISSION_STATUS_OPTIONS = ["PENDING", "PAYABLE", "PAID", "VOID"];
 const TRACKING_STATUS_OPTIONS = ["PENDING", "ACTIVE", "IN_PROGRESS", "ENDED"];
+const INVOICE_PAGE_SIZE = 20;
+const TAB_PAGE_SIZE = 50;
+
+const EMPTY_CUSTOMER_STATS = {
+  invoices: 0,
+  premiumTotal: 0,
+  pendingPayments: 0,
+  activeTrips: 0,
+  lastInvoiceDate: null,
+};
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-IN", {
@@ -71,23 +86,84 @@ function searchable(value: unknown) {
   return String(value || "").toLowerCase();
 }
 
+function isRequestCanceled(error: unknown) {
+  if (error == null || typeof error !== "object") return false;
+  const candidate = error as { name?: string; code?: string };
+  return candidate.name === "AbortError" || candidate.name === "CanceledError" || candidate.code === "ERR_CANCELED";
+}
+
+function firstReadable(...values: Array<string | null | undefined>) {
+  return values.find((value) => {
+    const trimmed = String(value || "").trim();
+    return trimmed && !/^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(trimmed);
+  }) || "";
+}
+
+function parseDistanceKm(value?: string | number | null) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (!value) return null;
+  const match = String(value).replace(/,/g, "").match(/-?\d+(\.\d+)?/);
+  return match ? Number(match[0]) : null;
+}
+
+function tripProgress(row: ChannelPartnerTripPayload) {
+  const traveled = parseDistanceKm(row.lastLocation?.distanceTravel);
+  const total = parseDistanceKm(row.lastLocation?.totalDistance);
+  if (traveled !== null && total && total > 0) {
+    return Math.max(0, Math.min(100, Math.round((traveled / total) * 100)));
+  }
+
+  const remaining = parseDistanceKm(row.lastLocation?.distanceRemained);
+  if (remaining !== null && total && total > 0) {
+    return Math.max(0, Math.min(100, Math.round(((total - remaining) / total) * 100)));
+  }
+
+  const status = String(row.status || "").toUpperCase();
+  if (status === "ENDED" || status === "COMPLETED") return 100;
+  if (status === "ACTIVE" || status === "IN_PROGRESS") return 50;
+  return 0;
+}
+
+function tripProgressDetail(row: ChannelPartnerTripPayload) {
+  return [
+    row.lastLocation?.distanceRemained ? `${row.lastLocation.distanceRemained} left` : "",
+    row.lastLocation?.timeRemained || "",
+  ].filter(Boolean).join(" · ");
+}
+
 export default function AdminChannelPartnersPage() {
   const router = useRouter();
   const { isAuthenticated, loading } = useAdmin();
   const [partners, setPartners] = useState<AdminChannelPartnerListRow[]>([]);
   const [selectedPartnerId, setSelectedPartnerId] = useState("");
   const [detail, setDetail] = useState<ChannelPartnerDetailPayload | null>(null);
+  const [customerStats, setCustomerStats] = useState<NonNullable<ChannelPartnerDetailPayload["customerStats"]>>({});
   const [busy, setBusy] = useState(false);
   const [detailBusy, setDetailBusy] = useState(false);
+  const [summaryBusy, setSummaryBusy] = useState(false);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("customers");
   const [tableSearch, setTableSearch] = useState("");
+  const [debouncedTableSearch, setDebouncedTableSearch] = useState("");
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("ALL");
   const [commissionStatusFilter, setCommissionStatusFilter] = useState("ALL");
   const [trackingStatusFilter, setTrackingStatusFilter] = useState("ALL");
+  const [invoicesPage, setInvoicesPage] = useState(1);
+  const [invoicesTotal, setInvoicesTotal] = useState(0);
+  const [invoicesTotalPages, setInvoicesTotalPages] = useState(1);
+  const [commissionsPage, setCommissionsPage] = useState(1);
+  const [commissionsTotal, setCommissionsTotal] = useState(0);
+  const [commissionsTotalPages, setCommissionsTotalPages] = useState(1);
+  const [tripsPage, setTripsPage] = useState(1);
+  const [tripsTotal, setTripsTotal] = useState(0);
+  const [tripsTotalPages, setTripsTotalPages] = useState(1);
   const [userSearch, setUserSearch] = useState("");
   const [userResults, setUserResults] = useState<AdminLedgerUser[]>([]);
   const [assigningUserId, setAssigningUserId] = useState("");
+  const profileRequestRef = useRef<AbortController | null>(null);
+  const summaryRequestRef = useRef<AbortController | null>(null);
+  const customerStatsRequestRef = useRef<AbortController | null>(null);
+  const tabRequestRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) router.push("/admin/login");
@@ -106,36 +182,234 @@ export default function AdminChannelPartnersPage() {
     setBusy(false);
   }, []);
 
-  const loadDetail = useCallback(async (partnerId: string) => {
+  const primePartnerDetail = useCallback((partner?: AdminChannelPartnerListRow | null) => {
+    if (!partner) {
+      setDetail(null);
+      return;
+    }
+    setDetail({
+      profile: partner,
+      summary: partner.summary,
+      customers: [],
+      invoices: [],
+      commissions: [],
+      trips: [],
+    });
+  }, []);
+
+  const loadProfile = useCallback(async (partnerId: string) => {
     if (!partnerId) {
       setDetail(null);
       return;
     }
-    setDetailBusy(true);
-    const response = await adminApi.getChannelPartnerDetail(partnerId);
-    if (response.success) {
-      setDetail(response.data || null);
-    } else {
-      toast.error(response.message || "Failed to load partner detail");
+
+    const controller = new AbortController();
+    profileRequestRef.current?.abort();
+    profileRequestRef.current = controller;
+
+    try {
+      const response = await adminApi.getChannelPartnerDetail(
+        partnerId,
+        { scope: "profile" },
+        { signal: controller.signal },
+      );
+      if (response.success) {
+        setDetail((current) => ({
+          profile: response.data?.profile || current?.profile || null,
+          summary: current?.summary,
+          customers: response.data?.customers || [],
+          invoices: current?.invoices || [],
+          commissions: current?.commissions || [],
+          trips: current?.trips || [],
+        }));
+      } else {
+        toast.error(response.message || "Failed to load partner profile");
+      }
+    } catch (error) {
+      if (!isRequestCanceled(error)) {
+        toast.error((error as { message?: string })?.message || "Failed to load partner profile");
+      }
     }
-    setDetailBusy(false);
   }, []);
+
+  const loadSummary = useCallback(async (partnerId: string) => {
+    if (!partnerId) return;
+
+    const controller = new AbortController();
+    summaryRequestRef.current?.abort();
+    summaryRequestRef.current = controller;
+
+    setSummaryBusy(true);
+    try {
+      const response = await adminApi.getChannelPartnerDetail(
+        partnerId,
+        { scope: "summary" },
+        { signal: controller.signal },
+      );
+      if (response.success) {
+        setDetail((current) => current ? { ...current, summary: response.data?.summary || current.summary } : current);
+      } else {
+        toast.error(response.message || "Failed to load partner summary");
+      }
+    } catch (error) {
+      if (!isRequestCanceled(error)) {
+        toast.error((error as { message?: string })?.message || "Failed to load partner summary");
+      }
+    } finally {
+      if (summaryRequestRef.current === controller) {
+        setSummaryBusy(false);
+      }
+    }
+  }, []);
+
+  const loadCustomerStats = useCallback(async (partnerId: string) => {
+    if (!partnerId) return;
+
+    const controller = new AbortController();
+    customerStatsRequestRef.current?.abort();
+    customerStatsRequestRef.current = controller;
+
+    try {
+      const response = await adminApi.getChannelPartnerDetail(
+        partnerId,
+        { scope: "customer-stats" },
+        { signal: controller.signal },
+      );
+      if (response.success) {
+        setCustomerStats(response.data?.customerStats || {});
+      } else {
+        toast.error(response.message || "Failed to load customer stats");
+      }
+    } catch (error) {
+      if (!isRequestCanceled(error)) {
+        toast.error((error as { message?: string })?.message || "Failed to load customer stats");
+      }
+    }
+  }, []);
+
+  const loadTabData = useCallback(async (partnerId: string, tab: TabKey, page = 1) => {
+    if (!partnerId || tab === "customers") return;
+
+    const controller = new AbortController();
+    tabRequestRef.current?.abort();
+    tabRequestRef.current = controller;
+
+    const filters: Parameters<typeof adminApi.getChannelPartnerDetail>[1] = {
+      scope: tab === "tracking" ? "trips" : tab,
+      page,
+      limit: tab === "invoices" ? INVOICE_PAGE_SIZE : TAB_PAGE_SIZE,
+    };
+    if (tab === "invoices" && invoiceStatusFilter !== "ALL") filters.status = invoiceStatusFilter;
+    if (tab === "invoices" && debouncedTableSearch.trim()) filters.invoiceSearch = debouncedTableSearch.trim();
+    if (tab === "commissions" && commissionStatusFilter !== "ALL") filters.status = commissionStatusFilter;
+    if (tab === "tracking" && trackingStatusFilter !== "ALL") filters.status = trackingStatusFilter;
+
+    setDetailBusy(true);
+    try {
+      const response = await adminApi.getChannelPartnerDetail(partnerId, filters, { signal: controller.signal });
+      if (!response.success) {
+        toast.error(response.message || `Failed to load ${tab}`);
+        return;
+      }
+
+      setDetail((current) => {
+        if (!current) return current;
+        if (tab === "invoices") return { ...current, invoices: response.data?.invoices || [] };
+        if (tab === "commissions") return { ...current, commissions: response.data?.commissions || [] };
+        return { ...current, trips: response.data?.trips || [] };
+      });
+
+      const total = response.data?.total || 0;
+      const totalPages = Math.max(1, Number(response.data?.totalPages || 0) || 1);
+      const safePage = response.data?.page || page;
+      if (tab === "invoices") {
+        setInvoicesTotal(total);
+        setInvoicesTotalPages(totalPages);
+        setInvoicesPage(safePage);
+      } else if (tab === "commissions") {
+        setCommissionsTotal(total);
+        setCommissionsTotalPages(totalPages);
+        setCommissionsPage(safePage);
+      } else {
+        setTripsTotal(total);
+        setTripsTotalPages(totalPages);
+        setTripsPage(safePage);
+      }
+    } catch (error) {
+      if (!isRequestCanceled(error)) {
+        toast.error((error as { message?: string })?.message || `Failed to load ${tab}`);
+      }
+    } finally {
+      if (tabRequestRef.current === controller) {
+        setDetailBusy(false);
+      }
+    }
+  }, [commissionStatusFilter, debouncedTableSearch, invoiceStatusFilter, trackingStatusFilter]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadPartners();
   }, [isAuthenticated, loadPartners]);
 
   useEffect(() => {
-    if (!selectedPartnerId) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (activeTab !== "invoices") {
+      setDebouncedTableSearch("");
+      return;
+    }
+    const timer = setTimeout(() => setDebouncedTableSearch(tableSearch.trim()), 350);
+    return () => clearTimeout(timer);
+  }, [activeTab, tableSearch]);
+
+  useEffect(() => {
+    if (!selectedPartnerId) {
+      setDetail(null);
+      return;
+    }
+    profileRequestRef.current?.abort();
+    summaryRequestRef.current?.abort();
+    customerStatsRequestRef.current?.abort();
+    tabRequestRef.current?.abort();
+    setDetailBusy(false);
     setTableSearch("");
     setInvoiceStatusFilter("ALL");
     setCommissionStatusFilter("ALL");
     setTrackingStatusFilter("ALL");
-    void loadDetail(selectedPartnerId);
-  }, [selectedPartnerId, loadDetail]);
+    setCustomerStats({});
+    setInvoicesPage(1);
+    setInvoicesTotal(0);
+    setInvoicesTotalPages(1);
+    setCommissionsPage(1);
+    setCommissionsTotal(0);
+    setCommissionsTotalPages(1);
+    setTripsPage(1);
+    setTripsTotal(0);
+    setTripsTotalPages(1);
+
+    const listPartner = partners.find((partner) => partner.id === selectedPartnerId);
+    primePartnerDetail(listPartner);
+    void loadProfile(selectedPartnerId);
+    void loadSummary(selectedPartnerId);
+  }, [selectedPartnerId, partners, primePartnerDetail, loadProfile, loadSummary]);
+
+  useEffect(() => {
+    if (!selectedPartnerId) return;
+    if (activeTab === "customers") {
+      tabRequestRef.current?.abort();
+      setDetailBusy(false);
+      void loadCustomerStats(selectedPartnerId);
+      return;
+    }
+    void loadTabData(selectedPartnerId, activeTab, 1);
+  }, [selectedPartnerId, activeTab, loadCustomerStats, loadTabData]);
+
+  useEffect(() => {
+    return () => {
+      profileRequestRef.current?.abort();
+      summaryRequestRef.current?.abort();
+      customerStatsRequestRef.current?.abort();
+      tabRequestRef.current?.abort();
+    };
+  }, []);
 
   const filteredPartners = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -155,10 +429,23 @@ export default function AdminChannelPartnersPage() {
   }, [partners, search]);
 
   const selectedPartner = detail?.profile;
+  const partnerSummary = useMemo<ChannelPartnerSummary>(() => detail?.summary || {
+    customers: 0,
+    invoices: 0,
+    premiumTotal: 0,
+    commissionPending: 0,
+    commissionPayable: 0,
+    commissionPaid: 0,
+    activeTrips: 0,
+    pendingPayments: 0,
+  }, [detail?.summary]);
   const q = tableSearch.trim().toLowerCase();
 
   const customerRows = useMemo(() => {
-    const rows = detail?.customers || [];
+    const rows = (detail?.customers || []).map((row) => ({
+      ...row,
+      stats: row.stats || customerStats[row.customer.id] || EMPTY_CUSTOMER_STATS,
+    }));
     if (!q) return rows;
     return rows.filter((row) =>
       [
@@ -168,7 +455,7 @@ export default function AdminChannelPartnersPage() {
         row.status,
       ].some((item) => searchable(item).includes(q)),
     );
-  }, [detail?.customers, q]);
+  }, [customerStats, detail?.customers, q]);
 
   const invoiceRows = useMemo(() => {
     let rows = detail?.invoices || [];
@@ -254,7 +541,7 @@ export default function AdminChannelPartnersPage() {
     }
     toast.success("Channel partner updated");
     await loadPartners();
-    await loadDetail(selectedPartner.id);
+    await Promise.all([loadProfile(selectedPartner.id), loadSummary(selectedPartner.id)]);
   };
 
   const searchUsers = async () => {
@@ -278,7 +565,7 @@ export default function AdminChannelPartnersPage() {
     setAssigningUserId("");
     setUserSearch("");
     setUserResults([]);
-    await loadDetail(selectedPartner.id);
+    await Promise.all([loadProfile(selectedPartner.id), loadSummary(selectedPartner.id), loadCustomerStats(selectedPartner.id)]);
     await loadPartners();
   };
 
@@ -290,7 +577,7 @@ export default function AdminChannelPartnersPage() {
     }
     toast.success(status === "APPROVED" ? "Customer link approved" : "Customer link removed");
     if (selectedPartner?.id) {
-      await loadDetail(selectedPartner.id);
+      await Promise.all([loadProfile(selectedPartner.id), loadSummary(selectedPartner.id), loadCustomerStats(selectedPartner.id)]);
       await loadPartners();
     }
   };
@@ -325,6 +612,11 @@ export default function AdminChannelPartnersPage() {
                 key={partner.id}
                 href={`/admin/channel-partners/partner/${partner.id}`}
                 target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => {
+                  primePartnerDetail(partner);
+                  setSelectedPartnerId(partner.id);
+                }}
                 className={`block w-full border-b border-slate-100 p-4 text-left hover:bg-slate-50 ${
                   selectedPartnerId === partner.id ? "bg-blue-50" : "bg-white"
                 }`}
@@ -399,13 +691,13 @@ export default function AdminChannelPartnersPage() {
                   </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6">
-                  <Metric icon={Users} label="Customers" value={String(detail.summary?.customers ?? 0)} />
-                  <Metric icon={FileText} label="Invoices" value={String(detail.summary?.invoices ?? 0)} />
-                  <Metric icon={BadgeIndianRupee} label="Premium" value={formatCurrency(detail.summary?.premiumTotal ?? 0)} />
-                  <Metric icon={BadgeIndianRupee} label="Pending" value={formatCurrency(detail.summary?.commissionPending ?? 0)} />
-                  <Metric icon={BadgeIndianRupee} label="Payable" value={formatCurrency(detail.summary?.commissionPayable ?? 0)} />
-                  <Metric icon={MapPin} label="Active Trips" value={String(detail.summary?.activeTrips ?? 0)} />
+                <div className={`mt-4 grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6 ${summaryBusy ? "opacity-70" : ""}`}>
+                  <Metric icon={Users} label="Customers" value={String(partnerSummary.customers)} />
+                  <Metric icon={FileText} label="Invoices" value={String(partnerSummary.invoices)} />
+                  <Metric icon={BadgeIndianRupee} label="Premium" value={formatCurrency(partnerSummary.premiumTotal)} />
+                  <Metric icon={BadgeIndianRupee} label="Pending" value={formatCurrency(partnerSummary.commissionPending)} />
+                  <Metric icon={BadgeIndianRupee} label="Payable" value={formatCurrency(partnerSummary.commissionPayable)} />
+                  <Metric icon={MapPin} label="Active Trips" value={String(partnerSummary.activeTrips)} />
                 </div>
 
                 <div className="mt-4 grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 lg:grid-cols-[1fr_auto_auto]">
@@ -512,11 +804,44 @@ export default function AdminChannelPartnersPage() {
                 ) : activeTab === "customers" ? (
                   <CustomersTable rows={customerRows} onUpdateLink={updateLink} />
                 ) : activeTab === "invoices" ? (
-                  <InvoicesTable rows={invoiceRows} />
+                  <>
+                    <InvoicesTable rows={invoiceRows} />
+                    <PaginationFooter
+                      label="invoices"
+                      page={invoicesPage}
+                      total={invoicesTotal}
+                      totalPages={invoicesTotalPages}
+                      visibleCount={invoiceRows.length}
+                      busy={detailBusy}
+                      onPageChange={(page) => void loadTabData(selectedPartnerId, "invoices", page)}
+                    />
+                  </>
                 ) : activeTab === "commissions" ? (
-                  <CommissionsTable rows={commissionRows} />
+                  <>
+                    <CommissionsTable rows={commissionRows} />
+                    <PaginationFooter
+                      label="commissions"
+                      page={commissionsPage}
+                      total={commissionsTotal}
+                      totalPages={commissionsTotalPages}
+                      visibleCount={commissionRows.length}
+                      busy={detailBusy}
+                      onPageChange={(page) => void loadTabData(selectedPartnerId, "commissions", page)}
+                    />
+                  </>
                 ) : (
-                  <TrackingTable rows={tripRows} />
+                  <>
+                    <TrackingTable rows={tripRows} />
+                    <PaginationFooter
+                      label="trips"
+                      page={tripsPage}
+                      total={tripsTotal}
+                      totalPages={tripsTotalPages}
+                      visibleCount={tripRows.length}
+                      busy={detailBusy}
+                      onPageChange={(page) => void loadTabData(selectedPartnerId, "tracking", page)}
+                    />
+                  </>
                 )}
               </div>
             </div>
@@ -743,27 +1068,105 @@ function TrackingTable({ rows }: { rows: ChannelPartnerTripPayload[] }) {
       <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
         <tr>
           <Th>Vehicle</Th>
-          <Th>Invoice</Th>
           <Th>Route</Th>
-          <Th>Status</Th>
-          <Th>Last Location</Th>
-          <Th>Updated</Th>
+          <Th>Trip Progress</Th>
+          <Th>Current Location</Th>
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
-        {rows.map((row) => (
-          <tr key={row.id} className="hover:bg-slate-50">
-            <Td>{row.vehicleNumber || "Vehicle pending"}</Td>
-            <Td>{row.invoice?.invoiceNumber || "-"}</Td>
-            <Td>{row.src || "-"} → {row.dest || "-"}</Td>
-            <Td><StatusPill status={row.status} /></Td>
-            <Td className="max-w-md">{row.lastLocation?.address || "Latest location unavailable"}</Td>
-            <Td>{formatDate(row.updatedAt)}</Td>
-          </tr>
-        ))}
-        {!rows.length ? <EmptyRow colSpan={6} label="No trips match this view." /> : null}
+        {rows.map((row) => {
+          const source = firstReadable(row.sourceName, row.src) || "Pickup point";
+          const destination = firstReadable(row.destinationName, row.dest) || "Delivery point";
+          const progress = tripProgress(row);
+          const detail = tripProgressDetail(row);
+          return (
+            <tr key={row.id} className="hover:bg-slate-50">
+              <Td>
+                <p className="font-semibold text-slate-900">{row.vehicleNumber || "Vehicle pending"}</p>
+                <p className="text-xs text-slate-500">{row.invoice?.invoiceNumber || "Invoice pending"}</p>
+              </Td>
+              <Td className="min-w-[18rem]">
+                <div className="flex items-start gap-2">
+                  <Route className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+                  <div>
+                    <p className="font-semibold text-slate-800">{source}</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500">to {destination}</p>
+                  </div>
+                </div>
+              </Td>
+              <Td className="min-w-[14rem]">
+                <div className="flex items-center justify-between gap-3">
+                  <StatusPill status={row.status} />
+                  <span className="text-sm font-bold text-slate-900">{progress}%</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
+                </div>
+                {detail ? <p className="mt-1 text-xs text-slate-500">{detail}</p> : null}
+              </Td>
+              <Td className="max-w-sm">
+                <p className="truncate font-medium text-slate-700">{row.lastLocation?.address || "Current location pending"}</p>
+                {row.lastLocation?.timeRecorded ? (
+                  <p className="mt-1 inline-flex items-center gap-1 text-xs text-slate-500">
+                    <Clock3 className="h-3.5 w-3.5" />
+                    {formatDate(row.lastLocation.timeRecorded)}
+                  </p>
+                ) : null}
+              </Td>
+            </tr>
+          );
+        })}
+        {!rows.length ? <EmptyRow colSpan={4} label="No trips match this view." /> : null}
       </tbody>
     </Table>
+  );
+}
+
+function PaginationFooter({
+  label,
+  page,
+  total,
+  totalPages,
+  visibleCount,
+  busy,
+  onPageChange,
+}: {
+  label: string;
+  page: number;
+  total: number;
+  totalPages: number;
+  visibleCount: number;
+  busy: boolean;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalPages <= 1 && total <= visibleCount) return null;
+
+  return (
+    <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-3">
+      <span className="text-xs font-semibold text-slate-500">
+        Showing {visibleCount} of {total} {label} · Page {page} of {totalPages}
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={busy || page <= 1}
+          onClick={() => onPageChange(page - 1)}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+          aria-label={`Previous ${label} page`}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          disabled={busy || page >= totalPages}
+          onClick={() => onPageChange(page + 1)}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+          aria-label={`Next ${label} page`}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
   );
 }
 

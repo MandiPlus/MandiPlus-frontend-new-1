@@ -28,10 +28,26 @@ async function withAuthRetry<T>(request: () => Promise<T>): Promise<T> {
   }
 }
 
-export async function getMyChannelPartnerDashboard(): Promise<ChannelPartnerDetailPayload> {
+export type ChannelPartnerDashboardFilters = {
+  scope?: "summary" | "profile" | "customer-stats" | "invoices" | "commissions" | "trips" | "all";
+  page?: number;
+  limit?: number;
+  customerId?: string;
+  status?: string;
+  startDate?: string;
+  endDate?: string;
+  invoiceSearch?: string;
+};
+
+export async function getMyChannelPartnerDashboard(
+  filters?: ChannelPartnerDashboardFilters,
+  options?: { signal?: AbortSignal },
+): Promise<ChannelPartnerDetailPayload> {
   const response = await withAuthRetry(() =>
     axios.get(`${API_BASE_URL}/channel-partners/me/dashboard`, {
       headers: getAuthHeader(),
+      params: filters,
+      signal: options?.signal,
     }),
   );
   return response.data?.data ?? response.data;
@@ -45,7 +61,13 @@ export async function onboardChannelPartnerCustomer(data: {
   mandiName?: string;
   products: string[];
   identity?: string;
-}): Promise<any> {
+}): Promise<{
+  success?: boolean;
+  message?: string;
+  data?: {
+    status?: string;
+  };
+}> {
   const response = await withAuthRetry(() =>
     axios.post(`${API_BASE_URL}/channel-partners/me/customers`, data, {
       headers: getAuthHeader(),
@@ -53,4 +75,3 @@ export async function onboardChannelPartnerCustomer(data: {
   );
   return response.data;
 }
-

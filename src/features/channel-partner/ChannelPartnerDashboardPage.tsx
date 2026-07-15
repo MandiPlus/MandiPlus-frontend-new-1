@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import {
@@ -11,9 +11,11 @@ import {
   Search,
   Users,
   UserPlus,
-  Plus,
   X,
+  Clock3,
+  ChevronLeft,
   ChevronRight,
+  Route,
 } from "lucide-react";
 import ProtectedRoute from "@/features/auth/components/ProtectedRoute";
 import { useAuth } from "@/features/auth/context/AuthContext";
@@ -73,6 +75,17 @@ const commonCommodities = [
   "Mango", "Tender Coconut", "Pineapple", "Mosambi", "Coconut", "Paddy", "Wheat", "Rice"
 ];
 
+const INVOICE_PAGE_SIZE = 20;
+const TAB_PAGE_SIZE = 50;
+
+const EMPTY_CUSTOMER_STATS = {
+  invoices: 0,
+  premiumTotal: 0,
+  pendingPayments: 0,
+  activeTrips: 0,
+  lastInvoiceDate: null,
+};
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -110,13 +123,76 @@ function searchable(value: unknown) {
   return String(value || "").toLowerCase();
 }
 
+function isRequestCanceled(error: unknown) {
+  if (error == null || typeof error !== "object") return false;
+  const candidate = error as { name?: string; code?: string };
+  return candidate.name === "AbortError" || candidate.name === "CanceledError" || candidate.code === "ERR_CANCELED";
+}
+
+function firstReadable(...values: Array<string | null | undefined>) {
+  return values.find((value) => {
+    const trimmed = String(value || "").trim();
+    return trimmed && !/^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(trimmed);
+  }) || "";
+}
+
+function parseDistanceKm(value?: string | number | null) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (!value) return null;
+  const match = String(value).replace(/,/g, "").match(/-?\d+(\.\d+)?/);
+  return match ? Number(match[0]) : null;
+}
+
+function tripProgress(row: NonNullable<ChannelPartnerDetailPayload["trips"]>[number]) {
+  const traveled = parseDistanceKm(row.lastLocation?.distanceTravel);
+  const total = parseDistanceKm(row.lastLocation?.totalDistance);
+  if (traveled !== null && total && total > 0) {
+    return Math.max(0, Math.min(100, Math.round((traveled / total) * 100)));
+  }
+
+  const remaining = parseDistanceKm(row.lastLocation?.distanceRemained);
+  if (remaining !== null && total && total > 0) {
+    return Math.max(0, Math.min(100, Math.round(((total - remaining) / total) * 100)));
+  }
+
+  const status = String(row.status || "").toUpperCase();
+  if (status === "ENDED" || status === "COMPLETED") return 100;
+  if (status === "ACTIVE" || status === "IN_PROGRESS") return 50;
+  return 0;
+}
+
+function formatProgressLabel(row: NonNullable<ChannelPartnerDetailPayload["trips"]>[number]) {
+  const progress = tripProgress(row);
+  const remaining = row.lastLocation?.distanceRemained;
+  const time = row.lastLocation?.timeRemained;
+  const detail = [remaining ? `${remaining} left` : "", time ? `${time}` : ""].filter(Boolean).join(" · ");
+  return { progress, detail };
+}
+
 export default function ChannelPartnerDashboardPage() {
   const { user, logout } = useAuth();
   const [payload, setPayload] = useState<ChannelPartnerDetailPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [tableLoading, setTableLoading] = useState(false);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<PartnerTab>("customers");
   const [tableSearch, setTableSearch] = useState("");
+  const [debouncedInvoiceSearch, setDebouncedInvoiceSearch] = useState("");
+  const [customerStats, setCustomerStats] = useState<NonNullable<ChannelPartnerDetailPayload["customerStats"]>>({});
+  const [invoicesPage, setInvoicesPage] = useState(1);
+  const [invoicesTotal, setInvoicesTotal] = useState(0);
+  const [invoicesTotalPages, setInvoicesTotalPages] = useState(1);
+  const [commissionsPage, setCommissionsPage] = useState(1);
+  const [commissionsTotal, setCommissionsTotal] = useState(0);
+  const [commissionsTotalPages, setCommissionsTotalPages] = useState(1);
+  const [tripsPage, setTripsPage] = useState(1);
+  const [tripsTotal, setTripsTotal] = useState(0);
+  const [tripsTotalPages, setTripsTotalPages] = useState(1);
+  const profileRequestRef = useRef<AbortController | null>(null);
+  const summaryRequestRef = useRef<AbortController | null>(null);
+  const customerStatsRequestRef = useRef<AbortController | null>(null);
+  const tabRequestRef = useRef<AbortController | null>(null);
 
   // Onboarding Modal States
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
@@ -131,24 +207,173 @@ export default function ChannelPartnerDashboardPage() {
   });
   const [onboardingBusy, setOnboardingBusy] = useState(false);
 
-  const loadDashboard = useCallback(async () => {
+  const loadProfile = useCallback(async () => {
+    profileRequestRef.current?.abort();
+    const controller = new AbortController();
+    profileRequestRef.current = controller;
+
     setLoading(true);
     setError("");
     try {
-      setPayload(await getMyChannelPartnerDashboard());
+      const response = await getMyChannelPartnerDashboard({ scope: "profile" }, { signal: controller.signal });
+      setPayload((current) => ({
+        ...response,
+        summary: current?.summary || response.summary,
+        customers: response.customers || [],
+        invoices: current?.invoices || [],
+        commissions: current?.commissions || [],
+        trips: current?.trips || [],
+      }));
     } catch (err: unknown) {
+      if (isRequestCanceled(err)) return;
       const message =
         err instanceof Error ? err.message : "Failed to load channel partner dashboard";
       setError(message);
       setPayload(null);
     } finally {
-      setLoading(false);
+      if (profileRequestRef.current === controller) {
+        setLoading(false);
+      }
     }
   }, []);
 
+  const loadSummary = useCallback(async () => {
+    summaryRequestRef.current?.abort();
+    const controller = new AbortController();
+    summaryRequestRef.current = controller;
+
+    setSummaryLoading(true);
+    try {
+      const response = await getMyChannelPartnerDashboard({ scope: "summary" }, { signal: controller.signal });
+      setPayload((current) => current ? { ...current, summary: response.summary || current.summary } : {
+        profile: response.profile || null,
+        summary: response.summary,
+        customers: [],
+        invoices: [],
+        commissions: [],
+        trips: [],
+        message: response.message,
+      });
+    } catch (err: unknown) {
+      if (!isRequestCanceled(err)) {
+        toast.error(err instanceof Error ? err.message : "Failed to load partner summary");
+      }
+    } finally {
+      if (summaryRequestRef.current === controller) {
+        setSummaryLoading(false);
+      }
+    }
+  }, []);
+
+  const loadCustomerStats = useCallback(async () => {
+    customerStatsRequestRef.current?.abort();
+    const controller = new AbortController();
+    customerStatsRequestRef.current = controller;
+
+    try {
+      const response = await getMyChannelPartnerDashboard({ scope: "customer-stats" }, { signal: controller.signal });
+      setCustomerStats(response.customerStats || {});
+    } catch (err: unknown) {
+      if (!isRequestCanceled(err)) {
+        toast.error(err instanceof Error ? err.message : "Failed to load customer stats");
+      }
+    }
+  }, []);
+
+  const loadTabData = useCallback(async (tab: PartnerTab, page = 1) => {
+    if (tab === "customers") return;
+
+    tabRequestRef.current?.abort();
+    const controller = new AbortController();
+    tabRequestRef.current = controller;
+
+    setTableLoading(true);
+    try {
+      const response = await getMyChannelPartnerDashboard(
+        {
+          scope: tab === "tracking" ? "trips" : tab,
+          page,
+          limit: tab === "invoices" ? INVOICE_PAGE_SIZE : TAB_PAGE_SIZE,
+          invoiceSearch: tab === "invoices" && debouncedInvoiceSearch ? debouncedInvoiceSearch : undefined,
+        },
+        { signal: controller.signal },
+      );
+
+      setPayload((current) => {
+        if (!current) return current;
+        if (tab === "invoices") return { ...current, invoices: response.invoices || [] };
+        if (tab === "commissions") return { ...current, commissions: response.commissions || [] };
+        return { ...current, trips: response.trips || [] };
+      });
+
+      const total = response.total || 0;
+      const totalPages = Math.max(1, Number(response.totalPages || 0) || 1);
+      const safePage = response.page || page;
+      if (tab === "invoices") {
+        setInvoicesTotal(total);
+        setInvoicesTotalPages(totalPages);
+        setInvoicesPage(safePage);
+      } else if (tab === "commissions") {
+        setCommissionsTotal(total);
+        setCommissionsTotalPages(totalPages);
+        setCommissionsPage(safePage);
+      } else {
+        setTripsTotal(total);
+        setTripsTotalPages(totalPages);
+        setTripsPage(safePage);
+      }
+    } catch (err: unknown) {
+      if (!isRequestCanceled(err)) {
+        toast.error(err instanceof Error ? err.message : `Failed to load ${tab}`);
+      }
+    } finally {
+      if (tabRequestRef.current === controller) {
+        setTableLoading(false);
+      }
+    }
+  }, [debouncedInvoiceSearch]);
+
+  const loadDashboard = useCallback(async () => {
+    await Promise.all([loadProfile(), loadSummary()]);
+    if (activeTab === "customers") {
+      await loadCustomerStats();
+    } else {
+      await loadTabData(activeTab, 1);
+    }
+  }, [activeTab, loadCustomerStats, loadProfile, loadSummary, loadTabData]);
+
   useEffect(() => {
-    void loadDashboard();
-  }, [loadDashboard]);
+    void Promise.all([loadProfile(), loadSummary()]);
+  }, [loadProfile, loadSummary]);
+
+  useEffect(() => {
+    if (activeTab !== "invoices") {
+      setDebouncedInvoiceSearch("");
+      return;
+    }
+    const timer = setTimeout(() => setDebouncedInvoiceSearch(tableSearch.trim()), 350);
+    return () => clearTimeout(timer);
+  }, [activeTab, tableSearch]);
+
+  useEffect(() => {
+    if (!payload?.profile) return;
+    if (activeTab === "customers") {
+      tabRequestRef.current?.abort();
+      setTableLoading(false);
+      void loadCustomerStats();
+      return;
+    }
+    void loadTabData(activeTab, 1);
+  }, [activeTab, loadCustomerStats, loadTabData, payload?.profile]);
+
+  useEffect(() => {
+    return () => {
+      profileRequestRef.current?.abort();
+      summaryRequestRef.current?.abort();
+      customerStatsRequestRef.current?.abort();
+      tabRequestRef.current?.abort();
+    };
+  }, []);
 
   const summary = payload?.summary;
   const statItems = useMemo(
@@ -173,14 +398,17 @@ export default function ChannelPartnerDashboardPage() {
 
   const q = tableSearch.trim().toLowerCase();
   const customerRows = useMemo(() => {
-    const rows = payload?.customers || [];
+    const rows = (payload?.customers || []).map((row) => ({
+      ...row,
+      stats: row.stats || customerStats[row.customer.id] || EMPTY_CUSTOMER_STATS,
+    }));
     if (!q) return rows;
     return rows.filter((row) =>
       [row.customer.name, row.customer.mobileNumber, row.customer.identity].some((item) =>
         searchable(item).includes(q),
       ),
     );
-  }, [payload?.customers, q]);
+  }, [customerStats, payload?.customers, q]);
 
   const invoiceRows = useMemo(() => {
     const rows = payload?.invoices || [];
@@ -238,7 +466,13 @@ export default function ChannelPartnerDashboardPage() {
     try {
       const response = await onboardCustomerCustomerData();
       if (response.success) {
-        toast.success("Customer onboarded successfully");
+        const status = String(response.data?.status || "").toUpperCase();
+        toast.success(
+          response.message ||
+            (status === "PENDING"
+              ? "Customer already exists. Sent to admin for approval."
+              : "Customer onboarded successfully"),
+        );
         setIsOnboardingOpen(false);
         setOnboardForm({
           name: "",
@@ -253,8 +487,9 @@ export default function ChannelPartnerDashboardPage() {
       } else {
         toast.error(response.message || "Failed to onboard customer");
       }
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || err.message || "Failed to onboard customer");
+    } catch (err: unknown) {
+      const candidate = err as { response?: { data?: { message?: string } }; message?: string };
+      toast.error(candidate.response?.data?.message || candidate.message || "Failed to onboard customer");
     } finally {
       setOnboardingBusy(false);
     }
@@ -354,7 +589,7 @@ export default function ChannelPartnerDashboardPage() {
           ) : (
             <>
               {/* Analytics Blocks */}
-              <section className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+              <section className={`grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6 ${summaryLoading ? "opacity-70" : ""}`}>
                 {statItems.map((item) => (
                   <div key={item.label} className="rounded-lg border border-slate-100 bg-white p-4 shadow-sm transition hover:shadow">
                     <div className="flex items-center justify-between text-slate-400">
@@ -400,16 +635,54 @@ export default function ChannelPartnerDashboardPage() {
                 </div>
 
                 {/* Minimalist Data Tables */}
-                <div className="max-h-[520px] overflow-auto">
-                  {activeTab === "customers" ? (
-                    <PartnerCustomers rows={customerRows} />
-                  ) : activeTab === "invoices" ? (
-                    <PartnerInvoices rows={invoiceRows} />
+                <div className="relative">
+                  {tableLoading ? (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-[1px]">
+                      <RefreshCw className="h-5 w-5 animate-spin text-blue-600" />
+                    </div>
+                  ) : null}
+                  <div className={`max-h-[520px] overflow-auto ${tableLoading ? "opacity-50" : ""}`}>
+                    {activeTab === "customers" ? (
+                      <PartnerCustomers rows={customerRows} />
+                    ) : activeTab === "invoices" ? (
+                      <PartnerInvoices rows={invoiceRows} />
+                    ) : activeTab === "commissions" ? (
+                      <PartnerCommissions rows={commissionRows} />
+                    ) : (
+                      <PartnerTrips rows={tripRows} />
+                    )}
+                  </div>
+                  {activeTab === "invoices" ? (
+                    <PaginationFooter
+                      label="invoices"
+                      page={invoicesPage}
+                      total={invoicesTotal}
+                      totalPages={invoicesTotalPages}
+                      visibleCount={invoiceRows.length}
+                      busy={tableLoading}
+                      onPageChange={(page) => void loadTabData("invoices", page)}
+                    />
                   ) : activeTab === "commissions" ? (
-                    <PartnerCommissions rows={commissionRows} />
-                  ) : (
-                    <PartnerTrips rows={tripRows} />
-                  )}
+                    <PaginationFooter
+                      label="commissions"
+                      page={commissionsPage}
+                      total={commissionsTotal}
+                      totalPages={commissionsTotalPages}
+                      visibleCount={commissionRows.length}
+                      busy={tableLoading}
+                      onPageChange={(page) => void loadTabData("commissions", page)}
+                    />
+                  ) : activeTab === "tracking" ? (
+                    <PaginationFooter
+                      label="trips"
+                      page={tripsPage}
+                      total={tripsTotal}
+                      totalPages={tripsTotalPages}
+                      visibleCount={tripRows.length}
+                      busy={tableLoading}
+                      onPageChange={(page) => void loadTabData("tracking", page)}
+                    />
+                  ) : null}
                 </div>
               </section>
             </>
@@ -702,32 +975,110 @@ function PartnerTrips({ rows }: { rows: NonNullable<ChannelPartnerDetailPayload[
     <table className="min-w-full divide-y divide-slate-200 text-sm">
       <thead className="sticky top-0 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
         <tr>
-          <th className="px-4 py-3">Vehicle Number</th>
-          <th className="px-4 py-3">Invoice Number</th>
-          <th className="px-4 py-3">Route Map</th>
-          <th className="px-4 py-3">Tracking Status</th>
+          <th className="px-4 py-3">Vehicle</th>
+          <th className="px-4 py-3">Route</th>
+          <th className="px-4 py-3">Trip Progress</th>
           <th className="px-4 py-3">Current Location</th>
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
-        {rows.map((row) => (
-          <tr key={row.id} className="hover:bg-slate-50 transition">
-            <td className="px-4 py-3 font-semibold text-slate-900">{row.vehicleNumber || "Vehicle Pending"}</td>
-            <td className="px-4 py-3 text-slate-600">{row.invoice?.invoiceNumber || "-"}</td>
-            <td className="px-4 py-3 text-slate-600">
-              {row.src || "-"} <span className="text-slate-400">→</span> {row.dest || "-"}
-            </td>
-            <td className="px-4 py-3">
-              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${statusClass(row.status)}`}>
-                {row.status}
-              </span>
-            </td>
-            <td className="px-4 py-3 text-slate-500 max-w-xs truncate">{row.lastLocation?.address || "Location pending"}</td>
-          </tr>
-        ))}
-        {!rows.length ? <EmptyRow colSpan={5} label="No active tracking shipments." /> : null}
+        {rows.map((row) => {
+          const source = firstReadable(row.sourceName, row.src) || "Source pending";
+          const destination = firstReadable(row.destinationName, row.dest) || "Destination pending";
+          const { progress, detail } = formatProgressLabel(row);
+          return (
+            <tr key={row.id} className="hover:bg-slate-50 transition">
+              <td className="px-4 py-4">
+                <p className="font-semibold text-slate-900">{row.vehicleNumber || "Vehicle pending"}</p>
+                <p className="text-xs text-slate-500">{row.invoice?.invoiceNumber || "Invoice pending"}</p>
+              </td>
+              <td className="px-4 py-4 min-w-[18rem]">
+                <div className="flex items-start gap-2">
+                  <Route className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+                  <div>
+                    <p className="font-semibold text-slate-800">{source}</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500">to {destination}</p>
+                  </div>
+                </div>
+              </td>
+              <td className="px-4 py-4 min-w-[14rem]">
+                <div className="flex items-center justify-between gap-3">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${statusClass(row.status)}`}>
+                    {row.status}
+                  </span>
+                  <span className="text-sm font-bold text-slate-900">{progress}%</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-blue-600 transition-all"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+                {detail ? <p className="mt-1 text-xs text-slate-500">{detail}</p> : null}
+              </td>
+              <td className="px-4 py-4 max-w-sm">
+                <p className="truncate font-medium text-slate-700">{row.lastLocation?.address || "Current location pending"}</p>
+                {row.lastLocation?.timeRecorded ? (
+                  <p className="mt-1 inline-flex items-center gap-1 text-xs text-slate-500">
+                    <Clock3 className="h-3.5 w-3.5" />
+                    {formatDate(row.lastLocation.timeRecorded)}
+                  </p>
+                ) : null}
+              </td>
+            </tr>
+          );
+        })}
+        {!rows.length ? <EmptyRow colSpan={4} label="No active tracking shipments." /> : null}
       </tbody>
     </table>
+  );
+}
+
+function PaginationFooter({
+  label,
+  page,
+  total,
+  totalPages,
+  visibleCount,
+  busy,
+  onPageChange,
+}: {
+  label: string;
+  page: number;
+  total: number;
+  totalPages: number;
+  visibleCount: number;
+  busy: boolean;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalPages <= 1 && total <= visibleCount) return null;
+
+  return (
+    <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-3">
+      <span className="text-xs font-semibold text-slate-500">
+        Showing {visibleCount} of {total} {label} · Page {page} of {totalPages}
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={busy || page <= 1}
+          onClick={() => onPageChange(page - 1)}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+          aria-label={`Previous ${label} page`}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          disabled={busy || page >= totalPages}
+          onClick={() => onPageChange(page + 1)}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+          aria-label={`Next ${label} page`}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
   );
 }
 
