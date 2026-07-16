@@ -120,6 +120,43 @@ export interface AdminAppCustomersSummary {
   releaseDate: string;
 }
 
+export type CustomerAccountRole = "OWNER" | "MANAGER" | "EMPLOYEE" | "VIEWER";
+export type CustomerAccountMembershipStatus =
+  | "INVITED"
+  | "ACTIVE"
+  | "SUSPENDED"
+  | "REVOKED";
+
+export interface CustomerAccountUserSummary {
+  id: string;
+  name?: string | null;
+  mobileNumber?: string | null;
+  secondaryMobileNumber?: string | null;
+  identity?: string | null;
+  state?: string | null;
+  isLedgerMasterVerified?: boolean;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface CustomerAccountMembership {
+  id: string;
+  tenantId: string;
+  accountUserId: string;
+  memberUserId: string;
+  role: CustomerAccountRole;
+  status: CustomerAccountMembershipStatus;
+  isDefault: boolean;
+  invitedMobileNumber?: string | null;
+  invitedByAdminId?: string | null;
+  acceptedAt?: string | null;
+  revokedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  accountUser?: CustomerAccountUserSummary | null;
+  memberUser?: CustomerAccountUserSummary | null;
+}
+
 export type AdminCustomerNotificationDeliveryStatus =
   | "pending"
   | "sent"
@@ -1810,6 +1847,99 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || 'Failed to fetch app customers',
+      };
+    }
+  };
+
+  public getCustomerAccountMemberships = async (
+    accountUserId: string,
+  ): Promise<ApiResponse<CustomerAccountMembership[]>> => {
+    try {
+      const response = await this.client.get('/customer-accounts/admin/memberships', {
+        params: { accountUserId },
+      });
+      const rows = Array.isArray(response.data)
+        ? response.data
+        : ((response.data as any)?.data ?? []);
+      return { success: true, data: rows };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to fetch account memberships',
+        error: error.message,
+      };
+    }
+  };
+
+  public createCustomerAccountMembership = async (payload: {
+    accountUserId: string;
+    memberUserId: string;
+    role: CustomerAccountRole;
+  }): Promise<ApiResponse<CustomerAccountMembership>> => {
+    try {
+      const response = await this.client.post(
+        '/customer-accounts/admin/memberships',
+        payload,
+      );
+      return {
+        success: true,
+        data: (response.data as any)?.data ?? response.data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to create account membership',
+        error: error.message,
+      };
+    }
+  };
+
+  public updateCustomerAccountMembership = async (
+    id: string,
+    payload: Partial<{
+      role: CustomerAccountRole;
+      status: CustomerAccountMembershipStatus;
+      isDefault: boolean;
+    }>,
+  ): Promise<ApiResponse<CustomerAccountMembership>> => {
+    try {
+      const response = await this.client.patch(
+        `/customer-accounts/admin/memberships/${id}`,
+        payload,
+      );
+      return {
+        success: true,
+        data: (response.data as any)?.data ?? response.data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to update account membership',
+        error: error.message,
+      };
+    }
+  };
+
+  public revokeCustomerAccountMembership = async (
+    id: string,
+  ): Promise<ApiResponse<CustomerAccountMembership>> => {
+    try {
+      const response = await this.client.delete(
+        `/customer-accounts/admin/memberships/${id}`,
+      );
+      return {
+        success: true,
+        data: (response.data as any)?.data ?? response.data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to revoke account membership',
+        error: error.message,
       };
     }
   };

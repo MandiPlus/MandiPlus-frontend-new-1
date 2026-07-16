@@ -25,6 +25,7 @@ import {
   DevicePhoneMobileIcon,
   UserCircleIcon,
   BellAlertIcon,
+  LinkIcon,
 } from '@heroicons/react/24/outline';
 
 export const ADMIN_SECTIONS = [
@@ -32,6 +33,7 @@ export const ADMIN_SECTIONS = [
   'users',
   'ledger',
   'app-customers',
+  'account-memberships',
   'app-invoices',
   'app-quick-details',
   'insurance-forms',
@@ -88,6 +90,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Users', href: '/admin/users', icon: UsersIcon, section: 'users' },
   { name: 'Ledger', href: '/admin/ledger', icon: DocumentTextIcon, section: 'ledger' },
   { name: 'Customers', href: '/admin/app-customers', icon: UserCircleIcon, section: 'app-customers' },
+  { name: 'Account Memberships', href: '/admin/account-memberships', icon: LinkIcon, section: 'account-memberships' },
   { name: 'Invoices', href: '/admin/app-invoices', icon: DevicePhoneMobileIcon, section: 'app-invoices' },
   { name: 'Quick Details', href: '/admin/quick-details', icon: InboxArrowDownIcon, section: 'app-quick-details' },
   { name: 'Invoice / Insurance Forms', href: '/admin/insurance-forms', icon: FolderIcon, section: 'insurance-forms' },
@@ -123,7 +126,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   },
   {
     name: 'App',
-    sections: ['app-customers', 'app-invoices', 'app-quick-details', 'notifications'],
+    sections: ['app-customers', 'account-memberships', 'app-invoices', 'app-quick-details', 'notifications'],
   },
   {
     name: 'Invoices',
@@ -152,6 +155,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/users': 'users',
   '/admin/ledger': 'ledger',
   '/admin/app-customers': 'app-customers',
+  '/admin/account-memberships': 'account-memberships',
   '/admin/app-invoices': 'app-invoices',
   '/admin/app/notifications': 'notifications',
   '/admin/quick-details': 'app-quick-details',
