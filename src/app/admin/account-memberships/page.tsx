@@ -8,9 +8,10 @@ import {
   LinkIcon,
   MagnifyingGlassIcon,
   NoSymbolIcon,
+  PlusIcon,
   ShieldCheckIcon,
   UserCircleIcon,
-  XCircleIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import {
   AdminLedgerUser,
@@ -42,6 +43,10 @@ function getUserId(user?: AdminLedgerUser | null) {
   return user?.id || user?._id || '';
 }
 
+function displayName(user?: AdminLedgerUser | CustomerAccountMembership['memberUser'] | null) {
+  return user?.name || 'Unnamed user';
+}
+
 function formatPhone(value?: string | null) {
   if (!value) return '-';
   const digits = value.replace(/\D/g, '');
@@ -65,23 +70,84 @@ function formatDateTime(value?: string | null) {
   });
 }
 
-function displayName(user?: AdminLedgerUser | CustomerAccountMembership['memberUser'] | null) {
-  return user?.name || 'Unnamed user';
+function StatusPill({ status }: { status: CustomerAccountMembershipStatus }) {
+  return (
+    <span className={classNames('inline-flex rounded-md px-2 py-1 text-xs font-bold ring-1', statusClasses[status])}>
+      {status}
+    </span>
+  );
 }
 
-function UserSearchBox({
-  label,
+function UserResultButton({
+  user,
+  onSelect,
+  disabled,
+  note,
+}: {
+  user: AdminLedgerUser;
+  onSelect: (user: AdminLedgerUser) => void;
+  disabled?: boolean;
+  note?: string;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onSelect(user)}
+      className="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-3 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-55"
+    >
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-slate-100">
+        <UserCircleIcon className="h-5 w-5 text-slate-500" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-bold text-slate-900">{displayName(user)}</p>
+        <p className="text-xs font-semibold text-slate-500">
+          {formatPhone(user.mobileNumber)} {user.identity ? `| ${user.identity}` : ''}
+          {user.state ? ` | ${user.state}` : ''}
+        </p>
+      </div>
+      {note ? <span className="shrink-0 text-xs font-bold text-slate-400">{note}</span> : null}
+      {user.isLedgerMasterVerified ? <ShieldCheckIcon className="h-5 w-5 shrink-0 text-emerald-600" /> : null}
+    </button>
+  );
+}
+
+function UserSearchInput({
+  value,
+  onChange,
+  placeholder,
+  autoFocus,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  autoFocus?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2.5 shadow-sm focus-within:border-[#4309ac] focus-within:ring-2 focus-within:ring-[#4309ac]/15">
+      <MagnifyingGlassIcon className="h-5 w-5 shrink-0 text-slate-400" />
+      <input
+        value={value}
+        autoFocus={autoFocus}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="min-w-0 flex-1 border-0 bg-transparent text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-400"
+      />
+    </div>
+  );
+}
+
+function PrimaryAccountSelector({
   query,
-  selectedUser,
+  selectedAccount,
   results,
   loading,
   onQueryChange,
   onSelect,
   onClear,
 }: {
-  label: string;
   query: string;
-  selectedUser: AdminLedgerUser | null;
+  selectedAccount: AdminLedgerUser | null;
   results: AdminLedgerUser[];
   loading: boolean;
   onQueryChange: (value: string) => void;
@@ -89,86 +155,240 @@ function UserSearchBox({
   onClear: () => void;
 }) {
   return (
-    <div>
-      <label className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
-        {label}
-      </label>
-      <div className="mt-2 rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2">
-          <MagnifyingGlassIcon className="h-5 w-5 shrink-0 text-slate-400" />
-          <input
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Search name or mobile"
-            className="min-w-0 flex-1 border-0 bg-transparent py-1 text-sm font-medium text-slate-900 outline-none placeholder:text-slate-400"
-          />
-          {selectedUser ? (
+    <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 px-4 py-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-[0.08em] text-slate-700">Primary account</h2>
+            {selectedAccount ? (
+              <p className="mt-1 text-sm font-semibold text-slate-500">
+                {displayName(selectedAccount)} | {formatPhone(selectedAccount.mobileNumber)}
+              </p>
+            ) : null}
+          </div>
+          {selectedAccount ? (
             <button
               type="button"
               onClick={onClear}
-              className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-              aria-label={`Clear ${label}`}
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
             >
-              <XCircleIcon className="h-5 w-5" />
+              <XMarkIcon className="h-5 w-5" />
+              Change
             </button>
           ) : null}
         </div>
+      </div>
 
-        {selectedUser ? (
-          <div className="flex items-center gap-3 px-3 py-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[#4309ac]/10">
-              <UserCircleIcon className="h-6 w-6 text-[#4309ac]" />
+      <div className="p-4">
+        {selectedAccount ? (
+          <div className="flex items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-[#4309ac]/10">
+              <UserCircleIcon className="h-7 w-7 text-[#4309ac]" />
             </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-black text-slate-950">{displayName(selectedUser)}</p>
-              <p className="text-xs font-semibold text-slate-500">
-                {formatPhone(selectedUser.mobileNumber)} {selectedUser.identity ? `| ${selectedUser.identity}` : ''}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-base font-black text-slate-950">{displayName(selectedAccount)}</p>
+              <p className="text-sm font-semibold text-slate-500">
+                {formatPhone(selectedAccount.mobileNumber)} {selectedAccount.identity ? `| ${selectedAccount.identity}` : ''}
+                {selectedAccount.state ? ` | ${selectedAccount.state}` : ''}
               </p>
             </div>
+            {selectedAccount.isLedgerMasterVerified ? (
+              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 ring-1 ring-emerald-200">
+                <ShieldCheckIcon className="h-4 w-4" />
+                Verified
+              </span>
+            ) : null}
           </div>
         ) : (
-          <div className="max-h-64 overflow-y-auto">
-            {loading ? (
-              <div className="px-3 py-4 text-sm font-medium text-slate-500">Searching...</div>
-            ) : results.length > 0 ? (
-              results.map((user) => (
-                <button
-                  key={getUserId(user)}
-                  type="button"
-                  onClick={() => onSelect(user)}
-                  className="flex w-full items-center gap-3 border-b border-slate-50 px-3 py-3 text-left hover:bg-slate-50"
-                >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-slate-100">
-                    <UserCircleIcon className="h-5 w-5 text-slate-500" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold text-slate-900">{displayName(user)}</p>
-                    <p className="text-xs font-semibold text-slate-500">
-                      {formatPhone(user.mobileNumber)} {user.state ? `| ${user.state}` : ''}
-                    </p>
-                  </div>
-                  {user.isLedgerMasterVerified ? (
-                    <ShieldCheckIcon className="h-5 w-5 shrink-0 text-emerald-600" />
-                  ) : null}
-                </button>
-              ))
-            ) : query.trim().length >= 2 ? (
-              <div className="px-3 py-4 text-sm font-medium text-slate-500">No users found.</div>
-            ) : (
-              <div className="px-3 py-4 text-sm font-medium text-slate-500">Type at least 2 characters.</div>
-            )}
+          <div>
+            <UserSearchInput
+              value={query}
+              onChange={onQueryChange}
+              placeholder="Search account by name or mobile"
+              autoFocus
+            />
+            <div className="mt-3 overflow-hidden rounded-md border border-slate-200">
+              {loading ? (
+                <div className="px-3 py-4 text-sm font-semibold text-slate-500">Searching...</div>
+              ) : results.length > 0 ? (
+                results.map((user) => (
+                  <UserResultButton key={getUserId(user)} user={user} onSelect={onSelect} />
+                ))
+              ) : query.trim().length >= 2 ? (
+                <div className="px-3 py-4 text-sm font-semibold text-slate-500">No users found.</div>
+              ) : (
+                <div className="px-3 py-4 text-sm font-semibold text-slate-500">Type at least 2 characters.</div>
+              )}
+            </div>
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 }
 
-function StatusPill({ status }: { status: CustomerAccountMembershipStatus }) {
+function AssignUserPanel({
+  open,
+  onClose,
+  memberQuery,
+  onMemberQueryChange,
+  memberResults,
+  selectedMember,
+  onSelectMember,
+  onClearMember,
+  loading,
+  role,
+  onRoleChange,
+  onSubmit,
+  submitting,
+  selectedAccountId,
+  linkedMemberIds,
+}: {
+  open: boolean;
+  onClose: () => void;
+  memberQuery: string;
+  onMemberQueryChange: (value: string) => void;
+  memberResults: AdminLedgerUser[];
+  selectedMember: AdminLedgerUser | null;
+  onSelectMember: (user: AdminLedgerUser) => void;
+  onClearMember: () => void;
+  loading: boolean;
+  role: CustomerAccountRole;
+  onRoleChange: (role: CustomerAccountRole) => void;
+  onSubmit: () => void;
+  submitting: boolean;
+  selectedAccountId: string;
+  linkedMemberIds: Set<string>;
+}) {
+  if (!open) return null;
+
+  const selectedMemberId = getUserId(selectedMember);
+  const selectedMemberAlreadyLinked = Boolean(selectedMemberId && linkedMemberIds.has(selectedMemberId));
+  const canSubmit =
+    Boolean(selectedAccountId) &&
+    Boolean(selectedMemberId) &&
+    selectedAccountId !== selectedMemberId &&
+    !selectedMemberAlreadyLinked &&
+    !submitting;
+
   return (
-    <span className={classNames('inline-flex rounded-md px-2 py-1 text-xs font-bold ring-1', statusClasses[status])}>
-      {status}
-    </span>
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        aria-label="Close assign user panel"
+        className="absolute inset-0 bg-slate-950/35"
+        onClick={onClose}
+      />
+      <aside className="absolute right-0 top-0 flex h-full w-full max-w-lg flex-col bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <div>
+            <h3 className="text-lg font-black text-slate-950">Assign user</h3>
+            <p className="mt-0.5 text-sm font-semibold text-slate-500">Select a registered user and role.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs font-black uppercase tracking-[0.08em] text-slate-500">User</label>
+              <div className="mt-2">
+                {selectedMember ? (
+                  <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[#4309ac]/10">
+                        <UserCircleIcon className="h-6 w-6 text-[#4309ac]" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-black text-slate-950">{displayName(selectedMember)}</p>
+                        <p className="text-xs font-semibold text-slate-500">
+                          {formatPhone(selectedMember.mobileNumber)} {selectedMember.identity ? `| ${selectedMember.identity}` : ''}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={onClearMember}
+                        className="rounded-md p-2 text-slate-400 hover:bg-white hover:text-slate-700"
+                      >
+                        <XMarkIcon className="h-5 w-5" />
+                      </button>
+                    </div>
+                    {selectedMemberAlreadyLinked ? (
+                      <p className="mt-2 text-xs font-bold text-amber-700">This user is already linked to this account.</p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <>
+                    <UserSearchInput
+                      value={memberQuery}
+                      onChange={onMemberQueryChange}
+                      placeholder="Search user by name or mobile"
+                    />
+                    <div className="mt-3 overflow-hidden rounded-md border border-slate-200">
+                      {loading ? (
+                        <div className="px-3 py-4 text-sm font-semibold text-slate-500">Searching...</div>
+                      ) : memberResults.length > 0 ? (
+                        memberResults.map((user) => {
+                          const userId = getUserId(user);
+                          const isSelf = userId === selectedAccountId;
+                          const isLinked = linkedMemberIds.has(userId);
+                          return (
+                            <UserResultButton
+                              key={userId}
+                              user={user}
+                              disabled={isSelf || isLinked}
+                              note={isSelf ? 'Self' : isLinked ? 'Linked' : undefined}
+                              onSelect={onSelectMember}
+                            />
+                          );
+                        })
+                      ) : memberQuery.trim().length >= 2 ? (
+                        <div className="px-3 py-4 text-sm font-semibold text-slate-500">No users found.</div>
+                      ) : (
+                        <div className="px-3 py-4 text-sm font-semibold text-slate-500">Type at least 2 characters.</div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-black uppercase tracking-[0.08em] text-slate-500">Role</label>
+              <select
+                value={role}
+                onChange={(event) => onRoleChange(event.target.value as CustomerAccountRole)}
+                className="mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-900 outline-none focus:border-[#4309ac] focus:ring-2 focus:ring-[#4309ac]/15"
+              >
+                {roles.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-slate-200 px-5 py-4">
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={!canSubmit}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#4309ac] px-4 py-2.5 text-sm font-black text-white shadow-sm hover:bg-[#360888] disabled:cursor-not-allowed disabled:bg-slate-300"
+          >
+            {submitting ? <ArrowPathIcon className="h-5 w-5 animate-spin" /> : <LinkIcon className="h-5 w-5" />}
+            Add user
+          </button>
+        </div>
+      </aside>
+    </div>
   );
 }
 
@@ -184,6 +404,7 @@ export default function AccountMembershipsPage() {
   const [loadingAccountSearch, setLoadingAccountSearch] = useState(false);
   const [loadingMemberSearch, setLoadingMemberSearch] = useState(false);
   const [loadingMemberships, setLoadingMemberships] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
@@ -238,12 +459,12 @@ export default function AccountMembershipsPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      if (!selectedMember) {
+      if (assignOpen && !selectedMember) {
         void runSearch(memberQuery, setLoadingMemberSearch, setMemberResults);
       }
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [memberQuery, runSearch, selectedMember]);
+  }, [assignOpen, memberQuery, runSearch, selectedMember]);
 
   const loadMemberships = useCallback(async () => {
     if (!selectedAccountId) {
@@ -268,14 +489,31 @@ export default function AccountMembershipsPage() {
     void loadMemberships();
   }, [loadMemberships]);
 
+  const resetAssignForm = () => {
+    setSelectedMember(null);
+    setMemberQuery('');
+    setMemberResults([]);
+    setRole('MANAGER');
+  };
+
+  const closeAssignPanel = () => {
+    setAssignOpen(false);
+    resetAssignForm();
+  };
+
   const handleAttach = async () => {
     if (!selectedAccountId || !selectedMemberId) {
-      toast.error('Select both users first');
+      toast.error('Select a user first');
       return;
     }
 
     if (selectedAccountId === selectedMemberId) {
-      toast.error('Select a different member user');
+      toast.error('Select a different user');
+      return;
+    }
+
+    if (linkedMemberIds.has(selectedMemberId)) {
+      toast.error('This user is already linked');
       return;
     }
 
@@ -288,14 +526,12 @@ export default function AccountMembershipsPage() {
     setSubmitting(false);
 
     if (!response.success) {
-      toast.error(response.message || 'Failed to attach member');
+      toast.error(response.message || 'Failed to assign user');
       return;
     }
 
-    toast.success('Member attached to account');
-    setSelectedMember(null);
-    setMemberQuery('');
-    setMemberResults([]);
+    toast.success('User assigned');
+    closeAssignPanel();
     await loadMemberships();
   };
 
@@ -335,130 +571,59 @@ export default function AccountMembershipsPage() {
 
   return (
     <div className="space-y-4 py-4">
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <LinkIcon className="h-6 w-6 text-[#4309ac]" />
-              <h2 className="text-xl font-black text-slate-950">App Account Memberships</h2>
-            </div>
-            <p className="mt-1 text-sm font-medium text-slate-500">
-              Primary account data is shown to active members through their own login.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:flex">
-            <div className="rounded-md border border-slate-200 px-3 py-2">
-              <p className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Rows</p>
-              <p className="text-lg font-black text-slate-950">{memberships.length}</p>
-            </div>
-            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
-              <p className="text-xs font-bold uppercase tracking-[0.08em] text-emerald-700">Active</p>
-              <p className="text-lg font-black text-emerald-800">{activeCount}</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_18rem]">
-        <UserSearchBox
-          label="Primary account"
-          query={accountQuery}
-          selectedUser={selectedAccount}
-          results={accountResults}
-          loading={loadingAccountSearch}
-          onQueryChange={(value) => {
-            setAccountQuery(value);
-            setSelectedAccount(null);
-          }}
-          onSelect={(user) => {
-            setSelectedAccount(user);
-            setAccountQuery(`${user.name || ''} ${user.mobileNumber || ''}`.trim());
-            setAccountResults([]);
-          }}
-          onClear={() => {
-            setSelectedAccount(null);
-            setAccountQuery('');
-            setMemberships([]);
-          }}
-        />
-
-        <UserSearchBox
-          label="Member user"
-          query={memberQuery}
-          selectedUser={selectedMember}
-          results={memberResults.filter((user) => getUserId(user) !== selectedAccountId)}
-          loading={loadingMemberSearch}
-          onQueryChange={(value) => {
-            setMemberQuery(value);
-            setSelectedMember(null);
-          }}
-          onSelect={(user) => {
-            setSelectedMember(user);
-            setMemberQuery(`${user.name || ''} ${user.mobileNumber || ''}`.trim());
-            setMemberResults([]);
-          }}
-          onClear={() => {
-            setSelectedMember(null);
-            setMemberQuery('');
-          }}
-        />
-
-        <div>
-          <label className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
-            Access role
-          </label>
-          <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-            <select
-              value={role}
-              onChange={(event) => setRole(event.target.value as CustomerAccountRole)}
-              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-[#4309ac] focus:ring-2 focus:ring-[#4309ac]/15"
-            >
-              {roles.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={handleAttach}
-              disabled={
-                submitting ||
-                !selectedAccountId ||
-                !selectedMemberId ||
-                selectedAccountId === selectedMemberId ||
-                linkedMemberIds.has(selectedMemberId)
-              }
-              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#4309ac] px-3 py-2 text-sm font-bold text-white shadow-sm hover:bg-[#360888] disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              {submitting ? (
-                <ArrowPathIcon className="h-5 w-5 animate-spin" />
-              ) : (
-                <LinkIcon className="h-5 w-5" />
-              )}
-              Attach member
-            </button>
-          </div>
-        </div>
-      </section>
+      <PrimaryAccountSelector
+        query={accountQuery}
+        selectedAccount={selectedAccount}
+        results={accountResults}
+        loading={loadingAccountSearch}
+        onQueryChange={(value) => {
+          setAccountQuery(value);
+          setSelectedAccount(null);
+        }}
+        onSelect={(user) => {
+          setSelectedAccount(user);
+          setAccountQuery(`${user.name || ''} ${user.mobileNumber || ''}`.trim());
+          setAccountResults([]);
+        }}
+        onClear={() => {
+          setSelectedAccount(null);
+          setAccountQuery('');
+          setAccountResults([]);
+          setMemberships([]);
+          closeAssignPanel();
+        }}
+      />
 
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+        <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h3 className="text-sm font-black uppercase tracking-[0.08em] text-slate-700">Selected account members</h3>
-            <p className="mt-1 text-xs font-semibold text-slate-500">
-              {selectedAccount ? `${displayName(selectedAccount)} | ${formatPhone(selectedAccount.mobileNumber)}` : 'No primary account selected'}
+            <h2 className="text-sm font-black uppercase tracking-[0.08em] text-slate-700">Members</h2>
+            <p className="mt-1 text-sm font-semibold text-slate-500">
+              {selectedAccount
+                ? `${memberships.length} linked | ${activeCount} active`
+                : 'Select an account'}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={loadMemberships}
-            disabled={!selectedAccountId || loadingMemberships}
-            className="inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
-          >
-            <ArrowPathIcon className={classNames('h-5 w-5', loadingMemberships && 'animate-spin')} />
-            Refresh
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={loadMemberships}
+              disabled={!selectedAccountId || loadingMemberships}
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+            >
+              <ArrowPathIcon className={classNames('h-5 w-5', loadingMemberships && 'animate-spin')} />
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={() => setAssignOpen(true)}
+              disabled={!selectedAccountId}
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-[#4309ac] px-3 py-2 text-sm font-black text-white shadow-sm hover:bg-[#360888] disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              <PlusIcon className="h-5 w-5" />
+              Assign user
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -476,20 +641,33 @@ export default function AccountMembershipsPage() {
             <tbody className="divide-y divide-slate-100 bg-white">
               {!selectedAccountId ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm font-semibold text-slate-500">
-                    Select a primary account to load memberships.
+                  <td colSpan={6} className="px-4 py-12 text-center text-sm font-semibold text-slate-500">
+                    Search and select a primary account.
                   </td>
                 </tr>
               ) : loadingMemberships ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm font-semibold text-slate-500">
+                  <td colSpan={6} className="px-4 py-12 text-center text-sm font-semibold text-slate-500">
                     Loading memberships...
                   </td>
                 </tr>
               ) : memberships.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm font-semibold text-slate-500">
-                    No memberships found for this account.
+                  <td colSpan={6} className="px-4 py-12 text-center">
+                    <div className="mx-auto max-w-sm">
+                      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-md bg-slate-100">
+                        <LinkIcon className="h-5 w-5 text-slate-500" />
+                      </div>
+                      <p className="mt-3 text-sm font-bold text-slate-700">No linked users</p>
+                      <button
+                        type="button"
+                        onClick={() => setAssignOpen(true)}
+                        className="mt-3 inline-flex items-center justify-center gap-2 rounded-md bg-[#4309ac] px-3 py-2 text-sm font-black text-white hover:bg-[#360888]"
+                      >
+                        <PlusIcon className="h-5 w-5" />
+                        Assign user
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -600,6 +778,35 @@ export default function AccountMembershipsPage() {
           </table>
         </div>
       </section>
+
+      <AssignUserPanel
+        open={assignOpen}
+        onClose={closeAssignPanel}
+        memberQuery={memberQuery}
+        onMemberQueryChange={(value) => {
+          setMemberQuery(value);
+          setSelectedMember(null);
+        }}
+        memberResults={memberResults}
+        selectedMember={selectedMember}
+        onSelectMember={(user) => {
+          setSelectedMember(user);
+          setMemberQuery(`${user.name || ''} ${user.mobileNumber || ''}`.trim());
+          setMemberResults([]);
+        }}
+        onClearMember={() => {
+          setSelectedMember(null);
+          setMemberQuery('');
+          setMemberResults([]);
+        }}
+        loading={loadingMemberSearch}
+        role={role}
+        onRoleChange={setRole}
+        onSubmit={handleAttach}
+        submitting={submitting}
+        selectedAccountId={selectedAccountId}
+        linkedMemberIds={linkedMemberIds}
+      />
     </div>
   );
 }
