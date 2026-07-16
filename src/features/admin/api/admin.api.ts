@@ -55,6 +55,15 @@ export interface AdminLedgerUser extends User {
   duplicateCount: number;
   aliasNames: string[];
   aliasPhones: string[];
+  invoiceProfile?: {
+    defaultInvoiceType?: string | null;
+    supplierName?: string | null;
+    buyerName?: string | null;
+    lastProductName?: string | null;
+    productNames?: string[];
+    vehicleNumber?: string | null;
+    updatedAt?: string | null;
+  } | null;
 }
 
 export type AdminAppCustomerStatus =

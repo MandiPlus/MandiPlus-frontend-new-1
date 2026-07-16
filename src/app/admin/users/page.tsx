@@ -119,6 +119,24 @@ const escapeCsvCell = (value: unknown) => {
     return `"${safeText.replaceAll('"', '""')}"`;
 };
 
+const invoiceDefaultModeLabel = (value?: string | null) => {
+    if (value === 'BUYER_INVOICE') return 'Cash';
+    if (value === 'SUPPLIER_INVOICE') return 'Commission';
+    return '';
+};
+
+const invoiceDefaultsSummary = (user: User) => {
+    const profile = user.invoiceProfile;
+    if (!profile) return null;
+
+    const product = profile.lastProductName || profile.productNames?.[0] || '';
+    return [
+        invoiceDefaultModeLabel(profile.defaultInvoiceType),
+        product,
+        profile.vehicleNumber,
+    ].filter(Boolean).join(' / ');
+};
+
 const getSimilarityScore = (leftRaw: string, rightRaw: string) => {
     const left = leftRaw.replace(/\s+/g, '');
     const right = rightRaw.replace(/\s+/g, '');
@@ -220,6 +238,7 @@ export default function UsersPage() {
     const tableColumnCount =
         5 +
         (showIdentityColumn ? 1 : 0) +
+        1 +
         (showBillingAndConvertColumns ? 2 : 0) +
         (showWalletColumns ? 2 : 0) +
         (showUserManagementColumns ? 3 : 0) +
@@ -1573,6 +1592,9 @@ export default function UsersPage() {
                                                     Identity
                                                 </th>
                                             )}
+                                            <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                Invoice Defaults
+                                            </th>
                                             {showBillingAndConvertColumns && (
                                                 <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                     Billing Type
@@ -1653,6 +1675,18 @@ export default function UsersPage() {
                                                             {user.identity || 'N/A'}
                                                         </td>
                                                     )}
+                                                    <td className="min-w-[180px] px-3 py-4 text-sm text-gray-500">
+                                                        {invoiceDefaultsSummary(user) ? (
+                                                            <div>
+                                                                <div className="font-medium text-gray-700">{invoiceDefaultsSummary(user)}</div>
+                                                                <div className="text-xs text-gray-400">
+                                                                    {user.invoiceProfile?.buyerName || user.invoiceProfile?.supplierName || ''}
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            'N/A'
+                                                        )}
+                                                    </td>
                                                     {showBillingAndConvertColumns && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                             {user.identity === 'TRANSPORTER'
