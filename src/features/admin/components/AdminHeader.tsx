@@ -42,6 +42,7 @@ const adminTitles: Record<string, string> = {
     '/admin/dashboard': 'Admin Panel',
     '/admin/users': 'Users',
     '/admin/app-customers': 'App Customers',
+    '/admin/account-memberships': 'Account Memberships',
     '/admin/app-invoices': 'App Invoices',
     '/admin/quick-details': 'Quick Details',
     '/admin/insurance-forms': 'Invoice / Insurance Forms',
