@@ -249,7 +249,6 @@ export const createInsuranceForm = async (
     const response = await axios.post(`${API_BASE_URL}/invoices`, formData, {
       headers: {
         Authorization: `Bearer ${token}`,
-        "Content-Type": "multipart/form-data",
       },
     });
     return response.data;

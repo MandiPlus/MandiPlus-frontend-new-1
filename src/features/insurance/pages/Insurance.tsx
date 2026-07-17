@@ -45,6 +45,7 @@ import {
     type InsuranceLearningUiEvent,
 } from '../learningContext';
 import { itemsData } from '../productCatalog';
+import { resolveWeighmentSlipForSubmit } from '../weighmentSlipSubmit';
 
 // --- Types ---
 interface FormData {
@@ -859,7 +860,7 @@ const Insurance = () => {
                 }
             }
 
-            const finalFile = fileArgument || weightmentSlipRef.current || weightmentSlip;
+            const finalFile = resolveWeighmentSlipForSubmit(fileArgument, weightmentSlipRef, weightmentSlip);
             if (finalFile) {
                 submitData.append('weighmentSlips', finalFile);
             }
@@ -1027,7 +1028,7 @@ const Insurance = () => {
         }
     };
 
-    const goToNextQuestion = (answerForCurrentQuestion?: string, latestNotes?: string) => {
+    const goToNextQuestion = (answerForCurrentQuestion?: string, latestNotes?: string, fileForSubmit?: File | null) => {
         const questionsForCurrentMode = getActiveQuestions(latestNotes !== undefined ? latestNotes : formData.notes);
         const currentQuestion = questionsForCurrentMode[currentQuestionIndex];
         let nextIndex = currentQuestionIndex + 1;
@@ -1107,7 +1108,7 @@ const Insurance = () => {
             if (currentQuestion?.field === 'addToCustomerAccount' && (answerForCurrentQuestion ?? formData.addToCustomerAccount) !== 'Yes') {
                 submitOverrides.customerUserId = '';
             }
-            submitInsuranceForm(null, submitOverrides);
+            submitInsuranceForm(fileForSubmit || null, submitOverrides);
         }
     };
 
@@ -1764,10 +1765,11 @@ const Insurance = () => {
     };
 
     const handleFileSubmit = async () => {
-        if (!weightmentSlip) return;
+        const selectedSlip = weightmentSlipRef.current || weightmentSlip;
+        if (!selectedSlip) return;
 
         setMessages(prev => [...prev, {
-            text: `📎 ${weightmentSlip.name}`,
+            text: `📎 ${selectedSlip.name}`,
             sender: 'user',
             field: 'weightmentSlip'
         }]);
@@ -1777,7 +1779,7 @@ const Insurance = () => {
             { text: language === 'hi' ? 'सबमिट किया जा रहा है...' : 'Submitting...', sender: 'bot' }
         ]);
 
-        goToNextQuestion();
+        goToNextQuestion(undefined, undefined, selectedSlip);
     };
 
     const currentQuestion = activeQuestions[currentQuestionIndex] || activeQuestions[activeQuestions.length - 1];
