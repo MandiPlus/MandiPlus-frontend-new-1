@@ -45,6 +45,11 @@ import {
     type InsuranceLearningUiEvent,
 } from '../learningContext';
 import { itemsData } from '../productCatalog';
+import {
+    formatInsuranceInvoiceMode,
+    normalizeInsuranceInvoiceMode,
+    resolveInsuranceInvoiceModeForSubmit,
+} from '../insuranceModeSubmit';
 import { resolveWeighmentSlipForSubmit } from '../weighmentSlipSubmit';
 
 // --- Types ---
@@ -322,6 +327,7 @@ const Insurance = () => {
 
     const [weightmentSlip, setWeightmentSlip] = useState<File | null>(null);
     const weightmentSlipRef = useRef<File | null>(null);
+    const invoiceModeRef = useRef<string>('');
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
     const [inputValue, setInputValue] = useState<string>('');
     const [language, setLanguage] = useState<'en' | 'hi' | null>(null);
@@ -362,6 +368,19 @@ const Insurance = () => {
     const updateWeightmentSlip = (file: File | null) => {
         weightmentSlipRef.current = file;
         setWeightmentSlip(file);
+    };
+
+    useEffect(() => {
+        if (formData.notes) {
+            invoiceModeRef.current = formData.notes;
+        }
+    }, [formData.notes]);
+
+    const rememberInvoiceModeSelection = (value: string) => {
+        const selectedMode = normalizeInsuranceInvoiceMode(value);
+        if (selectedMode) {
+            invoiceModeRef.current = selectedMode;
+        }
     };
 
     const identity = user?.identity || '';
@@ -787,9 +806,15 @@ const Insurance = () => {
             const supName = sanitizeText(resolvedFormData.supplierName || 'Unknown Supplier');
             submitData.append('supplierName', supName);
             // Auto-derive invoiceType: Cash = BUYER_INVOICE (buyer pays), Commission = SUPPLIER_INVOICE
-            const invoiceMode = (resolvedFormData.notes || '').toLowerCase();
+            const invoiceMode = resolveInsuranceInvoiceModeForSubmit(
+                resolvedFormData.notes,
+                invoiceModeRef.current,
+            );
             if (shouldUseDynamicQuestionFlow && !['cash', 'commission'].includes(invoiceMode)) {
                 throw new Error('Please select Cash or Commission before submitting.');
+            }
+            if (invoiceMode) {
+                resolvedFormData.notes = formatInsuranceInvoiceMode(invoiceMode);
             }
             const isCash = invoiceMode === 'cash';
             if (shouldRequireVerifiedParties) {
@@ -829,7 +854,11 @@ const Insurance = () => {
             submitData.append('invoiceType', isCash ? 'BUYER_INVOICE' : 'SUPPLIER_INVOICE');
 
             if (resolvedFormData.hsn) submitData.append('hsnCode', resolvedFormData.hsn);
-            if (resolvedFormData.notes) submitData.append('weighmentSlipNote', sanitizeText(resolvedFormData.notes));
+            if (invoiceMode) {
+                submitData.append('weighmentSlipNote', formatInsuranceInvoiceMode(invoiceMode));
+            } else if (resolvedFormData.notes) {
+                submitData.append('weighmentSlipNote', sanitizeText(resolvedFormData.notes));
+            }
             const driverPhone = normalizePhoneInput(resolvedFormData.driverPhone);
             if (driverPhone) {
                 if (driverPhone.length !== 10) {
@@ -1211,6 +1240,10 @@ const Insurance = () => {
                         ? (isOptionalPhoneSkip(currentInput) ? '' : normalizePhoneInput(currentInput))
                     : (q.type === 'number' && currentInput) ? parseFloat(currentInput) : currentInput;
 
+            if (q.field === 'notes') {
+                rememberInvoiceModeSelection(currentInput);
+            }
+
             if (q.field === 'itemName') {
                 const selectedItem = itemsData.find(item => item.name === currentInput);
                 const hsnCode = selectedItem ? selectedItem.hsn : '';
@@ -1296,10 +1329,16 @@ const Insurance = () => {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        if (currentQuestion.field === 'notes') {
+            rememberInvoiceModeSelection(inputValue);
+        }
         void processInput(inputValue);
     };
 
     const handleOptionSelect = (opt: string) => {
+        if (currentQuestion.field === 'notes') {
+            rememberInvoiceModeSelection(opt);
+        }
         void processInput(opt);
     };
 
@@ -1564,6 +1603,9 @@ const Insurance = () => {
     };
 
     const applyTemplateToForm = (template: SupplierPartyAssistTemplate) => {
+        if (template.notes) {
+            rememberInvoiceModeSelection(template.notes);
+        }
         setFormData((prev) => ({
             ...prev,
             itemName: template.productName || prev.itemName,

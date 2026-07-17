@@ -1,4 +1,9 @@
 import assert from "node:assert/strict";
+import {
+  formatInsuranceInvoiceMode,
+  normalizeInsuranceInvoiceMode,
+  resolveInsuranceInvoiceModeForSubmit,
+} from "../src/features/insurance/insuranceModeSubmit.ts";
 import { resolveWeighmentSlipForSubmit } from "../src/features/insurance/weighmentSlipSubmit.ts";
 
 const stateFile = { name: "state-slip.jpg" };
@@ -29,4 +34,46 @@ assert.equal(
   "returns null only when no selected slip exists",
 );
 
-console.log("insurance slip submit resolution ok");
+assert.equal(
+  normalizeInsuranceInvoiceMode(" Cash "),
+  "cash",
+  "normalizes cash selection",
+);
+
+assert.equal(
+  normalizeInsuranceInvoiceMode("Commission"),
+  "commission",
+  "normalizes commission selection",
+);
+
+assert.equal(
+  normalizeInsuranceInvoiceMode("Skipped"),
+  "",
+  "ignores unrelated optional answers",
+);
+
+assert.equal(
+  resolveInsuranceInvoiceModeForSubmit("", "Cash"),
+  "cash",
+  "falls back to latest selected invoice mode when form state is stale",
+);
+
+assert.equal(
+  resolveInsuranceInvoiceModeForSubmit("Commission", "Cash"),
+  "commission",
+  "uses current form mode before latest-mode fallback",
+);
+
+assert.equal(
+  formatInsuranceInvoiceMode("cash"),
+  "Cash",
+  "formats cash mode for submit payload",
+);
+
+assert.equal(
+  formatInsuranceInvoiceMode("commission"),
+  "Commission",
+  "formats commission mode for submit payload",
+);
+
+console.log("insurance submit resolution ok");
