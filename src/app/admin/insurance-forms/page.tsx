@@ -1114,10 +1114,12 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     };
 
     const productOptions = useMemo(() => {
-        const options = invoices
+        const catalogProducts = itemsData.map((item) => item.name);
+        const invoiceProducts = invoices
             .flatMap((invoice) => Array.isArray(invoice.productName) ? invoice.productName : [invoice.productName])
             .map((product) => String(product || '').trim())
             .filter(Boolean);
+        const options = [...catalogProducts, ...invoiceProducts];
 
         if (filters.productName?.trim()) {
             options.push(filters.productName.trim());
