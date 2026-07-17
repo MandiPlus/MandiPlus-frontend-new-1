@@ -3,7 +3,7 @@ import { getStoredAuthToken } from "@/features/auth/api";
 
 // 1. BACKEND BASE URL
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001";
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 
 export const getBackendURL = () => {
   return API_BASE_URL.replace("/api", "");

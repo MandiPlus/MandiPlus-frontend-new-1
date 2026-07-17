@@ -182,7 +182,7 @@ const questions: Question[] = [
         type: 'text',
         text: { en: "WhatsApp Phone Number (Buyer)", hi: "खरीदार का WhatsApp नंबर" }
     },
-    { field: 'weightmentSlip', type: 'file', optional: true, text: { en: "Kanta Parchi Photo", hi: "कांटा पर्ची" } },
+    { field: 'weightmentSlip', type: 'file', text: { en: "Kanta Parchi Photo", hi: "कांटा पर्ची" } },
     {
         field: 'addToCustomerAccount',
         type: 'select',
@@ -861,9 +861,10 @@ const Insurance = () => {
             }
 
             const finalFile = resolveWeighmentSlipForSubmit(fileArgument, weightmentSlipRef, weightmentSlip);
-            if (finalFile) {
-                submitData.append('weighmentSlips', finalFile);
+            if (!finalFile) {
+                throw new Error('Weightment slip photo is required. Please upload the Kanta Parchi before creating the invoice.');
             }
+            submitData.append('weighmentSlips', finalFile);
 
             submitData.append('learningContext', JSON.stringify(buildInsuranceLearningContext({
                 variant: 'desktop',
