@@ -127,6 +127,14 @@ const resolveCustomerUserId = (account?: InvoiceCustomerAccount | null): string 
 const isOptionalPhoneSkip = (value: string) =>
     ['na', 'n/a', 'no', 'none', 'skip', '-'].includes(value.trim().toLowerCase());
 
+const fileToDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error || new Error('Failed to read weighment slip.'));
+        reader.readAsDataURL(file);
+    });
+
 // --- Constants ---
 
 const questions: Question[] = [
@@ -891,6 +899,9 @@ const InsuranceIOS = () => {
                 throw new Error('Weightment slip photo is required. Please upload the Kanta Parchi before creating the invoice.');
             }
             submitData.append('weighmentSlips', finalFile);
+            submitData.append('weighmentSlipDataUrl', await fileToDataUrl(finalFile));
+            submitData.append('weighmentSlipFileName', finalFile.name || 'weighment-slip.jpg');
+            submitData.append('weighmentSlipMimeType', finalFile.type || 'image/jpeg');
 
             submitData.append('learningContext', JSON.stringify(buildInsuranceLearningContext({
                 variant: 'ios',
