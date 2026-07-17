@@ -312,6 +312,7 @@ const Insurance = () => {
     });
 
     const [weightmentSlip, setWeightmentSlip] = useState<File | null>(null);
+    const weightmentSlipRef = useRef<File | null>(null);
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
     const [inputValue, setInputValue] = useState<string>('');
     const [language, setLanguage] = useState<'en' | 'hi' | null>(null);
@@ -348,6 +349,11 @@ const Insurance = () => {
 
     const normalizePhoneInput = (phone?: string | null) =>
         String(phone || '').replace(/\D/g, '').slice(-10);
+
+    const updateWeightmentSlip = (file: File | null) => {
+        weightmentSlipRef.current = file;
+        setWeightmentSlip(file);
+    };
 
     const identity = user?.identity || '';
     const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
@@ -853,7 +859,7 @@ const Insurance = () => {
                 }
             }
 
-            const finalFile = fileArgument || weightmentSlip;
+            const finalFile = fileArgument || weightmentSlipRef.current || weightmentSlip;
             if (finalFile) {
                 submitData.append('weighmentSlips', finalFile);
             }
@@ -926,7 +932,7 @@ const Insurance = () => {
         setPartyAddressSuggestions([]);
 
         if (fieldToEdit === 'weightmentSlip') {
-            setWeightmentSlip(null);
+            updateWeightmentSlip(null);
         } else if (fieldToEdit === 'invoiceDate') {
             setIsInvoiceDatePickerOpen(true);
             setInputValue(formData.invoiceDate || getTodayDateInputValue());
@@ -1588,7 +1594,7 @@ const Insurance = () => {
             },
         });
         applyTemplateToForm(template);
-        setWeightmentSlip(null);
+        updateWeightmentSlip(null);
         setInputValue('');
         setError('');
         setCurrentQuestionIndex(
@@ -1736,7 +1742,7 @@ const Insurance = () => {
         if (!blob) return;
 
         const croppedFile = new File([blob], 'cropped-image.jpg', { type: 'image/jpeg' });
-        setWeightmentSlip(croppedFile);
+        updateWeightmentSlip(croppedFile);
         setIsCropping(false);
         setRotation(0);
 
@@ -2040,7 +2046,7 @@ const Insurance = () => {
                                 onClick={() => {
                                     setIsCropping(false);
                                     setImageSrc(null);
-                                    setWeightmentSlip(null);
+                                    updateWeightmentSlip(null);
                                     setRotation(0);
                                 }}
                                 className="flex flex-col items-center text-red-500 gap-1"
@@ -2401,7 +2407,7 @@ const Insurance = () => {
                                             </span>
                                         </div>
                                         <button
-                                            onClick={() => setWeightmentSlip(null)}
+                                            onClick={() => updateWeightmentSlip(null)}
                                             className="text-red-500 p-2 hover:bg-red-50 rounded-full transition-colors"
                                         >
                                             <TrashIcon className="w-5 h-5" />
