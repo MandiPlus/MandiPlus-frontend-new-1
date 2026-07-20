@@ -3,22 +3,25 @@ import {
   removeCustomerWebPushSubscription,
 } from "@/features/customer/api";
 
+// VAPID public keys are delivered to every subscribed browser by design.
+// Keep the private counterpart only in the backend deployment environment.
+const PRODUCTION_VAPID_PUBLIC_KEY =
+  "BE_BVSHD-rU_-KQcQN_i-0HCRzvW7kTStpQQtEaIxdTYTptWk6EssOvH5mykBBuWePqs9b9mhV8dFSII5m5w7Lw";
+const PRODUCTION_CANARY_MOBILE = "9022353647";
+
 export function isWebPushAvailable() {
   return (
     typeof window !== "undefined" &&
-    process.env.NEXT_PUBLIC_WEB_PUSH_ENABLED === "true" &&
+    webPushEnabled() &&
     "serviceWorker" in navigator &&
     "PushManager" in window &&
     "Notification" in window &&
-    Boolean(process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_KEY)
+    Boolean(vapidPublicKey())
   );
 }
 
 export function isWebPushAllowedForMobile(mobile?: string | null) {
-  const allowed = String(process.env.NEXT_PUBLIC_WEB_PUSH_CANARY_MOBILES || "")
-    .split(",")
-    .map(normalizeMobile)
-    .filter(Boolean);
+  const allowed = canaryMobiles();
   return !allowed.length || allowed.includes(normalizeMobile(mobile || ""));
 }
 
@@ -38,9 +41,7 @@ export async function enableWebPush() {
     existing ||
     (await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(
-        process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_KEY || "",
-      ),
+      applicationServerKey: urlBase64ToUint8Array(vapidPublicKey()),
     }));
   await saveSubscription(subscription);
   return subscription;
@@ -85,4 +86,28 @@ function urlBase64ToUint8Array(value: string) {
 function normalizeMobile(value: string) {
   const digits = value.replace(/\D/g, "");
   return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
+function webPushEnabled() {
+  const configured = process.env.NEXT_PUBLIC_WEB_PUSH_ENABLED;
+  if (configured !== undefined) return configured === "true";
+  return process.env.NODE_ENV === "production";
+}
+
+function vapidPublicKey() {
+  return (
+    process.env.NEXT_PUBLIC_WEB_PUSH_VAPID_KEY ||
+    (process.env.NODE_ENV === "production" ? PRODUCTION_VAPID_PUBLIC_KEY : "")
+  );
+}
+
+function canaryMobiles() {
+  const configured = process.env.NEXT_PUBLIC_WEB_PUSH_CANARY_MOBILES;
+  const value =
+    configured !== undefined
+      ? configured
+      : process.env.NODE_ENV === "production"
+        ? PRODUCTION_CANARY_MOBILE
+        : "";
+  return String(value).split(",").map(normalizeMobile).filter(Boolean);
 }
