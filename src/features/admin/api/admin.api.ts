@@ -573,6 +573,7 @@ export interface InsurancePaymentRow {
   id: string;
   invoiceId: string;
   invoiceNumber: string;
+  vehicleNumber?: string | null;
   recipientPhone?: string;
   pdfUrl?: string | null;
   paymentReceiptUrl?: string | null;
