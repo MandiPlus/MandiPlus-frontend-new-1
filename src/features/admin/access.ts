@@ -24,6 +24,7 @@ import {
   SparklesIcon,
   DevicePhoneMobileIcon,
   UserCircleIcon,
+  PresentationChartLineIcon,
 } from '@heroicons/react/24/outline';
 
 export const ADMIN_SECTIONS = [
@@ -52,6 +53,7 @@ export const ADMIN_SECTIONS = [
   'call-routing',
   'channel-partners',
   'reports',
+  'analytics',
 ] as const;
 
 export type AdminSection = (typeof ADMIN_SECTIONS)[number];
@@ -106,13 +108,14 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Team Daily Logs', href: '/admin/team-logs', icon: ClipboardDocumentCheckIcon, section: 'team-logs' },
   { name: 'Call Routing', href: '/admin/call-routing', icon: PhoneIcon, section: 'call-routing' },
   { name: 'Channel Partners', href: '/admin/channel-partners', icon: UserGroupIcon, section: 'channel-partners' },
+  { name: 'Sales Analytics', href: '/admin/analytics', icon: PresentationChartLineIcon, section: 'analytics' },
   { name: 'AI Reports', href: '/admin/reports', icon: SparklesIcon, section: 'reports' },
 ];
 
 export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   {
     name: 'Overview',
-    sections: ['dashboard', 'reports'],
+    sections: ['dashboard', 'analytics', 'reports'],
   },
   {
     name: 'People',
@@ -170,6 +173,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/call-routing': 'call-routing',
   '/admin/channel-partners': 'channel-partners',
   '/admin/reports': 'reports',
+  '/admin/analytics': 'analytics',
   '/admin/impersonate': 'users',
 };
 

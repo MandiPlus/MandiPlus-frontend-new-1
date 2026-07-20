@@ -57,6 +57,7 @@ const adminTitles: Record<string, string> = {
     '/admin/pdf-editor': 'Edit Insurance PDF',
     '/admin/impersonate': 'Impersonate',
     '/admin/reports': 'AI Reports',
+    '/admin/analytics': 'Sales Analytics',
     '/admin/insurance-learning': 'Insurance Learning',
 };
 

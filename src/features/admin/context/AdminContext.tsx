@@ -198,6 +198,13 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     };
 
     const canAccessSection = (section: AdminSection) => {
+        if (section === 'analytics') {
+            return Boolean(
+                accessProfile?.isFullAdmin ||
+                accessProfile?.allowedSections?.includes('reports'),
+            );
+        }
+
         if (section === 'app-invoices' || section === 'app-quick-details') {
             return Boolean(accessProfile?.allowedSections?.includes('insurance-forms'));
         }
