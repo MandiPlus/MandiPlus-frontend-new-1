@@ -54,6 +54,28 @@ export interface CustomerPaymentCheckoutStatus {
   invoices?: InsuranceForm[];
 }
 
+export interface CustomerNotification {
+  id: string;
+  title: string;
+  body: string;
+  type: string;
+  payload: Record<string, unknown>;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface CustomerNotificationsResponse {
+  unreadCount: number;
+  items: CustomerNotification[];
+}
+
+export interface WebPushSubscriptionPayload {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: { p256dh: string; auth: string };
+  deviceName?: string;
+}
+
 function getAuthHeader() {
   const token = getStoredAuthToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -65,6 +87,59 @@ function handleUnauthorized(err: AxiosError) {
     // Keep session until user explicitly logs out.
     console.warn("401 received from customer API; preserving local auth state.");
   }
+}
+
+export async function registerCustomerWebPushSubscription(
+  payload: WebPushSubscriptionPayload,
+) {
+  const response = await withAuthRetry(() =>
+    axios.post(`${API_BASE_URL}/notifications/web-subscription`, payload, {
+      headers: getAuthHeader(),
+    }),
+  );
+  return response.data;
+}
+
+export async function removeCustomerWebPushSubscription(endpoint: string) {
+  const response = await withAuthRetry(() =>
+    axios.delete(`${API_BASE_URL}/notifications/web-subscription`, {
+      headers: getAuthHeader(),
+      data: { endpoint },
+    }),
+  );
+  return response.data;
+}
+
+export async function getCustomerNotifications(limit = 50): Promise<CustomerNotificationsResponse> {
+  const response = await withAuthRetry(() =>
+    axios.get(`${API_BASE_URL}/notifications`, {
+      headers: getAuthHeader(),
+      params: { limit },
+    }),
+  );
+  return response.data;
+}
+
+export async function markCustomerNotificationRead(notificationId: string) {
+  const response = await withAuthRetry(() =>
+    axios.patch(
+      `${API_BASE_URL}/notifications/${encodeURIComponent(notificationId)}/read`,
+      {},
+      { headers: getAuthHeader() },
+    ),
+  );
+  return response.data;
+}
+
+export async function markAllCustomerNotificationsRead() {
+  const response = await withAuthRetry(() =>
+    axios.patch(
+      `${API_BASE_URL}/notifications/read-all`,
+      {},
+      { headers: getAuthHeader() },
+    ),
+  );
+  return response.data;
 }
 
 async function withAuthRetry<T>(request: () => Promise<T>): Promise<T> {

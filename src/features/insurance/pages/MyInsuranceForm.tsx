@@ -16,6 +16,7 @@ import {
   getCustomerDashboardInvoices,
   getMyUserInvoices,
   getTransporterDashboardInvoices,
+  markCustomerNotificationRead,
 } from "../../customer/api";
 import ProtectedRoute from "../../auth/components/ProtectedRoute";
 
@@ -81,6 +82,22 @@ const MyInsuranceForms = () => {
   useEffect(() => {
     setActiveTab(normalizeTab(searchParams.get("tab")));
   }, [searchParams]);
+
+  useEffect(() => {
+    const notificationId = searchParams.get("notificationId");
+    if (notificationId) void markCustomerNotificationRead(notificationId).catch(() => {});
+  }, [searchParams]);
+
+  useEffect(() => {
+    const invoiceId = searchParams.get("invoiceId");
+    if (!invoiceId || loading) return;
+    window.requestAnimationFrame(() => {
+      document.getElementById(`invoice-${invoiceId}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+  }, [forms, loading, searchParams]);
 
   const pendingInvoices = useMemo(() => forms.filter(isPayableInvoice), [forms]);
   const checkoutInvoices = useMemo(
@@ -317,7 +334,11 @@ const MyInsuranceForms = () => {
                 const invoiceUrl = getInvoiceUrl(form);
                 const policyUrl = getInsuranceUrl(form);
                 return (
-                  <article key={form.id} className="rounded-[22px] border border-[#e7ebf3] bg-white p-4">
+                  <article
+                    id={`invoice-${form.id}`}
+                    key={form.id}
+                    className={`rounded-[22px] border bg-white p-4 ${searchParams.get("invoiceId") === form.id ? "border-[#203044] ring-2 ring-[#dfe7f1]" : "border-[#e7ebf3]"}`}
+                  >
                     <div className="flex items-start gap-3">
                       <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#f8f9fd] text-[#203044]">
                         {policyUrl ? <ShieldCheckIcon className="h-6 w-6" /> : <DocumentTextIcon className="h-6 w-6" />}

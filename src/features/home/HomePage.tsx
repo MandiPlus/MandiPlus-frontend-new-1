@@ -32,6 +32,10 @@ import {
   createCustomerWebPaymentCheckout,
 } from "../customer/api";
 import { getMyChannelPartnerDashboard } from "../channel-partner/api";
+import {
+  CustomerNotificationBell,
+  CustomerWebPushPrompt,
+} from "../notifications/CustomerNotificationControls";
 import 'cropperjs/dist/cropper.css';
 import Cropper, { ReactCropperElement } from "react-cropper";
 import {
@@ -715,6 +719,7 @@ const HomePage = () => {
             </div>
 
             <div className="flex items-center gap-2">
+              {!isInternalUser ? <CustomerNotificationBell mobile={user?.mobileNumber} /> : null}
               <div className="hidden md:flex flex-col items-end rounded-2xl border border-[#e7ebf3] bg-[#f8f9fd] px-3 py-2 text-right leading-tight">
                 <p className="text-xs font-semibold tracking-wide text-[#203044]">
                   Welcome {welcomeName}
@@ -743,6 +748,8 @@ const HomePage = () => {
               </button>
             </div>
           </div>
+
+          {!isInternalUser ? <CustomerWebPushPrompt mobile={user?.mobileNumber} /> : null}
 
           <div className="mt-2 flex items-center justify-between gap-2 md:hidden">
             <div className="min-w-0 rounded-full border border-[#e7ebf3] bg-[#f8f9fd] px-3 py-1.5">

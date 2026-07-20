@@ -12,7 +12,9 @@ export default function ServiceWorkerRegistration() {
       window.location.hostname,
     );
 
-    if (process.env.NODE_ENV !== "production" || isLocalHost) {
+    const pushDevEnabled = process.env.NEXT_PUBLIC_ENABLE_WEB_PUSH_DEV === "true";
+
+    if ((process.env.NODE_ENV !== "production" || isLocalHost) && !pushDevEnabled) {
       navigator.serviceWorker
         .getRegistrations()
         .then((registrations) =>

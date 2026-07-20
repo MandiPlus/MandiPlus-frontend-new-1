@@ -9,6 +9,7 @@ import {
     setAuthToken,
 } from "@/features/auth/api";
 import { usePathname, useRouter } from "next/navigation";
+import { disableWebPushForCurrentBrowser } from "@/features/notifications/webPush";
 
 interface AuthContextType {
     user: any;
@@ -276,6 +277,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     const logout = () => {
+        void disableWebPushForCurrentBrowser().catch(() => {});
         clearImpersonationState();
         forceLogout();
         logoutApi().catch(() => {

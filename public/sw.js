@@ -11,6 +11,11 @@ const PRECACHE_URLS = [
 ];
 
 self.addEventListener('install', (event) => {
+  const isLocal = ['localhost', '127.0.0.1', '::1'].includes(self.location.hostname);
+  if (isLocal) {
+    self.skipWaiting();
+    return;
+  }
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) => cache.addAll(PRECACHE_URLS))
   );
@@ -33,6 +38,8 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
+
+  if (['localhost', '127.0.0.1', '::1'].includes(self.location.hostname)) return;
 
   if (request.method !== 'GET') return;
 
@@ -115,7 +122,14 @@ self.addEventListener('fetch', (event) => {
 });
 
 self.addEventListener('push', (event) => {
-  const data = event.data ? event.data.json() : {};
+  let data = {};
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch {
+      data = { body: event.data.text() };
+    }
+  }
 
   if (data.type === 'incoming_call') {
     const callerLabel = data.caller_name || data.from || 'Unknown';
@@ -168,8 +182,14 @@ self.addEventListener('push', (event) => {
     body: data.body || 'You have a new notification',
     icon: '/icons/icon-192.png',
     badge: '/icons/icon-72.png',
-    tag: data.tag || 'mandiplus-notification',
-    data: { url: data.url || '/' },
+    tag: data.tag || `mandiplus-notification-${Date.now()}`,
+    renotify: true,
+    data: {
+      type: data.type,
+      url: data.url || '/notifications',
+      notificationId: data.notificationId,
+      invoiceId: data.invoiceId,
+    },
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
@@ -210,7 +230,9 @@ self.addEventListener('notificationclick', (event) => {
           return c.url.includes(targetUrl);
         }
       });
-      if (existing) return existing.focus();
+      if (existing) {
+        return existing.focus().then(() => existing.navigate(targetUrl));
+      }
       return self.clients.openWindow(targetUrl);
     })
   );
