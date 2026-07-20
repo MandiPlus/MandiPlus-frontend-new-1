@@ -198,6 +198,13 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     };
 
     const canAccessSection = (section: AdminSection) => {
+        if (section === 'analytics') {
+            return Boolean(
+                accessProfile?.isFullAdmin ||
+                accessProfile?.allowedSections?.includes('reports'),
+            );
+        }
+
         if (section === 'account-memberships') {
             return Boolean(
                 accessProfile?.isFullAdmin ||

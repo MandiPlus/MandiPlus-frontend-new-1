@@ -514,6 +514,65 @@ export interface AiReportDataQuestionResponse {
   generatedAt: string;
 }
 
+export interface SalesAnalyticsMethodology {
+  metric: string;
+  definition: string;
+  source: string;
+  confidence: "High" | "Medium" | "Low";
+}
+
+export interface SalesAnalyticsPayload {
+  generatedAt: string;
+  range: {
+    from: string;
+    to: string;
+    previousFrom: string;
+    previousTo: string;
+    days: number;
+  };
+  summary: {
+    gmv: number;
+    premium: number;
+    loads: number;
+    vehicles: number;
+    activeCustomers: number;
+    newCustomers: number;
+    repeatCustomers: number;
+    repeatRate: number;
+    changes: Record<string, number>;
+  };
+  daily: Array<{ date: string; loads: number; customers: number; gmv: number; premium: number }>;
+  weekly: Array<{ weekStart: string; loads: number; customers: number; gmv: number; premium: number }>;
+  executives: Array<{
+    id: string; name: string; role: string; gmv: number; premium: number; loads: number;
+    customers: number; leads: number; meetings: number; openFollowUps: number; attributionSource: string;
+  }>;
+  channelPartners: Array<{
+    id: string; name: string; code: string; status: string; customers: number; linkedCustomers: number;
+    loads: number; gmv: number; premium: number; commission: number; paidCommissions: number;
+  }>;
+  locations: Array<{
+    location: string; loads: number; vehicles: number; customers: number; gmv: number; premium: number; share: number;
+  }>;
+  newCustomers: Array<{
+    id: string; name: string; state: string; firstSaleDate: string; loads: number; vehicles: number;
+    gmv: number; premium: number; source: string;
+  }>;
+  followUps: Array<{
+    id: string; customer: string; business: string; location: string; status: string; interest: string;
+    nextAction: string; dueDate?: string | null; owner: string; urgency: string;
+  }>;
+  lapsedCustomers: Array<{
+    id: string; name: string; state: string; lastSaleDate: string; daysInactive: number; usualCadenceDays: number;
+    lapseThresholdDays: number; lifetimeLoads: number; lifetimeVehicles: number; lastVehicle?: string | null;
+    lifetimePremium: number; monthlyPremiumAtRisk: number; risk: string; riskScore: number;
+  }>;
+  quality: Array<{
+    key: string; label: string; passed: number; total: number; coverage: number; status: string; explanation: string;
+  }>;
+  methodology: SalesAnalyticsMethodology[];
+}
+
 export interface RegenerateInvoicePayload {
   invoiceId: string;
   invoiceType?: string;
@@ -3586,6 +3645,25 @@ class AdminApi {
       "/admin/ai-reports/ask",
       payload,
     );
+    return response.data;
+  };
+
+  public getSalesAnalytics = async (
+    from: string,
+    to: string,
+  ): Promise<SalesAnalyticsPayload> => {
+    const response = await this.client.get<SalesAnalyticsPayload>(
+      "/admin/sales-analytics",
+      { params: { from, to } },
+    );
+    return response.data;
+  };
+
+  public exportSalesAnalytics = async (from: string, to: string): Promise<Blob> => {
+    const response = await this.client.get("/admin/sales-analytics/export", {
+      params: { from, to },
+      responseType: "blob",
+    });
     return response.data;
   };
 
