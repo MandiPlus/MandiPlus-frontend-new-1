@@ -71,9 +71,13 @@ export interface TrackingData {
     timeRecorded?: string;
     distanceRemained?: number;
     timeRemained?: number;
+    distanceTravel?: number;
+    totalDistance?: number;
   };
   origin?: LocationPoint;
   destination?: LocationPoint;
+  originLabel?: string;
+  destinationLabel?: string;
   consentStatus?: string;
   eta?: string;
   shareUrl?: string;
@@ -81,6 +85,39 @@ export interface TrackingData {
   session?: TruckSessionInfo;
   // Allow backend to send extra fields without breaking the UI
   [key: string]: any;
+}
+
+export interface LiveTrackingTrip {
+  id: string;
+  tripId?: string | null;
+  vehicleNumber: string;
+  status: string;
+  route?: string;
+  sourceName?: string | null;
+  destinationName?: string | null;
+  product?: string | null;
+  invoiceNumber?: string | null;
+  eta?: string | null;
+  updatedAt?: string;
+  lastLocation?: {
+    address?: string | null;
+    timeRecorded?: string | null;
+    distanceRemained?: string | number | null;
+    timeRemained?: string | number | null;
+    distanceTravel?: number | null;
+    totalDistance?: number | null;
+  } | null;
+}
+
+export interface TrackingRoute {
+  provider: string;
+  generatedAt?: string;
+  origin?: LocationPoint | null;
+  current?: LocationPoint | null;
+  destination?: LocationPoint | null;
+  points: LocationPoint[];
+  distanceMeters?: number | null;
+  durationSeconds?: number | null;
 }
 
 export interface TrackingResponse {
@@ -163,6 +200,8 @@ export const trackVehicle = async (
         location: raw.location,
         origin: raw.origin,
         destination: raw.destination,
+        originLabel: raw.originLabel,
+        destinationLabel: raw.destinationLabel,
         consentStatus: raw.consentStatus,
         eta: raw.eta,
         shareUrl: raw.shareUrl ?? raw.shareURL,
@@ -178,6 +217,54 @@ export const trackVehicle = async (
       (err.response?.data as any)?.error ||
       "Failed to fetch vehicle location";
     throw { message };
+  }
+};
+
+export const getLiveTrackingTrips = async (): Promise<LiveTrackingTrip[]> => {
+  try {
+    const token = typeof window !== "undefined" ? getStoredAuthToken() : null;
+    const response = await axios.get<LiveTrackingTrip[]>(
+      `${API_BASE_URL}/trucks/track/live-trips`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    );
+    return Array.isArray(response.data) ? response.data : [];
+  } catch (error) {
+    const err = error as AxiosError<ApiError | any>;
+    throw new Error(
+      (err.response?.data as any)?.message ||
+        (err.response?.data as any)?.error ||
+        "Unable to load live trips",
+    );
+  }
+};
+
+export const getTrackingRoute = async (
+  vehicleNumber: string,
+  options?: { accessToken?: string | null },
+): Promise<TrackingRoute> => {
+  try {
+    const hasExplicitAccessToken =
+      options && Object.prototype.hasOwnProperty.call(options, "accessToken");
+    const token = hasExplicitAccessToken
+      ? options.accessToken
+      : typeof window !== "undefined"
+        ? getStoredAuthToken()
+        : null;
+    const response = await axios.get<TrackingRoute>(
+      `${API_BASE_URL}/trucks/track/${encodeURIComponent(vehicleNumber)}/route`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    );
+    return {
+      ...response.data,
+      points: Array.isArray(response.data?.points) ? response.data.points : [],
+    };
+  } catch (error) {
+    const err = error as AxiosError<ApiError | any>;
+    throw new Error(
+      (err.response?.data as any)?.message ||
+        (err.response?.data as any)?.error ||
+        "Unable to load the trip route",
+    );
   }
 };
 
