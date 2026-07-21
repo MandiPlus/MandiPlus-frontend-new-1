@@ -247,9 +247,17 @@ export default function AdminQuickDetailDetailPage() {
       : [];
 
     const matchedUser = users.find((user) => user.id === detailResponse.data?.user?.id) || null;
+    const selectedProduct = itemsData.find(
+      (item) => item.name === detailResponse.data?.commodity,
+    );
     setVerifiedUsers(users);
     setDetail(detailResponse.data);
-    setForm((current) => applyInsuredUser(current, matchedUser));
+    setForm((current) => ({
+      ...applyInsuredUser(current, matchedUser),
+      ...(selectedProduct
+        ? { productName: selectedProduct.name, hsnCode: selectedProduct.hsn }
+        : {}),
+    }));
     setLoading(false);
   }, [canAccessSection, isAuthenticated, params?.id]);
 
@@ -414,6 +422,9 @@ export default function AdminQuickDetailDetailPage() {
             </button>
             <h1 className="mt-2 text-2xl font-black text-slate-950">Create invoice from quick detail</h1>
             <p className="mt-1 text-sm font-semibold text-slate-500">Submitted {formatDateTime(detail.createdAt)}</p>
+            {detail.commodity ? (
+              <p className="mt-2 text-sm font-black text-emerald-700">{detail.commodity}</p>
+            ) : null}
           </div>
           <button
             type="button"

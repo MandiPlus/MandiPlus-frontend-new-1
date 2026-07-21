@@ -209,6 +209,7 @@ export interface AdminQuickDetailMedia {
 export interface AdminQuickDetail {
   id: string;
   details?: string | null;
+  commodity?: string | null;
   media: AdminQuickDetailMedia[];
   audioDurationMillis?: number | null;
   sourceSurface?: string | null;

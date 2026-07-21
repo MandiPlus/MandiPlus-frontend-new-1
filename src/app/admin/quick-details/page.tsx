@@ -136,6 +136,12 @@ function QuickDetailCard({
         </div>
       </div>
 
+      {row.commodity ? (
+        <p className="mt-3 inline-flex rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-800">
+          {row.commodity}
+        </p>
+      ) : null}
+
       {hasDetails ? (
         <p className={`mt-4 whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-sm font-semibold leading-6 text-slate-800 ${viewMode === 'grid' ? 'line-clamp-5' : ''}`}>
           {row.details}
