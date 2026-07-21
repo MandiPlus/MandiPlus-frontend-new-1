@@ -215,13 +215,29 @@ export interface AdminQuickDetail {
   sourceSurface?: string | null;
   createdAt: string;
   updatedAt: string;
+  autofill?: AdminQuickDetailAutofillResult | null;
   user?: {
     id: string;
     name?: string | null;
     mobileNumber?: string | null;
     identity?: string | null;
     state?: string | null;
+    products?: string[] | null;
   } | null;
+}
+
+export interface AdminQuickDetailAutofillResult {
+  status: "not_started" | "pending" | "processing" | "completed" | "failed";
+  fingerprint?: string | null;
+  draft?: Record<string, unknown> | null;
+  changes: InvoiceApprovalAutofillChange[];
+  suggestions?: Record<string, unknown>;
+  attachmentsRead: number;
+  attachmentsAvailable: number;
+  attempts?: number;
+  error?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
 }
 
 export interface AdminMasterLedgerLinkedUser {
@@ -736,6 +752,7 @@ export interface AdminCreateInvoicePayload {
   driverSecondaryPhone?: string;
   ownerName?: string;
   weighmentSlips?: File[];
+  weighmentSlipUrls?: string[];
 }
 
 export type ChannelPartnerStatus = "PENDING" | "ACTIVE" | "SUSPENDED";
@@ -1745,6 +1762,9 @@ class AdminApi {
       payload.weighmentSlips?.forEach((file) => {
         formData.append("weighmentSlips", file);
       });
+      if (payload.weighmentSlipUrls?.length) {
+        formData.append("weighmentSlipUrls", JSON.stringify(payload.weighmentSlipUrls));
+      }
 
       const response = await this.client.post<ApiResponse<any>>(
         "/invoices",
@@ -2112,6 +2132,34 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || 'Failed to delete quick detail',
+      };
+    }
+  };
+
+  public autofillAdminQuickDetail = async (
+    id: string,
+  ): Promise<ApiResponse<AdminQuickDetailAutofillResult>> => {
+    try {
+      const response = await this.client.post(`/quick-details/admin/${id}/autofill`);
+      return response.data;
+    } catch {
+      return {
+        success: false,
+        message: 'Autofill is unavailable right now. You can continue manually.',
+      };
+    }
+  };
+
+  public getAdminQuickDetailAutofill = async (
+    id: string,
+  ): Promise<ApiResponse<AdminQuickDetailAutofillResult>> => {
+    try {
+      const response = await this.client.get(`/quick-details/admin/${id}/autofill`);
+      return response.data;
+    } catch {
+      return {
+        success: false,
+        message: 'Could not check the saved autofill result.',
       };
     }
   };
