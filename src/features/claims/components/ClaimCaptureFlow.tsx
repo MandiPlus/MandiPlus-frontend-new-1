@@ -111,7 +111,7 @@ export default function ClaimCaptureFlow({
         setLocation(null);
         setError(
           geoError.code === geoError.PERMISSION_DENIED
-            ? "Allow location access, then retry"
+            ? "Location blocked in Chrome. Allow it, then retry"
             : "Could not get location. Retry",
         );
       },

@@ -637,8 +637,32 @@ export const uploadClaimEvidence = async (
   formData.append("signature", target.signature);
   formData.append("public_id", target.publicId);
 
-  const response = await axios.post(target.uploadUrl, formData);
-  const uploaded = response.data;
+  // Use an isolated browser request here. The shared Axios instance carries the
+  // app's Authorization header, which Cloudinary rejects during CORS preflight.
+  const response = await fetch(target.uploadUrl, {
+    method: "POST",
+    body: formData,
+  });
+  const uploaded = (await response.json()) as {
+    secure_url?: string;
+    public_id?: string;
+    version?: number | string;
+    signature?: string;
+    bytes?: number | string;
+    resource_type?: string;
+    format?: string;
+    error?: { message?: string };
+  };
+
+  if (
+    !response.ok ||
+    !uploaded.secure_url ||
+    !uploaded.public_id ||
+    !uploaded.signature
+  ) {
+    throw new Error(uploaded.error?.message || "Evidence upload failed");
+  }
+
   return {
     url: uploaded.secure_url,
     publicId: uploaded.public_id,
