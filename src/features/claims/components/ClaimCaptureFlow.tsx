@@ -15,10 +15,14 @@ type Capture = {
   capturedAt: string;
 };
 
-type Props = {
+type ClaimEvidenceSubmission = Parameters<typeof createClaimWithEvidence>[0];
+
+type Props<TResult> = {
   truckNumber: string;
-  onClose: () => void;
-  onSubmitted: (claim: ClaimRequest) => void;
+  onClose?: () => void;
+  onSubmitted: (claim: TResult) => void;
+  prepareUpload?: typeof getClaimEvidenceUploadTarget;
+  sendEvidence?: (payload: ClaimEvidenceSubmission) => Promise<TResult>;
 };
 
 const getMessage = (error: unknown) => {
@@ -46,11 +50,15 @@ const createSubmissionId = () => {
   return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
 };
 
-export default function ClaimCaptureFlow({
+export default function ClaimCaptureFlow<TResult = ClaimRequest>({
   truckNumber,
   onClose,
   onSubmitted,
-}: Props) {
+  prepareUpload = getClaimEvidenceUploadTarget,
+  sendEvidence = createClaimWithEvidence as unknown as (
+    payload: ClaimEvidenceSubmission,
+  ) => Promise<TResult>,
+}: Props<TResult>) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -129,12 +137,20 @@ export default function ClaimCaptureFlow({
       stopCamera();
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: { ideal: "environment" },
+          facingMode: { exact: "environment" },
           width: { ideal: 1280, max: 1280 },
           height: { ideal: 720, max: 720 },
         },
         audio: false,
       });
+      const selectedFacingMode = stream
+        .getVideoTracks()[0]
+        ?.getSettings()
+        .facingMode?.toLowerCase();
+      if (selectedFacingMode === "user") {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new DOMException("Rear camera required", "OverconstrainedError");
+      }
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -146,7 +162,9 @@ export default function ClaimCaptureFlow({
       setError(
         name === "NotAllowedError"
           ? "Allow camera access"
-          : "Camera could not start",
+          : name === "NotFoundError" || name === "OverconstrainedError"
+            ? "Rear camera not available"
+            : "Camera could not start",
       );
     }
   }, [stopCamera]);
@@ -285,18 +303,14 @@ export default function ClaimCaptureFlow({
       const uploadedPhotos = [];
       const uploadedVideos = [];
       for (const capture of photos) {
-        const target = await getClaimEvidenceUploadTarget(
-          submissionIdRef.current,
-        );
+        const target = await prepareUpload(submissionIdRef.current);
         uploadedPhotos.push(
           await uploadClaimEvidence(target, capture.file, capture.capturedAt),
         );
         setProgress((value) => value + 1);
       }
       for (const capture of videos) {
-        const target = await getClaimEvidenceUploadTarget(
-          submissionIdRef.current,
-        );
+        const target = await prepareUpload(submissionIdRef.current);
         uploadedVideos.push(
           await uploadClaimEvidence(target, capture.file, capture.capturedAt),
         );
@@ -304,7 +318,7 @@ export default function ClaimCaptureFlow({
       }
       const currentLocation = locationRef.current;
       if (!currentLocation) throw new Error("Could not get location. Retry");
-      const claim = await createClaimWithEvidence({
+      const claim = await sendEvidence({
         truckNumber,
         submissionId: submissionIdRef.current,
         photos: uploadedPhotos,
@@ -330,13 +344,17 @@ export default function ClaimCaptureFlow({
         <span className="text-sm font-bold">
           Claim · {truckNumber.toUpperCase()}
         </span>
-        <button
-          type="button"
-          onClick={onClose}
-          className="min-h-10 px-2 text-sm text-white/80"
-        >
-          Close
-        </button>
+        {onClose ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-10 px-2 text-sm text-white/80"
+          >
+            Close
+          </button>
+        ) : (
+          <span aria-hidden="true" className="w-10" />
+        )}
       </header>
 
       {!reviewing ? (

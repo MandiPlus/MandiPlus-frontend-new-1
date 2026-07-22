@@ -22,7 +22,10 @@ export default function InstallPrompt() {
     /iPad|iPhone|iPod/.test(navigator.userAgent);
 
   useEffect(() => {
-    if (pathname === "/") return;
+    if (pathname === "/" || pathname.startsWith("/claim/")) {
+      setShowPrompt(false);
+      return;
+    }
 
     const standalone =
       window.matchMedia("(display-mode: standalone)").matches ||
@@ -65,7 +68,8 @@ export default function InstallPrompt() {
     localStorage.setItem("pwa-install-dismissed", "true");
   };
 
-  if (pathname === "/" || !showPrompt) return null;
+  if (pathname === "/" || pathname.startsWith("/claim/") || !showPrompt)
+    return null;
 
   return (
     <div className="fixed bottom-20 left-4 right-4 z-[90] animate-fadeIn">

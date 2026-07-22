@@ -42,12 +42,15 @@ export interface InsuranceForm {
   claimDetails?: string;
   pdfUrl?: string;
   pdfURL?: string;
-  insurance?: {
-    fileUrl?: string;
-    url?: string;
-    fileType?: string;
-    uploadedAt?: string;
-  } | string | null;
+  insurance?:
+    | {
+        fileUrl?: string;
+        url?: string;
+        fileType?: string;
+        uploadedAt?: string;
+      }
+    | string
+    | null;
   insuranceFileUrl?: string;
   insuranceUrl?: string;
   createdAt?: string;
@@ -148,6 +151,15 @@ export interface ClaimLocation {
   capturedAt: string;
 }
 
+export interface PublicClaimCaptureLink {
+  claimId: string;
+  vehicleNumber: string;
+  invoiceNumber?: string;
+  expiresAt: string;
+  submitted: boolean;
+  submittedAt?: string | null;
+}
+
 export interface ClaimEligibleVehicle {
   vehicleNumber: string;
   invoiceId: string;
@@ -176,7 +188,8 @@ export type CreateInsuranceResponse = InsuranceForm;
 function normalizeClaimRequest(claim: ClaimRequest): ClaimRequest {
   const claimFormUrl =
     claim?.claimFormUrl ||
-    (claim as ClaimRequest & { damageFormUrl?: string | null })?.damageFormUrl ||
+    (claim as ClaimRequest & { damageFormUrl?: string | null })
+      ?.damageFormUrl ||
     null;
 
   return {
@@ -315,17 +328,22 @@ export const getInvoiceCustomerAccounts = async (): Promise<
   try {
     const token = getStoredAuthToken();
 
-    const response = await axios.get(`${API_BASE_URL}/invoices/customer-accounts`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
+    const response = await axios.get(
+      `${API_BASE_URL}/invoices/customer-accounts`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       },
-    });
+    );
 
     const payload = response.data?.data ?? response.data;
     return Array.isArray(payload) ? payload : [];
   } catch (error) {
     const err = error as AxiosError<ApiError>;
-    throw err.response?.data || { message: "Failed to fetch customer accounts" };
+    throw (
+      err.response?.data || { message: "Failed to fetch customer accounts" }
+    );
   }
 };
 
@@ -347,7 +365,9 @@ export const getTruckFlagStatus = async (
     return response.data;
   } catch (error) {
     const err = error as AxiosError<ApiError>;
-    throw err.response?.data || { message: "Failed to check truck flag status" };
+    throw (
+      err.response?.data || { message: "Failed to check truck flag status" }
+    );
   }
 };
 
@@ -369,7 +389,11 @@ export const getVehicleRecentInvoiceStatus = async (
     return response.data;
   } catch (error) {
     const err = error as AxiosError<ApiError>;
-    throw err.response?.data || { message: "Failed to check recent vehicle invoice status" };
+    throw (
+      err.response?.data || {
+        message: "Failed to check recent vehicle invoice status",
+      }
+    );
   }
 };
 
@@ -378,33 +402,39 @@ export const getVerifiedSuppliers = async (): Promise<
 > => {
   try {
     const token = getInsuranceLookupToken();
-    const response = await axios.get(`${API_BASE_URL}/invoices/verified-suppliers`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    });
+    const response = await axios.get(
+      `${API_BASE_URL}/invoices/verified-suppliers`,
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      },
+    );
 
     const payload = response.data?.data ?? response.data;
     return Array.isArray(payload) ? payload : [];
   } catch (error) {
     const err = error as AxiosError<ApiError>;
-    throw err.response?.data || { message: "Failed to fetch verified suppliers" };
+    throw (
+      err.response?.data || { message: "Failed to fetch verified suppliers" }
+    );
   }
 };
 
-export const getSupplierHistoricalParties = async (
-  params: {
-    supplierId?: string;
-    supplierName?: string;
-    search?: string;
-  },
-): Promise<HistoricalPartyOption[]> => {
+export const getSupplierHistoricalParties = async (params: {
+  supplierId?: string;
+  supplierName?: string;
+  search?: string;
+}): Promise<HistoricalPartyOption[]> => {
   try {
     const token = getStoredAuthToken();
-    const response = await axios.get(`${API_BASE_URL}/invoices/supplier-parties`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
+    const response = await axios.get(
+      `${API_BASE_URL}/invoices/supplier-parties`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        params,
       },
-      params,
-    });
+    );
 
     const payload = response.data?.data ?? response.data;
     return Array.isArray(payload) ? payload : [];
@@ -414,21 +444,22 @@ export const getSupplierHistoricalParties = async (
   }
 };
 
-export const getBuyerHistoricalSuppliers = async (
-  params: {
-    buyerId?: string;
-    buyerName?: string;
-    search?: string;
-  },
-): Promise<HistoricalPartyOption[]> => {
+export const getBuyerHistoricalSuppliers = async (params: {
+  buyerId?: string;
+  buyerName?: string;
+  search?: string;
+}): Promise<HistoricalPartyOption[]> => {
   try {
     const token = getStoredAuthToken();
-    const response = await axios.get(`${API_BASE_URL}/invoices/buyer-suppliers`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
+    const response = await axios.get(
+      `${API_BASE_URL}/invoices/buyer-suppliers`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        params,
       },
-      params,
-    });
+    );
 
     const payload = response.data?.data ?? response.data;
     return Array.isArray(payload) ? payload : [];
@@ -438,22 +469,23 @@ export const getBuyerHistoricalSuppliers = async (
   }
 };
 
-export const getPartyAddressSuggestions = async (
-  params: {
-    partyId?: string;
-    partyName?: string;
-    role?: "buyer" | "supplier";
-    search?: string;
-  },
-): Promise<PartyAddressSuggestion[]> => {
+export const getPartyAddressSuggestions = async (params: {
+  partyId?: string;
+  partyName?: string;
+  role?: "buyer" | "supplier";
+  search?: string;
+}): Promise<PartyAddressSuggestion[]> => {
   try {
     const token = getStoredAuthToken();
-    const response = await axios.get(`${API_BASE_URL}/invoices/party-addresses`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
+    const response = await axios.get(
+      `${API_BASE_URL}/invoices/party-addresses`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        params,
       },
-      params,
-    });
+    );
     return response.data;
   } catch (error: unknown) {
     const err = error as AxiosError<ApiError>;
@@ -461,21 +493,22 @@ export const getPartyAddressSuggestions = async (
   }
 };
 
-export const getSupplierPartyAssists = async (
-  params: {
-    supplierId?: string;
-    supplierName?: string;
-    partyName: string;
-  },
-): Promise<SupplierPartyAssistResponse> => {
+export const getSupplierPartyAssists = async (params: {
+  supplierId?: string;
+  supplierName?: string;
+  partyName: string;
+}): Promise<SupplierPartyAssistResponse> => {
   try {
     const token = getStoredAuthToken();
-    const response = await axios.get(`${API_BASE_URL}/invoices/supplier-party-assists`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
+    const response = await axios.get(
+      `${API_BASE_URL}/invoices/supplier-party-assists`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        params,
       },
-      params,
-    });
+    );
 
     const payload = response.data?.data ?? response.data;
     return {
@@ -491,7 +524,11 @@ export const getSupplierPartyAssists = async (
     };
   } catch (error) {
     const err = error as AxiosError<ApiError>;
-    throw err.response?.data || { message: "Failed to fetch supplier-party assists" };
+    throw (
+      err.response?.data || {
+        message: "Failed to fetch supplier-party assists",
+      }
+    );
   }
 };
 
@@ -607,11 +644,15 @@ export const getClaimEvidenceUploadTarget = async (
     return response.data?.data || response.data;
   } catch (error) {
     const err = error as AxiosError<any>;
-    throw err.response?.data || { message: "Failed to prepare evidence upload" };
+    throw (
+      err.response?.data || { message: "Failed to prepare evidence upload" }
+    );
   }
 };
 
-export const getClaimEligibleVehicles = async (): Promise<ClaimEligibleVehicle[]> => {
+export const getClaimEligibleVehicles = async (): Promise<
+  ClaimEligibleVehicle[]
+> => {
   try {
     const token = getStoredAuthToken();
     const response = await axios.get(
@@ -695,6 +736,72 @@ export const createClaimWithEvidence = async (payload: {
     const err = error as AxiosError<any>;
     throw err.response?.data || { message: "Failed to send claim" };
   }
+};
+
+const readPublicClaimResponse = async <T>(response: Response): Promise<T> => {
+  const payload = (await response.json().catch(() => null)) as
+    (T & { message?: string | string[] }) | null;
+  if (!response.ok || !payload) {
+    const message = payload?.message;
+    throw new Error(
+      Array.isArray(message)
+        ? message[0]
+        : message || "Unable to open claim link",
+    );
+  }
+  return payload;
+};
+
+export const getPublicClaimCaptureLink = async (
+  token: string,
+): Promise<PublicClaimCaptureLink> => {
+  const response = await fetch(
+    `${API_BASE_URL}/claim-requests/public/${encodeURIComponent(token)}`,
+    { cache: "no-store" },
+  );
+  return readPublicClaimResponse<PublicClaimCaptureLink>(response);
+};
+
+export const getPublicClaimEvidenceUploadTarget = async (
+  token: string,
+  submissionId: string,
+): Promise<ClaimEvidenceUploadTarget> => {
+  const response = await fetch(
+    `${API_BASE_URL}/claim-requests/public/${encodeURIComponent(token)}/evidence-upload-signature`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ submissionId }),
+    },
+  );
+  return readPublicClaimResponse<ClaimEvidenceUploadTarget>(response);
+};
+
+export const createPublicClaimWithEvidence = async (
+  token: string,
+  payload: {
+    truckNumber: string;
+    submissionId: string;
+    photos: ClaimEvidenceUploadProof[];
+    videos: ClaimEvidenceUploadProof[];
+    location: ClaimLocation;
+  },
+): Promise<PublicClaimCaptureLink> => {
+  const evidence = {
+    submissionId: payload.submissionId,
+    photos: payload.photos,
+    videos: payload.videos,
+    location: payload.location,
+  };
+  const response = await fetch(
+    `${API_BASE_URL}/claim-requests/public/${encodeURIComponent(token)}/evidence`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(evidence),
+    },
+  );
+  return readPublicClaimResponse<PublicClaimCaptureLink>(response);
 };
 
 /**
