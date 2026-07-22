@@ -20,7 +20,11 @@ type Capture = {
 
 const PHOTO_TOTAL = 4;
 const VIDEO_TOTAL = 2;
-const RECORDING_LIMIT_MS = 8000;
+const RECORDING_LIMIT_MS = 60_000;
+const VIDEO_WIDTH = 854;
+const VIDEO_HEIGHT = 480;
+const VIDEO_FRAME_RATE = 20;
+const VIDEO_BITS_PER_SECOND = 500_000;
 
 type ClaimEvidenceSubmission = Parameters<typeof createClaimWithEvidence>[0];
 
@@ -57,6 +61,9 @@ const createSubmissionId = () => {
   const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
   return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
 };
+
+const formatDuration = (seconds: number) =>
+  `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
 function UploadBadge({ state }: { state: Capture["uploadState"] }) {
   const ready = state === "ready";
@@ -113,6 +120,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
   const [videos, setVideos] = useState<Capture[]>([]);
   const [location, setLocation] = useState<ClaimLocation | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
+  const [videoProfileReady, setVideoProfileReady] = useState(false);
   const [photoCaptureBusy, setPhotoCaptureBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordingElapsed, setRecordingElapsed] = useState(0);
@@ -168,7 +176,11 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
           }
           updateCaptureUploadState(capture.id, "uploading");
           const target = await prepareUpload(submissionId);
-          const proof = await uploadFile(target, capture.file, capture.capturedAt);
+          const proof = await uploadFile(
+            target,
+            capture.file,
+            capture.capturedAt,
+          );
           if (generation === uploadGenerationRef.current) {
             uploadProofsRef.current.set(capture.id, proof);
             updateCaptureUploadState(capture.id, "ready");
@@ -198,6 +210,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setCameraReady(false);
+    setVideoProfileReady(false);
     setRecording(false);
     setRecordingElapsed(0);
   }, [clearRecordingTimers]);
@@ -307,6 +320,47 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
     capturesRef.current = [...photos, ...videos];
   }, [photos, videos]);
 
+  useEffect(() => {
+    if (photos.length !== PHOTO_TOTAL || !cameraReady) return;
+
+    let cancelled = false;
+    const prepareCompactVideo = async () => {
+      setVideoProfileReady(false);
+      const videoTrack = streamRef.current?.getVideoTracks()[0];
+      if (!videoTrack) return;
+
+      if ("contentHint" in videoTrack) videoTrack.contentHint = "motion";
+      try {
+        await videoTrack.applyConstraints({
+          width: { ideal: VIDEO_WIDTH, max: VIDEO_WIDTH },
+          height: { ideal: VIDEO_HEIGHT, max: VIDEO_HEIGHT },
+          frameRate: {
+            ideal: VIDEO_FRAME_RATE,
+            max: VIDEO_FRAME_RATE,
+          },
+        });
+      } catch {
+        try {
+          await videoTrack.applyConstraints({
+            frameRate: {
+              ideal: VIDEO_FRAME_RATE,
+              max: VIDEO_FRAME_RATE,
+            },
+          });
+        } catch {
+          // The bitrate cap below still keeps the video compact on older phones.
+        }
+      }
+    };
+
+    void prepareCompactVideo().finally(() => {
+      if (!cancelled) setVideoProfileReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [cameraReady, photos.length]);
+
   const takePhoto = () => {
     const video = videoRef.current;
     if (
@@ -366,6 +420,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
   const startRecording = () => {
     if (
       !streamRef.current ||
+      !videoProfileReady ||
       recording ||
       videos.length >= VIDEO_TOTAL ||
       typeof MediaRecorder === "undefined"
@@ -378,7 +433,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
     const mimeType = getRecorderMimeType();
     const recorder = new MediaRecorder(streamRef.current, {
       ...(mimeType ? { mimeType } : {}),
-      videoBitsPerSecond: 1_000_000,
+      videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
     });
     recorderRef.current = recorder;
     recorder.ondataavailable = (event) => {
@@ -419,7 +474,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
       setRecording(false);
       setRecordingElapsed(0);
     };
-    recorder.start(500);
+    recorder.start(1000);
     recordingStartedAtRef.current = performance.now();
     setRecordingElapsed(0);
     setRecording(true);
@@ -579,7 +634,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
               aria-live="polite"
             >
               {recording
-                ? `● Recording 00:${String(recordingSeconds).padStart(2, "0")} / 00:08`
+                ? `● Recording ${formatDuration(recordingSeconds)} / 01:00`
                 : captureFeedback ||
                   (capturingPhotos
                     ? `${PHOTO_TOTAL - photos.length} photos remaining`
@@ -674,7 +729,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
             >
               <button
                 type="button"
-                disabled={!cameraReady}
+                disabled={!cameraReady || !videoProfileReady}
                 onClick={recording ? stopRecording : startRecording}
                 className="grid h-[68px] w-[68px] place-items-center rounded-full border-4 border-[#0d1117] bg-white disabled:opacity-40"
                 aria-label={recording ? "Stop recording" : "Start recording"}
@@ -693,7 +748,9 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
             >
               {recording
                 ? "Recording · tap to finish"
-                : `Start video ${videos.length + 1} of ${VIDEO_TOTAL}`}
+                : !videoProfileReady
+                  ? "Preparing video…"
+                  : `Start video ${videos.length + 1} of ${VIDEO_TOTAL} · up to 1 min`}
             </p>
           </div>
         )}
