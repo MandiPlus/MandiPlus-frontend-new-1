@@ -148,6 +148,12 @@ export interface ClaimLocation {
   capturedAt: string;
 }
 
+export interface ClaimEligibleVehicle {
+  vehicleNumber: string;
+  invoiceId: string;
+  invoiceNumber: string;
+}
+
 // Added this DTO for the damage form
 export interface CreateDamageFormDto {
   damageCertificateDate: string;
@@ -602,6 +608,20 @@ export const getClaimEvidenceUploadTarget = async (
   } catch (error) {
     const err = error as AxiosError<any>;
     throw err.response?.data || { message: "Failed to prepare evidence upload" };
+  }
+};
+
+export const getClaimEligibleVehicles = async (): Promise<ClaimEligibleVehicle[]> => {
+  try {
+    const token = getStoredAuthToken();
+    const response = await axios.get(
+      `${API_BASE_URL}/claim-requests/eligible-vehicles`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    return Array.isArray(response.data) ? response.data : [];
+  } catch (error) {
+    const err = error as AxiosError<any>;
+    throw err.response?.data || { message: "Failed to load vehicles" };
   }
 };
 

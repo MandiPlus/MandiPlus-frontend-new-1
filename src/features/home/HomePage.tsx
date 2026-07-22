@@ -16,9 +16,11 @@ import {
   getMyClaimsForms,
   getAdminClaimsForms,
   ClaimRequest,
+  ClaimEligibleVehicle,
   CreateDamageFormDto,
   uploadClaimMedia,
-  submitDamageForm
+  submitDamageForm,
+  getClaimEligibleVehicles,
 } from "../insurance/api";
 import {
   getMyWalletSummary,
@@ -99,6 +101,8 @@ const HomePage = () => {
   const [loadingClaims, setLoadingClaims] = useState(false);
   const [showClaimsModal, setShowClaimsModal] = useState(false);
   const [newClaimTruckNo, setNewClaimTruckNo] = useState('');
+  const [claimVehicles, setClaimVehicles] = useState<ClaimEligibleVehicle[]>([]);
+  const [loadingClaimVehicles, setLoadingClaimVehicles] = useState(false);
   const [showClaimCapture, setShowClaimCapture] = useState(false);
   const [statusLookupInput, setStatusLookupInput] = useState('');
   const [statusLookupResult, setStatusLookupResult] = useState<ClaimRequest | null>(null);
@@ -323,6 +327,26 @@ const HomePage = () => {
     setStatusLookupResult(null);
     setStatusLookupError(null);
     fetchClaims();
+    void fetchClaimVehicles();
+  };
+
+  const fetchClaimVehicles = async () => {
+    setLoadingClaimVehicles(true);
+    try {
+      const vehicles = await getClaimEligibleVehicles();
+      setClaimVehicles(vehicles);
+      setNewClaimTruckNo((current) =>
+        vehicles.some((item) => item.vehicleNumber === current)
+          ? current
+          : vehicles[0]?.vehicleNumber || '',
+      );
+    } catch (err: unknown) {
+      setClaimVehicles([]);
+      setNewClaimTruckNo('');
+      setError(getErrorMessage(err, 'Failed to load vehicles'));
+    } finally {
+      setLoadingClaimVehicles(false);
+    }
   };
 
   // --- NEW: Create Claim Handler ---
@@ -1294,13 +1318,24 @@ const HomePage = () => {
                 <div className="bg-[#f8f9fd] p-4 rounded-2xl mb-6">
                   <h4 className="font-semibold text-slate-800 mb-2">File a claim</h4>
                   <form onSubmit={handleCreateClaim} className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Vehicle number"
+                    <select
                       value={newClaimTruckNo}
                       onChange={(e) => setNewClaimTruckNo(e.target.value)}
                       className="flex-1 px-4 py-2 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#203044] text-black"
-                    />
+                      disabled={loadingClaimVehicles || claimVehicles.length === 0}
+                    >
+                      {loadingClaimVehicles ? (
+                        <option value="">Loading…</option>
+                      ) : claimVehicles.length === 0 ? (
+                        <option value="">No vehicle available</option>
+                      ) : (
+                        claimVehicles.map((vehicle) => (
+                          <option key={vehicle.invoiceId} value={vehicle.vehicleNumber}>
+                            {vehicle.vehicleNumber}
+                          </option>
+                        ))
+                      )}
+                    </select>
                     <button
                       type="submit"
                       disabled={!newClaimTruckNo.trim()}
