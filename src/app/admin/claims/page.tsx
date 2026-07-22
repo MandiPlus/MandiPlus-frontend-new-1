@@ -56,6 +56,28 @@ function claimStatusLabel(status: ClaimStatus | string) {
   }
 }
 
+function claimProductLabel(claim: ClaimRequest) {
+  const product = claim.invoice?.productName || claim.invoice?.item;
+
+  if (Array.isArray(product)) {
+    return product.filter(Boolean).join(", ") || "N/A";
+  }
+
+  return product || "N/A";
+}
+
+function claimAmountLabel(amount?: number) {
+  if (amount === undefined || amount === null || Number.isNaN(Number(amount))) {
+    return "N/A";
+  }
+
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2,
+  }).format(Number(amount));
+}
+
 export default function ClaimsPage() {
   const [claims, setClaims] = useState<ClaimRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -706,6 +728,46 @@ export default function ClaimsPage() {
                         <span className="ml-2 font-semibold text-slate-900">
                           {selectedClaim.invoice?.invoiceNumber || "N/A"}
                         </span>
+                      </div>
+                      <div className="col-span-2 grid grid-cols-2 gap-3 border-t border-slate-200 pt-3">
+                        <div>
+                          <span className="font-medium text-slate-600">
+                            Product:
+                          </span>
+                          <span className="ml-2 font-semibold text-slate-900">
+                            {claimProductLabel(selectedClaim)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="font-medium text-slate-600">
+                            Quantity:
+                          </span>
+                          <span className="ml-2 font-semibold text-slate-900">
+                            {selectedClaim.invoice?.quantity ?? "N/A"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="font-medium text-slate-600">
+                            Amount:
+                          </span>
+                          <span className="ml-2 font-semibold text-slate-900">
+                            {claimAmountLabel(selectedClaim.invoice?.amount)}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="font-medium text-slate-600">
+                            Route:
+                          </span>
+                          <span className="ml-2 font-semibold text-slate-900">
+                            {selectedClaim.invoice?.supplierName ||
+                              selectedClaim.invoice?.supplier ||
+                              "N/A"}
+                            {" → "}
+                            {selectedClaim.invoice?.billToName ||
+                              selectedClaim.invoice?.buyer ||
+                              "N/A"}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
