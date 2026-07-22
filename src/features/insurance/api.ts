@@ -101,6 +101,51 @@ export interface ClaimRequest {
   // Legacy field (deprecated)
   supportedMedia?: string[];
   notes?: string;
+  evidenceSubmissionId?: string | null;
+  evidencePhotos?: ClaimEvidenceItem[];
+  evidenceVideos?: ClaimEvidenceItem[];
+  locationLatitude?: number | string | null;
+  locationLongitude?: number | string | null;
+  locationAccuracyMeters?: number | string | null;
+  locationCapturedAt?: string | null;
+  evidenceSubmittedAt?: string | null;
+}
+
+export interface ClaimEvidenceItem {
+  url: string;
+  publicId: string;
+  mimeType: string;
+  size: number;
+  capturedAt: string;
+  slot: number;
+}
+
+export interface ClaimEvidenceUploadTarget {
+  uploadUrl: string;
+  cloudName: string;
+  apiKey: string;
+  timestamp: number;
+  signature: string;
+  publicId: string;
+}
+
+export interface ClaimEvidenceUploadProof {
+  url: string;
+  publicId: string;
+  version: number;
+  signature: string;
+  size: number;
+  mimeType: string;
+  capturedAt: string;
+  resourceType?: string;
+  format?: string;
+}
+
+export interface ClaimLocation {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  capturedAt: string;
 }
 
 // Added this DTO for the damage form
@@ -540,6 +585,71 @@ export const createClaimByTruck = async (
   } catch (error) {
     const err = error as AxiosError<any>;
     throw err.response?.data || { message: "Failed to create claim" };
+  }
+};
+
+export const getClaimEvidenceUploadTarget = async (
+  submissionId: string,
+): Promise<ClaimEvidenceUploadTarget> => {
+  try {
+    const token = getStoredAuthToken();
+    const response = await axios.post(
+      `${API_BASE_URL}/claim-requests/evidence-upload-signature`,
+      { submissionId },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    return response.data?.data || response.data;
+  } catch (error) {
+    const err = error as AxiosError<any>;
+    throw err.response?.data || { message: "Failed to prepare evidence upload" };
+  }
+};
+
+export const uploadClaimEvidence = async (
+  target: ClaimEvidenceUploadTarget,
+  file: File,
+  capturedAt: string,
+): Promise<ClaimEvidenceUploadProof> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("api_key", target.apiKey);
+  formData.append("timestamp", String(target.timestamp));
+  formData.append("signature", target.signature);
+  formData.append("public_id", target.publicId);
+
+  const response = await axios.post(target.uploadUrl, formData);
+  const uploaded = response.data;
+  return {
+    url: uploaded.secure_url,
+    publicId: uploaded.public_id,
+    version: Number(uploaded.version),
+    signature: uploaded.signature,
+    size: Number(uploaded.bytes || file.size),
+    mimeType: file.type,
+    capturedAt,
+    resourceType: uploaded.resource_type,
+    format: uploaded.format,
+  };
+};
+
+export const createClaimWithEvidence = async (payload: {
+  truckNumber: string;
+  submissionId: string;
+  photos: ClaimEvidenceUploadProof[];
+  videos: ClaimEvidenceUploadProof[];
+  location: ClaimLocation;
+}): Promise<ClaimRequest> => {
+  try {
+    const token = getStoredAuthToken();
+    const response = await axios.post(
+      `${API_BASE_URL}/claim-requests/by-truck/evidence`,
+      payload,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    return normalizeClaimRequest(response.data);
+  } catch (error) {
+    const err = error as AxiosError<any>;
+    throw err.response?.data || { message: "Failed to send claim" };
   }
 };
 

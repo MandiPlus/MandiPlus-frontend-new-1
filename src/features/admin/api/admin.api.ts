@@ -980,6 +980,28 @@ export interface ClaimRequest {
   damageFormUrl?: string | null; // Damage form PDF URL
   // Legacy field (deprecated)
   supportedMedia?: string[];
+  evidenceSubmissionId?: string | null;
+  evidencePhotos?: Array<{
+    url: string;
+    publicId: string;
+    mimeType: string;
+    size: number;
+    capturedAt: string;
+    slot: number;
+  }>;
+  evidenceVideos?: Array<{
+    url: string;
+    publicId: string;
+    mimeType: string;
+    size: number;
+    capturedAt: string;
+    slot: number;
+  }>;
+  locationLatitude?: number | string | null;
+  locationLongitude?: number | string | null;
+  locationAccuracyMeters?: number | string | null;
+  locationCapturedAt?: string | null;
+  evidenceSubmittedAt?: string | null;
 }
 
 export interface FilterClaimRequestsDto {

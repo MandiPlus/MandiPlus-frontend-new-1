@@ -17,7 +17,6 @@ import {
   getAdminClaimsForms,
   ClaimRequest,
   CreateDamageFormDto,
-  createClaimByTruck,
   uploadClaimMedia,
   submitDamageForm
 } from "../insurance/api";
@@ -53,6 +52,7 @@ import {
   ChatBubbleLeftRightIcon,
   XMarkIcon
 } from '@heroicons/react/24/outline';
+import ClaimCaptureFlow from "../claims/components/ClaimCaptureFlow";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/";
 
@@ -99,7 +99,7 @@ const HomePage = () => {
   const [loadingClaims, setLoadingClaims] = useState(false);
   const [showClaimsModal, setShowClaimsModal] = useState(false);
   const [newClaimTruckNo, setNewClaimTruckNo] = useState('');
-  const [creatingClaim, setCreatingClaim] = useState(false);
+  const [showClaimCapture, setShowClaimCapture] = useState(false);
   const [statusLookupInput, setStatusLookupInput] = useState('');
   const [statusLookupResult, setStatusLookupResult] = useState<ClaimRequest | null>(null);
   const [statusLookupError, setStatusLookupError] = useState<string | null>(null);
@@ -326,21 +326,10 @@ const HomePage = () => {
   };
 
   // --- NEW: Create Claim Handler ---
-  const handleCreateClaim = async (e: React.FormEvent) => {
+  const handleCreateClaim = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newClaimTruckNo) return;
-    setCreatingClaim(true);
-    try {
-      const newClaim = await createClaimByTruck(newClaimTruckNo);
-      setNewClaimTruckNo('');
-      setCreatedClaim(newClaim);
-      setShowClaimSuccessModal(true);
-      await fetchClaims();
-    } catch (err: unknown) {
-      alert(getErrorMessage(err, "Failed to create claim. Ensure invoice exists."));
-    } finally {
-      setCreatingClaim(false);
-    }
+    if (!newClaimTruckNo.trim()) return;
+    setShowClaimCapture(true);
   };
 
   const handleCheckClaimStatus = async (e: React.FormEvent) => {
@@ -1303,24 +1292,23 @@ const HomePage = () => {
               <div className="p-6">
                 {/* Create New Claim Section */}
                 <div className="bg-[#f8f9fd] p-4 rounded-2xl mb-6">
-                  <h4 className="font-semibold text-slate-800 mb-2">Create New Claim</h4>
+                  <h4 className="font-semibold text-slate-800 mb-2">File a claim</h4>
                   <form onSubmit={handleCreateClaim} className="flex gap-2">
                     <input
                       type="text"
-                      placeholder="Enter Truck Number (e.g. MH12AB1234)"
+                      placeholder="Vehicle number"
                       value={newClaimTruckNo}
                       onChange={(e) => setNewClaimTruckNo(e.target.value)}
                       className="flex-1 px-4 py-2 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#203044] text-black"
                     />
                     <button
                       type="submit"
-                      disabled={creatingClaim}
+                      disabled={!newClaimTruckNo.trim()}
                       className="bg-[#203044] text-white px-4 py-2 rounded-xl font-medium disabled:opacity-50"
                     >
-                      {creatingClaim ? '...' : 'Create'}
+                      Start
                     </button>
                   </form>
-                  <p className="text-xs text-gray-500 mt-2">Latest invoice for this truck will be used.</p>
                 </div>
 
                 <div className="bg-slate-50 p-4 rounded-2xl mb-6 border border-slate-200">
@@ -1440,61 +1428,50 @@ const HomePage = () => {
           </div>
         )}
 
+        {showClaimCapture && (
+          <ClaimCaptureFlow
+            truckNumber={newClaimTruckNo.trim()}
+            onClose={() => setShowClaimCapture(false)}
+            onSubmitted={(claim) => {
+              setCreatedClaim(claim);
+              setNewClaimTruckNo('');
+              setShowClaimCapture(false);
+              setShowClaimsModal(false);
+              setShowClaimSuccessModal(true);
+              void fetchClaims();
+            }}
+          />
+        )}
+
         {/* NEW: CLAIM SUCCESS MODAL */}
         {showClaimSuccessModal && createdClaim && (
-          <div className="fixed inset-0 bg-gray-200 bg-opacity-75 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-3xl w-full max-w-md p-8 text-center shadow-2xl">
-              {/* Success Icon with overlapping documents */}
-              <div className="flex justify-center mb-6">
-                <div className="relative">
-                  {/* Back document */}
-                  <div className="absolute top-2 left-2 w-20 h-20 bg-gray-300 rounded-lg transform rotate-6"></div>
-                  {/* Front document with checkmark */}
-                  <div className="relative w-20 h-20 bg-blue-50 rounded-lg flex items-center justify-center shadow-md">
-                    <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center">
-                      <CheckIcon className="w-7 h-7 text-white" />
-                    </div>
-                  </div>
-                  {/* Gradient line below */}
-                  <div className="absolute -bottom-3 left-1/2 transform -translate-x-1/2 w-24 h-1.5 bg-gradient-to-r from-blue-400 via-blue-500 to-green-500 rounded-full"></div>
-                </div>
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-3xl w-full max-w-sm p-6 text-center shadow-2xl">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100">
+                <CheckIcon className="h-8 w-8 text-emerald-700" />
               </div>
-
-              {/* Success Message */}
-              <h2 className="text-xl font-bold text-slate-800 mb-3 leading-tight">
-                Your claim has successfully registered.
-              </h2>
-              <p className="text-base text-slate-700 mb-2">
-                Your claim number is <span className="font-bold text-blue-600">{createdClaim.invoice?.invoiceNumber || createdClaim.id.replace(/-/g, '').slice(0, 10)}</span>.
+              <h2 className="text-xl font-bold text-slate-800">Claim sent</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                {createdClaim.invoice?.invoiceNumber || createdClaim.id.replace(/-/g, '').slice(0, 10)}
               </p>
-              <p className="text-sm text-gray-600 mb-1">
-                Please note this claim number for future reference.
-              </p>
-              <p className="text-sm text-gray-600 mb-6">
-                Kindly upload the required documents to speed up your claim process.
-              </p>
-
-              {/* Upload Documents Button */}
               <button
                 onClick={() => {
                   setShowClaimSuccessModal(false);
                   setSelectedClaimForDetail(createdClaim);
                   setShowClaimDetailModal(true);
                 }}
-                className="w-full bg-gradient-to-r from-blue-500 via-blue-600 to-green-500 text-white py-3.5 px-6 rounded-xl font-semibold text-base mb-4 hover:from-blue-600 hover:via-blue-700 hover:to-green-600 transition-all shadow-lg transform hover:scale-[1.02]"
+                className="mt-6 w-full rounded-xl bg-[#203044] px-6 py-3 text-sm font-bold text-white"
               >
-                Upload Documents
+                Add documents
               </button>
-
-              {/* Go Back Link */}
               <button
                 onClick={() => {
                   setShowClaimSuccessModal(false);
                   setCreatedClaim(null);
                 }}
-                className="text-gray-500 text-sm hover:text-gray-700 underline"
+                className="mt-3 min-h-10 px-4 text-sm text-gray-500 underline"
               >
-                Go back to home
+                Done
               </button>
             </div>
           </div>

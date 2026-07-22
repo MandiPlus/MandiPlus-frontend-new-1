@@ -308,6 +308,7 @@ export default function ClaimsPage() {
                                         <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Truck / Invoice</th>
                                         <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Surveyor</th>
                                         <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Date</th>
+                                        <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Evidence</th>
                                         <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
                                         <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
                                             <span className="sr-only">Actions</span>
@@ -316,9 +317,9 @@ export default function ClaimsPage() {
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 bg-white">
                                     {loading ? (
-                                        <tr><td colSpan={6} className="text-center py-10">Loading claims...</td></tr>
+                                        <tr><td colSpan={7} className="text-center py-10">Loading claims...</td></tr>
                                     ) : claims.length === 0 ? (
-                                        <tr><td colSpan={6} className="text-center py-10 text-gray-500">No claims found</td></tr>
+                                        <tr><td colSpan={7} className="text-center py-10 text-gray-500">No claims found</td></tr>
                                     ) : (
                                         claims.map((claim) => (
                                             <tr key={claim.id}>
@@ -339,6 +340,13 @@ export default function ClaimsPage() {
                                                 </td>
                                                 <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                     {new Date(claim.createdAt).toLocaleDateString()}
+                                                </td>
+                                                <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                                    {claim.evidencePhotos?.length === 4 && claim.evidenceVideos?.length === 2 ? (
+                                                        <span className="font-semibold text-emerald-700">6 / 6</span>
+                                                    ) : (
+                                                        <span className="text-gray-400">Legacy</span>
+                                                    )}
                                                 </td>
                                                 <td className="whitespace-nowrap px-3 py-4 text-sm">
                                                     <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${getStatusColor(claim.status)}`}>
@@ -492,6 +500,42 @@ export default function ClaimsPage() {
                                             </div>
                                         </div>
                                     </div>
+
+                                    {selectedClaim.evidencePhotos?.length || selectedClaim.evidenceVideos?.length ? (
+                                        <div className="mb-6 space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="font-semibold text-gray-900">Live evidence</h4>
+                                                <span className="text-xs font-semibold text-emerald-700">
+                                                    {(selectedClaim.evidencePhotos?.length || 0) + (selectedClaim.evidenceVideos?.length || 0)} / 6
+                                                </span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                                {selectedClaim.evidencePhotos?.map((photo, index) => (
+                                                    <a key={photo.publicId || photo.url} href={photo.url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-lg bg-black">
+                                                        <img src={photo.url} alt={`Live photo ${index + 1}`} loading="lazy" className="aspect-video h-full w-full object-cover" />
+                                                    </a>
+                                                ))}
+                                                {selectedClaim.evidenceVideos?.map((video, index) => (
+                                                    <video key={video.publicId || video.url} src={video.url} aria-label={`Live video ${index + 1}`} controls preload="metadata" className="aspect-video w-full rounded-lg bg-black object-cover" />
+                                                ))}
+                                            </div>
+                                            {selectedClaim.locationLatitude != null && selectedClaim.locationLongitude != null && (
+                                                <a
+                                                    href={`https://www.google.com/maps?q=${selectedClaim.locationLatitude},${selectedClaim.locationLongitude}`}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3 text-sm font-semibold text-[#4309ac]"
+                                                >
+                                                    <span>Open location</span>
+                                                    <span className="text-xs text-slate-500">±{Math.round(Number(selectedClaim.locationAccuracyMeters || 0))}m</span>
+                                                </a>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="mb-6 rounded-lg border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500">
+                                            Legacy claim · no live evidence
+                                        </div>
+                                    )}
 
                                     {/* Media Upload Sections */}
                                     <div className="space-y-4">
