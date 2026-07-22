@@ -94,8 +94,9 @@ interface Invoice {
     } | null;
 }
 
-interface InsuranceFormFilters extends InvoiceFilterParams {
+interface InsuranceFormFilters extends Omit<InvoiceFilterParams, 'insuranceStatus'> {
     verificationStatus?: '' | 'pending' | 'verified' | 'rejected';
+    insuranceStatus?: '' | 'pending' | 'uploaded';
 }
 
 type InsuranceFormsPageProps = {
@@ -501,12 +502,13 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         productName: '',
         sourceSurface: appQueueMode ? 'USER_APP' : '',
         verificationStatus: appQueueMode ? 'pending' : '',
+        insuranceStatus: '',
     });
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 20;
     const [serverTotal, setServerTotal] = useState(0);
     const [serverTotalPages, setServerTotalPages] = useState(1);
-    const [summaryStats, setSummaryStats] = useState({ totalRows: 0, verifiedCount: 0, rejectedCount: 0, pendingPaymentCount: 0, paidCount: 0, totalPremium: 0, totalPaidAmount: 0 });
+    const [summaryStats, setSummaryStats] = useState({ totalRows: 0, verifiedCount: 0, rejectedCount: 0, pendingInsuranceCount: null as number | null, pendingPaymentCount: 0, paidCount: 0, totalPremium: 0, totalPaidAmount: 0 });
     const debouncedFilters = useDebounce(filters, 500);
 
     const buildActiveFilters = useCallback((sourceFilters: InsuranceFormFilters): InvoiceFilterParams => {
@@ -558,13 +560,21 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
             activeFilters.sourceSurface = sourceFilters.sourceSurface.trim();
         }
 
-        if (sourceFilters.verificationStatus === 'verified') {
+        if (sourceFilters.insuranceStatus === 'pending') {
+            activeFilters.insuranceStatus = 'pending';
             activeFilters.isVerified = true;
             activeFilters.isRejected = false;
-        } else if (sourceFilters.verificationStatus === 'pending') {
+        } else if (sourceFilters.insuranceStatus === 'uploaded') {
+            activeFilters.insuranceStatus = 'uploaded';
+        }
+
+        if (!sourceFilters.insuranceStatus && sourceFilters.verificationStatus === 'verified') {
+            activeFilters.isVerified = true;
+            activeFilters.isRejected = false;
+        } else if (!sourceFilters.insuranceStatus && sourceFilters.verificationStatus === 'pending') {
             activeFilters.isVerified = false;
             activeFilters.isRejected = false;
-        } else if (sourceFilters.verificationStatus === 'rejected') {
+        } else if (!sourceFilters.insuranceStatus && sourceFilters.verificationStatus === 'rejected') {
             activeFilters.isRejected = true;
         }
 
@@ -617,6 +627,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                     totalRows: summaryResponse.totalRows || 0,
                     verifiedCount: summaryResponse.verifiedCount || 0,
                     rejectedCount: summaryResponse.rejectedCount || 0,
+                    pendingInsuranceCount: summaryResponse.pendingInsuranceCount ?? null,
                     pendingPaymentCount: summaryResponse.pendingPaymentCount || 0,
                     paidCount: summaryResponse.paidCount || 0,
                     totalPremium: summaryResponse.totalPremium || 0,
@@ -1130,7 +1141,12 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
 
     const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-        setFilters((prev) => ({ ...prev, [name]: value }));
+        setFilters((prev) => ({
+            ...prev,
+            [name]: value,
+            ...(name === 'verificationStatus' ? { insuranceStatus: '' } : {}),
+            ...(name === 'insuranceStatus' ? { verificationStatus: '' } : {}),
+        }));
         setCurrentPage(1);
     };
 
@@ -2300,7 +2316,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                 </div>
 
                 <div className="bg-white text-black p-3 sm:p-4 rounded-lg shadow mb-4 sm:mb-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-9 gap-3 sm:gap-4">
+                    <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 ${appQueueMode ? 'xl:grid-cols-9' : 'xl:grid-cols-5 2xl:grid-cols-10'}`}>
                         <select
                             name="invoiceType"
                             value={filters.invoiceType || ''}
@@ -2389,6 +2405,22 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                             <option value="verified">Verified</option>
                             <option value="rejected">Rejected</option>
                         </select>
+
+                        {!appQueueMode ? (
+                            <select
+                                name="insuranceStatus"
+                                aria-label="Insurance status"
+                                value={filters.insuranceStatus || ''}
+                                onChange={handleFilterChange}
+                                className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
+                            >
+                                <option value="">Insurance queue</option>
+                                <option value="pending">
+                                    Pending insurance ({summaryStats.pendingInsuranceCount ?? '…'})
+                                </option>
+                                <option value="uploaded">Insurance uploaded</option>
+                            </select>
+                        ) : null}
                     </div>
 
                     <div className="mt-3 flex items-center justify-between gap-3 text-xs sm:text-sm text-slate-500">
@@ -2444,7 +2476,11 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                     {paginatedInvoices.length === 0 ? (
                                         <tr>
                                             <td colSpan={14} className="px-6 py-12 text-center text-sm text-gray-500">
-                                                {loading ? 'Loading...' : 'No invoices found matching criteria.'}
+                                                {loading
+                                                    ? 'Loading...'
+                                                    : filters.insuranceStatus === 'pending'
+                                                        ? 'All verified invoices have insurance uploaded.'
+                                                        : 'No invoices found matching criteria.'}
                                             </td>
                                         </tr>
                                     ) : (
@@ -2971,7 +3007,11 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                         </div>
                     ) : paginatedInvoices.length === 0 ? (
                         <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
-                            {loading ? 'Loading...' : 'No invoices found matching criteria.'}
+                            {loading
+                                ? 'Loading...'
+                                : filters.insuranceStatus === 'pending'
+                                    ? 'All verified invoices have insurance uploaded.'
+                                    : 'No invoices found matching criteria.'}
                         </div>
                     ) : (
                         paginatedInvoices.map((inv) => (

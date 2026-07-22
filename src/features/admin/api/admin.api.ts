@@ -626,6 +626,7 @@ export interface InvoiceFilterParams {
   sourceSurfaces?: string;
   exportType?: "all" | "payment";
   paymentStatus?: string;
+  insuranceStatus?: "pending" | "uploaded";
   isVerified?: boolean;
   isRejected?: boolean;
   excludeUnverifiedAppSubmissions?: boolean;
@@ -1692,6 +1693,7 @@ class AdminApi {
     totalRows?: number;
     verifiedCount?: number;
     rejectedCount?: number;
+    pendingInsuranceCount?: number;
     pendingPaymentCount?: number;
     paidCount?: number;
     totalPremium?: number;
@@ -1830,6 +1832,7 @@ class AdminApi {
     productName?: string;
     userId?: string;
     paymentStatus?: string;
+    insuranceStatus?: "pending" | "uploaded";
     isVerified?: boolean;
     isRejected?: boolean;
     advancedFilters?: string;
