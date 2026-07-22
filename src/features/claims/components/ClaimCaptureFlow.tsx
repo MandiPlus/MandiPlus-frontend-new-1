@@ -25,6 +25,7 @@ const VIDEO_WIDTH = 854;
 const VIDEO_HEIGHT = 480;
 const VIDEO_FRAME_RATE = 20;
 const VIDEO_BITS_PER_SECOND = 500_000;
+const AUDIO_BITS_PER_SECOND = 24_000;
 
 type ClaimEvidenceSubmission = Parameters<typeof createClaimWithEvidence>[0];
 
@@ -269,7 +270,13 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
           width: { ideal: 1280, max: 1280 },
           height: { ideal: 720, max: 720 },
         },
-        audio: false,
+        audio: {
+          channelCount: { ideal: 1 },
+          sampleRate: { ideal: 16_000 },
+          echoCancellation: { ideal: true },
+          noiseSuppression: { ideal: true },
+          autoGainControl: { ideal: true },
+        },
       });
       const selectedFacingMode = stream
         .getVideoTracks()[0]
@@ -293,10 +300,12 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
       const name = cameraError instanceof DOMException ? cameraError.name : "";
       setError(
         name === "NotAllowedError"
-          ? "Allow camera access"
-          : name === "NotFoundError" || name === "OverconstrainedError"
-            ? "Rear camera not available"
-            : "Camera could not start",
+          ? "Allow camera and microphone access"
+          : name === "NotFoundError"
+            ? "Camera or microphone not available"
+            : name === "OverconstrainedError"
+              ? "Rear camera not available"
+              : "Camera could not start",
       );
     }
   }, [stopCamera]);
@@ -434,6 +443,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
     const recorder = new MediaRecorder(streamRef.current, {
       ...(mimeType ? { mimeType } : {}),
       videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+      audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
     });
     recorderRef.current = recorder;
     recorder.ondataavailable = (event) => {
