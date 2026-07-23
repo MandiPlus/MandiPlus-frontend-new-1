@@ -512,10 +512,6 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     const buildActiveFilters = useCallback((sourceFilters: InsuranceFormFilters): InvoiceFilterParams => {
         const activeFilters: InvoiceFilterParams = {};
 
-        if (!appQueueMode) {
-            activeFilters.excludeUnverifiedAppSubmissions = true;
-        }
-
         if (sourceFilters.invoiceType) {
             activeFilters.invoiceType = sourceFilters.invoiceType;
         }
