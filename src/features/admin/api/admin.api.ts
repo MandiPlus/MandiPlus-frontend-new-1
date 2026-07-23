@@ -688,6 +688,7 @@ export interface InvoiceFilterParams {
   isVerified?: boolean;
   isRejected?: boolean;
   excludeUnverifiedAppSubmissions?: boolean;
+  excludeVerifiedNonRejected?: boolean;
   advancedFilters?: string;
 }
 
@@ -1963,6 +1964,7 @@ class AdminApi {
     insuranceStatus?: "pending" | "uploaded";
     isVerified?: boolean;
     isRejected?: boolean;
+    excludeVerifiedNonRejected?: boolean;
     advancedFilters?: string;
     invoiceIds?: string[];
     exportType?: "all" | "payment";
