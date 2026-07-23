@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Button from "@/shared/components/Button";
@@ -10,6 +10,7 @@ import { register, sendOtp, verifyOtp } from "@/features/auth/api";
 import { toast } from "react-toastify";
 import { useAuth } from "../context/AuthContext"; // Import useAuth
 import Image from "next/image";
+import { useWebOtp } from "@/features/auth/hooks/useWebOtp";
 
 const indianStates = [
   { value: "ANDHRA_PRADESH", label: "Andhra Pradesh" },
@@ -60,6 +61,7 @@ const RegisterPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState<"FORM" | "OTP">("FORM");
   const [otp, setOtp] = useState("");
+  const verificationInFlightRef = useRef(false);
 
   const initialMobile = searchParams.get('mobile') || "";
 
@@ -72,50 +74,73 @@ const RegisterPage = () => {
     referredByChannelPartner: "",
   });
 
+  const completeRegistration = useCallback(
+    async (code: string) => {
+      if (verificationInFlightRef.current) return;
+      if (code.length !== 6) {
+        toast.error("Enter a valid 6-digit OTP");
+        return;
+      }
+
+      verificationInFlightRef.current = true;
+      setIsLoading(true);
+      try {
+        await verifyOtp({ mobileNumber: formData.mobileNumber, otp: code });
+
+        const response = await register({
+          name: formData.name,
+          mobileNumber: formData.mobileNumber,
+          state: formData.state,
+          identity: formData.identity as "BUYER" | "AGENT" | "SUPPLIER" | "CUSTOMER" | "TRANSPORTER",
+          ...(formData.isChannelPartner ? { isChannelPartner: true } : {}),
+          ...(formData.referredByChannelPartner.trim()
+            ? { referredByChannelPartner: formData.referredByChannelPartner.trim() }
+            : {}),
+        });
+
+        if (response.accessToken) {
+          await login(response.accessToken, response.user);
+          toast.success("Account created successfully!");
+        }
+      } catch (error: unknown) {
+        toast.error(getErrorMessage(error, "Registration failed"));
+      } finally {
+        verificationInFlightRef.current = false;
+        setIsLoading(false);
+      }
+    },
+    [formData, login],
+  );
+
+  useWebOtp({
+    enabled: step === "OTP" && !isLoading,
+    onCode: (code) => {
+      setOtp(code);
+      void completeRegistration(code);
+    },
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (step === "OTP") {
+      await completeRegistration(otp);
+      return;
+    }
+
     setIsLoading(true);
 
     const { name, mobileNumber, state, identity } = formData;
 
     try {
-      if (step === "FORM") {
-        if (!name || !mobileNumber || !state || !identity) {
-          toast.error("Please fill all fields");
-          setIsLoading(false);
-          return;
-        }
-
-        await sendOtp({ mobileNumber });
-        setStep("OTP");
-        toast.success("OTP sent. Please verify to complete signup.");
-        setIsLoading(false);
+      if (!name || !mobileNumber || !state || !identity) {
+        toast.error("Please fill all fields");
         return;
       }
 
-      if (!otp || otp.length !== 6) {
-        toast.error("Enter a valid 6-digit OTP");
-        setIsLoading(false);
-        return;
-      }
-
-      await verifyOtp({ mobileNumber, otp });
-
-      const response = await register({
-        name,
-        mobileNumber,
-        state,
-        identity: identity as "BUYER" | "AGENT" | "SUPPLIER" | "CUSTOMER" | "TRANSPORTER",
-        ...(formData.isChannelPartner ? { isChannelPartner: true } : {}),
-        ...(formData.referredByChannelPartner.trim()
-          ? { referredByChannelPartner: formData.referredByChannelPartner.trim() }
-          : {}),
-      });
-
-      if (response.accessToken) {
-        await login(response.accessToken, response.user);
-        toast.success("Account created successfully!");
-      }
+      await sendOtp({ mobileNumber });
+      setStep("OTP");
+      toast.success("OTP sent. Please verify to complete signup.");
 
     } catch (error: unknown) {
       toast.error(getErrorMessage(error, "Registration failed"));
@@ -209,9 +234,11 @@ const RegisterPage = () => {
               <Input
                 className="bg-gray-100/80 text-center tracking-widest"
                 placeholder="Enter 6-digit OTP"
+                inputMode="numeric"
+                autoComplete="one-time-code"
                 maxLength={6}
                 value={otp}
-                onChange={(e) => setOtp(e.target.value)}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
               />
             </>
           )}
