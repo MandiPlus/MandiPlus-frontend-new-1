@@ -514,7 +514,6 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
 
         if (!appQueueMode) {
             activeFilters.excludeUnverifiedAppSubmissions = true;
-            activeFilters.excludeVerifiedNonRejected = true;
         }
 
         if (sourceFilters.invoiceType) {
@@ -591,11 +590,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
             };
         });
 
-        // Keep the workflow boundary intact even if an older API response or
-        // stale request returns a row that has already moved to Payments.
-        return appQueueMode
-            ? normalized
-            : normalized.filter((invoice) => !invoice.isVerified || invoice.isRejected);
+        return normalized;
     }, [appQueueMode, insuranceOverrides]);
 
     const fetchInvoices = useCallback(async () => {
@@ -2394,7 +2389,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                         >
                             <option value="">{appQueueMode ? 'All app statuses' : 'Status'}</option>
                             <option value="pending">Pending review</option>
-                            {appQueueMode ? <option value="verified">Verified</option> : null}
+                            <option value="verified">Verified</option>
                             <option value="rejected">Rejected</option>
                         </select>
                     </div>
