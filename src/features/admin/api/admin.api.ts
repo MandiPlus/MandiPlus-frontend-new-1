@@ -554,6 +554,7 @@ export interface InsurancePaymentRow {
   id: string;
   invoiceId: string;
   invoiceNumber: string;
+  vehicleNumber?: string | null;
   recipientPhone?: string;
   pdfUrl?: string | null;
   paymentReceiptUrl?: string | null;
@@ -567,10 +568,22 @@ export interface InsurancePaymentRow {
   balance: number;
   paymentStatus: string;
   paymentMethod?: string | null;
+  payerName?: string;
+  payerPhone?: string;
+  paymentGatewayOrderId?: string | null;
+  paymentGatewayPaymentId?: string | null;
   isPaymentRequired: boolean;
   paymentCompletedAt?: string | null;
   remarks?: string | null;
   updatedAt: string;
+}
+
+export type AppPaymentRow = InsurancePaymentRow;
+
+export interface AppPaymentsSummary {
+  totalRows: number;
+  totalPaid: number;
+  paidToday: number;
 }
 
 export interface ArrivalReportRow {
@@ -2961,6 +2974,54 @@ class AdminApi {
       });
       return { success: true, ...response.data };
     } catch (error: any) {
+      return { success: false };
+    }
+  };
+
+  public getAppPayments = async (filters?: {
+    fromDate?: string;
+    toDate?: string;
+    searchQuery?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<ApiResponse<AppPaymentRow[]>> => {
+    try {
+      const response = await this.client.get(
+        "/insurance-payments/admin/app-payments",
+        { params: filters },
+      );
+      const payload = response.data;
+      return {
+        success: payload?.success !== false,
+        data: Array.isArray(payload?.data) ? payload.data : [],
+        count: payload?.count,
+        total: payload?.total,
+        page: payload?.page,
+        limit: payload?.limit,
+        totalPages: payload?.totalPages,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to fetch app payments",
+        error: error.message,
+      };
+    }
+  };
+
+  public getAppPaymentsSummary = async (filters?: {
+    fromDate?: string;
+    toDate?: string;
+    searchQuery?: string;
+  }): Promise<{ success: boolean } & Partial<AppPaymentsSummary>> => {
+    try {
+      const response = await this.client.get(
+        "/insurance-payments/admin/app-payments/summary",
+        { params: filters },
+      );
+      return { success: true, ...response.data };
+    } catch {
       return { success: false };
     }
   };
