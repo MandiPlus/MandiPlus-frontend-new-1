@@ -45,6 +45,7 @@ const adminTitles: Record<string, string> = {
     '/admin/account-memberships': 'Account Memberships',
     '/admin/app-invoices': 'App Invoices',
     '/admin/quick-details': 'Quick Details',
+    '/admin/app-payments': 'App Payments',
     '/admin/insurance-forms': 'Invoice / Insurance Forms',
     '/admin/claims': 'Claim Requests',
     '/admin/tracking': 'Tracking',
