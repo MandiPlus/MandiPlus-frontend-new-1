@@ -9,9 +9,52 @@ export const getBackendURL = () => {
   return API_BASE_URL.replace("/api", "");
 };
 
-const getInsuranceLookupToken = (): string | null => {
+type InsuranceAdminTokenClaims = {
+  exp?: number;
+  role?: string;
+  sections?: string[];
+};
+
+const decodeJwtClaims = (token: string): InsuranceAdminTokenClaims | null => {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(
+      normalized.length + ((4 - (normalized.length % 4)) % 4),
+      "=",
+    );
+    return JSON.parse(atob(padded)) as InsuranceAdminTokenClaims;
+  } catch {
+    return null;
+  }
+};
+
+export const getStoredInsuranceAdminToken = (): string | null => {
   if (typeof window === "undefined") return null;
-  return getStoredAuthToken() || localStorage.getItem("adminToken");
+  if (sessionStorage.getItem("impersonationActive") === "1") return null;
+
+  const token = localStorage.getItem("adminToken");
+  if (!token) return null;
+
+  const claims = decodeJwtClaims(token);
+  if (!claims?.exp || claims.exp * 1000 <= Date.now()) return null;
+  if (claims.role === "admin") return token;
+  if (
+    claims.role === "limited_admin" &&
+    Array.isArray(claims.sections) &&
+    claims.sections.includes("insurance-forms")
+  ) {
+    return token;
+  }
+  return null;
+};
+
+export const hasStoredInsuranceAdminSession = (): boolean =>
+  Boolean(getStoredInsuranceAdminToken());
+
+const getInsuranceRequestToken = (): string | null => {
+  return getStoredInsuranceAdminToken() || getStoredAuthToken();
 };
 
 /* -------------------------------------------------------------------------- */
@@ -308,7 +351,7 @@ export const createInsuranceForm = async (
   formData: FormData,
 ): Promise<CreateInsuranceResponse> => {
   try {
-    const token = getStoredAuthToken();
+    const token = getInsuranceRequestToken();
 
     const response = await axios.post(`${API_BASE_URL}/invoices`, formData, {
       headers: {
@@ -326,7 +369,7 @@ export const getInvoiceCustomerAccounts = async (): Promise<
   InvoiceCustomerAccount[]
 > => {
   try {
-    const token = getStoredAuthToken();
+    const token = getInsuranceRequestToken();
 
     const response = await axios.get(
       `${API_BASE_URL}/invoices/customer-accounts`,
@@ -351,7 +394,7 @@ export const getTruckFlagStatus = async (
   truckNumber: string,
 ): Promise<TruckFlagStatus> => {
   try {
-    const token = getStoredAuthToken();
+    const token = getInsuranceRequestToken();
 
     const response = await axios.get(
       `${API_BASE_URL}/trucks/flag-status/${encodeURIComponent(truckNumber)}`,
@@ -375,7 +418,7 @@ export const getVehicleRecentInvoiceStatus = async (
   vehicleNumber: string,
 ): Promise<VehicleRecentInvoiceStatus> => {
   try {
-    const token = getStoredAuthToken();
+    const token = getInsuranceRequestToken();
 
     const response = await axios.get(
       `${API_BASE_URL}/invoices/vehicle/recent-status/${encodeURIComponent(vehicleNumber)}`,
@@ -401,7 +444,7 @@ export const getVerifiedSuppliers = async (): Promise<
   VerifiedSupplierOption[]
 > => {
   try {
-    const token = getInsuranceLookupToken();
+    const token = getInsuranceRequestToken();
     const response = await axios.get(
       `${API_BASE_URL}/invoices/verified-suppliers`,
       {
@@ -425,7 +468,7 @@ export const getSupplierHistoricalParties = async (params: {
   search?: string;
 }): Promise<HistoricalPartyOption[]> => {
   try {
-    const token = getStoredAuthToken();
+    const token = getInsuranceRequestToken();
     const response = await axios.get(
       `${API_BASE_URL}/invoices/supplier-parties`,
       {
@@ -450,7 +493,7 @@ export const getBuyerHistoricalSuppliers = async (params: {
   search?: string;
 }): Promise<HistoricalPartyOption[]> => {
   try {
-    const token = getStoredAuthToken();
+    const token = getInsuranceRequestToken();
     const response = await axios.get(
       `${API_BASE_URL}/invoices/buyer-suppliers`,
       {
@@ -476,7 +519,7 @@ export const getPartyAddressSuggestions = async (params: {
   search?: string;
 }): Promise<PartyAddressSuggestion[]> => {
   try {
-    const token = getStoredAuthToken();
+    const token = getInsuranceRequestToken();
     const response = await axios.get(
       `${API_BASE_URL}/invoices/party-addresses`,
       {
@@ -499,7 +542,7 @@ export const getSupplierPartyAssists = async (params: {
   partyName: string;
 }): Promise<SupplierPartyAssistResponse> => {
   try {
-    const token = getStoredAuthToken();
+    const token = getInsuranceRequestToken();
     const response = await axios.get(
       `${API_BASE_URL}/invoices/supplier-party-assists`,
       {

@@ -25,6 +25,7 @@ import {
     getTruckFlagStatus,
     getVehicleRecentInvoiceStatus,
     getVerifiedSuppliers,
+    hasStoredInsuranceAdminSession,
     type SupplierPartyAssistProduct,
     type SupplierPartyAssistResponse,
     type SupplierPartyAssistTemplate,
@@ -358,6 +359,7 @@ const Insurance = () => {
     });
     const [isLoadingAssists, setIsLoadingAssists] = useState(false);
     const [learningEvents, setLearningEvents] = useState<InsuranceLearningUiEvent[]>([]);
+    const [isInsuranceAdminSession, setIsInsuranceAdminSession] = useState(false);
     // React state updates can lag behind the last chat answer; keep the selected customerUserId
     // in a ref so submit always includes it when needed.
     const selectedCustomerUserIdRef = useRef<string>('');
@@ -376,6 +378,10 @@ const Insurance = () => {
         }
     }, [formData.notes]);
 
+    useEffect(() => {
+        setIsInsuranceAdminSession(hasStoredInsuranceAdminSession());
+    }, []);
+
     const rememberInvoiceModeSelection = (value: string) => {
         const selectedMode = normalizeInsuranceInvoiceMode(value);
         if (selectedMode) {
@@ -387,7 +393,9 @@ const Insurance = () => {
     const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
     const shouldAskCustomerPicker = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
     const shouldRequireVerifiedParties =
-        ['AGENT', 'INTERNAL_TEAM'].includes(identity) || !identity;
+        isInsuranceAdminSession ||
+        ['AGENT', 'INTERNAL_TEAM'].includes(identity) ||
+        !identity;
     const shouldUseDynamicQuestionFlow = true;
     const getActiveQuestions = (notes?: string) =>
         shouldUseDynamicQuestionFlow ? getQuestionsForMode(notes) : questions;
@@ -782,9 +790,28 @@ const Insurance = () => {
                 ...formOverrides,
             };
             const submitData = new FormData();
-            const effectiveUserId = getResolvedUserId(user);
+            const invoiceMode = resolveInsuranceInvoiceModeForSubmit(
+                resolvedFormData.notes,
+                invoiceModeRef.current,
+            );
+            if (shouldUseDynamicQuestionFlow && !['cash', 'commission'].includes(invoiceMode)) {
+                throw new Error('Please select Cash or Commission before submitting.');
+            }
+            if (invoiceMode) {
+                resolvedFormData.notes = formatInsuranceInvoiceMode(invoiceMode);
+            }
+            const isCash = invoiceMode === 'cash';
+            const selectedInsuredUserId =
+                isCash ? selectedBuyerId : selectedSupplierId;
+            const effectiveUserId = isInsuranceAdminSession
+                ? selectedInsuredUserId
+                : getResolvedUserId(user);
             if (!effectiveUserId) {
-                throw new Error('Authentication required. Please login again.');
+                throw new Error(
+                    isInsuranceAdminSession
+                        ? 'Select a registered verified insured party.'
+                        : 'Authentication required. Please login again.',
+                );
             }
             submitData.append('userId', effectiveUserId);
 
@@ -806,17 +833,6 @@ const Insurance = () => {
             const supName = sanitizeText(resolvedFormData.supplierName || 'Unknown Supplier');
             submitData.append('supplierName', supName);
             // Auto-derive invoiceType: Cash = BUYER_INVOICE (buyer pays), Commission = SUPPLIER_INVOICE
-            const invoiceMode = resolveInsuranceInvoiceModeForSubmit(
-                resolvedFormData.notes,
-                invoiceModeRef.current,
-            );
-            if (shouldUseDynamicQuestionFlow && !['cash', 'commission'].includes(invoiceMode)) {
-                throw new Error('Please select Cash or Commission before submitting.');
-            }
-            if (invoiceMode) {
-                resolvedFormData.notes = formatInsuranceInvoiceMode(invoiceMode);
-            }
-            const isCash = invoiceMode === 'cash';
             if (shouldRequireVerifiedParties) {
                 if (isCash) {
                     if (!selectedBuyerId) {
@@ -878,7 +894,9 @@ const Insurance = () => {
             }
             const insuredPartyPhone = normalizePhoneInput(resolvedFormData.insuredPartyPhone);
             if (insuredPartyPhone) submitData.append('insuredPartyPhone', insuredPartyPhone);
-            if (['CUSTOMER', 'TRANSPORTER'].includes(identity)) {
+            if (isInsuranceAdminSession) {
+                submitData.append('customerUserId', effectiveUserId);
+            } else if (['CUSTOMER', 'TRANSPORTER'].includes(identity)) {
                 submitData.append('customerUserId', effectiveUserId);
             } else if (shouldRequireVerifiedParties) {
                 const insuredUserId =
