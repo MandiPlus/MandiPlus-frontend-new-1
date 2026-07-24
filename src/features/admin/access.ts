@@ -97,6 +97,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Quick Details', href: '/admin/quick-details', icon: InboxArrowDownIcon, section: 'app-quick-details' },
   { name: 'Invoice / Insurance Forms', href: '/admin/insurance-forms', icon: FolderIcon, section: 'insurance-forms' },
   { name: 'Claim Requests', href: '/admin/claims', icon: ClipboardDocumentListIcon, section: 'claims' },
+  { name: 'Capture Links', href: '/admin/claims/capture-links', icon: LinkIcon, section: 'claims' },
   { name: 'Tracking', href: '/admin/tracking', icon: MapPinIcon, section: 'tracking' },
   { name: 'Created Trips', href: '/admin/trips', icon: MapPinIcon, section: 'trips' },
   { name: 'Agent Commissions', href: '/admin/agent-commissions', icon: BanknotesIcon, section: 'agent-commissions' },
@@ -164,6 +165,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/quick-details': 'app-quick-details',
   '/admin/insurance-forms': 'insurance-forms',
   '/admin/claims': 'claims',
+  '/admin/claims/capture-links': 'claims',
   '/admin/tracking': 'tracking',
   '/admin/trips': 'trips',
   '/admin/agent-commissions': 'agent-commissions',
@@ -187,7 +189,12 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
 };
 
 export function getSectionForAdminPath(pathname: string): AdminSection | null {
-  return ADMIN_ROUTE_SECTION_MAP[pathname] ?? null;
+  const exact = ADMIN_ROUTE_SECTION_MAP[pathname];
+  if (exact) return exact;
+  const parentPath = Object.keys(ADMIN_ROUTE_SECTION_MAP)
+    .filter((route) => pathname.startsWith(`${route}/`))
+    .sort((left, right) => right.length - left.length)[0];
+  return parentPath ? ADMIN_ROUTE_SECTION_MAP[parentPath] : null;
 }
 
 export function getFirstAllowedAdminPath(profile: AdminAccessProfile | null): string {

@@ -1024,11 +1024,35 @@ export enum ClaimStatus {
   SETTLED = "settled",
 }
 
+export enum ClaimPaymentStatus {
+  NOT_STARTED = "not_started",
+  AWAITING_APPROVAL = "awaiting_approval",
+  APPROVED_FOR_PAYMENT = "approved_for_payment",
+  PROCESSING = "processing",
+  PARTIALLY_PAID = "partially_paid",
+  PAID = "paid",
+  ON_HOLD = "on_hold",
+  FAILED = "failed",
+  NOT_APPLICABLE = "not_applicable",
+}
+
 export interface ClaimRequest {
   id: string;
+  caseNumber: string;
+  officialClaimNumber?: string | null;
   status: ClaimStatus;
+  paymentStatus: ClaimPaymentStatus;
   createdAt: string;
+  updatedAt: string;
   invoice: InsuranceForm;
+  description?: string | null;
+  claimAmount?: number | null;
+  insuredValue?: number | null;
+  quotationAmount?: number | null;
+  approvedPayableAmount?: number | null;
+  paymentReference?: string | null;
+  settlementPaidAt?: string | null;
+  remarks?: string | null;
   surveyorName?: string;
   surveyorContact?: string;
   notes?: string;
@@ -1081,8 +1105,84 @@ export interface FilterClaimRequestsDto {
   status?: ClaimStatus;
   invoiceId?: string;
   truckNumber?: string;
+  search?: string;
+  paymentStatus?: ClaimPaymentStatus;
+  evidenceStatus?: "not_requested" | "active" | "received" | "expired";
+  page?: number;
+  limit?: number;
+  sortBy?:
+    | "createdAt"
+    | "updatedAt"
+    | "insuredValue"
+    | "quotationAmount"
+    | "approvedPayableAmount";
+  sortOrder?: "ASC" | "DESC";
   startDate?: string;
   endDate?: string;
+}
+
+export interface ClaimsPage {
+  data: ClaimRequest[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface ClaimsSummary {
+  total: number;
+  open: number;
+  evidenceReceived: number;
+  captureLinksActive: number;
+  paymentPending: number;
+  outstandingAmount: number;
+}
+
+export interface EligibleClaimInvoice {
+  id: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  vehicleNumber?: string | null;
+  supplierName: string;
+  supplierAddress: string[];
+  billToName: string;
+  billToAddress: string[];
+  insuredPersonName: string;
+  amount: number;
+}
+
+export interface ClaimActivity {
+  id: string;
+  eventType: string;
+  summary: string;
+  actorName?: string | null;
+  changes?: Record<string, { from: unknown; to: unknown }> | null;
+  createdAt: string;
+}
+
+export interface UpdateClaimDto {
+  officialClaimNumber?: string | null;
+  description?: string | null;
+  status?: ClaimStatus;
+  quotationAmount?: number | null;
+  approvedPayableAmount?: number | null;
+  paymentStatus?: ClaimPaymentStatus;
+  paymentReference?: string | null;
+  settlementPaidAt?: string | null;
+  remarks?: string | null;
+  surveyorName?: string | null;
+  surveyorContact?: string | null;
+  notes?: string | null;
+}
+
+export interface CreateClaimByInvoiceDto {
+  invoiceId: string;
+  officialClaimNumber?: string;
+  description?: string;
+  status?: ClaimStatus;
+  quotationAmount?: number;
+  approvedPayableAmount?: number;
+  remarks?: string;
 }
 
 export interface UpdateClaimStatusDto {
@@ -3007,6 +3107,109 @@ class AdminApi {
     };
   }
 
+  private getLegacyClaimsPage = async (
+    filters?: FilterClaimRequestsDto,
+  ): Promise<ClaimsPage | null> => {
+    const response = await this.getClaims({
+      status: filters?.status,
+      invoiceId: filters?.invoiceId,
+      truckNumber: filters?.truckNumber,
+    });
+    if (!response.success) return null;
+
+    const normalizedSearch = filters?.search?.trim().toLowerCase();
+    const filtered = (response.data || []).filter((claim) => {
+      if (
+        filters?.paymentStatus &&
+        claim.paymentStatus !== filters.paymentStatus
+      ) {
+        return false;
+      }
+      if (filters?.evidenceStatus) {
+        const hasEvidence = Boolean(claim.evidenceSubmittedAt);
+        const hasLink = Boolean(claim.captureLinkExpiresAt);
+        const activeLink =
+          hasLink &&
+          !hasEvidence &&
+          !claim.captureLinkUsedAt &&
+          new Date(claim.captureLinkExpiresAt as string).getTime() > Date.now();
+        const evidenceState = hasEvidence
+          ? "received"
+          : activeLink
+            ? "active"
+            : hasLink
+              ? "expired"
+              : "not_requested";
+        if (evidenceState !== filters.evidenceStatus) return false;
+      }
+      if (!normalizedSearch) return true;
+      return [
+        claim.caseNumber,
+        claim.officialClaimNumber,
+        claim.invoice?.invoiceNumber,
+        claim.invoice?.vehicleNumber,
+        claim.invoice?.truckNumber,
+        claim.invoice?.supplierName,
+        claim.invoice?.billToName,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedSearch);
+    });
+    const page = filters?.page || 1;
+    const limit = filters?.limit || 25;
+    return {
+      data: filtered.slice((page - 1) * limit, page * limit),
+      total: filtered.length,
+      page,
+      limit,
+      totalPages: Math.max(Math.ceil(filtered.length / limit), 1),
+    };
+  };
+
+  private getLegacyClaimsSummary = async (): Promise<ClaimsSummary | null> => {
+    const response = await this.getClaims();
+    if (!response.success) return null;
+    const claims = response.data || [];
+    return {
+      total: claims.length,
+      open: claims.filter(
+        (claim) =>
+          ![
+            ClaimStatus.COMPLETED,
+            ClaimStatus.REJECTED,
+            ClaimStatus.SETTLED,
+          ].includes(claim.status),
+      ).length,
+      evidenceReceived: claims.filter((claim) =>
+        Boolean(claim.evidenceSubmittedAt),
+      ).length,
+      captureLinksActive: claims.filter(
+        (claim) =>
+          !claim.evidenceSubmittedAt &&
+          !claim.captureLinkUsedAt &&
+          claim.captureLinkExpiresAt &&
+          new Date(claim.captureLinkExpiresAt).getTime() > Date.now(),
+      ).length,
+      paymentPending: claims.filter((claim) =>
+        [
+          ClaimPaymentStatus.AWAITING_APPROVAL,
+          ClaimPaymentStatus.APPROVED_FOR_PAYMENT,
+          ClaimPaymentStatus.PROCESSING,
+          ClaimPaymentStatus.PARTIALLY_PAID,
+        ].includes(claim.paymentStatus),
+      ).length,
+      outstandingAmount: claims.reduce(
+        (total, claim) =>
+          claim.paymentStatus === ClaimPaymentStatus.PAID
+            ? total
+            : total + Number(claim.approvedPayableAmount || 0),
+        0,
+      ),
+    };
+  };
+
   public rejectInvoice = async (
     invoiceId: string,
     rejectionReason?: string,
@@ -3671,6 +3874,153 @@ class AdminApi {
     }
   };
 
+  public getClaimsPage = async (
+    filters?: FilterClaimRequestsDto,
+  ): Promise<ApiResponse<ClaimsPage>> => {
+    try {
+      const response = await this.client.get<ClaimsPage>(
+        "/claim-requests/admin",
+        { params: filters },
+      );
+      const payload = (response.data as any)?.data?.data
+        ? (response.data as any).data
+        : response.data;
+      const data = Array.isArray(payload?.data)
+        ? payload.data.map((claim: ClaimRequest) =>
+            this.normalizeClaim({
+              ...claim,
+              status:
+                (claim.status?.toLowerCase() as ClaimStatus) ||
+                ClaimStatus.PENDING,
+            }),
+          )
+        : [];
+      return {
+        success: true,
+        data: {
+          data,
+          total: Number(payload?.total || data.length),
+          page: Number(payload?.page || 1),
+          limit: Number(payload?.limit || filters?.limit || 25),
+          totalPages: Number(payload?.totalPages || 1),
+        },
+      };
+    } catch (error: any) {
+      const legacyPage = await this.getLegacyClaimsPage(filters);
+      if (legacyPage) return { success: true, data: legacyPage };
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(error, "Failed to fetch claims"),
+        error: error.message,
+      };
+    }
+  };
+
+  public getClaimsSummary = async (): Promise<ApiResponse<ClaimsSummary>> => {
+    try {
+      const response = await this.client.get<ClaimsSummary>(
+        "/claim-requests/admin/summary",
+      );
+      return {
+        success: true,
+        data: (response.data as any)?.data ?? response.data,
+      };
+    } catch (error: any) {
+      const legacySummary = await this.getLegacyClaimsSummary();
+      if (legacySummary) return { success: true, data: legacySummary };
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to fetch claims summary",
+        ),
+        error: error.message,
+      };
+    }
+  };
+
+  public getClaimCaptureLinks = async (
+    filters?: FilterClaimRequestsDto,
+  ): Promise<ApiResponse<ClaimsPage>> => {
+    try {
+      const response = await this.client.get<ClaimsPage>(
+        "/claim-requests/admin/capture-links",
+        { params: filters },
+      );
+      const payload = (response.data as any)?.data?.data
+        ? (response.data as any).data
+        : response.data;
+      return {
+        success: true,
+        data: {
+          ...payload,
+          data: (payload?.data || []).map((claim: ClaimRequest) =>
+            this.normalizeClaim(claim),
+          ),
+        },
+      };
+    } catch (error: any) {
+      const legacyPage = await this.getLegacyClaimsPage(filters);
+      if (legacyPage) return { success: true, data: legacyPage };
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to fetch capture links",
+        ),
+        error: error.message,
+      };
+    }
+  };
+
+  public searchEligibleClaimInvoices = async (
+    search?: string,
+    limit = 20,
+  ): Promise<ApiResponse<EligibleClaimInvoice[]>> => {
+    try {
+      const response = await this.client.get<EligibleClaimInvoice[]>(
+        "/claim-requests/admin/eligible-invoices",
+        { params: { search, limit } },
+      );
+      return {
+        success: true,
+        data: (response.data as any)?.data ?? response.data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to search invoices",
+        ),
+        error: error.message,
+      };
+    }
+  };
+
+  public createClaimByInvoice = async (
+    payload: CreateClaimByInvoiceDto,
+  ): Promise<ApiResponse<ClaimRequest>> => {
+    try {
+      const response = await this.client.post<ClaimRequest>(
+        "/claim-requests/by-invoice",
+        payload,
+      );
+      const claim = (response.data as any)?.data ?? response.data;
+      return {
+        success: true,
+        data: this.normalizeClaim(claim),
+        message: "Claim created successfully",
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(error, "Failed to create claim"),
+        error: error.message,
+      };
+    }
+  };
+
   /**
    * Get a single claim by ID
    */
@@ -3727,12 +4077,12 @@ class AdminApi {
   };
 
   public createClaimCaptureLink = async (
-    truckNumber: string,
+    input: string | { invoiceId?: string; truckNumber?: string },
   ): Promise<ApiResponse<ClaimCaptureLinkResult>> => {
     try {
       const response = await this.client.post<ClaimCaptureLinkResult>(
         "/claim-requests/capture-links",
-        { truckNumber },
+        typeof input === "string" ? { truckNumber: input } : input,
       );
       return { success: true, data: response.data };
     } catch (error: any) {
@@ -3740,6 +4090,53 @@ class AdminApi {
         success: false,
         message:
           error.response?.data?.message || "Failed to generate claim link",
+        error: error.message,
+      };
+    }
+  };
+
+  public updateClaim = async (
+    id: string,
+    updateData: UpdateClaimDto,
+  ): Promise<ApiResponse<ClaimRequest>> => {
+    try {
+      const response = await this.client.patch<ClaimRequest>(
+        `/claim-requests/${id}`,
+        updateData,
+      );
+      const claim = (response.data as any)?.data ?? response.data;
+      return {
+        success: true,
+        data: this.normalizeClaim(claim),
+        message: "Claim updated successfully",
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(error, "Failed to update claim"),
+        error: error.message,
+      };
+    }
+  };
+
+  public getClaimActivity = async (
+    id: string,
+  ): Promise<ApiResponse<ClaimActivity[]>> => {
+    try {
+      const response = await this.client.get<ClaimActivity[]>(
+        `/claim-requests/${id}/activity`,
+      );
+      return {
+        success: true,
+        data: (response.data as any)?.data ?? response.data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to fetch claim activity",
+        ),
         error: error.message,
       };
     }
