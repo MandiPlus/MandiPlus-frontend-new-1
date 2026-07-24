@@ -112,14 +112,14 @@ export default function AdminSidebar() {
     const { logout, canAccessSection } = useAdmin();
     const navigationGroups = useMemo(() => {
         const visibleItems = ADMIN_NAV_ITEMS.filter((item) => canAccessSection(item.section));
-        const itemBySection = new Map(visibleItems.map((item) => [item.section, item]));
 
         return ADMIN_NAV_GROUPS
             .map((group) => ({
                 ...group,
                 items: group.sections
-                    .map((section) => itemBySection.get(section))
-                    .filter((item): item is AdminNavItem => Boolean(item)),
+                    .flatMap((section) =>
+                        visibleItems.filter((item) => item.section === section),
+                    ),
             }))
             .filter((group) => group.items.length > 0);
     }, [canAccessSection]);
