@@ -96,7 +96,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Invoices', href: '/admin/app-invoices', icon: DevicePhoneMobileIcon, section: 'app-invoices' },
   { name: 'Quick Details', href: '/admin/quick-details', icon: InboxArrowDownIcon, section: 'app-quick-details' },
   { name: 'Invoice / Insurance Forms', href: '/admin/insurance-forms', icon: FolderIcon, section: 'insurance-forms' },
-  { name: 'Claim Requests', href: '/admin/claims', icon: ClipboardDocumentListIcon, section: 'claims' },
+  { name: 'Dashboard', href: '/admin/claims', icon: ClipboardDocumentListIcon, section: 'claims' },
   { name: 'Capture Links', href: '/admin/claims/capture-links', icon: LinkIcon, section: 'claims' },
   { name: 'Tracking', href: '/admin/tracking', icon: MapPinIcon, section: 'tracking' },
   { name: 'Created Trips', href: '/admin/trips', icon: MapPinIcon, section: 'trips' },
