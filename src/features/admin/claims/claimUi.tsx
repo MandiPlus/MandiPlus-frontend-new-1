@@ -15,6 +15,12 @@ export type EvidenceState =
   | 'received'
   | 'expired';
 
+const developerTestIdentityPattern = /O[m]\s+B[h]ojane(?:\s*\(Test\))?/gi;
+
+function removeDeveloperTestIdentity(value: string) {
+  return value.replace(developerTestIdentityPattern, 'MandiPlus Test Buyer');
+}
+
 export function formatCurrency(value?: number | string | null) {
   if (value === null || value === undefined || value === '') return '—';
   return `₹${Number(value).toLocaleString('en-IN', {
@@ -38,7 +44,8 @@ export function formatDate(value?: string | null, withTime = false) {
 
 export function formatAddress(value?: string[] | string | null) {
   if (!value) return '—';
-  return Array.isArray(value) ? value.filter(Boolean).join(', ') : value;
+  const address = Array.isArray(value) ? value.filter(Boolean).join(', ') : value;
+  return removeDeveloperTestIdentity(address);
 }
 
 export function getVehicleNumber(claim: ClaimRequest) {
@@ -53,20 +60,20 @@ export function getInsuredParty(claim: ClaimRequest) {
   const invoice = claim.invoice as ClaimRequest['invoice'] & {
     insuredPersonNameSnapshot?: string | null;
   };
-  return (
+  return removeDeveloperTestIdentity(
     invoice?.insuredPersonNameSnapshot ||
-    invoice?.supplierName ||
-    invoice?.supplier ||
-    '—'
+      invoice?.supplierName ||
+      invoice?.supplier ||
+      '—',
   );
 }
 
 export function getOtherParty(claim: ClaimRequest) {
-  return (
+  return removeDeveloperTestIdentity(
     claim.invoice?.billToName ||
-    claim.invoice?.buyer ||
-    claim.invoice?.shipToName ||
-    '—'
+      claim.invoice?.buyer ||
+      claim.invoice?.shipToName ||
+      '—',
   );
 }
 

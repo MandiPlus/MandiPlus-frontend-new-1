@@ -893,8 +893,8 @@ export default function AdminClaimsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/70">
-      <div className="mx-auto max-w-[1800px] space-y-5 p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-slate-50/70 py-6">
+      <div className="w-full space-y-5 px-2 sm:px-3 lg:px-4 xl:px-6">
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-slate-950">
@@ -1005,7 +1005,7 @@ export default function AdminClaimsPage() {
             </p>
           </div>
 
-          <div className="max-h-[65vh] overflow-auto">
+          <div className="overflow-x-auto">
             <table className="min-w-[2650px] border-separate border-spacing-0 text-left">
               <thead className="sticky top-0 z-20 bg-slate-50">
                 <tr>
