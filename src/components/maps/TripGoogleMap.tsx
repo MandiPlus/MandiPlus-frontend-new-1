@@ -393,7 +393,11 @@ export default function TripGoogleMap({
   const cameraFrameRef = useRef(0);
   const routeFrameRef = useRef(0);
   const mapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
-  const { isLoaded, loadError } = useLoadScript({ googleMapsApiKey: mapsApiKey });
+  const { isLoaded, loadError } = useLoadScript({
+    id: 'mandiplus-google-maps',
+    googleMapsApiKey: mapsApiKey,
+    preventGoogleFontsLoading: true,
+  });
 
   const mapCenter = useMemo(
     () => (isCoord(center) ? center : { lat: 22.9734, lng: 78.6569 }),

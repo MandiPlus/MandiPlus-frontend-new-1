@@ -89,16 +89,34 @@ export type CustomerInvoiceDraft = {
   quantity: string;
   rate: string;
   vehicleNumber: string;
+  vehicleTonnage: string;
   driverPhone: string;
   insuredPartyPhone: string;
   ownerName: string;
   note: string;
 };
 
+export type CustomerAppPricing = {
+  tenderCoconut: {
+    pricingVersion: number;
+    amount25Ton: number;
+    amount30Ton: number;
+    updatedAt: string | null;
+  };
+};
+
+export async function getCustomerAppPricing() {
+  return customerRequest<CustomerAppPricing>({
+    method: "GET",
+    url: "/app-settings/customer/pricing",
+  });
+}
+
 export async function createCustomerInvoice(
   userId: string,
   draft: CustomerInvoiceDraft,
   files: File[],
+  pricing?: CustomerAppPricing["tenderCoconut"],
 ): Promise<InsuranceForm & { paymentStatus?: string }> {
   const form = new FormData();
   const vehicle = draft.vehicleNumber.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -126,6 +144,11 @@ export async function createCustomerInvoice(
   form.append("autoVerifyOnCreate", "true");
   form.append("vehicleNumber", vehicle);
   form.append("truckNumber", vehicle);
+  if (isTenderCoconutProduct(draft.product)) {
+    form.append("vehicleTonnage", draft.vehicleTonnage);
+    form.append("pricingVersion", String(pricing?.pricingVersion || 1));
+    form.append("invoiceAdditionsAmount", "0");
+  }
   if (draft.ownerName.trim()) form.append("ownerName", draft.ownerName.trim());
   if (draft.driverPhone.trim()) form.append("driverPhone", digits(draft.driverPhone));
   if (draft.insuredPartyPhone.trim()) {
@@ -143,4 +166,13 @@ export async function createCustomerInvoice(
 
 function digits(value: string) {
   return value.replace(/\D/g, "").slice(-10);
+}
+
+export function isTenderCoconutProduct(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+  return (
+    normalized === "coconut" ||
+    normalized === "green coconut" ||
+    /tender\s+coconuts?/.test(normalized)
+  );
 }

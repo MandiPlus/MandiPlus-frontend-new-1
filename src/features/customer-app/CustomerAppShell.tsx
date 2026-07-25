@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import {
   Bell,
   ChevronRight,
@@ -23,7 +22,6 @@ import {
   createContext,
   useContext,
   useEffect,
-  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -60,12 +58,7 @@ export function CustomerAppShell({
   children: ReactNode;
 }) {
   const { user, logout } = useAuth();
-  const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
-
-  useEffect(() => {
-    setMenuOpen(false);
-  }, [pathname]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -81,20 +74,13 @@ export function CustomerAppShell({
     };
   }, [menuOpen]);
 
-  const fifthItem = partnerActive
-    ? { href: "/partner", label: "Partner", icon: UsersRound }
-    : { href: "/support", label: "Help", icon: Headphones };
-
-  const navItems = useMemo(
-    () => [
-      { key: "home" as const, href: "/home", label: "Home", icon: Home },
-      { key: "pay" as const, href: "/pay", label: "Pay", icon: WalletCards },
-      { key: "create" as const, href: "/insurance", label: "Insurance\nbanao", icon: Plus },
-      { key: "tracking" as const, href: "/tracking", label: "Tracking", icon: Route },
-      { key: "partner" as const, ...fifthItem },
-    ],
-    [fifthItem.href, fifthItem.label],
-  );
+  const navItems = [
+    { key: "home" as const, href: "/home", label: "Home", icon: Home },
+    { key: "pay" as const, href: "/pay", label: "Pay", icon: WalletCards },
+    { key: "create" as const, href: "/insurance", label: "Insurance\nbanao", icon: Plus },
+    { key: "tracking" as const, href: "/tracking", label: "Tracking", icon: Route },
+    { key: "partner" as const, href: "/partner", label: "Partner", icon: UsersRound },
+  ];
 
   return (
     <ProtectedRoute

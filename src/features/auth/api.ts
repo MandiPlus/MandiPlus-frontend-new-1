@@ -109,10 +109,8 @@ export const setAuthToken = (
 // Step 1: Send OTP
 export const sendOtp = async (data: SendOtpPayload): Promise<AuthResponse> => {
     try {
-        const response = await axios.post(`${API_BASE_URL}/auth/send-otp`, {
-            ...data,
-            client: "WEB",
-        });
+        // The shared app/web backend rejects fields outside its OTP contract.
+        const response = await axios.post(`${API_BASE_URL}/auth/send-otp`, data);
         return response.data;
     } catch (error) {
         const err = error as AxiosError<{ message: string }>;

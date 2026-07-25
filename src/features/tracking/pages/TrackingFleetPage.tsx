@@ -8,7 +8,6 @@ import {
   ChevronRight,
   Clock3,
   Headphones,
-  LocateFixed,
   RefreshCw,
   Search,
   Share2,
@@ -16,6 +15,7 @@ import {
 } from 'lucide-react';
 
 import ProtectedRoute from '@/features/auth/components/ProtectedRoute';
+import { getStoredAuthToken } from '@/features/auth/api';
 import {
   getLiveTrackingTrips,
   getTrackingRoute,
@@ -25,12 +25,7 @@ import {
   TrackingData,
   TrackingRoute,
 } from '@/features/tracking/api';
-import type { FleetMapItem } from '@/components/maps/FleetGoogleMap';
-
-const FleetGoogleMap = dynamic(() => import('@/components/maps/FleetGoogleMap'), {
-  ssr: false,
-  loading: () => <MapLoading label="Loading vehicles…" />,
-});
+import FleetGoogleMap, { type FleetMapItem } from '@/components/maps/FleetGoogleMap';
 
 const TripGoogleMap = dynamic(() => import('@/components/maps/TripGoogleMap'), {
   ssr: false,
@@ -38,9 +33,50 @@ const TripGoogleMap = dynamic(() => import('@/components/maps/TripGoogleMap'), {
 });
 
 const REFRESH_INTERVAL_MS = 60_000;
-const FLEET_HYDRATION_LIMIT = 18;
+const FLEET_HYDRATION_LIMIT = 24;
+const FLEET_HYDRATION_WORKERS = 6;
+const TRACKING_SNAPSHOT_TTL_MS = 5 * 60_000;
 
 type TrackingCache = Record<string, TrackingData>;
+type TrackingSnapshot = {
+  trips: LiveTrackingTrip[];
+  tracking: TrackingCache;
+  savedAt: number;
+};
+
+let trackingSnapshot: TrackingSnapshot | null = null;
+let trackingSnapshotOwner = '';
+let liveTripsRequest: {
+  owner: string;
+  promise: Promise<LiveTrackingTrip[]>;
+} | null = null;
+
+function ensureTrackingOwner() {
+  const owner = getStoredAuthToken() || '';
+  if (owner !== trackingSnapshotOwner) {
+    trackingSnapshotOwner = owner;
+    trackingSnapshot = null;
+    liveTripsRequest = null;
+  }
+  return owner;
+}
+
+function fetchLiveTripsOnce() {
+  const owner = ensureTrackingOwner();
+  if (!liveTripsRequest || liveTripsRequest.owner !== owner) {
+    const promise = getLiveTrackingTrips();
+    liveTripsRequest = { owner, promise };
+    void promise.then(
+      () => {
+        if (liveTripsRequest?.promise === promise) liveTripsRequest = null;
+      },
+      () => {
+        if (liveTripsRequest?.promise === promise) liveTripsRequest = null;
+      },
+    );
+  }
+  return liveTripsRequest.promise;
+}
 
 function vehicleKey(value?: string | null) {
   return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -52,6 +88,42 @@ function isCoord(value?: LocationPoint | null): value is LocationPoint {
       Number.isFinite(Number(value.lat)) &&
       Number.isFinite(Number(value.lng)),
   );
+}
+
+function trackingFromTrip(trip: LiveTrackingTrip): TrackingData | null {
+  const location = trip.lastLocation;
+  if (!isCoord(location as LocationPoint | null)) return null;
+  return {
+    vehicleNumber: trip.vehicleNumber,
+    tripId: trip.tripId || undefined,
+    tripStatus: trip.status,
+    status: 'online',
+    eta: trip.eta || undefined,
+    location: {
+      lat: Number(location?.lat),
+      lng: Number(location?.lng),
+      address: location?.address || undefined,
+      timeRecorded: location?.timeRecorded || undefined,
+      distanceRemained:
+        location?.distanceRemained == null
+          ? undefined
+          : Number(location.distanceRemained),
+      timeRemained:
+        location?.timeRemained == null
+          ? undefined
+          : Number(location.timeRemained),
+      distanceTravel: location?.distanceTravel ?? undefined,
+      totalDistance: location?.totalDistance ?? undefined,
+    },
+  };
+}
+
+function seedTrackingFromTrips(trips: LiveTrackingTrip[]) {
+  return trips.reduce<TrackingCache>((cache, trip) => {
+    const tracking = trackingFromTrip(trip);
+    if (tracking) cache[vehicleKey(trip.vehicleNumber)] = tracking;
+    return cache;
+  }, {});
 }
 
 function shortPlace(value?: string | null) {
@@ -72,33 +144,88 @@ function relativeTime(value?: string | null) {
   return `Updated ${date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`;
 }
 
-function formatEta(tracking?: TrackingData | null, trip?: LiveTrackingTrip | null) {
-  const remaining = tracking?.location?.timeRemained;
-  if (remaining !== undefined && remaining !== null && String(remaining).trim()) {
-    const numeric = Number(remaining);
-    if (Number.isFinite(numeric)) {
-      if (numeric >= 60) return `${Math.floor(numeric / 60)} hr ${Math.round(numeric % 60)} min`;
-      return `${Math.max(1, Math.round(numeric))} min`;
-    }
-    return String(remaining);
+function parseEtaDate(value: string) {
+  const text = value.trim();
+  const slashDate = text.match(
+    /^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:,\s*)?(\d{1,2})?:?(\d{2})?(?::\d{2})?\s*(am|pm)?/i,
+  );
+
+  if (slashDate) {
+    const day = Number(slashDate[1]);
+    const month = Number(slashDate[2]) - 1;
+    const year = Number(slashDate[3].length === 2 ? `20${slashDate[3]}` : slashDate[3]);
+    let hour = Number(slashDate[4] || 0);
+    const minute = Number(slashDate[5] || 0);
+    const meridiem = slashDate[6]?.toLowerCase();
+
+    if (meridiem === 'pm' && hour < 12) hour += 12;
+    if (meridiem === 'am' && hour === 12) hour = 0;
+
+    const date = new Date(year, month, day, hour, minute);
+    return Number.isNaN(date.getTime()) ? null : date;
   }
-  const value = tracking?.eta || trip?.eta;
-  if (!value) return 'Calculating';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return String(value);
-  return parsed.toLocaleString('en-IN', {
-    day: 'numeric',
-    month: 'short',
+
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function ordinalDay(day: number) {
+  if (day > 10 && day < 20) return `${day}th`;
+  const suffix = day % 10 === 1 ? 'st' : day % 10 === 2 ? 'nd' : day % 10 === 3 ? 'rd' : 'th';
+  return `${day}${suffix}`;
+}
+
+function formatEtaValue(value: string) {
+  const parsed = parseEtaDate(value);
+  if (!parsed) return value;
+
+  const day = parsed.getDate();
+  const month = parsed.toLocaleString('en-IN', { month: 'long' });
+  const time = parsed.toLocaleString('en-IN', {
     hour: 'numeric',
     minute: '2-digit',
+    hour12: true,
   });
+
+  return `${ordinalDay(day)} ${month}, ${time}`;
+}
+
+function formatEta(tracking?: TrackingData | null, trip?: LiveTrackingTrip | null) {
+  const remaining = String(tracking?.location?.timeRemained || '').trim();
+  if (remaining) return formatEtaValue(remaining);
+
+  const eta = String(tracking?.eta || trip?.eta || '').trim();
+  if (eta) return formatEtaValue(eta);
+
+  return 'Time not available';
+}
+
+function numberFromDistance(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const match = String(value || '').match(/[\d.]+/);
+  if (!match) return null;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function tripProgress(tracking?: TrackingData | null) {
-  const travelled = Number(tracking?.location?.distanceTravel ?? 0);
-  const total = Number(tracking?.location?.totalDistance ?? 0);
-  if (!Number.isFinite(travelled) || !Number.isFinite(total) || total <= 0) return 0;
-  return Math.max(0, Math.min(100, Math.round((travelled / total) * 100)));
+  const travelled = numberFromDistance(tracking?.location?.distanceTravel);
+  const total = numberFromDistance(tracking?.location?.totalDistance);
+  const remaining = numberFromDistance(tracking?.location?.distanceRemained);
+  const effectiveTotal = total ?? (travelled !== null && remaining !== null ? travelled + remaining : null);
+  let percent: number | null = null;
+
+  if (travelled !== null && effectiveTotal !== null && effectiveTotal > 0) {
+    percent = Math.min(100, Math.max(0, Math.round((travelled / effectiveTotal) * 100)));
+  } else if (remaining !== null && effectiveTotal !== null && effectiveTotal > 0) {
+    percent = Math.min(100, Math.max(0, Math.round(((effectiveTotal - remaining) / effectiveTotal) * 100)));
+  }
+
+  const isOnline = tracking?.status === 'online';
+  return {
+    percentLabel: percent !== null ? `${percent}%` : isOnline ? 'Live' : '0%',
+    visualPercent: percent ?? (isOnline ? 18 : 0),
+  };
 }
 
 function MapLoading({ label }: { label: string }) {
@@ -130,23 +257,55 @@ export default function TrackingFleetPage() {
   const hydrationRequestedRef = useRef(new Set<string>());
   const trackingCacheRef = useRef<TrackingCache>({});
 
-  const loadTrips = useCallback(async () => {
-    setLoadingTrips(true);
+  const applySnapshot = useCallback((snapshot: TrackingSnapshot) => {
+    setTrips(snapshot.trips);
+    setTrackingCache(snapshot.tracking);
+    trackingCacheRef.current = snapshot.tracking;
+  }, []);
+
+  const loadTrips = useCallback(async (force = false) => {
+    ensureTrackingOwner();
+    const freshSnapshot =
+      trackingSnapshot &&
+      Date.now() - trackingSnapshot.savedAt < TRACKING_SNAPSHOT_TTL_MS
+        ? trackingSnapshot
+        : null;
+
+    if (freshSnapshot && !force) {
+      applySnapshot(freshSnapshot);
+      setLoadingTrips(false);
+    } else {
+      setLoadingTrips(true);
+    }
     setError(null);
     hydrationRequestedRef.current.clear();
-    trackingCacheRef.current = {};
-    setTrackingCache({});
     try {
-      setTrips(await getLiveTrackingTrips());
+      const nextTrips = await fetchLiveTripsOnce();
+      const nextSnapshot: TrackingSnapshot = {
+        trips: nextTrips,
+        tracking: {
+          ...(freshSnapshot?.tracking || {}),
+          ...seedTrackingFromTrips(nextTrips),
+        },
+        savedAt: Date.now(),
+      };
+      trackingSnapshot = nextSnapshot;
+      applySnapshot(nextSnapshot);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Unable to load live trips');
-      setTrips([]);
+      if (!freshSnapshot) {
+        setTrips([]);
+        setTrackingCache({});
+        trackingCacheRef.current = {};
+      }
     } finally {
       setLoadingTrips(false);
     }
-  }, []);
+  }, [applySnapshot]);
 
   useEffect(() => {
+    // Start downloading the detail map while the overview and vehicle API load.
+    void import('@/components/maps/TripGoogleMap');
     void loadTrips();
   }, [loadTrips]);
 
@@ -158,6 +317,29 @@ export default function TrackingFleetPage() {
       .slice(0, FLEET_HYDRATION_LIMIT);
     queue.forEach((trip) => hydrationRequestedRef.current.add(vehicleKey(trip.vehicleNumber)));
 
+    let animationFrame = 0;
+    let pendingUpdates: TrackingCache = {};
+
+    const commitTracking = (key: string, value: TrackingData) => {
+      pendingUpdates[key] = value;
+      if (animationFrame) return;
+      animationFrame = window.requestAnimationFrame(() => {
+        const updates = pendingUpdates;
+        pendingUpdates = {};
+        animationFrame = 0;
+        setTrackingCache((previous) => {
+          const next = { ...previous, ...updates };
+          trackingCacheRef.current = next;
+          trackingSnapshot = {
+            trips,
+            tracking: next,
+            savedAt: Date.now(),
+          };
+          return next;
+        });
+      });
+    };
+
     const worker = async () => {
       while (!cancelled && queue.length) {
         const trip = queue.shift();
@@ -165,20 +347,19 @@ export default function TrackingFleetPage() {
         try {
           const response = await trackVehicle(trip.vehicleNumber);
           if (cancelled) return;
-          setTrackingCache((previous) => {
-            const next = { ...previous, [vehicleKey(trip.vehicleNumber)]: response.data };
-            trackingCacheRef.current = next;
-            return next;
-          });
+          commitTracking(vehicleKey(trip.vehicleNumber), response.data);
         } catch {
           // Keep the trip visible even when its latest GPS point is unavailable.
         }
       }
     };
 
-    void Promise.all([worker(), worker(), worker()]);
+    void Promise.all(
+      Array.from({ length: FLEET_HYDRATION_WORKERS }, () => worker()),
+    );
     return () => {
       cancelled = true;
+      if (animationFrame) window.cancelAnimationFrame(animationFrame);
     };
   }, [trips]);
 
@@ -306,7 +487,7 @@ export default function TrackingFleetPage() {
             </div>
             <button
               type="button"
-              onClick={() => selectedTrip ? void openTrip(selectedTrip) : void loadTrips()}
+              onClick={() => selectedTrip ? void openTrip(selectedTrip) : void loadTrips(true)}
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[#e7ebf3] bg-[#f8f9fd] text-[#203044] transition active:scale-95"
               aria-label="Refresh tracking"
             >
@@ -338,17 +519,23 @@ export default function TrackingFleetPage() {
             ) : null}
 
             <div className="relative h-[340px] overflow-hidden rounded-[24px] border border-[#e7ebf3] bg-[#eef3fa] shadow-[0_10px_24px_rgba(32,48,68,0.06)] sm:h-[420px]">
-              {fleetMapItems.length ? (
-                <FleetGoogleMap
-                  vehicles={fleetMapItems}
-                  onVehicleSelect={(item) => {
-                    const match = trips.find((trip) => trip.id === item.id);
-                    if (match) void openTrip(match);
-                  }}
-                />
-              ) : (
-                <MapLoading label={loadingTrips ? 'Loading vehicles…' : 'Waiting for GPS…'} />
-              )}
+              <FleetGoogleMap
+                vehicles={fleetMapItems}
+                onVehicleSelect={(item) => {
+                  const match = trips.find((trip) => trip.id === item.id);
+                  if (match) void openTrip(match);
+                }}
+              />
+              {!fleetMapItems.length ? (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div className="flex items-center gap-2 rounded-full border border-[#e7ebf3] bg-white/92 px-4 py-2 text-xs font-semibold text-[#7b8176] shadow-sm backdrop-blur">
+                    {loadingTrips ? (
+                      <RefreshCw className="h-4 w-4 animate-spin text-[#203044]" />
+                    ) : null}
+                    {loadingTrips ? 'Loading vehicles…' : 'Waiting for GPS…'}
+                  </div>
+                </div>
+              ) : null}
               <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-[#e7ebf3] bg-white/95 px-3 py-2 text-xs font-black text-[#203044] shadow-sm">
                 {loadingTrips ? 'Updating…' : `${trips.length} live`}
               </div>
@@ -468,7 +655,7 @@ function TripDetail({
   currentName: string;
   sourceName: string;
   destinationName: string;
-  progress: number;
+  progress: ReturnType<typeof tripProgress>;
 }) {
   const isOnline = tracking?.status === 'online';
   const headline = isOnline ? `${currentName} → ${destinationName}` : currentName;
@@ -491,26 +678,30 @@ function TripDetail({
       ) : null}
 
       <div className="relative h-[390px] overflow-hidden rounded-[24px] border border-[#e7ebf3] bg-[#eef3fa] shadow-[0_10px_24px_rgba(32,48,68,0.06)] sm:h-[520px]">
+        <TripGoogleMap
+          center={center}
+          current={isCoord(tracking?.location) ? tracking.location : null}
+          source={isCoord(tracking?.origin) ? tracking.origin : null}
+          destination={isCoord(tracking?.destination) ? tracking.destination : null}
+          routePoints={route?.points || []}
+          currentLabel={currentName}
+          sourceLabel={sourceName}
+          destinationLabel={destinationName}
+          zoom={16}
+          followMode={isOnline}
+          lastGpsRecordedAt={tracking?.location?.timeRecorded || null}
+          isOnline={isOnline}
+          routeDistanceMeters={route?.distanceMeters ?? null}
+          routeDurationSeconds={route?.durationSeconds ?? null}
+        />
         {loading && !tracking ? (
-          <MapLoading label="Loading location…" />
-        ) : (
-          <TripGoogleMap
-            center={center}
-            current={isCoord(tracking?.location) ? tracking.location : null}
-            source={isCoord(tracking?.origin) ? tracking.origin : null}
-            destination={isCoord(tracking?.destination) ? tracking.destination : null}
-            routePoints={route?.points || []}
-            currentLabel={currentName}
-            sourceLabel={sourceName}
-            destinationLabel={destinationName}
-            zoom={16}
-            followMode={isOnline}
-            lastGpsRecordedAt={tracking?.location?.timeRecorded || null}
-            isOnline={isOnline}
-            routeDistanceMeters={route?.distanceMeters ?? null}
-            routeDurationSeconds={route?.durationSeconds ?? null}
-          />
-        )}
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="flex items-center gap-2 rounded-full border border-[#e7ebf3] bg-white/92 px-4 py-2 text-xs font-semibold text-[#7b8176] shadow-sm backdrop-blur">
+              <RefreshCw className="h-4 w-4 animate-spin text-[#203044]" />
+              Loading location…
+            </div>
+          </div>
+        ) : null}
         <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-full border border-[#e7ebf3] bg-white/95 px-3 py-2 text-xs font-black text-[#203044] shadow-sm">
           <span className={`h-2 w-2 rounded-full ${isOnline ? 'animate-pulse bg-[#22a66b]' : 'bg-[#c88d37]'}`} />
           {isOnline ? 'On the way' : 'Last location'}
@@ -534,20 +725,28 @@ function TripDetail({
           <RoutePoint label="To" value={destinationName} />
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="rounded-2xl bg-[#f8f9fd] p-3">
-            <div className="flex items-center gap-2 text-[#203044]">
-              <Clock3 className="h-4 w-4" />
-              <span className="text-[10px] font-black uppercase tracking-[0.1em]">Arrival</span>
+        <div className="mt-4 rounded-[20px] border border-[#e7ebf3] px-3.5 py-[13px]">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Clock3 className="h-6 w-6 shrink-0 text-[#203044]" strokeWidth={2.2} />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-extrabold leading-[15px] text-[#7b8176]">Pahunchne ka time</p>
+              <p className="mt-0.5 truncate text-sm font-black leading-[19px] text-[#171914]">
+                {formatEta(tracking, trip)}
+              </p>
             </div>
-            <p className="mt-2 truncate text-sm font-black text-[#171914]">{formatEta(tracking, trip)}</p>
           </div>
-          <div className="rounded-2xl bg-[#f8f9fd] p-3">
-            <div className="flex items-center gap-2 text-[#203044]">
-              <LocateFixed className="h-4 w-4" />
-              <span className="text-[10px] font-black uppercase tracking-[0.1em]">Progress</span>
+
+          <div className="mt-3 border-t border-[#e7ebf3] pt-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-extrabold leading-[15px] text-[#7b8176]">Trip ki progress</p>
+              <p className="text-sm font-black leading-[18px] text-[#203044]">{progress.percentLabel}</p>
             </div>
-            <p className="mt-2 text-sm font-black text-[#171914]">{progress ? `${progress}%` : 'Live'}</p>
+            <div className="mt-2 h-[9px] overflow-hidden rounded-full bg-[#eef3fa]">
+              <div
+                className="h-full min-w-2 rounded-full bg-[#203044] transition-[width] duration-500"
+                style={{ width: `${progress.visualPercent}%` }}
+              />
+            </div>
           </div>
         </div>
 

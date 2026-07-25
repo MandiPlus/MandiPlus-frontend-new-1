@@ -168,13 +168,9 @@ export async function getMyWalletSummary(): Promise<WalletSummary | null> {
   } catch (error) {
     const err = error as AxiosError;
     handleUnauthorized(err);
-    if (err.response?.status === 404) {
+    if (err.response?.status === 400 || err.response?.status === 404) {
       return null;
     }
-    console.error("Wallet summary fetch failed", {
-      status: err.response?.status,
-      url: `${API_BASE_URL}/wallet/me`,
-    });
     throw error;
   }
 }
@@ -190,13 +186,9 @@ export async function getMyWalletStatement(): Promise<WalletStatementItem[]> {
   } catch (error) {
     const err = error as AxiosError;
     handleUnauthorized(err);
-    if (err.response?.status === 404) {
+    if (err.response?.status === 400 || err.response?.status === 404) {
       return [];
     }
-    console.error("Wallet statement fetch failed", {
-      status: err.response?.status,
-      url: `${API_BASE_URL}/wallet/me/statement`,
-    });
     throw error;
   }
 }

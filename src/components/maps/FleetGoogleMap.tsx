@@ -22,8 +22,13 @@ const defaultCenter = { lat: 22.9734, lng: 78.6569 };
 
 export default function FleetGoogleMap({ vehicles, onVehicleSelect, className }: FleetGoogleMapProps) {
   const mapRef = useRef<google.maps.Map | null>(null);
+  const fitTimerRef = useRef<number | null>(null);
   const mapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
-  const { isLoaded, loadError } = useLoadScript({ googleMapsApiKey: mapsApiKey });
+  const { isLoaded, loadError } = useLoadScript({
+    id: 'mandiplus-google-maps',
+    googleMapsApiKey: mapsApiKey,
+    preventGoogleFontsLoading: true,
+  });
   const center = vehicles[0]?.current ?? defaultCenter;
 
   const fitVehicles = useCallback(() => {
@@ -43,7 +48,19 @@ export default function FleetGoogleMap({ vehicles, onVehicleSelect, className }:
   }, [vehicles]);
 
   useEffect(() => {
-    fitVehicles();
+    if (fitTimerRef.current !== null) {
+      window.clearTimeout(fitTimerRef.current);
+    }
+    fitTimerRef.current = window.setTimeout(() => {
+      fitTimerRef.current = null;
+      fitVehicles();
+    }, 100);
+    return () => {
+      if (fitTimerRef.current !== null) {
+        window.clearTimeout(fitTimerRef.current);
+        fitTimerRef.current = null;
+      }
+    };
   }, [fitVehicles]);
 
   const truckIcon = useMemo(() => {
@@ -79,7 +96,7 @@ export default function FleetGoogleMap({ vehicles, onVehicleSelect, className }:
         mapContainerStyle={mapContainerStyle}
         onLoad={(map) => {
           mapRef.current = map;
-          fitVehicles();
+          window.requestAnimationFrame(fitVehicles);
         }}
         onUnmount={() => {
           mapRef.current = null;
