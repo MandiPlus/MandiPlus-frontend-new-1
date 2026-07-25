@@ -59,6 +59,8 @@ export function CustomerAppShell({
 }) {
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const isInternalTeam =
+    String(user?.identity || "").trim().toUpperCase() === "INTERNAL_TEAM";
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -84,7 +86,13 @@ export function CustomerAppShell({
 
   return (
     <ProtectedRoute
-      allowedIdentities={["CUSTOMER", "BUYER", "SUPPLIER", "TRANSPORTER"]}
+      allowedIdentities={[
+        "CUSTOMER",
+        "BUYER",
+        "SUPPLIER",
+        "TRANSPORTER",
+        "INTERNAL_TEAM",
+      ]}
     >
       <ShellContext.Provider value={{ openMenu: () => setMenuOpen(true) }}>
         <div className={styles.root}>
@@ -236,7 +244,7 @@ export function CustomerAppShell({
                 </aside>
               </>
             ) : null}
-            <CustomerSetupModal />
+            {isInternalTeam ? null : <CustomerSetupModal />}
           </div>
         </div>
       </ShellContext.Provider>

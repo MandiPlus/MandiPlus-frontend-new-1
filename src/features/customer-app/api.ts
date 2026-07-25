@@ -35,11 +35,41 @@ export async function updateCustomerUser(
   userId: string,
   payload: Record<string, unknown>,
 ) {
-  return customerRequest<Record<string, unknown>>({
-    method: "PATCH",
-    url: `/users/${encodeURIComponent(userId)}`,
-    data: payload,
-  });
+  const request = (data: Record<string, unknown>) =>
+    customerRequest<Record<string, unknown>>({
+      method: "PATCH",
+      url: `/users/${encodeURIComponent(userId)}`,
+      data,
+    });
+
+  try {
+    return await request(payload);
+  } catch (error) {
+    if (
+      "primaryCommodityCode" in payload &&
+      isUnsupportedPropertyError(error, "primaryCommodityCode")
+    ) {
+      const compatiblePayload = { ...payload };
+      delete compatiblePayload.primaryCommodityCode;
+      return request(compatiblePayload);
+    }
+    throw error;
+  }
+}
+
+function isUnsupportedPropertyError(error: unknown, property: string) {
+  if (!axios.isAxiosError(error) || error.response?.status !== 400) {
+    return false;
+  }
+  const responseMessage = error.response.data?.message;
+  const messages = Array.isArray(responseMessage)
+    ? responseMessage
+    : [responseMessage];
+  return messages.some((message) =>
+    String(message || "")
+      .toLowerCase()
+      .includes(`property ${property.toLowerCase()} should not exist`),
+  );
 }
 
 export async function extractCustomerInvoice(files: File[]) {
