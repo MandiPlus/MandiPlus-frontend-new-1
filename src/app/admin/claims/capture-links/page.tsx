@@ -39,13 +39,15 @@ import { toast } from 'react-toastify';
 function CaptureLinkModal({
   onClose,
   onGenerated,
-  captureType,
+  initialCaptureType,
 }: {
   onClose: () => void;
   onGenerated: (result: ClaimCaptureLinkResult) => void;
-  captureType: CaptureType;
+  initialCaptureType: CaptureType;
 }) {
   const [invoice, setInvoice] = useState<EligibleClaimInvoice | null>(null);
+  const [captureType, setCaptureType] =
+    useState<CaptureType>(initialCaptureType);
   const [loading, setLoading] = useState(false);
 
   const generate = async () => {
@@ -69,9 +71,7 @@ function CaptureLinkModal({
         <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
           <div>
             <h2 className="text-lg font-bold text-slate-900">
-              Create{' '}
-              {captureType === 'engine_seize' ? 'engine seize' : 'accident'}{' '}
-              capture request
+              Create capture request
             </h2>
           </div>
           <button
@@ -81,7 +81,37 @@ function CaptureLinkModal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="p-6">
+        <div className="space-y-5 p-6">
+          <div>
+            <p className="mb-2 text-xs font-semibold text-slate-500">
+              Claim type
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                {
+                  value: 'accident' as const,
+                  label: 'Accident claim',
+                },
+                {
+                  value: 'engine_seize' as const,
+                  label: 'Engine seize',
+                },
+              ].map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setCaptureType(item.value)}
+                  className={`rounded-xl border px-4 py-3 text-left text-sm font-semibold transition ${
+                    captureType === item.value
+                      ? 'border-[#4309ac] bg-violet-50 text-[#4309ac] ring-1 ring-[#4309ac]/10'
+                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <InvoicePicker value={invoice} onChange={setInvoice} />
         </div>
         <div className="flex justify-end gap-2 border-t border-slate-100 px-6 py-4">
@@ -540,9 +570,10 @@ export default function CaptureLinksPage() {
           onGenerated={(result) => {
             setShowCreate(false);
             setGenerated(result);
+            setCaptureType(result.captureType);
             void load();
           }}
-          captureType={captureType}
+          initialCaptureType={captureType}
         />
       )}
       {generated && (
