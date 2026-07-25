@@ -96,6 +96,39 @@ export async function extractCustomerInvoiceText(
   });
 }
 
+export type InvoiceVoiceTargetField =
+  | "supplier_name"
+  | "buyer_name"
+  | "buyer_address"
+  | "quantity"
+  | "rate"
+  | "total_amount"
+  | "vehicle_tonnage"
+  | "insured_party_phone";
+
+export async function extractCustomerInvoiceVoice(
+  audio: File,
+  currentProduct?: string,
+  targetField?: InvoiceVoiceTargetField,
+) {
+  const form = new FormData();
+  form.append("audio", audio);
+  if (currentProduct) form.append("currentProduct", currentProduct);
+  if (targetField) form.append("targetField", targetField);
+  return customerRequest<Record<string, unknown>>({
+    method: "POST",
+    url: "/invoices/extract-invoice-voice-fields",
+    data: form,
+  });
+}
+
+export async function getCustomerInvoiceProfile() {
+  return customerRequest<Record<string, unknown> | null>({
+    method: "GET",
+    url: "/invoices/customer/profile",
+  });
+}
+
 export async function askCustomerAssistant(payload: {
   message: string;
   history?: Array<{ role: "user" | "assistant"; text: string }>;
@@ -118,6 +151,7 @@ export type CustomerInvoiceDraft = {
   product: string;
   quantity: string;
   rate: string;
+  totalAmount: string;
   vehicleNumber: string;
   vehicleTonnage: string;
   driverPhone: string;
@@ -152,7 +186,19 @@ export async function createCustomerInvoice(
   const vehicle = draft.vehicleNumber.toUpperCase().replace(/[^A-Z0-9]/g, "");
   const quantity = Number(draft.quantity || 0);
   const rate = Number(draft.rate || 0);
-  const amount = quantity * rate;
+  const extractedTotal = Number(draft.totalAmount || 0);
+  const goodsAmount =
+    Number.isFinite(extractedTotal) && extractedTotal > 0
+      ? extractedTotal
+      : quantity * rate;
+  const logisticsAmount = isTenderCoconutProduct(draft.product)
+    ? draft.vehicleTonnage === "30"
+      ? Number(pricing?.amount30Ton || 0)
+      : draft.vehicleTonnage === "25"
+        ? Number(pricing?.amount25Ton || 0)
+        : 0
+    : 0;
+  const amount = Number((goodsAmount + logisticsAmount).toFixed(2));
   const cash = draft.mode === "Cash";
 
   form.append("userId", userId);
