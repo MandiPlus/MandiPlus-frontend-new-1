@@ -40,6 +40,7 @@ export default function PublicClaimCapturePage({ token }: { token: string }) {
     return (
       <ClaimCaptureFlow<PublicClaimCaptureLink>
         truckNumber={claim.vehicleNumber}
+        captureType={claim.captureType}
         prepareUpload={(submissionId) =>
           getPublicClaimEvidenceUploadTarget(token, submissionId)
         }
@@ -59,7 +60,9 @@ export default function PublicClaimCapturePage({ token }: { token: string }) {
       <section className="w-full max-w-sm rounded-[28px] border border-[#e1e6ee] bg-white p-6 shadow-[0_18px_60px_rgba(23,32,51,0.10)]">
         <div className="mb-8 h-1.5 w-10 rounded-full bg-[#4309ac]" />
         <p className="text-xs font-black uppercase tracking-[0.14em] text-[#6c7482]">
-          MandiPlus Claim
+          {claim?.captureType === "engine_seize"
+            ? "MandiPlus Engine Seize"
+            : "MandiPlus Accident Claim"}
         </p>
 
         {loading ? (
@@ -85,7 +88,9 @@ export default function PublicClaimCapturePage({ token }: { token: string }) {
               {claim.vehicleNumber}
             </h1>
             <p className="mt-1 text-sm font-bold text-[#6c7482]">
-              4 photos · 2 videos · location
+              {claim.captureType === "engine_seize"
+                ? "RC · 9 photos · 2 videos · GPS"
+                : "4 photos · 2 videos · location"}
             </p>
             <button
               type="button"

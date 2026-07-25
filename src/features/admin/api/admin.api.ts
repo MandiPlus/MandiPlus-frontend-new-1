@@ -1087,6 +1087,7 @@ export interface ClaimRequest {
     size: number;
     capturedAt: string;
     slot: number;
+    label?: string;
   }>;
   evidenceVideos?: Array<{
     url: string;
@@ -1095,6 +1096,7 @@ export interface ClaimRequest {
     size: number;
     capturedAt: string;
     slot: number;
+    label?: string;
   }>;
   locationLatitude?: number | string | null;
   locationLongitude?: number | string | null;
@@ -1103,6 +1105,33 @@ export interface ClaimRequest {
   evidenceSubmittedAt?: string | null;
   captureLinkExpiresAt?: string | null;
   captureLinkUsedAt?: string | null;
+  engineSeizeEvidenceSubmissionId?: string | null;
+  engineSeizeEvidencePhotos?: Array<{
+    url: string;
+    publicId: string;
+    mimeType: string;
+    size: number;
+    capturedAt: string;
+    slot: number;
+    label?: string;
+  }>;
+  engineSeizeEvidenceVideos?: Array<{
+    url: string;
+    publicId: string;
+    mimeType: string;
+    size: number;
+    capturedAt: string;
+    slot: number;
+    label?: string;
+  }>;
+  engineSeizeLocationLatitude?: number | string | null;
+  engineSeizeLocationLongitude?: number | string | null;
+  engineSeizeLocationAccuracyMeters?: number | string | null;
+  engineSeizeLocationCapturedAt?: string | null;
+  engineSeizeEvidenceSubmittedAt?: string | null;
+  engineSeizeCrossLoadingVehicleNumber?: string | null;
+  engineSeizeCaptureLinkExpiresAt?: string | null;
+  engineSeizeCaptureLinkUsedAt?: string | null;
 }
 
 export interface ClaimCaptureLinkResult {
@@ -1111,6 +1140,7 @@ export interface ClaimCaptureLinkResult {
   invoiceNumber?: string;
   token: string;
   expiresAt: string;
+  captureType: "accident" | "engine_seize";
 }
 
 export interface FilterClaimRequestsDto {
@@ -1120,6 +1150,7 @@ export interface FilterClaimRequestsDto {
   search?: string;
   paymentStatus?: ClaimPaymentStatus;
   evidenceStatus?: "not_requested" | "active" | "received" | "expired";
+  captureType?: "accident" | "engine_seize";
   page?: number;
   limit?: number;
   sortBy?:
@@ -4137,7 +4168,13 @@ class AdminApi {
   };
 
   public createClaimCaptureLink = async (
-    input: string | { invoiceId?: string; truckNumber?: string },
+    input:
+      | string
+      | {
+          invoiceId?: string;
+          truckNumber?: string;
+          captureType?: "accident" | "engine_seize";
+        },
   ): Promise<ApiResponse<ClaimCaptureLinkResult>> => {
     try {
       const response = await this.client.post<ClaimCaptureLinkResult>(

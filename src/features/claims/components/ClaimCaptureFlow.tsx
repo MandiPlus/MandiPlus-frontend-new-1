@@ -9,25 +9,85 @@ import {
   getClaimEvidenceUploadTarget,
   uploadClaimEvidence,
 } from "@/features/insurance/api";
+import {
+  Boxes,
+  FileText,
+  Gauge,
+  LayoutDashboard,
+  PackageOpen,
+  Truck,
+  Upload,
+  Wrench,
+} from "lucide-react";
 
 type Capture = {
   id: string;
   file: File;
   preview: string;
   capturedAt: string;
+  label: string;
   uploadState: "queued" | "uploading" | "ready" | "failed";
 };
 
-const PHOTO_TOTAL = 4;
-const VIDEO_TOTAL = 2;
-const RECORDING_LIMIT_MS = 60_000;
+export type ClaimCaptureType = "accident" | "engine_seize";
+
+type CaptureStep = {
+  label: string;
+  hint: string;
+  minDurationMs?: number;
+  maxDurationMs?: number;
+};
+
+const ACCIDENT_PHOTO_STEPS: CaptureStep[] = Array.from(
+  { length: 4 },
+  (_, index) => ({
+    label: `Photo ${index + 1}`,
+    hint: "Keep the vehicle clearly visible",
+  }),
+);
+const ACCIDENT_VIDEO_STEPS: CaptureStep[] = Array.from(
+  { length: 2 },
+  (_, index) => ({
+    label: `Video ${index + 1}`,
+    hint: "Move slowly and keep the vehicle in frame",
+    maxDurationMs: 60_000,
+  }),
+);
+const ENGINE_SEIZE_PHOTO_STEPS: CaptureStep[] = [
+  { label: "RC", hint: "Capture the complete RC clearly" },
+  { label: "Front", hint: "Keep the full front of the vehicle visible" },
+  { label: "Rear", hint: "Keep the full rear of the vehicle visible" },
+  { label: "Left", hint: "Capture the complete left side" },
+  { label: "Right", hint: "Capture the complete right side" },
+  { label: "Engine", hint: "Open the bonnet and capture the engine clearly" },
+  { label: "Dashboard", hint: "Capture the complete dashboard" },
+  { label: "Odometer", hint: "Keep the odometer reading sharp and readable" },
+  { label: "Loading", hint: "Show the vehicle while it is loaded" },
+  { label: "Goods", hint: "Show the loaded goods clearly" },
+];
+const ENGINE_SEIZE_VIDEO_STEPS: CaptureStep[] = [
+  {
+    label: "Engine video",
+    hint: "Record the engine continuously with sound",
+    minDurationMs: 60_000,
+    maxDurationMs: 90_000,
+  },
+  {
+    label: "Cross-loading video",
+    hint: "Record the load being transferred to the other vehicle",
+    maxDurationMs: 60_000,
+  },
+];
 const VIDEO_WIDTH = 854;
 const VIDEO_HEIGHT = 480;
 const VIDEO_FRAME_RATE = 20;
 const VIDEO_BITS_PER_SECOND = 500_000;
 const AUDIO_BITS_PER_SECOND = 24_000;
 
-type ClaimEvidenceSubmission = Parameters<typeof createClaimWithEvidence>[0];
+type ClaimEvidenceSubmission = Parameters<typeof createClaimWithEvidence>[0] & {
+  captureType?: ClaimCaptureType;
+  crossLoadingVehicleNumber?: string;
+};
 
 type Props<TResult> = {
   truckNumber: string;
@@ -36,6 +96,7 @@ type Props<TResult> = {
   prepareUpload?: typeof getClaimEvidenceUploadTarget;
   uploadFile?: typeof uploadClaimEvidence;
   sendEvidence?: (payload: ClaimEvidenceSubmission) => Promise<TResult>;
+  captureType?: ClaimCaptureType;
 };
 
 const getMessage = (error: unknown) => {
@@ -65,6 +126,86 @@ const createSubmissionId = () => {
 
 const formatDuration = (seconds: number) =>
   `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+
+const drawGpsOverlay = (
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  location: ClaimLocation,
+) => {
+  const padding = Math.max(14, Math.round(width * 0.018));
+  const titleSize = Math.max(15, Math.round(width * 0.025));
+  const bodySize = Math.max(13, Math.round(width * 0.021));
+  const overlayHeight = Math.max(104, Math.round(height * 0.2));
+  const capturedAt = new Date(location.capturedAt);
+
+  context.save();
+  context.fillStyle = "rgba(8, 12, 18, 0.78)";
+  context.fillRect(0, height - overlayHeight, width, overlayHeight);
+  context.fillStyle = "#ffffff";
+  context.font = `700 ${titleSize}px sans-serif`;
+  context.fillText(
+    "GPS LOCATION",
+    padding,
+    height - overlayHeight + padding + titleSize,
+  );
+  context.font = `600 ${bodySize}px sans-serif`;
+  context.fillText(
+    `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}  ·  ±${Math.round(location.accuracy)}m`,
+    padding,
+    height - overlayHeight + padding * 2 + titleSize + bodySize,
+  );
+  context.font = `500 ${bodySize}px sans-serif`;
+  context.fillText(
+    capturedAt.toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }),
+    padding,
+    height - padding,
+  );
+  context.restore();
+};
+
+const loadImageFile = (file: File) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Could not open RC image"));
+    };
+    image.src = objectUrl;
+  });
+
+function CaptureGuide({ step }: { step: CaptureStep }) {
+  let Icon = Truck;
+  if (step.label === "RC") Icon = FileText;
+  if (step.label === "Engine") Icon = Wrench;
+  if (step.label === "Dashboard") Icon = LayoutDashboard;
+  if (step.label === "Odometer") Icon = Gauge;
+  if (step.label === "Loading") Icon = Boxes;
+  if (step.label === "Goods") Icon = PackageOpen;
+
+  return (
+    <div className="pointer-events-none absolute inset-x-6 top-1/2 flex -translate-y-1/2 flex-col items-center">
+      <div className="grid h-40 w-full max-w-xs place-items-center rounded-[28px] border border-dashed border-white/55 bg-black/10">
+        <Icon className="h-16 w-16 stroke-[1.35] text-white/80 drop-shadow" />
+      </div>
+      <p className="mt-3 rounded-full bg-black/65 px-4 py-2 text-center text-xs font-semibold text-white backdrop-blur-sm">
+        {step.hint}
+      </p>
+    </div>
+  );
+}
 
 function UploadBadge({ state }: { state: Capture["uploadState"] }) {
   const ready = state === "ready";
@@ -97,7 +238,17 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
   sendEvidence = createClaimWithEvidence as unknown as (
     payload: ClaimEvidenceSubmission,
   ) => Promise<TResult>,
+  captureType = "accident",
 }: Props<TResult>) {
+  const engineSeize = captureType === "engine_seize";
+  const photoSteps = engineSeize
+    ? ENGINE_SEIZE_PHOTO_STEPS
+    : ACCIDENT_PHOTO_STEPS;
+  const videoSteps = engineSeize
+    ? ENGINE_SEIZE_VIDEO_STEPS
+    : ACCIDENT_VIDEO_STEPS;
+  const photoTotal = photoSteps.length;
+  const videoTotal = videoSteps.length;
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -129,6 +280,9 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [crossLoadingVehicleNumber, setCrossLoadingVehicleNumber] =
+    useState("");
+  const rcUploadRef = useRef<HTMLInputElement>(null);
 
   const clearRecordingTimers = useCallback(() => {
     if (recordTimerRef.current) clearTimeout(recordTimerRef.current);
@@ -182,11 +336,12 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
             capture.file,
             capture.capturedAt,
           );
+          const labeledProof = { ...proof, label: capture.label };
           if (generation === uploadGenerationRef.current) {
-            uploadProofsRef.current.set(capture.id, proof);
+            uploadProofsRef.current.set(capture.id, labeledProof);
             updateCaptureUploadState(capture.id, "ready");
           }
-          return proof;
+          return labeledProof;
         });
 
       uploadTasksRef.current.set(capture.id, task);
@@ -312,6 +467,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
 
   useEffect(() => {
     void startCamera();
+    if (engineSeize) startLocation();
     return () => {
       uploadGenerationRef.current += 1;
       stopCamera();
@@ -323,14 +479,14 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
         URL.revokeObjectURL(capture.preview),
       );
     };
-  }, [startCamera, stopCamera]);
+  }, [engineSeize, startCamera, startLocation, stopCamera]);
 
   useEffect(() => {
     capturesRef.current = [...photos, ...videos];
   }, [photos, videos]);
 
   useEffect(() => {
-    if (photos.length !== PHOTO_TOTAL || !cameraReady) return;
+    if (photos.length !== photoTotal || !cameraReady) return;
 
     let cancelled = false;
     const prepareCompactVideo = async () => {
@@ -368,16 +524,62 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
     return () => {
       cancelled = true;
     };
-  }, [cameraReady, photos.length]);
+  }, [cameraReady, photoTotal, photos.length]);
+
+  const savePhotoCanvas = (
+    canvas: HTMLCanvasElement,
+    label: string,
+    capturedAt: string,
+  ) => {
+    canvas.toBlob(
+      (blob) => {
+        photoCaptureBusyRef.current = false;
+        setPhotoCaptureBusy(false);
+        if (!blob) return setError("Photo failed. Try again");
+        const photoNumber = photos.length + 1;
+        const safeLabel = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        const file = new File(
+          [blob],
+          `${engineSeize ? "engine-seize" : "claim"}-${safeLabel}.jpg`,
+          {
+            type: "image/jpeg",
+            lastModified: Date.now(),
+          },
+        );
+        const capture: Capture = {
+          id: `${submissionIdRef.current}-photo-${photoNumber}`,
+          file,
+          preview: URL.createObjectURL(file),
+          capturedAt,
+          label,
+          uploadState: "queued",
+        };
+        setPhotos((items) => [...items, capture]);
+        showCaptureFeedback(
+          photoNumber === photoTotal
+            ? "All photos captured"
+            : `${label} saved · ${photoTotal - photoNumber} left`,
+        );
+        void beginBackgroundUpload(capture).catch(() => undefined);
+      },
+      "image/jpeg",
+      0.76,
+    );
+  };
 
   const takePhoto = () => {
     const video = videoRef.current;
+    const currentLocation = locationRef.current;
     if (
       !video ||
       !cameraReady ||
       photoCaptureBusyRef.current ||
-      photos.length >= PHOTO_TOTAL
+      photos.length >= photoTotal
     ) {
+      return;
+    }
+    if (engineSeize && !currentLocation) {
+      setError("Getting GPS location. Please wait");
       return;
     }
     photoCaptureBusyRef.current = true;
@@ -389,49 +591,92 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
     );
     canvas.width = width;
     canvas.height = height;
-    canvas.getContext("2d")?.drawImage(video, 0, 0, width, height);
-    canvas.toBlob(
-      (blob) => {
-        photoCaptureBusyRef.current = false;
-        setPhotoCaptureBusy(false);
-        if (!blob) return setError("Photo failed. Try again");
-        const photoNumber = photos.length + 1;
-        const capturedAt = new Date().toISOString();
-        const file = new File([blob], `claim-photo-${photoNumber}.jpg`, {
-          type: "image/jpeg",
-          lastModified: Date.now(),
-        });
-        const capture: Capture = {
-          id: `${submissionIdRef.current}-photo-${photoNumber}`,
-          file,
-          preview: URL.createObjectURL(file),
-          capturedAt,
-          uploadState: "queued",
-        };
-        setPhotos((items) => [...items, capture]);
-        showCaptureFeedback(
-          photoNumber === PHOTO_TOTAL
-            ? "All 4 photos captured"
-            : `Photo ${photoNumber} saved · ${PHOTO_TOTAL - photoNumber} left`,
-        );
-        void beginBackgroundUpload(capture).catch(() => undefined);
-      },
-      "image/jpeg",
-      0.76,
-    );
+    const context = canvas.getContext("2d");
+    context?.drawImage(video, 0, 0, width, height);
+    const capturedAt = new Date().toISOString();
+    if (context && engineSeize && currentLocation) {
+      drawGpsOverlay(context, width, height, {
+        ...currentLocation,
+        capturedAt,
+      });
+    }
+    savePhotoCanvas(canvas, photoSteps[photos.length].label, capturedAt);
   };
 
-  const stopRecording = () => {
+  const uploadRc = async (file?: File) => {
+    const currentLocation = locationRef.current;
+    if (!file || photos.length !== 0 || !engineSeize) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Upload the RC as an image");
+      return;
+    }
+    if (!currentLocation) {
+      setError("Getting GPS location. Please wait");
+      return;
+    }
+    photoCaptureBusyRef.current = true;
+    setPhotoCaptureBusy(true);
+    setError(null);
+    try {
+      const image = await loadImageFile(file);
+      const width = Math.min(image.naturalWidth || 1280, 1280);
+      const height = Math.round(
+        width * ((image.naturalHeight || 720) / (image.naturalWidth || 1280)),
+      );
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      context?.drawImage(image, 0, 0, width, height);
+      const capturedAt = new Date().toISOString();
+      if (context) {
+        drawGpsOverlay(context, width, height, {
+          ...currentLocation,
+          capturedAt,
+        });
+      }
+      savePhotoCanvas(canvas, ENGINE_SEIZE_PHOTO_STEPS[0].label, capturedAt);
+    } catch (uploadError) {
+      photoCaptureBusyRef.current = false;
+      setPhotoCaptureBusy(false);
+      setError(getMessage(uploadError));
+    } finally {
+      if (rcUploadRef.current) rcUploadRef.current.value = "";
+    }
+  };
+
+  const stopRecording = (force = false) => {
+    const currentStep = videoSteps[videos.length];
+    const elapsed = performance.now() - recordingStartedAtRef.current;
+    if (
+      !force &&
+      recorderRef.current?.state === "recording" &&
+      currentStep?.minDurationMs &&
+      elapsed < currentStep.minDurationMs
+    ) {
+      showCaptureFeedback(
+        `Keep recording until ${formatDuration(currentStep.minDurationMs / 1000)}`,
+      );
+      return;
+    }
     clearRecordingTimers();
     if (recorderRef.current?.state === "recording") recorderRef.current.stop();
   };
 
   const startRecording = () => {
     if (
+      engineSeize &&
+      videos.length === 1 &&
+      !crossLoadingVehicleNumber.trim()
+    ) {
+      setError("Enter the cross-loading vehicle number");
+      return;
+    }
+    if (
       !streamRef.current ||
       !videoProfileReady ||
       recording ||
-      videos.length >= VIDEO_TOTAL ||
+      videos.length >= videoTotal ||
       typeof MediaRecorder === "undefined"
     ) {
       if (typeof MediaRecorder === "undefined")
@@ -456,11 +701,12 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
         setError("Video failed. Try again");
       } else {
         const videoNumber = videos.length + 1;
+        const step = videoSteps[videos.length];
         const capturedAt = new Date().toISOString();
         const extension = finalType.includes("mp4") ? "mp4" : "webm";
         const file = new File(
           [blob],
-          `claim-video-${videoNumber}.${extension}`,
+          `${engineSeize ? "engine-seize" : "claim"}-${step.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.${extension}`,
           {
             type: finalType.split(";")[0],
             lastModified: Date.now(),
@@ -471,13 +717,14 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
           file,
           preview: URL.createObjectURL(file),
           capturedAt,
+          label: step.label,
           uploadState: "queued",
         };
         setVideos((items) => [...items, capture]);
         showCaptureFeedback(
-          videoNumber === VIDEO_TOTAL
-            ? "Both videos captured"
-            : `Video ${videoNumber} saved · 1 left`,
+          videoNumber === videoTotal
+            ? "All videos captured"
+            : `${step.label} saved · ${videoTotal - videoNumber} left`,
         );
         void beginBackgroundUpload(capture).catch(() => undefined);
       }
@@ -489,22 +736,28 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
     setRecordingElapsed(0);
     setRecording(true);
     recordTickRef.current = setInterval(() => {
+      const limitMs = videoSteps[videos.length]?.maxDurationMs || 60_000;
       setRecordingElapsed(
-        Math.min(
-          performance.now() - recordingStartedAtRef.current,
-          RECORDING_LIMIT_MS,
-        ),
+        Math.min(performance.now() - recordingStartedAtRef.current, limitMs),
       );
     }, 100);
-    recordTimerRef.current = setTimeout(stopRecording, RECORDING_LIMIT_MS);
+    const limitMs = videoSteps[videos.length]?.maxDurationMs || 60_000;
+    recordTimerRef.current = setTimeout(() => stopRecording(true), limitMs);
   };
 
   useEffect(() => {
-    if (photos.length === PHOTO_TOTAL && videos.length === VIDEO_TOTAL) {
+    if (photos.length === photoTotal && videos.length === videoTotal) {
       stopCamera();
-      startLocation();
+      if (!locationRef.current) startLocation();
     }
-  }, [photos.length, videos.length, startLocation, stopCamera]);
+  }, [
+    photoTotal,
+    photos.length,
+    startLocation,
+    stopCamera,
+    videoTotal,
+    videos.length,
+  ]);
 
   const reset = () => {
     capturesRef.current.forEach((capture) =>
@@ -514,6 +767,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
     setVideos([]);
     locationRef.current = null;
     setLocation(null);
+    setCrossLoadingVehicleNumber("");
     setCaptureFeedback(null);
     uploadGenerationRef.current += 1;
     uploadQueueRef.current = Promise.resolve();
@@ -529,8 +783,8 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
 
   const submit = async () => {
     if (
-      photos.length !== PHOTO_TOTAL ||
-      videos.length !== VIDEO_TOTAL ||
+      photos.length !== photoTotal ||
+      videos.length !== videoTotal ||
       !location ||
       sending
     ) {
@@ -555,6 +809,9 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
         photos: uploadedPhotos,
         videos: uploadedVideos,
         location: currentLocation,
+        ...(engineSeize
+          ? { crossLoadingVehicleNumber: crossLoadingVehicleNumber.trim() }
+          : {}),
       });
       onSubmitted(claim);
     } catch (submitError) {
@@ -565,25 +822,29 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
     }
   };
 
-  const capturingPhotos = photos.length < PHOTO_TOTAL;
+  const capturingPhotos = photos.length < photoTotal;
   const capturingVideos =
-    photos.length === PHOTO_TOTAL && videos.length < VIDEO_TOTAL;
+    photos.length === photoTotal && videos.length < videoTotal;
   const reviewing =
-    photos.length === PHOTO_TOTAL && videos.length === VIDEO_TOTAL;
+    photos.length === photoTotal && videos.length === videoTotal;
   const readyUploads = [...photos, ...videos].filter(
     (capture) => capture.uploadState === "ready",
   ).length;
-  const recordingProgress = Math.min(recordingElapsed / RECORDING_LIMIT_MS, 1);
+  const currentPhotoStep = photoSteps[photos.length];
+  const currentVideoStep = videoSteps[videos.length];
+  const recordingLimitMs = currentVideoStep?.maxDurationMs || 60_000;
+  const recordingProgress = Math.min(recordingElapsed / recordingLimitMs, 1);
   const recordingSeconds = Math.min(
     Math.floor(recordingElapsed / 1000),
-    RECORDING_LIMIT_MS / 1000,
+    recordingLimitMs / 1000,
   );
 
   return (
     <div className="fixed inset-0 z-[70] flex flex-col bg-[#0d1117] text-white">
       <header className="flex min-h-14 items-center justify-between border-b border-white/10 px-4">
         <span className="text-sm font-bold">
-          Claim · {truckNumber.toUpperCase()}
+          {engineSeize ? "Engine seize" : "Accident claim"} ·{" "}
+          {truckNumber.toUpperCase()}
         </span>
         {onClose ? (
           <button
@@ -606,18 +867,25 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
             muted
             className="h-full w-full object-contain"
           />
+          {engineSeize && capturingPhotos && currentPhotoStep && (
+            <CaptureGuide step={currentPhotoStep} />
+          )}
           <div className="absolute left-3 right-3 top-3 rounded-2xl border border-white/15 bg-black/75 px-4 py-3 shadow-lg backdrop-blur-sm">
             <div className="flex items-center justify-between text-sm font-black">
-              <span>{capturingPhotos ? "Photos" : "Videos"}</span>
+              <span>
+                {capturingPhotos
+                  ? currentPhotoStep?.label || "Photos"
+                  : currentVideoStep?.label || "Videos"}
+              </span>
               <span className="rounded-full bg-white px-2.5 py-1 text-xs text-[#111827]">
                 {capturingPhotos
-                  ? `${photos.length} / ${PHOTO_TOTAL}`
-                  : `${videos.length} / ${VIDEO_TOTAL}`}
+                  ? `${photos.length + 1} / ${photoTotal}`
+                  : `${videos.length + 1} / ${videoTotal}`}
               </span>
             </div>
             <div className="mt-2 flex gap-2" aria-hidden="true">
               {Array.from({
-                length: capturingPhotos ? PHOTO_TOTAL : VIDEO_TOTAL,
+                length: capturingPhotos ? photoTotal : videoTotal,
               }).map((_, index) => {
                 const complete =
                   index < (capturingPhotos ? photos.length : videos.length);
@@ -644,37 +912,79 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
               aria-live="polite"
             >
               {recording
-                ? `● Recording ${formatDuration(recordingSeconds)} / 01:00`
+                ? `● Recording ${formatDuration(recordingSeconds)} / ${formatDuration(recordingLimitMs / 1000)}`
                 : captureFeedback ||
                   (capturingPhotos
-                    ? `${PHOTO_TOTAL - photos.length} photos remaining`
-                    : `${VIDEO_TOTAL - videos.length} videos remaining`)}
+                    ? engineSeize
+                      ? currentPhotoStep?.hint
+                      : `${photoTotal - photos.length} photos remaining`
+                    : currentVideoStep?.hint ||
+                      `${videoTotal - videos.length} videos remaining`)}
             </p>
+            {engineSeize && (
+              <p
+                className={`mt-1 text-center text-[10px] font-semibold ${
+                  location ? "text-emerald-300" : "text-amber-300"
+                }`}
+              >
+                {location
+                  ? `GPS ready · ±${Math.round(location.accuracy)}m`
+                  : "Getting GPS location…"}
+              </p>
+            )}
           </div>
+          {engineSeize &&
+            capturingVideos &&
+            videos.length === 1 &&
+            !recording && (
+              <div className="absolute bottom-4 left-4 right-4 rounded-xl bg-black/75 p-3 backdrop-blur-sm">
+                <label className="text-[11px] font-bold text-white/70">
+                  Cross-loading vehicle number
+                </label>
+                <input
+                  value={crossLoadingVehicleNumber}
+                  onChange={(event) => {
+                    setCrossLoadingVehicleNumber(
+                      event.target.value.toUpperCase(),
+                    );
+                    setError(null);
+                  }}
+                  placeholder="e.g. MH12AB1234"
+                  maxLength={32}
+                  className="mt-2 h-11 w-full rounded-lg border border-white/20 bg-white px-3 text-sm font-bold text-[#172033] outline-none focus:border-white"
+                />
+              </div>
+            )}
         </main>
       ) : (
         <main className="min-h-0 flex-1 overflow-y-auto bg-[#f5f6f8] p-4 text-[#172033]">
           <div className="mx-auto grid max-w-xl grid-cols-3 gap-2">
-            {photos.map((photo, index) => (
+            {photos.map((photo) => (
               <div key={photo.preview} className="relative">
                 <img
                   src={photo.preview}
-                  alt={`Photo ${index + 1}`}
+                  alt={photo.label}
                   className="aspect-square w-full rounded-lg bg-black object-cover"
                 />
                 <UploadBadge state={photo.uploadState} />
+                <span className="absolute bottom-1.5 left-1.5 rounded-md bg-black/70 px-2 py-1 text-[9px] font-bold text-white">
+                  {photo.label}
+                </span>
               </div>
             ))}
-            {videos.map((video, index) => (
+            {videos.map((video) => (
               <div key={video.preview} className="relative">
                 <video
                   src={video.preview}
-                  aria-label={`Video ${index + 1}`}
+                  aria-label={video.label}
                   controls
                   preload="metadata"
                   className="aspect-square w-full rounded-lg bg-black object-cover"
                 />
                 <UploadBadge state={video.uploadState} />
+                <span className="absolute bottom-1.5 left-1.5 rounded-md bg-black/70 px-2 py-1 text-[9px] font-bold text-white">
+                  {video.label}
+                </span>
               </div>
             ))}
           </div>
@@ -683,14 +993,14 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
               <span>Evidence</span>
               <span
                 className={
-                  readyUploads === PHOTO_TOTAL + VIDEO_TOTAL
+                  readyUploads === photoTotal + videoTotal
                     ? "text-emerald-700"
                     : "text-amber-700"
                 }
               >
-                {readyUploads === PHOTO_TOTAL + VIDEO_TOTAL
+                {readyUploads === photoTotal + videoTotal
                   ? "Ready"
-                  : `Preparing ${readyUploads}/6`}
+                  : `Preparing ${readyUploads}/${photoTotal + videoTotal}`}
               </span>
             </div>
             <div className="flex items-center justify-between py-3">
@@ -703,6 +1013,14 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
                   : "Getting…"}
               </span>
             </div>
+            {engineSeize && (
+              <div className="flex items-center justify-between py-3">
+                <span>Cross-loading vehicle</span>
+                <span className="text-slate-600">
+                  {crossLoadingVehicleNumber || "—"}
+                </span>
+              </div>
+            )}
           </div>
         </main>
       )}
@@ -715,16 +1033,54 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
         )}
         {capturingPhotos && (
           <div className="text-center">
-            <button
-              type="button"
-              disabled={!cameraReady || photoCaptureBusy}
-              onClick={takePhoto}
-              className="mx-auto block h-16 w-16 rounded-full border-4 border-white bg-white/20 shadow-[0_0_0_5px_rgba(255,255,255,0.12)] active:scale-95 disabled:opacity-40"
-              aria-label={`Take photo ${photos.length + 1} of ${PHOTO_TOTAL}`}
-            />
+            <div className="flex items-center justify-center gap-5">
+              {engineSeize && photos.length === 0 && (
+                <>
+                  <input
+                    ref={rcUploadRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => void uploadRc(event.target.files?.[0])}
+                  />
+                  <button
+                    type="button"
+                    disabled={!location || photoCaptureBusy}
+                    onClick={() => rcUploadRef.current?.click()}
+                    className="grid h-12 w-12 place-items-center rounded-full border border-white/30 text-white active:scale-95 disabled:opacity-40"
+                    aria-label="Upload RC image"
+                  >
+                    <Upload className="h-5 w-5" />
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                disabled={
+                  !cameraReady || photoCaptureBusy || (engineSeize && !location)
+                }
+                onClick={takePhoto}
+                className="block h-16 w-16 rounded-full border-4 border-white bg-white/20 shadow-[0_0_0_5px_rgba(255,255,255,0.12)] active:scale-95 disabled:opacity-40"
+                aria-label={`Take ${currentPhotoStep?.label || "photo"} ${photos.length + 1} of ${photoTotal}`}
+              />
+              {engineSeize && photos.length === 0 && (
+                <span aria-hidden="true" className="h-12 w-12" />
+              )}
+            </div>
             <p className="mt-2 text-xs font-bold text-white/70">
-              Photo {photos.length + 1} of {PHOTO_TOTAL}
+              {currentPhotoStep?.label || "Photo"} · {photos.length + 1} of{" "}
+              {photoTotal}
             </p>
+            {engineSeize && photos.length === 0 && (
+              <button
+                type="button"
+                disabled={!location || photoCaptureBusy}
+                onClick={() => rcUploadRef.current?.click()}
+                className="mt-1 min-h-8 text-[11px] font-semibold text-white/65 underline disabled:opacity-40"
+              >
+                Or upload RC image
+              </button>
+            )}
           </div>
         )}
         {capturingVideos && (
@@ -740,7 +1096,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
               <button
                 type="button"
                 disabled={!cameraReady || !videoProfileReady}
-                onClick={recording ? stopRecording : startRecording}
+                onClick={recording ? () => stopRecording() : startRecording}
                 className="grid h-[68px] w-[68px] place-items-center rounded-full border-4 border-[#0d1117] bg-white disabled:opacity-40"
                 aria-label={recording ? "Stop recording" : "Start recording"}
               >
@@ -752,15 +1108,13 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
               </button>
             </div>
             <p
-              className={`mt-2 text-xs font-black ${
-                recording ? "text-red-300" : "text-white/75"
-              }`}
+              className={`mt-2 text-xs font-black ${recording ? "text-red-300" : "text-white/75"}`}
             >
               {recording
                 ? "Recording · tap to finish"
                 : !videoProfileReady
                   ? "Preparing video…"
-                  : `Start video ${videos.length + 1} of ${VIDEO_TOTAL} · up to 1 min`}
+                  : `${currentVideoStep?.label || "Start video"} · up to ${formatDuration(recordingLimitMs / 1000)}`}
             </p>
           </div>
         )}
@@ -783,7 +1137,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
               {sending
                 ? finalizing
                   ? "Sending claim…"
-                  : `Finishing uploads ${readyUploads}/6`
+                  : `Finishing uploads ${readyUploads}/${photoTotal + videoTotal}`
                 : location
                   ? "Send claim"
                   : "Getting location…"}

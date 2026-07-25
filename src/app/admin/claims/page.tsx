@@ -126,9 +126,7 @@ function NewClaimModal({
       invoiceId: invoice.id,
       officialClaimNumber: officialClaimNumber.trim() || undefined,
       description: reason.trim() || undefined,
-      quotationAmount: quotationAmount
-        ? Number(quotationAmount)
-        : undefined,
+      quotationAmount: quotationAmount ? Number(quotationAmount) : undefined,
       remarks: remarks.trim() || undefined,
     });
     setSaving(false);
@@ -146,7 +144,9 @@ function NewClaimModal({
       <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div className="sticky top-0 z-10 flex items-start justify-between border-b border-slate-100 bg-white px-6 py-5">
           <div>
-            <p className="text-lg font-bold text-slate-900">Initiate new claim</p>
+            <p className="text-lg font-bold text-slate-900">
+              Initiate new claim
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -262,8 +262,7 @@ function ClaimDrawer({
     status: claim.status,
     quotationAmount: claim.quotationAmount ?? null,
     approvedPayableAmount: claim.approvedPayableAmount ?? null,
-    paymentStatus:
-      claim.paymentStatus || ClaimPaymentStatus.NOT_STARTED,
+    paymentStatus: claim.paymentStatus || ClaimPaymentStatus.NOT_STARTED,
     paymentReference: claim.paymentReference || '',
     remarks: claim.remarks || '',
     surveyorName: claim.surveyorName || '',
@@ -309,11 +308,7 @@ function ClaimDrawer({
   ) => {
     if (!file) return;
     setUploading(mediaType);
-    const response = await adminApi.uploadClaimMedia(
-      claim.id,
-      mediaType,
-      file,
-    );
+    const response = await adminApi.uploadClaimMedia(claim.id, mediaType, file);
     setUploading(null);
     if (!response.success) {
       toast.error(response.message || 'Upload failed');
@@ -348,8 +343,7 @@ function ClaimDrawer({
               </div>
               <p className="mt-1 text-xs text-slate-500">
                 {claim.caseNumber || 'Claim number pending'} ·{' '}
-                {claim.invoice?.invoiceNumber} ·{' '}
-                {getVehicleNumber(claim)}
+                {claim.invoice?.invoiceNumber} · {getVehicleNumber(claim)}
               </p>
             </div>
             <button
@@ -396,8 +390,18 @@ function ClaimDrawer({
                       'Buyer address',
                       formatAddress(claim.invoice?.billToAddress),
                     ],
-                    ['Invoice / insured value', formatCurrency(claim.insuredValue ?? claim.invoice?.amount)],
-                    ['Invoice date', formatDate(claim.invoice?.invoiceDate || claim.invoice?.date)],
+                    [
+                      'Invoice / insured value',
+                      formatCurrency(
+                        claim.insuredValue ?? claim.invoice?.amount,
+                      ),
+                    ],
+                    [
+                      'Invoice date',
+                      formatDate(
+                        claim.invoice?.invoiceDate || claim.invoice?.date,
+                      ),
+                    ],
                   ].map(([label, value]) => (
                     <div key={label}>
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
@@ -615,9 +619,7 @@ function ClaimDrawer({
                         disabled={Boolean(uploading)}
                         onChange={(event) =>
                           uploadDocument(
-                            mediaType as Parameters<
-                              typeof uploadDocument
-                            >[0],
+                            mediaType as Parameters<typeof uploadDocument>[0],
                             event.target.files?.[0],
                           )
                         }
@@ -664,13 +666,14 @@ function ClaimDrawer({
                 <LocationLink claim={claim} />
                 {claim.locationAccuracyMeters && (
                   <span className="text-xs text-slate-500">
-                    Accuracy ±{Math.round(Number(claim.locationAccuracyMeters))}m
+                    Accuracy ±{Math.round(Number(claim.locationAccuracyMeters))}
+                    m
                   </span>
                 )}
               </div>
               <div>
                 <p className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
-                  Photos
+                  Accident photos
                 </p>
                 <div className="grid grid-cols-2 gap-3">
                   {(claim.evidencePhotos || []).map((photo) => (
@@ -688,7 +691,7 @@ function ClaimDrawer({
                         className="h-full w-full object-cover transition group-hover:scale-[1.02]"
                       />
                       <span className="absolute bottom-2 left-2 rounded-md bg-slate-950/70 px-2 py-1 text-[10px] font-semibold text-white">
-                        Photo {photo.slot}
+                        {photo.label || `Photo ${photo.slot}`}
                       </span>
                     </a>
                   ))}
@@ -704,7 +707,7 @@ function ClaimDrawer({
               </div>
               <div>
                 <p className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
-                  Videos
+                  Accident videos
                 </p>
                 <div className="space-y-2">
                   {(claim.evidenceVideos || []).map((video) => (
@@ -716,13 +719,93 @@ function ClaimDrawer({
                       className="flex items-center justify-between rounded-xl border border-slate-200 p-3 text-xs font-semibold text-slate-700 hover:border-violet-200 hover:text-[#4309ac]"
                     >
                       <span className="flex items-center gap-2">
-                        <Video className="h-4 w-4" /> Video {video.slot}
+                        <Video className="h-4 w-4" />{' '}
+                        {video.label || `Video ${video.slot}`}
                       </span>
                       <ExternalLink className="h-3.5 w-3.5" />
                     </a>
                   ))}
                 </div>
               </div>
+              {(claim.engineSeizeEvidenceSubmittedAt ||
+                claim.engineSeizeEvidencePhotos?.length ||
+                claim.engineSeizeEvidenceVideos?.length) && (
+                <div className="space-y-5 border-t border-slate-200 pt-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <EvidenceBadge claim={claim} captureType="engine_seize" />
+                    <div className="text-right">
+                      <LocationLink claim={claim} captureType="engine_seize" />
+                      {claim.engineSeizeLocationAccuracyMeters && (
+                        <p className="mt-1 text-[10px] text-slate-400">
+                          Accuracy ±
+                          {Math.round(
+                            Number(claim.engineSeizeLocationAccuracyMeters),
+                          )}
+                          m
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {claim.engineSeizeCrossLoadingVehicleNumber && (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                      <span className="text-slate-500">
+                        Cross-loading vehicle
+                      </span>
+                      <span className="ml-2 font-bold text-slate-800">
+                        {claim.engineSeizeCrossLoadingVehicleNumber}
+                      </span>
+                    </div>
+                  )}
+                  <div>
+                    <p className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
+                      Engine seize photos
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {(claim.engineSeizeEvidencePhotos || []).map((photo) => (
+                        <a
+                          key={photo.publicId}
+                          href={photo.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={photo.url}
+                            alt={photo.label || `Engine evidence ${photo.slot}`}
+                            className="h-full w-full object-cover transition group-hover:scale-[1.02]"
+                          />
+                          <span className="absolute bottom-2 left-2 rounded-md bg-slate-950/70 px-2 py-1 text-[10px] font-semibold text-white">
+                            {photo.label || `Photo ${photo.slot}`}
+                          </span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-400">
+                      Engine seize videos
+                    </p>
+                    <div className="space-y-2">
+                      {(claim.engineSeizeEvidenceVideos || []).map((video) => (
+                        <a
+                          key={video.publicId}
+                          href={video.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center justify-between rounded-xl border border-slate-200 p-3 text-xs font-semibold text-slate-700 hover:border-violet-200 hover:text-[#4309ac]"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Video className="h-4 w-4" />
+                            {video.label || `Video ${video.slot}`}
+                          </span>
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -739,10 +822,7 @@ function ClaimDrawer({
               ) : (
                 <div className="relative space-y-5 before:absolute before:bottom-2 before:left-[7px] before:top-2 before:w-px before:bg-slate-200">
                   {activities.map((activity) => (
-                    <div
-                      key={activity.id}
-                      className="relative flex gap-4 pl-0"
-                    >
+                    <div key={activity.id} className="relative flex gap-4 pl-0">
                       <span className="z-10 mt-1 h-3.5 w-3.5 shrink-0 rounded-full border-2 border-white bg-[#4309ac] ring-1 ring-violet-200" />
                       <div>
                         <p className="text-sm font-semibold text-slate-800">
@@ -803,34 +883,36 @@ export default function AdminClaimsPage() {
   const [selectedClaim, setSelectedClaim] = useState<ClaimRequest | null>(null);
   const [showNewClaim, setShowNewClaim] = useState(false);
 
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
-    const [claimsResponse, summaryResponse] = await Promise.all([
-      adminApi.getClaimsPage({
-        search: search || undefined,
-        status: (status as ClaimStatus) || undefined,
-        paymentStatus:
-          (paymentStatus as ClaimPaymentStatus) || undefined,
-        evidenceStatus:
-          (evidenceStatus as
-            | 'not_requested'
-            | 'active'
-            | 'received'
-            | 'expired') || undefined,
-        page,
-        limit: 20,
-      }),
-      adminApi.getClaimsSummary(),
-    ]);
-    if (!claimsResponse.success) {
-      toast.error(claimsResponse.message || 'Could not load claims');
-    }
-    setClaims(claimsResponse.data?.data || []);
-    setTotal(claimsResponse.data?.total || 0);
-    setTotalPages(claimsResponse.data?.totalPages || 1);
-    setSummary(summaryResponse.data || null);
-    if (!silent) setLoading(false);
-  }, [evidenceStatus, page, paymentStatus, search, status]);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      const [claimsResponse, summaryResponse] = await Promise.all([
+        adminApi.getClaimsPage({
+          search: search || undefined,
+          status: (status as ClaimStatus) || undefined,
+          paymentStatus: (paymentStatus as ClaimPaymentStatus) || undefined,
+          evidenceStatus:
+            (evidenceStatus as
+              | 'not_requested'
+              | 'active'
+              | 'received'
+              | 'expired') || undefined,
+          page,
+          limit: 20,
+        }),
+        adminApi.getClaimsSummary(),
+      ]);
+      if (!claimsResponse.success) {
+        toast.error(claimsResponse.message || 'Could not load claims');
+      }
+      setClaims(claimsResponse.data?.data || []);
+      setTotal(claimsResponse.data?.total || 0);
+      setTotalPages(claimsResponse.data?.totalPages || 1);
+      setSummary(summaryResponse.data || null);
+      if (!silent) setLoading(false);
+    },
+    [evidenceStatus, page, paymentStatus, search, status],
+  );
 
   useEffect(() => {
     // The first fetch intentionally initializes server-backed page state.
@@ -1125,8 +1207,7 @@ export default function AdminClaimsPage() {
                         </td>
                         <td className="border-b border-slate-100 px-3 py-3 text-right text-xs font-bold tabular-nums text-slate-900">
                           {formatCurrency(
-                            claim.approvedPayableAmount ??
-                              claim.claimAmount,
+                            claim.approvedPayableAmount ?? claim.claimAmount,
                           )}
                         </td>
                         <td className="border-b border-slate-100 px-3 py-3">

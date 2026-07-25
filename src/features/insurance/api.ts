@@ -164,6 +164,7 @@ export interface ClaimEvidenceItem {
   size: number;
   capturedAt: string;
   slot: number;
+  label?: string;
 }
 
 export interface ClaimEvidenceUploadTarget {
@@ -185,6 +186,7 @@ export interface ClaimEvidenceUploadProof {
   capturedAt: string;
   resourceType?: string;
   format?: string;
+  label?: string;
 }
 
 export interface ClaimLocation {
@@ -201,6 +203,7 @@ export interface PublicClaimCaptureLink {
   expiresAt: string;
   submitted: boolean;
   submittedAt?: string | null;
+  captureType: "accident" | "engine_seize";
 }
 
 export interface ClaimEligibleVehicle {
@@ -700,7 +703,9 @@ export const getClaimEligibleVehicles = async (): Promise<
     const token = getStoredAuthToken();
     const response = await axios.get(
       `${API_BASE_URL}/claim-requests/eligible-vehicles`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
     );
     return Array.isArray(response.data) ? response.data : [];
   } catch (error) {
@@ -772,7 +777,9 @@ export const createClaimWithEvidence = async (payload: {
     const response = await axios.post(
       `${API_BASE_URL}/claim-requests/by-truck/evidence`,
       payload,
-      { headers: { Authorization: `Bearer ${token}` } },
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
     );
     return normalizeClaimRequest(response.data);
   } catch (error) {
@@ -783,7 +790,8 @@ export const createClaimWithEvidence = async (payload: {
 
 const readPublicClaimResponse = async <T>(response: Response): Promise<T> => {
   const payload = (await response.json().catch(() => null)) as
-    (T & { message?: string | string[] }) | null;
+    | (T & { message?: string | string[] })
+    | null;
   if (!response.ok || !payload) {
     const message = payload?.message;
     throw new Error(
@@ -828,6 +836,8 @@ export const createPublicClaimWithEvidence = async (
     photos: ClaimEvidenceUploadProof[];
     videos: ClaimEvidenceUploadProof[];
     location: ClaimLocation;
+    captureType?: "accident" | "engine_seize";
+    crossLoadingVehicleNumber?: string;
   },
 ): Promise<PublicClaimCaptureLink> => {
   const evidence = {
@@ -835,6 +845,9 @@ export const createPublicClaimWithEvidence = async (
     photos: payload.photos,
     videos: payload.videos,
     location: payload.location,
+    ...(payload.crossLoadingVehicleNumber
+      ? { crossLoadingVehicleNumber: payload.crossLoadingVehicleNumber }
+      : {}),
   };
   const response = await fetch(
     `${API_BASE_URL}/claim-requests/public/${encodeURIComponent(token)}/evidence`,
