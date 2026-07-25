@@ -1,19 +1,10 @@
 'use client';
 
 import type { ClaimRequest } from '@/features/admin/api/admin.api';
-import {
-  AlertCircle,
-  CheckCircle2,
-  Clock3,
-  Link2,
-  MapPin,
-} from 'lucide-react';
+import { AlertCircle, CheckCircle2, Clock3, Link2, MapPin } from 'lucide-react';
 
-export type EvidenceState =
-  | 'not_requested'
-  | 'active'
-  | 'received'
-  | 'expired';
+export type EvidenceState = 'not_requested' | 'active' | 'received' | 'expired';
+export type CaptureType = 'accident' | 'engine_seize';
 
 const developerTestIdentityPattern = /O[m]\s+B[h]ojane(?:\s*\(Test\))?/gi;
 
@@ -36,23 +27,21 @@ export function formatDate(value?: string | null, withTime = false) {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
-    ...(withTime
-      ? { hour: '2-digit', minute: '2-digit' }
-      : {}),
+    ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
   });
 }
 
 export function formatAddress(value?: string[] | string | null) {
   if (!value) return '—';
-  const address = Array.isArray(value) ? value.filter(Boolean).join(', ') : value;
+  const address = Array.isArray(value)
+    ? value.filter(Boolean).join(', ')
+    : value;
   return removeDeveloperTestIdentity(address);
 }
 
 export function getVehicleNumber(claim: ClaimRequest) {
   return (
-    claim.invoice?.vehicleNumber ||
-    claim.invoice?.truckNumber ||
-    'Not recorded'
+    claim.invoice?.vehicleNumber || claim.invoice?.truckNumber || 'Not recorded'
   );
 }
 
@@ -77,12 +66,38 @@ export function getOtherParty(claim: ClaimRequest) {
   );
 }
 
-export function getEvidenceState(claim: ClaimRequest): EvidenceState {
-  if (claim.evidenceSubmittedAt) return 'received';
-  if (!claim.captureLinkExpiresAt) return 'not_requested';
-  const expiresAt = new Date(claim.captureLinkExpiresAt).getTime();
+export function getEvidenceState(
+  claim: ClaimRequest,
+  captureType?: CaptureType,
+): EvidenceState {
+  const engineSeize = captureType === 'engine_seize';
+  const submittedAt = engineSeize
+    ? claim.engineSeizeEvidenceSubmittedAt
+    : claim.evidenceSubmittedAt;
+  const linkExpiresAt = engineSeize
+    ? claim.engineSeizeCaptureLinkExpiresAt
+    : claim.captureLinkExpiresAt;
+  const linkUsedAt = engineSeize
+    ? claim.engineSeizeCaptureLinkUsedAt
+    : claim.captureLinkUsedAt;
+
+  if (submittedAt || (!captureType && claim.engineSeizeEvidenceSubmittedAt)) {
+    return 'received';
+  }
   if (
-    !claim.captureLinkUsedAt &&
+    !linkExpiresAt &&
+    (captureType || !claim.engineSeizeCaptureLinkExpiresAt)
+  ) {
+    return 'not_requested';
+  }
+  const expiresAt = Math.max(
+    new Date(linkExpiresAt || 0).getTime(),
+    !captureType
+      ? new Date(claim.engineSeizeCaptureLinkExpiresAt || 0).getTime()
+      : 0,
+  );
+  if (
+    (!linkUsedAt || (!captureType && !claim.engineSeizeCaptureLinkUsedAt)) &&
     Number.isFinite(expiresAt) &&
     expiresAt > Date.now()
   ) {
@@ -153,18 +168,36 @@ export function StatusBadge({
   );
 }
 
-export function EvidenceBadge({ claim }: { claim: ClaimRequest }) {
-  const state = getEvidenceState(claim);
+export function EvidenceBadge({
+  claim,
+  captureType,
+}: {
+  claim: ClaimRequest;
+  captureType?: CaptureType;
+}) {
+  const state = getEvidenceState(claim, captureType);
+  const engineSeize = captureType === 'engine_seize';
+  const photos = engineSeize
+    ? claim.engineSeizeEvidencePhotos?.length || 0
+    : claim.evidencePhotos?.length || 0;
+  const videos = engineSeize
+    ? claim.engineSeizeEvidenceVideos?.length || 0
+    : claim.evidenceVideos?.length || 0;
+  const expiresAt = engineSeize
+    ? claim.engineSeizeCaptureLinkExpiresAt
+    : claim.captureLinkExpiresAt;
   const config = {
     received: {
-      label: 'Evidence received',
-      detail: `${claim.evidencePhotos?.length || 0} photos · ${claim.evidenceVideos?.length || 0} videos`,
+      label: engineSeize ? 'Engine evidence received' : 'Evidence received',
+      detail: captureType
+        ? `${photos} photos · ${videos} videos`
+        : `${photos + (claim.engineSeizeEvidencePhotos?.length || 0)} photos · ${videos + (claim.engineSeizeEvidenceVideos?.length || 0)} videos`,
       classes: 'border-emerald-200 bg-emerald-50 text-emerald-700',
       icon: CheckCircle2,
     },
     active: {
       label: 'Link active',
-      detail: `Until ${formatDate(claim.captureLinkExpiresAt)}`,
+      detail: `Until ${formatDate(expiresAt)}`,
       classes: 'border-violet-200 bg-violet-50 text-violet-700',
       icon: Link2,
     },
@@ -195,9 +228,23 @@ export function EvidenceBadge({ claim }: { claim: ClaimRequest }) {
   );
 }
 
-export function LocationLink({ claim }: { claim: ClaimRequest }) {
-  if (!claim.locationLatitude || !claim.locationLongitude) return null;
-  const href = `https://www.google.com/maps?q=${claim.locationLatitude},${claim.locationLongitude}`;
+export function LocationLink({
+  claim,
+  captureType = 'accident',
+}: {
+  claim: ClaimRequest;
+  captureType?: CaptureType;
+}) {
+  const latitude =
+    captureType === 'engine_seize'
+      ? claim.engineSeizeLocationLatitude
+      : claim.locationLatitude;
+  const longitude =
+    captureType === 'engine_seize'
+      ? claim.engineSeizeLocationLongitude
+      : claim.locationLongitude;
+  if (!latitude || !longitude) return null;
+  const href = `https://www.google.com/maps?q=${latitude},${longitude}`;
   return (
     <a
       href={href}

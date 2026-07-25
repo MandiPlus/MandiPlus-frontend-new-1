@@ -8,6 +8,7 @@ import {
 } from '@/features/admin/api/admin.api';
 import InvoicePicker from '@/features/admin/claims/InvoicePicker';
 import {
+  CaptureType,
   EvidenceBadge,
   formatDate,
   getEvidenceState,
@@ -38,9 +39,11 @@ import { toast } from 'react-toastify';
 function CaptureLinkModal({
   onClose,
   onGenerated,
+  captureType,
 }: {
   onClose: () => void;
   onGenerated: (result: ClaimCaptureLinkResult) => void;
+  captureType: CaptureType;
 }) {
   const [invoice, setInvoice] = useState<EligibleClaimInvoice | null>(null);
   const [loading, setLoading] = useState(false);
@@ -50,6 +53,7 @@ function CaptureLinkModal({
     setLoading(true);
     const response = await adminApi.createClaimCaptureLink({
       invoiceId: invoice.id,
+      captureType,
     });
     setLoading(false);
     if (!response.success || !response.data) {
@@ -65,7 +69,9 @@ function CaptureLinkModal({
         <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
           <div>
             <h2 className="text-lg font-bold text-slate-900">
-              Create capture request
+              Create{' '}
+              {captureType === 'engine_seize' ? 'engine seize' : 'accident'}{' '}
+              capture request
             </h2>
           </div>
           <button
@@ -135,7 +141,9 @@ function GeneratedLinkModal({
           </button>
         </div>
         <h2 className="mt-4 text-lg font-bold text-slate-900">
-          Capture link ready
+          {result.captureType === 'engine_seize'
+            ? 'Engine seize link ready'
+            : 'Accident claim link ready'}
         </h2>
         <p className="mt-1 text-xs text-slate-500">
           {result.invoiceNumber} · {result.vehicleNumber} · expires{' '}
@@ -147,7 +155,10 @@ function GeneratedLinkModal({
           </p>
         </div>
         <div className="mt-4 flex gap-2">
-          <button onClick={copy} className={`${adminButtonClasses.primary} flex-1`}>
+          <button
+            onClick={copy}
+            className={`${adminButtonClasses.primary} flex-1`}
+          >
             {copied ? (
               <Check className="mr-2 h-4 w-4" />
             ) : (
@@ -174,6 +185,7 @@ function GeneratedLinkModal({
 }
 
 export default function CaptureLinksPage() {
+  const [captureType, setCaptureType] = useState<CaptureType>('accident');
   const [claims, setClaims] = useState<ClaimRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchInput, setSearchInput] = useState('');
@@ -183,8 +195,9 @@ export default function CaptureLinksPage() {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
-  const [generated, setGenerated] =
-    useState<ClaimCaptureLinkResult | null>(null);
+  const [generated, setGenerated] = useState<ClaimCaptureLinkResult | null>(
+    null,
+  );
   const [generatingId, setGeneratingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -194,6 +207,7 @@ export default function CaptureLinksPage() {
       evidenceStatus:
         (state as 'not_requested' | 'active' | 'received' | 'expired') ||
         undefined,
+      captureType,
       page,
       limit: 20,
     });
@@ -204,7 +218,7 @@ export default function CaptureLinksPage() {
     if (!response.success) {
       toast.error(response.message || 'Could not load capture links');
     }
-  }, [page, search, state]);
+  }, [captureType, page, search, state]);
 
   useEffect(() => {
     // The first fetch intentionally initializes server-backed page state.
@@ -227,7 +241,10 @@ export default function CaptureLinksPage() {
       return;
     }
     setGeneratingId(claim.id);
-    const response = await adminApi.createClaimCaptureLink({ invoiceId });
+    const response = await adminApi.createClaimCaptureLink({
+      invoiceId,
+      captureType,
+    });
     setGeneratingId(null);
     if (!response.success || !response.data) {
       toast.error(response.message || 'Could not generate link');
@@ -250,7 +267,9 @@ export default function CaptureLinksPage() {
               Claims dashboard
             </Link>
             <h1 className="text-2xl font-bold tracking-tight text-slate-950">
-              Capture links
+              {captureType === 'engine_seize'
+                ? 'Engine seize links'
+                : 'Accident claim links'}
             </h1>
           </div>
           <button
@@ -260,6 +279,30 @@ export default function CaptureLinksPage() {
             <Plus className="mr-2 h-4 w-4" />
             New capture request
           </button>
+        </div>
+
+        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+          {[
+            { value: 'accident' as const, label: 'Accident claim links' },
+            { value: 'engine_seize' as const, label: 'Engine seize links' },
+          ].map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => {
+                setCaptureType(item.value);
+                setState('');
+                setPage(1);
+              }}
+              className={`rounded-md px-4 py-2 text-xs font-semibold transition ${
+                captureType === item.value
+                  ? 'bg-[#4309ac] text-white'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
 
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -347,7 +390,31 @@ export default function CaptureLinksPage() {
                   </tr>
                 ) : (
                   claims.map((claim) => {
-                    const evidenceReceived = Boolean(claim.evidenceSubmittedAt);
+                    const evidenceReceived = Boolean(
+                      captureType === 'engine_seize'
+                        ? claim.engineSeizeEvidenceSubmittedAt
+                        : claim.evidenceSubmittedAt,
+                    );
+                    const photos =
+                      captureType === 'engine_seize'
+                        ? claim.engineSeizeEvidencePhotos || []
+                        : claim.evidencePhotos || [];
+                    const videos =
+                      captureType === 'engine_seize'
+                        ? claim.engineSeizeEvidenceVideos || []
+                        : claim.evidenceVideos || [];
+                    const latitude =
+                      captureType === 'engine_seize'
+                        ? claim.engineSeizeLocationLatitude
+                        : claim.locationLatitude;
+                    const longitude =
+                      captureType === 'engine_seize'
+                        ? claim.engineSeizeLocationLongitude
+                        : claim.locationLongitude;
+                    const submittedAt =
+                      captureType === 'engine_seize'
+                        ? claim.engineSeizeEvidenceSubmittedAt
+                        : claim.evidenceSubmittedAt;
                     return (
                       <tr
                         key={claim.id}
@@ -370,25 +437,27 @@ export default function CaptureLinksPage() {
                           {getInsuredParty(claim)}
                         </td>
                         <td className="border-b border-slate-100 px-4 py-3">
-                          <EvidenceBadge claim={claim} />
+                          <EvidenceBadge
+                            claim={claim}
+                            captureType={captureType}
+                          />
                         </td>
                         <td className="border-b border-slate-100 px-4 py-3">
                           <div className="flex flex-wrap gap-1.5">
                             <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
                               <ImageIcon className="h-3 w-3" />
-                              {claim.evidencePhotos?.length || 0}
+                              {photos.length}
                             </span>
                             <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
                               <Video className="h-3 w-3" />
-                              {claim.evidenceVideos?.length || 0}
+                              {videos.length}
                             </span>
                           </div>
                         </td>
                         <td className="border-b border-slate-100 px-4 py-3">
-                          {claim.locationLatitude &&
-                          claim.locationLongitude ? (
+                          {latitude && longitude ? (
                             <a
-                              href={`https://www.google.com/maps?q=${claim.locationLatitude},${claim.locationLongitude}`}
+                              href={`https://www.google.com/maps?q=${latitude},${longitude}`}
                               target="_blank"
                               rel="noreferrer"
                               className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#4309ac] hover:underline"
@@ -403,10 +472,7 @@ export default function CaptureLinksPage() {
                           )}
                         </td>
                         <td className="border-b border-slate-100 px-4 py-3 text-xs text-slate-500">
-                          {formatDate(
-                            claim.evidenceSubmittedAt || claim.updatedAt,
-                            true,
-                          )}
+                          {formatDate(submittedAt || claim.updatedAt, true)}
                         </td>
                         <td className="border-b border-slate-100 px-4 py-3">
                           {evidenceReceived ? (
@@ -428,7 +494,8 @@ export default function CaptureLinksPage() {
                               ) : (
                                 <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
                               )}
-                              {getEvidenceState(claim) === 'not_requested'
+                              {getEvidenceState(claim, captureType) ===
+                              'not_requested'
                                 ? 'Generate link'
                                 : 'Regenerate'}
                             </button>
@@ -475,6 +542,7 @@ export default function CaptureLinksPage() {
             setGenerated(result);
             void load();
           }}
+          captureType={captureType}
         />
       )}
       {generated && (
