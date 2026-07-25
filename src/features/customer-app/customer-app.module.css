@@ -1568,7 +1568,7 @@
   min-width: 0;
 }
 
-.compactField label {
+.compactField > span {
   color: var(--mp-muted);
   font-size: 10px;
   font-weight: 800;
@@ -1652,6 +1652,69 @@
   border-radius: 14px;
   font-size: 16px;
   line-height: 21px;
+}
+
+.inlineExtractionNotice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid #dde5f0;
+  border-radius: 12px;
+  color: var(--mp-navy);
+  background: #f7f9fd;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.inlineCalculatedTotal {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px 0 3px;
+  padding: 7px 9px;
+  border-radius: 9px;
+  color: var(--mp-navy);
+  background: var(--mp-soft);
+}
+
+.inlineCalculatedTotal span {
+  color: var(--mp-muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.inlineCalculatedTotal strong {
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.inlineTonnage {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  align-self: end;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--mp-soft);
+}
+
+.inlineTonnage button {
+  min-height: 32px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--mp-muted);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.inlineTonnage .tonnageButtonActive {
+  color: #fff;
+  background: var(--mp-navy);
 }
 
 .quickCreateBody {
@@ -1839,6 +1902,213 @@
   background: var(--mp-surface);
   font-size: 15px;
   font-weight: 900;
+}
+
+.eagerReadingBadge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  padding: 5px 8px;
+  color: var(--mp-navy);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 4px 12px rgba(31, 48, 69, 0.12);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.quickMicRecording,
+.missingVoiceButtonRecording {
+  background: #6f57dc !important;
+}
+
+.recordingTime {
+  align-self: center;
+  margin-right: 8px;
+  color: #6f57dc;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.missingDetailsModal {
+  position: fixed;
+  z-index: 170;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 18px;
+}
+
+.missingDetailsBackdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(17, 24, 39, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.missingDetailsSheet {
+  position: relative;
+  display: grid;
+  width: min(100%, 440px);
+  gap: 19px;
+  border: 1px solid var(--mp-line);
+  border-radius: 24px;
+  padding: 20px;
+  background: #fff;
+  box-shadow: 0 24px 64px rgba(31, 48, 69, 0.24);
+  animation: sheetIn 180ms ease-out;
+}
+
+.missingDetailsHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.missingDetailsHeader h2,
+.missingDetailsSheet h3,
+.missingDetailsHeader p {
+  margin: 0;
+}
+
+.missingDetailsHeader h2 {
+  color: var(--mp-ink);
+  font-size: 19px;
+  font-weight: 950;
+}
+
+.missingDetailsHeader p {
+  margin-top: 3px;
+  color: var(--mp-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.missingDetailsHeader > button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--mp-ink);
+  background: var(--mp-soft);
+}
+
+.missingDetailsSheet h3 {
+  color: var(--mp-ink);
+  font-size: 23px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.missingVoiceArea {
+  display: grid;
+  min-height: 210px;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+}
+
+.missingVoiceButton {
+  display: grid;
+  width: 86px;
+  height: 86px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--mp-navy);
+  box-shadow: 0 10px 26px rgba(31, 48, 69, 0.22);
+}
+
+.missingVoiceArea > strong {
+  color: var(--mp-ink);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.missingVoiceArea > span {
+  color: #6f57dc;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.voiceWaveform {
+  display: flex;
+  width: min(230px, 78vw);
+  height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.voiceWaveform span {
+  width: 3px;
+  min-height: 4px;
+  border-radius: 999px;
+  background: #7b65e8;
+  transition: height 140ms ease;
+}
+
+.missingChoiceRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 18px 0;
+}
+
+.missingChoiceRow button {
+  min-height: 76px;
+  border: 1px solid var(--mp-line);
+  border-radius: 16px;
+  color: var(--mp-muted);
+  background: var(--mp-soft);
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.missingChoiceRow .missingChoiceSelected {
+  border-color: var(--mp-navy);
+  color: #fff;
+  background: var(--mp-navy);
+}
+
+.missingActions {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.missingActions button {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 12px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.missingBack {
+  color: var(--mp-ink);
+  background: var(--mp-soft);
+}
+
+.missingNext {
+  color: #fff;
+  background: var(--mp-navy);
 }
 
 .sourceOption span {
@@ -2221,6 +2491,17 @@
 @keyframes shimmer {
   from { background-position: 200% 0; }
   to { background-position: -200% 0; }
+}
+
+@keyframes sheetIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
