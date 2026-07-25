@@ -100,6 +100,8 @@ export interface LiveTrackingTrip {
   eta?: string | null;
   updatedAt?: string;
   lastLocation?: {
+    lat?: number | null;
+    lng?: number | null;
     address?: string | null;
     timeRecorded?: string | null;
     distanceRemained?: string | number | null;

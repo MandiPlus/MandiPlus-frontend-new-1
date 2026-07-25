@@ -29,6 +29,9 @@ import {
   createCustomerInvoice,
   extractCustomerInvoice,
   extractCustomerInvoiceText,
+  getCustomerAppPricing,
+  isTenderCoconutProduct,
+  type CustomerAppPricing,
   type CustomerInvoiceDraft,
 } from "./api";
 import { CustomerAppShell } from "./CustomerAppShell";
@@ -57,6 +60,7 @@ function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft 
     quantity: "",
     rate: "",
     vehicleNumber: "",
+    vehicleTonnage: "25",
     driverPhone: "",
     insuredPartyPhone: userPhone,
     ownerName: "",
@@ -78,12 +82,29 @@ export default function CustomerCreateInsurancePage() {
   const [sourceOpen, setSourceOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
   const [notice, setNotice] = useState("");
+  const [pricing, setPricing] = useState<
+    CustomerAppPricing["tenderCoconut"] | null
+  >(null);
+  const [pricingLoading, setPricingLoading] = useState(false);
+  const [pricingError, setPricingError] = useState("");
 
-  const total = useMemo(
-    () => Number(draft.quantity || 0) * Number(draft.rate || 0),
-    [draft.quantity, draft.rate],
-  );
-  const premium = Math.max(1, Math.round(total * 0.002));
+  const isTenderCoconut = isTenderCoconutProduct(draft.product);
+  const total = useMemo(() => {
+    const base = Number(draft.quantity || 0) * Number(draft.rate || 0);
+    if (!isTenderCoconut || !pricing) return base;
+    const logistics =
+      draft.vehicleTonnage === "30"
+        ? pricing.amount30Ton
+        : pricing.amount25Ton;
+    return Number((base + Number(logistics || 0)).toFixed(2));
+  }, [
+    draft.quantity,
+    draft.rate,
+    draft.vehicleTonnage,
+    isTenderCoconut,
+    pricing,
+  ]);
+  const premium = Number((total * 0.002).toFixed(2));
 
   useEffect(() => {
     if (!user) return;
@@ -97,6 +118,36 @@ export default function CustomerCreateInsurancePage() {
       product: current.product || defaults.product,
     }));
   }, [user]);
+
+  useEffect(() => {
+    if (!isTenderCoconut) {
+      setPricing(null);
+      setPricingError("");
+      setPricingLoading(false);
+      return;
+    }
+
+    let active = true;
+    setPricingLoading(true);
+    setPricingError("");
+    void getCustomerAppPricing()
+      .then((response) => {
+        if (!active) return;
+        setPricing(response.tenderCoconut);
+      })
+      .catch(() => {
+        if (!active) return;
+        setPricing(null);
+        setPricingError("Amount load nahi hua. Dobara try karein.");
+      })
+      .finally(() => {
+        if (active) setPricingLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isTenderCoconut]);
 
   useEffect(() => {
     if (!files[0] || !files[0].type.startsWith("image/")) {
@@ -162,7 +213,15 @@ export default function CustomerCreateInsurancePage() {
     setStage("creating");
     setNotice("");
     try {
-      const invoice = await createCustomerInvoice(user.id, draft, files);
+      if (isTenderCoconut && !pricing) {
+        throw new Error("Amount load nahi hua. Dobara try karein.");
+      }
+      const invoice = await createCustomerInvoice(
+        user.id,
+        draft,
+        files,
+        pricing || undefined,
+      );
       if (!invoice?.id) throw new Error("Invoice was created without an ID.");
       const checkout = await createCustomerWebPaymentCheckout([invoice.id]);
       if (!checkout.redirectUrl) {
@@ -498,6 +557,27 @@ export default function CustomerCreateInsurancePage() {
               full
               onChange={(value) => update("vehicleNumber", value.toUpperCase())}
             />
+            {isTenderCoconut ? (
+              <div className={`${styles.tonnageField} ${styles.detailGridFull}`}>
+                <span>Vehicle tonnage</span>
+                <div>
+                  {(["25", "30"] as const).map((tonnage) => (
+                    <button
+                      key={tonnage}
+                      type="button"
+                      className={
+                        draft.vehicleTonnage === tonnage
+                          ? styles.tonnageButtonActive
+                          : ""
+                      }
+                      onClick={() => update("vehicleTonnage", tonnage)}
+                    >
+                      {tonnage} ton
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </DetailSection>
 
           <DetailSection title="Contact" icon={<Phone size={20} />}>
@@ -516,7 +596,9 @@ export default function CustomerCreateInsurancePage() {
           </DetailSection>
         </section>
 
-        {notice ? <div className={styles.notice}>{notice}</div> : null}
+        {notice || pricingError ? (
+          <div className={styles.notice}>{notice || pricingError}</div>
+        ) : null}
       </main>
 
       <div className={styles.stickyPay}>
@@ -524,12 +606,17 @@ export default function CustomerCreateInsurancePage() {
           type="button"
           className={styles.wideButton}
           onClick={() => void submitAndPay()}
-          disabled={stage === "creating"}
+          disabled={
+            stage === "creating" ||
+            (isTenderCoconut && (pricingLoading || !pricing))
+          }
         >
           {stage === "creating" ? (
             <LoaderCircle className="animate-spin" size={19} />
           ) : null}
-          Pay {money(premium)}
+          {isTenderCoconut && pricingLoading
+            ? "Amount load ho raha hai"
+            : `Pay ${payableMoney(premium)}`}
         </button>
       </div>
     </CustomerAppShell>
@@ -646,6 +733,13 @@ function validateDraft(draft: CustomerInvoiceDraft) {
   if (!(Number(draft.quantity) > 0)) return "Sahi quantity add karein.";
   if (!(Number(draft.rate) > 0)) return "Sahi rate add karein.";
   if (!draft.vehicleNumber.trim()) return "Vehicle number add karein.";
+  if (
+    isTenderCoconutProduct(draft.product) &&
+    draft.vehicleTonnage !== "25" &&
+    draft.vehicleTonnage !== "30"
+  ) {
+    return "Vehicle tonnage chunein.";
+  }
   if (phone(draft.insuredPartyPhone).length < 10) {
     return "Buyer ka 10 digit mobile number add karein.";
   }
@@ -677,4 +771,12 @@ function normalizeDate(value: unknown) {
 
 function round(value: number) {
   return Math.round(value * 100) / 100;
+}
+
+function payableMoney(value: number) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2,
+  }).format(value);
 }
