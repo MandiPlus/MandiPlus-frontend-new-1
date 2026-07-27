@@ -272,12 +272,13 @@ export async function getMyUserInvoices(): Promise<InsuranceForm[]> {
 
 export async function createCustomerWebPaymentCheckout(
   invoiceIds: string[],
+  expectedTotalPaymentAmount?: number,
 ): Promise<CustomerPaymentCheckoutResponse> {
   try {
     const response = await withAuthRetry(() =>
       axios.post(
         `${API_BASE_URL}/payment/customer/web-checkout`,
-        { invoiceIds },
+        { invoiceIds, expectedTotalPaymentAmount },
         { headers: getAuthHeader() },
       ),
     );
