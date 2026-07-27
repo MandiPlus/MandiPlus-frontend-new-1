@@ -6,6 +6,8 @@ import {
   BellRing,
   CheckCircle2,
   Clock3,
+  ExternalLink,
+  Link2,
   Loader2,
   RefreshCw,
   Search,
@@ -25,6 +27,32 @@ import { useAdmin } from '@/features/admin/context/AdminContext';
 
 const MAX_TITLE_LENGTH = 180;
 const MAX_BODY_LENGTH = 1200;
+const MAX_LINK_LENGTH = 2048;
+const MANDIPLUS_PLAY_STORE_URL =
+  'https://play.google.com/store/apps/details?id=com.mandiplus.customer';
+
+function normalizeHttpsUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'https:' ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
+function linkDestinationLabel(value: string) {
+  const normalized = normalizeHttpsUrl(value);
+  if (!normalized) return null;
+
+  try {
+    return new URL(normalized).hostname.replace(/^www\./, '');
+  } catch {
+    return null;
+  }
+}
 
 function normalizeMobile(value: string) {
   const digits = value.replace(/\D/g, '');
@@ -98,13 +126,22 @@ export default function AdminNotificationsPage() {
   const [mobileNumber, setMobileNumber] = useState('');
   const [title, setTitle] = useState('MandiPlus update');
   const [body, setBody] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
   const [recentNotifications, setRecentNotifications] = useState<AdminCustomerNotification[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
   const [sending, setSending] = useState(false);
   const [lastSent, setLastSent] = useState<AdminCustomerNotification | null>(null);
 
   const normalizedMobile = useMemo(() => normalizeMobile(mobileNumber), [mobileNumber]);
-  const canSend = normalizedMobile.length === 10 && title.trim().length > 0 && body.trim().length > 0 && !sending;
+  const normalizedLink = useMemo(() => normalizeHttpsUrl(linkUrl), [linkUrl]);
+  const linkError = linkUrl.trim().length > 0 && normalizedLink === null;
+  const linkDestination = useMemo(() => linkDestinationLabel(linkUrl), [linkUrl]);
+  const canSend =
+    normalizedMobile.length === 10 &&
+    title.trim().length > 0 &&
+    body.trim().length > 0 &&
+    !linkError &&
+    !sending;
   const remainingBody = MAX_BODY_LENGTH - body.length;
 
   const loadRecent = useCallback(async () => {
@@ -160,6 +197,12 @@ export default function AdminNotificationsPage() {
     }
   };
 
+  const applyPlayStorePreset = () => {
+    setTitle('MandiPlus update available');
+    setBody('Tap to update your app.');
+    setLinkUrl(MANDIPLUS_PLAY_STORE_URL);
+  };
+
   const sendNotification = async () => {
     if (!canSend) return;
     setSending(true);
@@ -167,10 +210,11 @@ export default function AdminNotificationsPage() {
       mobileNumber: normalizedMobile,
       title: title.trim(),
       body: body.trim(),
-      type: 'MANUAL',
+      type: normalizedLink === MANDIPLUS_PLAY_STORE_URL ? 'APP_UPDATE' : 'MANUAL',
       payload: {
         screen: 'notifications',
         source: 'admin-dashboard',
+        ...(normalizedLink ? { url: normalizedLink } : {}),
       },
     });
 
@@ -185,6 +229,7 @@ export default function AdminNotificationsPage() {
         toast.error(response.data.errorMessage || 'Notification could not be delivered');
       }
       setBody('');
+      setLinkUrl('');
     } else {
       toast.error(response.message || 'Notification send failed');
     }
@@ -332,6 +377,47 @@ export default function AdminNotificationsPage() {
               />
             </div>
 
+            <div>
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <label htmlFor="notification-link" className="block text-sm font-semibold text-slate-700">
+                  Open link on tap <span className="font-normal text-slate-400">(optional)</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={applyPlayStorePreset}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Use Play Store update
+                </button>
+              </div>
+              <div className="relative">
+                <Link2 className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                <input
+                  id="notification-link"
+                  type="url"
+                  value={linkUrl}
+                  onChange={(event) => setLinkUrl(event.target.value.slice(0, MAX_LINK_LENGTH))}
+                  placeholder="https://example.com/page"
+                  aria-invalid={linkError}
+                  aria-describedby="notification-link-help"
+                  className={`h-10 w-full rounded-lg border bg-white pl-9 pr-3 text-sm text-slate-950 outline-none transition focus:ring-2 ${
+                    linkError
+                      ? 'border-rose-400 focus:border-rose-500 focus:ring-rose-100'
+                      : 'border-slate-300 focus:border-emerald-500 focus:ring-emerald-100'
+                  }`}
+                />
+              </div>
+              <p
+                id="notification-link-help"
+                className={`mt-1.5 text-xs ${linkError ? 'font-medium text-rose-600' : 'text-slate-500'}`}
+              >
+                {linkError
+                  ? 'Enter a complete secure link beginning with https://'
+                  : 'Leave blank to open the app notifications. Secure https:// links only.'}
+              </p>
+            </div>
+
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
               <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">
                 Preview
@@ -347,6 +433,19 @@ export default function AdminNotificationsPage() {
                     </p>
                     <p className="mt-1 line-clamp-3 text-sm leading-5 text-slate-600">
                       {body.trim() || 'Message content will appear here.'}
+                    </p>
+                    <p className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-slate-500">
+                      {linkDestination ? (
+                        <>
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Opens {linkDestination}
+                        </>
+                      ) : (
+                        <>
+                          <BellRing className="h-3.5 w-3.5" />
+                          Opens app notifications
+                        </>
+                      )}
                     </p>
                   </div>
                 </div>
