@@ -60,6 +60,11 @@ type EagerExtraction = {
   promise: Promise<Record<string, unknown>>;
 };
 
+type PendingPaymentDraft = {
+  invoiceId: string;
+  fingerprint: string;
+};
+
 const DEFAULT_TENDER_COCONUT_PRICING: CustomerAppPricing["tenderCoconut"] = {
   pricingVersion: 1,
   amount25Ton: 130000,
@@ -142,6 +147,23 @@ function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft 
   };
 }
 
+function paymentDraftFingerprint(
+  draft: CustomerInvoiceDraft,
+  files: File[],
+  expectedTotalPaymentAmount: number,
+) {
+  return JSON.stringify({
+    draft,
+    expectedTotalPaymentAmount,
+    files: files.map((file) => ({
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      lastModified: file.lastModified,
+    })),
+  });
+}
+
 export default function CustomerCreateInsurancePage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -156,6 +178,7 @@ export default function CustomerCreateInsurancePage() {
   const questionGenerationRef = useRef<
     Partial<Record<MissingDetailKey, number>>
   >({});
+  const pendingPaymentDraftRef = useRef<PendingPaymentDraft | null>(null);
 
   const [stage, setStage] = useState<Stage>("capture");
   const [extractionState, setExtractionState] =
@@ -580,17 +603,36 @@ export default function CustomerCreateInsurancePage() {
     setStage("creating");
     setNotice("");
     try {
-      const invoice = await createCustomerInvoice(
-        user.id,
+      const fingerprint = paymentDraftFingerprint(
         draft,
         files,
-        pricing,
+        premium,
       );
-      if (!invoice?.id) throw new Error("Invoice was created without an ID.");
-      const checkout = await createCustomerWebPaymentCheckout([invoice.id]);
+      let invoiceId =
+        pendingPaymentDraftRef.current?.fingerprint === fingerprint
+          ? pendingPaymentDraftRef.current.invoiceId
+          : "";
+
+      if (!invoiceId) {
+        const invoice = await createCustomerInvoice(
+          user.id,
+          draft,
+          files,
+          pricing,
+        );
+        if (!invoice?.id) {
+          throw new Error("Invoice was created without an ID.");
+        }
+        invoiceId = invoice.id;
+        pendingPaymentDraftRef.current = { invoiceId, fingerprint };
+      }
+
+      const checkout = await createCustomerWebPaymentCheckout(
+        [invoiceId],
+        premium,
+      );
       if (!checkout.redirectUrl) {
-        router.replace("/pay");
-        return;
+        throw new Error("PhonePe checkout URL was not returned.");
       }
       window.location.assign(checkout.redirectUrl);
     } catch (error) {
