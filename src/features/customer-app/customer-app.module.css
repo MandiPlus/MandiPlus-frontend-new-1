@@ -919,6 +919,11 @@
   background: #fff4dd;
 }
 
+.documentIconPending {
+  color: #6756c5;
+  background: #f0edff;
+}
+
 .documentTitle {
   display: block;
   overflow: hidden;
@@ -961,6 +966,29 @@
   font-size: 10px;
   font-weight: 800;
   line-height: 13px;
+}
+
+.documentPending {
+  display: grid;
+  max-width: 130px;
+  justify-items: end;
+  text-align: right;
+}
+
+.documentPending strong {
+  color: #6756c5;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.documentPending small {
+  margin-top: 4px;
+  color: var(--mp-ink);
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 14px;
 }
 
 .checkbox {
