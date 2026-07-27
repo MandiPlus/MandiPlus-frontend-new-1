@@ -435,6 +435,10 @@ export default function UsersPage() {
     const isAllBulkMergeSelected =
         allBulkMergeCandidateIds.length > 0 &&
         allBulkMergeCandidateIds.every((id) => bulkMergeSelectedUserIds.includes(id));
+    const canSelectAllBulkMergeCandidates =
+        bulkMergeSearchTerm.trim().length >= 2 &&
+        allBulkMergeCandidateIds.length > 0 &&
+        allBulkMergeCandidateIds.length <= 50;
 
     useEffect(() => {
         if (!isAuthenticated) {
@@ -1339,6 +1343,15 @@ export default function UsersPage() {
     };
 
     const openBulkMergeModal = (masterUser: User) => {
+        if (
+            !masterUser.isLedgerMasterVerified ||
+            masterUser.isMerged ||
+            masterUser.id !== masterUser.canonicalUserId
+        ) {
+            toast.error('Only an active verified master user can receive merged accounts');
+            return;
+        }
+
         setBulkMergeModalMaster(masterUser);
         setBulkMergeSearchTerm('');
         setBulkMergeSelectedUserIds([]);
@@ -1364,7 +1377,7 @@ export default function UsersPage() {
     };
 
     const toggleSelectAllBulkMergeCandidates = () => {
-        if (allBulkMergeCandidateIds.length === 0) {
+        if (!canSelectAllBulkMergeCandidates) {
             return;
         }
 
@@ -1378,8 +1391,13 @@ export default function UsersPage() {
     };
 
     const handleBulkMerge = async () => {
-        if (!bulkMergeModalMaster?.id) {
-            toast.error('Verified master user not found');
+        if (
+            !bulkMergeModalMaster?.id ||
+            !bulkMergeModalMaster.isLedgerMasterVerified ||
+            bulkMergeModalMaster.isMerged ||
+            bulkMergeModalMaster.id !== bulkMergeModalMaster.canonicalUserId
+        ) {
+            toast.error('The selected master user is no longer eligible for merging');
             return;
         }
 
@@ -1388,35 +1406,57 @@ export default function UsersPage() {
             return;
         }
 
+        const selectedSourceUsers = bulkMergeSelectedUserIds
+            .map((userId) => allUsers.find((user) => user.id === userId))
+            .filter((user): user is User => Boolean(user));
+        const invalidSourceUsers = selectedSourceUsers.filter(
+            (user) =>
+                user.id === bulkMergeModalMaster.id ||
+                user.isMerged ||
+                user.isLedgerMasterVerified ||
+                user.id !== user.canonicalUserId,
+        );
+
+        if (
+            selectedSourceUsers.length !== bulkMergeSelectedUserIds.length ||
+            invalidSourceUsers.length > 0
+        ) {
+            toast.error('One or more selected child users are no longer eligible. Refresh and review the selection.');
+            return;
+        }
+
         setBulkMergeLoading(true);
         try {
-            let mergedCount = 0;
+            const failedUserIds: string[] = [];
 
-            for (const sourceUserId of bulkMergeSelectedUserIds) {
-                const sourceUser = allUsers.find((user) => user.id === sourceUserId);
+            for (const sourceUser of selectedSourceUsers) {
                 const response = await adminApi.mergeUsers({
-                    sourceUserId,
+                    sourceUserId: sourceUser.id,
                     targetUserId: bulkMergeModalMaster.id,
                     reason: 'Bulk merge into verified master user',
-                    notes: `Merged ${sourceUser?.name || sourceUserId} into verified master ${bulkMergeModalMaster.name || bulkMergeModalMaster.id} from verified users modal`,
+                    notes: `Merged ${sourceUser.name || sourceUser.id} into verified master ${bulkMergeModalMaster.name || bulkMergeModalMaster.id} from admin users`,
                 });
 
                 if (!response.success) {
-                    throw new Error(
-                        response.message ||
-                            `Failed to merge ${sourceUser?.name || 'selected user'}`,
-                    );
+                    failedUserIds.push(sourceUser.id);
                 }
-
-                mergedCount += 1;
             }
 
             await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
-            loadAllUsersBackground();
-            toast.success(
-                `${mergedCount} user${mergedCount === 1 ? '' : 's'} merged into ${bulkMergeModalMaster.name || 'verified master'}`,
-            );
-            resetBulkMergeModalState();
+            await loadAllUsersBackground();
+
+            const mergedCount = selectedSourceUsers.length - failedUserIds.length;
+            if (failedUserIds.length > 0) {
+                setBulkMergeSelectedUserIds(failedUserIds);
+                toast.error(
+                    `${mergedCount} merged, ${failedUserIds.length} failed. The failed child accounts remain selected for review.`,
+                );
+            } else {
+                toast.success(
+                    `${mergedCount} child account${mergedCount === 1 ? '' : 's'} merged into ${bulkMergeModalMaster.name || 'the master account'}`,
+                );
+                resetBulkMergeModalState();
+            }
         } catch (err: any) {
             toast.error(err?.message || 'Failed to merge selected users');
         } finally {
@@ -1637,6 +1677,9 @@ export default function UsersPage() {
                                             </tr>
                                         ) : (
                                             paginatedUsers.map((user) => {
+                                                const mergedUsersForMaster =
+                                                    mergedUsersByMasterId.get(user.id) || [];
+
                                                 return (
                                                 <tr key={user.id} className="hover:bg-gray-50 transition-colors">
                                                     {/* Name */}
@@ -1939,13 +1982,29 @@ export default function UsersPage() {
                                                                 {impersonatingByUser[user.id] ? 'Opening...' : 'Access Account'}
                                                             </button>
                                                             {user.isLedgerMasterVerified ? (
-                                                                <button
-                                                                    onClick={() => handleUnverifyMaster(user)}
-                                                                    disabled={unverifyingMasterByUser[user.id]}
-                                                                    className="rounded-md bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
-                                                                >
-                                                                    {unverifyingMasterByUser[user.id] ? 'Removing...' : 'Unverify'}
-                                                                </button>
+                                                                <>
+                                                                    <button
+                                                                        onClick={() => openBulkMergeModal(user)}
+                                                                        className="rounded-md bg-emerald-700 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-800"
+                                                                    >
+                                                                        Merge Users
+                                                                    </button>
+                                                                    {mergedUsersForMaster.length > 0 ? (
+                                                                        <button
+                                                                            onClick={() => setMergedUsersModalMaster(user)}
+                                                                            className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                                                        >
+                                                                            Merged ({mergedUsersForMaster.length})
+                                                                        </button>
+                                                                    ) : null}
+                                                                    <button
+                                                                        onClick={() => handleUnverifyMaster(user)}
+                                                                        disabled={unverifyingMasterByUser[user.id]}
+                                                                        className="rounded-md bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                                                                    >
+                                                                        {unverifyingMasterByUser[user.id] ? 'Removing...' : 'Unverify'}
+                                                                    </button>
+                                                                </>
                                                             ) : (
                                                                 <button
                                                                     onClick={() => handleVerifyMaster(user)}
@@ -2136,6 +2195,229 @@ export default function UsersPage() {
                                     </tbody>
                                 </table>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {mergedUsersModalMaster && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-white shadow-xl">
+                        <div className="flex items-center justify-between border-b px-5 py-4">
+                            <div className="flex min-w-0 items-center gap-3">
+                                <h3 className="text-lg font-semibold text-gray-900">Merged Users</h3>
+                                <span className="rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                                    Master
+                                </span>
+                                <span className="truncate text-sm font-medium text-gray-800">
+                                    {mergedUsersModalMaster.name || 'Verified user'}
+                                </span>
+                            </div>
+                            <button
+                                onClick={() => setMergedUsersModalMaster(null)}
+                                aria-label="Close merged users"
+                                className="ml-3 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xl text-gray-500 hover:bg-gray-100"
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <div className="overflow-auto">
+                            {(mergedUsersByMasterId.get(mergedUsersModalMaster.id) || []).length === 0 ? (
+                                <div className="px-5 py-10 text-center text-sm text-gray-500">
+                                    No merged users
+                                </div>
+                            ) : (
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="sticky top-0 bg-gray-50">
+                                        <tr>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Name</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Mobile</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Identity</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">State</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100 bg-white">
+                                        {(mergedUsersByMasterId.get(mergedUsersModalMaster.id) || []).map((mergedUser) => (
+                                            <tr key={mergedUser.id}>
+                                                <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                                                    {mergedUser.name || 'N/A'}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-600">
+                                                    {formatIndianMobile(mergedUser.mobileNumber)}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-600">
+                                                    {mergedUser.identity || 'N/A'}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-600">
+                                                    {mergedUser.state || 'N/A'}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            onClick={() => handleImpersonateUser(mergedUser)}
+                                                            disabled={impersonatingByUser[mergedUser.id]}
+                                                            className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                                                        >
+                                                            {impersonatingByUser[mergedUser.id] ? 'Opening...' : 'Access'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleUnmergeUser(mergedUser)}
+                                                            disabled={unmergingByUser[mergedUser.id]}
+                                                            className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                                                        >
+                                                            {unmergingByUser[mergedUser.id] ? 'Unmerging...' : 'Unmerge'}
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {bulkMergeModalMaster && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-white shadow-xl">
+                        <div className="flex items-center justify-between border-b px-5 py-4">
+                            <div className="flex min-w-0 items-center gap-3">
+                                <h3 className="text-lg font-semibold text-gray-900">Merge Users</h3>
+                                <span className="rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                                    Master
+                                </span>
+                                <span className="truncate text-sm font-medium text-gray-800">
+                                    {bulkMergeModalMaster.name || 'Verified user'}
+                                </span>
+                                <span className="hidden text-sm text-gray-500 sm:inline">
+                                    {formatIndianMobile(bulkMergeModalMaster.mobileNumber)}
+                                </span>
+                            </div>
+                            <button
+                                onClick={closeBulkMergeModal}
+                                disabled={bulkMergeLoading}
+                                aria-label="Close merge users"
+                                className="ml-3 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xl text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <div className="border-b px-5 py-4">
+                            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                <input
+                                    type="text"
+                                    placeholder="Search by name, mobile, alternate number, or state"
+                                    value={bulkMergeSearchTerm}
+                                    onChange={(e) => setBulkMergeSearchTerm(e.target.value)}
+                                    disabled={bulkMergeLoading}
+                                    className="w-full rounded-md border border-gray-300 px-4 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:bg-gray-100 md:max-w-lg"
+                                />
+                                <div className="flex items-center gap-4">
+                                    <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+                                        <input
+                                            type="checkbox"
+                                            checked={isAllBulkMergeSelected}
+                                            onChange={toggleSelectAllBulkMergeCandidates}
+                                            disabled={bulkMergeLoading || !canSelectAllBulkMergeCandidates}
+                                            title={
+                                                canSelectAllBulkMergeCandidates
+                                                    ? 'Select every user in these search results'
+                                                    : 'Enter at least 2 search characters and narrow the results to 50 or fewer'
+                                            }
+                                            className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                        />
+                                        Select results
+                                    </label>
+                                    <span className="text-sm font-medium text-gray-600">
+                                        {bulkMergeSelectedUserIds.length} selected
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="overflow-auto">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="sticky top-0 bg-gray-50">
+                                    <tr>
+                                        <th className="w-12 px-4 py-3">
+                                            <span className="sr-only">Select</span>
+                                        </th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Name</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Mobile</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Alternate</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">State</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100 bg-white">
+                                    {bulkMergeCandidates.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-500">
+                                                No users found
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        bulkMergeCandidates.map((candidate) => {
+                                            const isSelected = bulkMergeSelectedUserIds.includes(candidate.id);
+
+                                            return (
+                                                <tr
+                                                    key={candidate.id}
+                                                    className={isSelected ? 'bg-emerald-50/70' : undefined}
+                                                >
+                                                    <td className="px-4 py-3">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isSelected}
+                                                            onChange={() => toggleBulkMergeSelection(candidate.id)}
+                                                            disabled={bulkMergeLoading}
+                                                            aria-label={`Select ${candidate.name || 'user'}`}
+                                                            className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                                        />
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                                                        {candidate.name || 'N/A'}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm text-gray-600">
+                                                        {formatIndianMobile(candidate.mobileNumber)}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm text-gray-600">
+                                                        {candidate.secondaryMobileNumber
+                                                            ? formatIndianMobile(candidate.secondaryMobileNumber)
+                                                            : 'N/A'}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm text-gray-600">
+                                                        {candidate.state || 'N/A'}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="flex justify-end gap-2 border-t bg-gray-50 px-5 py-4">
+                            <button
+                                onClick={closeBulkMergeModal}
+                                disabled={bulkMergeLoading}
+                                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleBulkMerge}
+                                disabled={bulkMergeLoading || bulkMergeSelectedUserIds.length === 0}
+                                className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {bulkMergeLoading
+                                    ? 'Merging...'
+                                    : `Merge selected (${bulkMergeSelectedUserIds.length})`}
+                            </button>
                         </div>
                     </div>
                 </div>
