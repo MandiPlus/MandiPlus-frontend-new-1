@@ -14,14 +14,11 @@ import {
   Camera,
   Check,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   FolderOpen,
   ImagePlus,
   LoaderCircle,
   Mic,
   Phone,
-  Send,
   Trash2,
   Truck,
   Users,
@@ -33,7 +30,6 @@ import { createCustomerWebPaymentCheckout } from "@/features/customer/api";
 import {
   createCustomerInvoice,
   extractCustomerInvoice,
-  extractCustomerInvoiceText,
   extractCustomerInvoiceVoice,
   getCustomerAppPricing,
   getCustomerInvoiceProfile,
@@ -56,7 +52,7 @@ type MissingDetailKey =
   | "totalAmount"
   | "vehicleTonnage"
   | "insuredPartyPhone";
-type RecordingPurpose = "quick" | MissingDetailKey;
+type RecordingPurpose = MissingDetailKey;
 type VoiceAnswerState = "processing" | "saved" | "failed";
 
 type EagerExtraction = {
@@ -73,19 +69,40 @@ const DEFAULT_TENDER_COCONUT_PRICING: CustomerAppPricing["tenderCoconut"] = {
 
 const MISSING_QUESTIONS: Record<
   MissingDetailKey,
-  { label: string; target?: InvoiceVoiceTargetField }
+  { label: string; audio: string; target?: InvoiceVoiceTargetField }
 > = {
   supplierName: {
     label: "Aapka vyapari kaun hai?",
+    audio: "/customer-app/voices/tender-coconut-supplier-name.mp3",
     target: "supplier_name",
   },
-  buyerName: { label: "Buyer ka naam", target: "buyer_name" },
-  buyerAddress: { label: "Buyer ka address", target: "buyer_address" },
-  quantity: { label: "Kitne dane hain?", target: "quantity" },
-  totalAmount: { label: "Kitne lakh ka maal hai?", target: "total_amount" },
-  vehicleTonnage: { label: "Gaadi kitne ton ki hai?" },
+  buyerName: {
+    label: "Buyer ka naam",
+    audio: "/customer-app/voices/tender-coconut-buyer-name.mp3",
+    target: "buyer_name",
+  },
+  buyerAddress: {
+    label: "Buyer ka address",
+    audio: "/customer-app/voices/tender-coconut-buyer-address.mp3",
+    target: "buyer_address",
+  },
+  quantity: {
+    label: "Kitne dane hain?",
+    audio: "/customer-app/voices/tender-coconut-quantity.mp3",
+    target: "quantity",
+  },
+  totalAmount: {
+    label: "Kitne lakh ka maal hai?",
+    audio: "/customer-app/voices/tender-coconut-total-amount.mp3",
+    target: "total_amount",
+  },
+  vehicleTonnage: {
+    label: "Gaadi kitne ton ki hai?",
+    audio: "/customer-app/voices/tender-coconut-vehicle-tonnage.mp3",
+  },
   insuredPartyPhone: {
     label: "Buyer mobile",
+    audio: "/customer-app/voices/tender-coconut-buyer-mobile.mp3",
     target: "insured_party_phone",
   },
 };
@@ -131,9 +148,9 @@ export default function CustomerCreateInsurancePage() {
   const cameraRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const eagerExtractionRef = useRef<EagerExtraction | null>(null);
-  const quickVoiceTaskRef = useRef<Promise<Record<string, unknown>> | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderStreamRef = useRef<MediaStream | null>(null);
+  const questionAudioRef = useRef<HTMLAudioElement | null>(null);
   const recordingStartedAtRef = useRef(0);
   const recordingPurposeRef = useRef<RecordingPurpose | null>(null);
   const questionGenerationRef = useRef<
@@ -147,7 +164,6 @@ export default function CustomerCreateInsurancePage() {
   const [draft, setDraft] = useState<CustomerInvoiceDraft>(() =>
     emptyDraft(user),
   );
-  const [quickText, setQuickText] = useState("");
   const [sourceOpen, setSourceOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
   const [notice, setNotice] = useState("");
@@ -157,19 +173,20 @@ export default function CustomerCreateInsurancePage() {
     );
   const [recordingPurpose, setRecordingPurpose] =
     useState<RecordingPurpose | null>(null);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [missingKeys, setMissingKeys] = useState<MissingDetailKey[]>([]);
   const [missingIndex, setMissingIndex] = useState(0);
   const [missingOpen, setMissingOpen] = useState(false);
   const [voiceAnswers, setVoiceAnswers] = useState<
     Partial<Record<MissingDetailKey, VoiceAnswerState>>
   >({});
+  const [amountBreakdownOpen, setAmountBreakdownOpen] = useState(false);
 
   const isTenderCoconut = isTenderCoconutProduct(draft.product);
-  const total = useMemo(
-    () => resolveInvoiceAmount(draft, pricing),
+  const amountBreakdown = useMemo(
+    () => resolveInvoiceAmountBreakdown(draft, pricing),
     [draft, pricing],
   );
+  const total = amountBreakdown.totalAmount;
   const premium = Number((total * 0.002).toFixed(2));
   const pendingVoiceAnswers = Object.values(voiceAnswers).filter(
     (state) => state === "processing",
@@ -179,6 +196,8 @@ export default function CustomerCreateInsurancePage() {
   const activeQuestion = activeMissingKey
     ? MISSING_QUESTIONS[activeMissingKey]
     : null;
+  const isFinalizingReview =
+    stage === "review" && !missingOpen && pendingVoiceAnswers > 0;
 
   useEffect(() => {
     if (!user) return;
@@ -227,31 +246,13 @@ export default function CustomerCreateInsurancePage() {
     setPreviewUrl(next);
     return () => URL.revokeObjectURL(next);
   }, [files]);
-
-  useEffect(() => {
-    if (!recordingPurpose) {
-      setRecordingSeconds(0);
-      return;
-    }
-    const updateDuration = () => {
-      setRecordingSeconds(
-        Math.max(
-          0,
-          Math.floor((Date.now() - recordingStartedAtRef.current) / 1000),
-        ),
-      );
-    };
-    updateDuration();
-    const interval = window.setInterval(updateDuration, 250);
-    return () => window.clearInterval(interval);
-  }, [recordingPurpose]);
-
   useEffect(
     () => () => {
       if (recorderRef.current?.state === "recording") {
         recorderRef.current.stop();
       }
       recorderStreamRef.current?.getTracks().forEach((track) => track.stop());
+      questionAudioRef.current?.pause();
     },
     [],
   );
@@ -285,8 +286,19 @@ export default function CustomerCreateInsurancePage() {
   const update = (field: keyof CustomerInvoiceDraft, value: string) => {
     setDraft((current) => {
       const next = { ...current, [field]: value };
-      if (field === "quantity" || field === "rate") {
-        next.totalAmount = "";
+      if (field === "rate") {
+        const quantity = Number(next.quantity);
+        const rate = Number(value);
+        if (quantity > 0 && rate > 0) {
+          next.totalAmount = String(round(quantity * rate));
+        }
+      }
+      if (field === "quantity" || field === "totalAmount") {
+        const quantity = Number(next.quantity);
+        const totalAmount = Number(next.totalAmount);
+        if (quantity > 0 && totalAmount > 0) {
+          next.rate = String(round(totalAmount / quantity));
+        }
       }
       return next;
     });
@@ -309,11 +321,27 @@ export default function CustomerCreateInsurancePage() {
       );
       const nextFiles = [...files, ...optimized].slice(0, 8);
       setFiles(nextFiles);
-      queueDocumentExtraction(nextFiles);
+      const task = queueDocumentExtraction(nextFiles);
+      if (task) {
+        const extractionKey = fileSetKey(nextFiles);
+        void Promise.allSettled([task]).then((results) => {
+          if (eagerExtractionRef.current?.key !== extractionKey) return;
+          setStage("review");
+          applyExtractionResults(results);
+        });
+      }
     } catch {
       const nextFiles = [...files, ...selected].slice(0, 8);
       setFiles(nextFiles);
-      queueDocumentExtraction(nextFiles);
+      const task = queueDocumentExtraction(nextFiles);
+      if (task) {
+        const extractionKey = fileSetKey(nextFiles);
+        void Promise.allSettled([task]).then((results) => {
+          if (eagerExtractionRef.current?.key !== extractionKey) return;
+          setStage("review");
+          applyExtractionResults(results);
+        });
+      }
     }
   };
 
@@ -363,43 +391,6 @@ export default function CustomerCreateInsurancePage() {
       return next;
     });
     setExtractionState("ready");
-  };
-
-  const extract = async () => {
-    if (
-      !files.length &&
-      !quickText.trim() &&
-      !quickVoiceTaskRef.current
-    ) {
-      setNotice("Weighment slip dalein ya insurance details batayein.");
-      return;
-    }
-    if (recordingPurpose) {
-      setNotice("Pehle voice answer save karein.");
-      return;
-    }
-
-    setStage("review");
-    setNotice("");
-    const tasks: Array<Promise<Record<string, unknown>>> = [];
-    if (files.length) {
-      tasks.push(
-        eagerExtractionRef.current?.key === fileSetKey(files)
-          ? eagerExtractionRef.current.promise
-          : queueDocumentExtraction(files)!,
-      );
-    }
-    if (quickText.trim()) {
-      tasks.push(extractCustomerInvoiceText(quickText.trim(), draft.product));
-    }
-    if (quickVoiceTaskRef.current) tasks.push(quickVoiceTaskRef.current);
-    if (!tasks.length) {
-      openMissingDetails(draft);
-      return;
-    }
-    setExtractionState("reading");
-    const results = await Promise.allSettled(tasks);
-    applyExtractionResults(results);
   };
 
   const advanceMissingDetails = () => {
@@ -495,15 +486,6 @@ export default function CustomerCreateInsurancePage() {
           setNotice("Voice save nahi hui. Ek baar phir boliye.");
           return;
         }
-        if (stoppedPurpose === "quick") {
-          quickVoiceTaskRef.current = extractCustomerInvoiceVoice(
-            audio,
-            draft.product,
-          );
-          void quickVoiceTaskRef.current.catch(() => undefined);
-          setNotice("Voice save ho gayi.");
-          return;
-        }
         advanceMissingDetails();
         processQuestionVoice(stoppedPurpose, audio);
       };
@@ -530,8 +512,55 @@ export default function CustomerCreateInsurancePage() {
       stopRecording();
       return;
     }
-    if (!recordingPurpose) void startRecording(purpose);
+    if (!recordingPurpose) {
+      questionAudioRef.current?.pause();
+      void startRecording(purpose);
+    }
   };
+
+  useEffect(() => {
+    if (!missingOpen || !activeMissingKey || !activeQuestion) return;
+    let active = true;
+    const audio = questionAudioRef.current || new Audio();
+    questionAudioRef.current = audio;
+    audio.src = activeQuestion.audio;
+    audio.preload = "auto";
+    audio.currentTime = 0;
+
+    const startAnswer = () => {
+      if (active && activeQuestion.target) {
+        void startRecording(activeMissingKey);
+      }
+    };
+    audio.onended = startAnswer;
+    audio.onerror = startAnswer;
+    void (async () => {
+      for (const delay of [0, 120, 320]) {
+        if (!active) return;
+        if (delay) {
+          await new Promise((resolve) => window.setTimeout(resolve, delay));
+        }
+        try {
+          await audio.play();
+          return;
+        } catch {
+          audio.currentTime = 0;
+        }
+      }
+      if (active) {
+        setNotice("Question audio play nahi hua. Mic tap karke jawab boliye.");
+      }
+    })();
+
+    return () => {
+      active = false;
+      audio.pause();
+      audio.onended = null;
+      audio.onerror = null;
+    };
+    // Each question should play exactly once when its index becomes active.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMissingKey, missingOpen]);
 
   const submitAndPay = async () => {
     const validation = validateDraft(draft);
@@ -576,7 +605,6 @@ export default function CustomerCreateInsurancePage() {
   };
 
   if (stage === "capture") {
-    const quickRecording = recordingPurpose === "quick";
     return (
       <CustomerAppShell activeTab="create" showBottomNav={false}>
         <header className={styles.secondaryHeader}>
@@ -671,49 +699,6 @@ export default function CustomerCreateInsurancePage() {
           />
 
           {notice ? <div className={styles.notice}>{notice}</div> : null}
-
-          <div className={styles.quickComposer}>
-            <div className={styles.quickComposerAccessory}>
-              <button
-                type="button"
-                className={`${styles.quickMic} ${
-                  quickRecording ? styles.quickMicRecording : ""
-                }`}
-                onClick={() => handleVoicePress("quick")}
-                aria-label={quickRecording ? "Voice answer done" : "Voice input"}
-              >
-                {quickRecording ? <Check size={22} /> : <Mic size={22} />}
-              </button>
-              {quickRecording ? (
-                <span className={styles.recordingTime}>
-                  {formatRecordingTime(recordingSeconds)}
-                </span>
-              ) : null}
-            </div>
-            <div className={styles.quickComposerRow}>
-              <textarea
-                value={quickText}
-                onChange={(event) => setQuickText(event.target.value)}
-                placeholder="Insurance details batayein..."
-                maxLength={700}
-              />
-              <button
-                type="button"
-                className={styles.quickSend}
-                onClick={() => void extract()}
-                disabled={
-                  (!files.length &&
-                    !quickText.trim() &&
-                    !quickVoiceTaskRef.current) ||
-                  extractionState === "optimizing" ||
-                  Boolean(recordingPurpose)
-                }
-                aria-label="Details bhejein"
-              >
-                <Send size={17} />
-              </button>
-            </div>
-          </div>
         </main>
 
         {sourceOpen ? (
@@ -780,12 +765,17 @@ export default function CustomerCreateInsurancePage() {
         <section className={styles.reviewTopCard}>
           <div className={styles.reviewProductRow}>
             <div className={styles.reviewProduct}>
+              <span aria-hidden="true">{isTenderCoconut ? "🥥" : "🍅"}</span>
               <input
                 aria-label="Commodity"
                 value={draft.product}
                 onChange={(event) => update("product", event.target.value)}
               />
               <ChevronDown size={18} />
+            </div>
+            <div>
+              <div className={styles.reviewTotalLabel}>Total</div>
+              <div className={styles.reviewTotal}>{money(total)}</div>
             </div>
           </div>
           <div className={styles.reviewModeRow}>
@@ -855,12 +845,16 @@ export default function CustomerCreateInsurancePage() {
               value={draft.rate}
               onChange={(value) => update("rate", value)}
             />
-            <div className={`${styles.inlineCalculatedTotal} ${styles.detailGridFull}`}>
-              <span>Total</span>
-              <strong>{money(total)}</strong>
-            </div>
+            <CompactInput
+              label="Goods value"
+              inputMode="decimal"
+              value={draft.totalAmount}
+              full
+              onChange={(value) => update("totalAmount", value)}
+            />
             <CompactInput
               label="Vehicle number"
+              full
               value={draft.vehicleNumber}
               onChange={(value) =>
                 update(
@@ -907,6 +901,55 @@ export default function CustomerCreateInsurancePage() {
           </DetailSection>
         </section>
 
+        <section className={styles.amountBreakdownCard}>
+          <button
+            type="button"
+            className={styles.amountBreakdownTrigger}
+            onClick={() => setAmountBreakdownOpen((current) => !current)}
+            aria-expanded={amountBreakdownOpen}
+            aria-controls="invoice-amount-breakdown"
+          >
+            <span>Total amount</span>
+            <span className={styles.amountBreakdownTriggerValue}>
+              <strong>{money(total)}</strong>
+              <ChevronDown
+                size={19}
+                className={
+                  amountBreakdownOpen ? styles.amountBreakdownChevronOpen : ""
+                }
+              />
+            </span>
+          </button>
+          {amountBreakdownOpen ? (
+            <div
+              id="invoice-amount-breakdown"
+              className={styles.amountBreakdownBody}
+            >
+              <div className={styles.amountBreakdownRow}>
+                <span>Invoice amount</span>
+                <strong>{money(amountBreakdown.invoiceAmount)}</strong>
+              </div>
+              {amountBreakdown.logisticsAmount > 0 ? (
+                <div className={styles.amountBreakdownRow}>
+                  <span>
+                    Logistics cost
+                    {draft.vehicleTonnage
+                      ? ` (${draft.vehicleTonnage} ton)`
+                      : ""}
+                  </span>
+                  <strong>{money(amountBreakdown.logisticsAmount)}</strong>
+                </div>
+              ) : null}
+              <div
+                className={`${styles.amountBreakdownRow} ${styles.amountBreakdownFinal}`}
+              >
+                <span>Total amount</span>
+                <strong>{money(total)}</strong>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
         {notice ? <div className={styles.notice}>{notice}</div> : null}
       </main>
 
@@ -936,6 +979,20 @@ export default function CustomerCreateInsurancePage() {
         </button>
       </div>
 
+      {isFinalizingReview ? (
+        <div
+          className={styles.finalizingReviewOverlay}
+          role="status"
+          aria-live="polite"
+          aria-label="Details taiyar ho rahi hain"
+        >
+          <div className={styles.finalizingReviewStatus}>
+            <LoaderCircle size={34} strokeWidth={2.2} aria-hidden="true" />
+            <strong>Details taiyar ho rahi hain</strong>
+          </div>
+        </div>
+      ) : null}
+
       {missingOpen && activeMissingKey && activeQuestion ? (
         <div className={styles.missingDetailsModal}>
           <button
@@ -964,20 +1021,21 @@ export default function CustomerCreateInsurancePage() {
               </button>
             </div>
 
-            <h3>{activeQuestion.label}</h3>
+            <h3 className={styles.missingDetailsQuestion}>
+              {activeQuestion.label}
+            </h3>
 
             {activeMissingKey === "vehicleTonnage" ? (
-              <div className={styles.missingChoiceRow}>
+              <div className={styles.missingTonnageChoices}>
                 {(["25", "30"] as const).map((tonnage) => (
                   <button
                     key={tonnage}
                     type="button"
-                    className={
-                      draft.vehicleTonnage === tonnage
-                        ? styles.missingChoiceSelected
-                        : ""
-                    }
-                    onClick={() => update("vehicleTonnage", tonnage)}
+                    onClick={() => {
+                      questionAudioRef.current?.pause();
+                      update("vehicleTonnage", tonnage);
+                      advanceMissingDetails();
+                    }}
                   >
                     {tonnage} ton
                   </button>
@@ -985,85 +1043,38 @@ export default function CustomerCreateInsurancePage() {
               </div>
             ) : (
               <div className={styles.missingVoiceArea}>
-                <button
-                  type="button"
-                  className={`${styles.missingVoiceButton} ${
-                    recordingPurpose === activeMissingKey
-                      ? styles.missingVoiceButtonRecording
-                      : ""
-                  }`}
-                  onClick={() => handleVoicePress(activeMissingKey)}
-                  aria-label={
-                    recordingPurpose === activeMissingKey
-                      ? "Voice answer done"
-                      : "Speak answer"
-                  }
-                >
+                <div className={styles.missingVoiceControl}>
                   {recordingPurpose === activeMissingKey ? (
-                    <Check size={31} />
-                  ) : (
-                    <Mic size={31} />
-                  )}
-                </button>
-                <div className={styles.voiceWaveform} aria-hidden="true">
-                  {Array.from({ length: 18 }, (_, index) => (
-                    <span
-                      key={index}
-                      style={{
-                        height:
-                          recordingPurpose === activeMissingKey
-                            ? `${12 + ((index * 17) % 30)}px`
-                            : "4px",
-                      }}
-                    />
-                  ))}
-                </div>
-                <strong>
-                  {recordingPurpose === activeMissingKey
-                    ? "Ho gaya? Tap karein"
-                    : "Boliye"}
-                </strong>
-                {recordingPurpose === activeMissingKey ? (
-                  <span>{formatRecordingTime(recordingSeconds)}</span>
-                ) : null}
-              </div>
-            )}
-
-            {recordingPurpose !== activeMissingKey ? (
-              <div className={styles.missingActions}>
-                {missingIndex > 0 ? (
+                    <>
+                      <span className={styles.voiceRadar} />
+                      <span
+                        className={`${styles.voiceRadar} ${styles.voiceRadarDelayed}`}
+                      />
+                    </>
+                  ) : null}
                   <button
                     type="button"
-                    className={styles.missingBack}
-                    onClick={() =>
-                      setMissingIndex((current) => Math.max(0, current - 1))
+                    className={`${styles.missingVoiceButton} ${
+                      recordingPurpose === activeMissingKey
+                        ? styles.missingVoiceButtonRecording
+                        : ""
+                    }`}
+                    onClick={() => handleVoicePress(activeMissingKey)}
+                    aria-label={
+                      recordingPurpose === activeMissingKey
+                        ? "Answer complete"
+                        : "Speak answer"
                     }
                   >
-                    <ChevronLeft size={20} />
-                    Back
+                    {recordingPurpose === activeMissingKey ? (
+                      <Check size={31} />
+                    ) : (
+                      <Mic size={31} />
+                    )}
                   </button>
-                ) : (
-                  <span />
-                )}
-                {isMissingDetailAnswered(
-                  activeMissingKey,
-                  String(draft[activeMissingKey] || ""),
-                ) ? (
-                  <button
-                    type="button"
-                    className={styles.missingNext}
-                    onClick={advanceMissingDetails}
-                  >
-                    {missingIndex === missingKeys.length - 1 ? "Done" : "Next"}
-                    {missingIndex < missingKeys.length - 1 ? (
-                      <ChevronRight size={20} />
-                    ) : null}
-                  </button>
-                ) : (
-                  <span />
-                )}
+                </div>
               </div>
-            ) : null}
+            )}
           </section>
         </div>
       ) : null}
@@ -1245,8 +1256,14 @@ function missingVoiceValue(
       return text(raw.buyer_address);
     case "quantity":
       return numberText(raw.quantity);
-    case "totalAmount":
-      return numberText(raw.total_amount);
+    case "totalAmount": {
+      const spokenAmount = Number(raw.total_amount || raw.amount || 0);
+      return numberText(
+        spokenAmount > 0 && spokenAmount < 1000
+          ? spokenAmount * 100000
+          : spokenAmount,
+      );
+    }
     case "vehicleTonnage":
       return tonnage(raw.vehicle_tonnage);
     case "insuredPartyPhone":
@@ -1268,6 +1285,12 @@ function extractionDraft(response: Record<string, unknown>) {
 
 function getMissingDetailKeys(draft: CustomerInvoiceDraft) {
   if (!isTenderCoconutProduct(draft.product)) return [];
+  const transactionFields = new Set<MissingDetailKey>([
+    "supplierName",
+    "quantity",
+    "totalAmount",
+    "vehicleTonnage",
+  ]);
   const ordered: MissingDetailKey[] = [
     "supplierName",
     "buyerName",
@@ -1279,6 +1302,7 @@ function getMissingDetailKeys(draft: CustomerInvoiceDraft) {
   ];
   return ordered.filter(
     (key) =>
+      transactionFields.has(key) ||
       !isMissingDetailAnswered(key, String(draft[key] || "")),
   );
 }
@@ -1325,7 +1349,7 @@ function validateDraft(draft: CustomerInvoiceDraft) {
   return "";
 }
 
-function resolveInvoiceAmount(
+function resolveInvoiceAmountBreakdown(
   draft: CustomerInvoiceDraft,
   pricing: CustomerAppPricing["tenderCoconut"],
 ) {
@@ -1344,7 +1368,11 @@ function resolveInvoiceAmount(
         ? Number(pricing.amount30Ton || 0)
         : 0
     : 0;
-  return Number((goodsAmount + logistics).toFixed(2));
+  return {
+    invoiceAmount: Number(goodsAmount.toFixed(2)),
+    logisticsAmount: Number(logistics.toFixed(2)),
+    totalAmount: Number((goodsAmount + logistics).toFixed(2)),
+  };
 }
 
 async function optimizeImageForOcr(file: File) {
@@ -1408,10 +1436,6 @@ function fileSetKey(files: File[]) {
 
 function jpegName(name: string) {
   return `${name.replace(/\.[^.]+$/, "") || "invoice"}.jpg`;
-}
-
-function formatRecordingTime(seconds: number) {
-  return `0:${String(Math.min(59, seconds)).padStart(2, "0")}`;
 }
 
 function text(value: unknown) {

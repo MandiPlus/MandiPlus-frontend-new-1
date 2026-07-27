@@ -1631,6 +1631,90 @@
   background: var(--mp-navy);
 }
 
+.amountBreakdownCard {
+  overflow: hidden;
+  border: 1px solid var(--mp-line);
+  border-radius: 14px;
+  background: var(--mp-soft);
+}
+
+.amountBreakdownTrigger {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  padding: 0 11px;
+  color: var(--mp-muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.amountBreakdownTriggerValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--mp-navy);
+  white-space: nowrap;
+}
+
+.amountBreakdownTriggerValue strong {
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.amountBreakdownTriggerValue svg {
+  transition: transform 180ms ease;
+}
+
+.amountBreakdownChevronOpen {
+  transform: rotate(180deg);
+}
+
+.amountBreakdownBody {
+  display: grid;
+  gap: 8px;
+  padding: 9px 11px 10px;
+  border-top: 1px solid var(--mp-line);
+  background: var(--mp-surface);
+}
+
+.amountBreakdownRow {
+  display: flex;
+  min-height: 22px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--mp-muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.amountBreakdownRow strong {
+  color: var(--mp-ink);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.amountBreakdownFinal {
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--mp-line);
+  color: var(--mp-ink);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.amountBreakdownFinal strong {
+  color: var(--mp-navy);
+  font-size: 13px;
+}
+
 .stickyPay {
   position: sticky;
   z-index: 30;
@@ -1721,7 +1805,36 @@
   display: flex;
   min-height: calc(100dvh - 58px - env(safe-area-inset-top));
   flex-direction: column;
-  padding: 16px 18px 92px;
+  padding: 16px 18px 24px;
+}
+
+.finalizingReviewOverlay {
+  position: fixed;
+  z-index: 190;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(245, 246, 251, 0.76);
+  backdrop-filter: blur(2px);
+}
+
+.finalizingReviewStatus {
+  display: grid;
+  justify-items: center;
+  gap: 13px;
+  color: var(--mp-navy);
+  text-align: center;
+}
+
+.finalizingReviewStatus svg {
+  animation: finalizingSpin 1s linear infinite;
+}
+
+.finalizingReviewStatus strong {
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 21px;
 }
 
 .captureStage {
@@ -2008,6 +2121,12 @@
   line-height: 1.2;
 }
 
+.missingDetailsQuestion {
+  width: 100%;
+  text-align: center;
+  text-wrap: balance;
+}
+
 .missingVoiceArea {
   display: grid;
   min-height: 210px;
@@ -2016,7 +2135,17 @@
   gap: 12px;
 }
 
+.missingVoiceControl {
+  position: relative;
+  display: grid;
+  width: 144px;
+  height: 144px;
+  place-items: center;
+}
+
 .missingVoiceButton {
+  position: relative;
+  z-index: 2;
   display: grid;
   width: 86px;
   height: 86px;
@@ -2026,6 +2155,20 @@
   color: #fff;
   background: var(--mp-navy);
   box-shadow: 0 10px 26px rgba(31, 48, 69, 0.22);
+}
+
+.voiceRadar {
+  position: absolute;
+  width: 102px;
+  height: 102px;
+  border: 2px solid rgba(111, 87, 220, 0.48);
+  border-radius: 50%;
+  opacity: 0;
+  animation: voiceRadar 1.55s ease-out infinite;
+}
+
+.voiceRadarDelayed {
+  animation-delay: 680ms;
 }
 
 .missingVoiceArea > strong {
@@ -2076,6 +2219,29 @@
 
 .missingChoiceRow .missingChoiceSelected {
   border-color: var(--mp-navy);
+  color: #fff;
+  background: var(--mp-navy);
+}
+
+.missingTonnageChoices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-self: center;
+  padding: 18px 0;
+}
+
+.missingTonnageChoices button {
+  min-height: 76px;
+  border: 1px solid var(--mp-line);
+  border-radius: 16px;
+  color: var(--mp-navy);
+  background: var(--mp-soft);
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.missingTonnageChoices button:active {
   color: #fff;
   background: var(--mp-navy);
 }
@@ -2476,6 +2642,15 @@
     right: max(14px, calc((100vw - 264px - 480px) / 2 + 14px));
     left: max(278px, calc(264px + (100vw - 264px - 480px) / 2 + 14px));
   }
+
+  .finalizingReviewOverlay {
+    top: 16px;
+    right: auto;
+    bottom: 16px;
+    left: max(264px, calc(264px + (100vw - 264px - 480px) / 2));
+    width: 480px;
+    border-radius: 32px;
+  }
 }
 
 @keyframes fadeIn {
@@ -2504,10 +2679,32 @@
   }
 }
 
+@keyframes voiceRadar {
+  0% {
+    opacity: 0;
+    transform: scale(0.78);
+  }
+  22% {
+    opacity: 0.3;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.68);
+  }
+}
+
+@keyframes finalizingSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .drawer,
   .drawerBackdrop,
-  .skeleton {
+  .skeleton,
+  .voiceRadar,
+  .finalizingReviewStatus svg {
     animation: none;
   }
 
