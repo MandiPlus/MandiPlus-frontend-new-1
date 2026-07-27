@@ -741,6 +741,58 @@ export interface AppPaymentsSummary {
   paidToday: number;
 }
 
+export interface AdminWalletPack {
+  id: string;
+  code: string;
+  label: string;
+  creditAmount: number;
+  priceAmount: number;
+  badge: string | null;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface AdminWalletCoupon {
+  id: string;
+  code: string;
+  name: string;
+  discountType: 'FIXED' | 'PERCENTAGE';
+  discountValue: number;
+  usageMode: 'SINGLE_USE' | 'MULTI_USE';
+  maxRedemptions: number | null;
+  perUserLimit: number | null;
+  eligiblePackCodes: string[] | null;
+  validFrom: string | null;
+  validUntil: string | null;
+  isActive: boolean;
+  isCurrentlyValid: boolean;
+  redeemedCount: number;
+  reservedCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminWalletOffers {
+  packs: AdminWalletPack[];
+  coupons: AdminWalletCoupon[];
+}
+
+export interface GenerateWalletCouponsPayload {
+  name: string;
+  prefix: string;
+  code?: string;
+  count: number;
+  discountType: 'FIXED' | 'PERCENTAGE';
+  discountValue: number;
+  usageMode: 'SINGLE_USE' | 'MULTI_USE';
+  maxRedemptions: number | null;
+  perUserLimit: number | null;
+  eligiblePackCodes: string[];
+  validFrom: string | null;
+  validUntil: string | null;
+  isActive: boolean;
+}
+
 export interface ArrivalReportRow {
   id: string;
   reportDate: string;
@@ -3727,6 +3779,97 @@ class AdminApi {
         success: false,
         message:
           error.response?.data?.message || "Failed to fetch app payments",
+        error: error.message,
+      };
+    }
+  };
+
+  public getWalletOffers = async (): Promise<ApiResponse<AdminWalletOffers>> => {
+    try {
+      const response =
+        await this.client.get<AdminWalletOffers>('/admin/app/coupons');
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to fetch wallet offers',
+        error: error.message,
+      };
+    }
+  };
+
+  public createWalletPack = async (
+    payload: Omit<AdminWalletPack, 'id'>,
+  ): Promise<ApiResponse<AdminWalletPack>> => {
+    try {
+      const response = await this.client.post<AdminWalletPack>(
+        '/admin/app/coupons/packs',
+        payload,
+      );
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to create pack',
+        error: error.message,
+      };
+    }
+  };
+
+  public updateWalletPack = async (
+    id: string,
+    payload: Partial<AdminWalletPack>,
+  ): Promise<ApiResponse<AdminWalletPack>> => {
+    try {
+      const response = await this.client.put<AdminWalletPack>(
+        `/admin/app/coupons/packs/${id}`,
+        payload,
+      );
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to update pack',
+        error: error.message,
+      };
+    }
+  };
+
+  public generateWalletCoupons = async (
+    payload: GenerateWalletCouponsPayload,
+  ): Promise<ApiResponse<{ coupons: AdminWalletCoupon[] }>> => {
+    try {
+      const response = await this.client.post<{
+        coupons: AdminWalletCoupon[];
+      }>('/admin/app/coupons/generate', payload);
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to generate coupons',
+        error: error.message,
+      };
+    }
+  };
+
+  public updateWalletCoupon = async (
+    id: string,
+    payload: Pick<
+      Partial<AdminWalletCoupon>,
+      'name' | 'isActive' | 'validFrom' | 'validUntil'
+    >,
+  ): Promise<ApiResponse<AdminWalletCoupon>> => {
+    try {
+      const response = await this.client.patch<AdminWalletCoupon>(
+        `/admin/app/coupons/${id}`,
+        payload,
+      );
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to update coupon',
         error: error.message,
       };
     }

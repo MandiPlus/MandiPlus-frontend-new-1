@@ -27,6 +27,7 @@ import {
   BellAlertIcon,
   LinkIcon,
   PresentationChartLineIcon,
+  TicketIcon,
 } from '@heroicons/react/24/outline';
 
 export const ADMIN_SECTIONS = [
@@ -38,6 +39,7 @@ export const ADMIN_SECTIONS = [
   'app-invoices',
   'app-quick-details',
   'app-payments',
+  'app-coupons',
   'insurance-forms',
   'claims',
   'tracking',
@@ -97,6 +99,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Invoices', href: '/admin/app-invoices', icon: DevicePhoneMobileIcon, section: 'app-invoices' },
   { name: 'Quick Details', href: '/admin/quick-details', icon: InboxArrowDownIcon, section: 'app-quick-details' },
   { name: 'Payments', href: '/admin/app-payments', icon: CreditCardIcon, section: 'app-payments' },
+  { name: 'Coupons', href: '/admin/app/coupons', icon: TicketIcon, section: 'app-coupons' },
   { name: 'Invoice / Insurance Forms', href: '/admin/insurance-forms', icon: FolderIcon, section: 'insurance-forms' },
   { name: 'Dashboard', href: '/admin/claims', icon: ClipboardDocumentListIcon, section: 'claims' },
   { name: 'Capture Links', href: '/admin/claims/capture-links', icon: LinkIcon, section: 'claims' },
@@ -138,6 +141,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       'app-invoices',
       'app-quick-details',
       'app-payments',
+      'app-coupons',
       'notifications',
     ],
   },
@@ -173,6 +177,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/app/notifications': 'notifications',
   '/admin/quick-details': 'app-quick-details',
   '/admin/app-payments': 'app-payments',
+  '/admin/app/coupons': 'app-coupons',
   '/admin/insurance-forms': 'insurance-forms',
   '/admin/claims': 'claims',
   '/admin/claims/capture-links': 'claims',
