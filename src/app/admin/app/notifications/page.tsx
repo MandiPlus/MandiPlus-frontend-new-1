@@ -1,18 +1,21 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   BellRing,
   CheckCircle2,
   Clock3,
   ExternalLink,
+  Image as ImageIcon,
+  ImagePlus,
   Link2,
   Loader2,
   RefreshCw,
   Search,
   Send,
   Smartphone,
+  Type,
   UserRound,
   XCircle,
 } from 'lucide-react';
@@ -28,8 +31,37 @@ import { useAdmin } from '@/features/admin/context/AdminContext';
 const MAX_TITLE_LENGTH = 180;
 const MAX_BODY_LENGTH = 1200;
 const MAX_LINK_LENGTH = 2048;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MANDIPLUS_PLAY_STORE_URL =
   'https://play.google.com/store/apps/details?id=com.mandiplus.customer';
+type NotificationContentMode = 'text' | 'text-image' | 'image';
+
+const CONTENT_MODES: Array<{
+  id: NotificationContentMode;
+  label: string;
+  description: string;
+  icon: typeof Type;
+}> = [
+  {
+    id: 'text',
+    label: 'Text only',
+    description: 'Title and message',
+    icon: Type,
+  },
+  {
+    id: 'text-image',
+    label: 'Text + image',
+    description: 'Message with a visual',
+    icon: ImagePlus,
+  },
+  {
+    id: 'image',
+    label: 'Image only',
+    description: 'No custom message',
+    icon: ImageIcon,
+  },
+];
 
 function normalizeHttpsUrl(value: string) {
   const trimmed = value.trim();
@@ -52,6 +84,16 @@ function linkDestinationLabel(value: string) {
   } catch {
     return null;
   }
+}
+
+function notificationImageUrl(notification: AdminCustomerNotification) {
+  const direct = typeof notification.imageUrl === 'string' ? notification.imageUrl : '';
+  const payloadImage =
+    typeof notification.payload?.imageUrl === 'string'
+      ? notification.payload.imageUrl
+      : '';
+  const value = (direct || payloadImage).trim();
+  return /^https:\/\/[^\s]+$/i.test(value) ? value : '';
 }
 
 function normalizeMobile(value: string) {
@@ -124,25 +166,40 @@ export default function AdminNotificationsPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<AdminLedgerUser | null>(null);
   const [searchingCustomers, setSearchingCustomers] = useState(false);
   const [mobileNumber, setMobileNumber] = useState('');
+  const [contentMode, setContentMode] = useState<NotificationContentMode>('text');
   const [title, setTitle] = useState('MandiPlus update');
   const [body, setBody] = useState('');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
   const [recentNotifications, setRecentNotifications] = useState<AdminCustomerNotification[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
   const [sending, setSending] = useState(false);
   const [lastSent, setLastSent] = useState<AdminCustomerNotification | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   const normalizedMobile = useMemo(() => normalizeMobile(mobileNumber), [mobileNumber]);
   const normalizedLink = useMemo(() => normalizeHttpsUrl(linkUrl), [linkUrl]);
   const linkError = linkUrl.trim().length > 0 && normalizedLink === null;
   const linkDestination = useMemo(() => linkDestinationLabel(linkUrl), [linkUrl]);
+  const needsText = contentMode !== 'image';
+  const needsImage = contentMode !== 'text';
+  const hasRequiredContent =
+    (!needsText || (title.trim().length > 0 && body.trim().length > 0)) &&
+    (!needsImage || Boolean(imageFile));
   const canSend =
     normalizedMobile.length === 10 &&
-    title.trim().length > 0 &&
-    body.trim().length > 0 &&
+    hasRequiredContent &&
     !linkError &&
     !sending;
   const remainingBody = MAX_BODY_LENGTH - body.length;
+
+  useEffect(() => {
+    const previewUrl = imagePreviewUrl;
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [imagePreviewUrl]);
 
   const loadRecent = useCallback(async () => {
     setLoadingRecent(true);
@@ -197,7 +254,31 @@ export default function AdminNotificationsPage() {
     }
   };
 
+  const handleImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    event.target.value = '';
+    if (!file) return;
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+      toast.error('Use a JPEG, PNG, or WebP image');
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      toast.error('Image must be 5 MB or smaller');
+      return;
+    }
+    setImageFile(file);
+    setImagePreviewUrl(URL.createObjectURL(file));
+  };
+
+  const clearImage = () => {
+    setImageFile(null);
+    setImagePreviewUrl('');
+  };
+
   const applyPlayStorePreset = () => {
+    if (contentMode === 'image') {
+      setContentMode('text-image');
+    }
     setTitle('MandiPlus update available');
     setBody('Tap to update your app.');
     setLinkUrl(MANDIPLUS_PLAY_STORE_URL);
@@ -206,14 +287,28 @@ export default function AdminNotificationsPage() {
   const sendNotification = async () => {
     if (!canSend) return;
     setSending(true);
+    let imageUrl = '';
+    if (needsImage && imageFile) {
+      const uploadResponse =
+        await adminApi.uploadCustomerNotificationImage(imageFile);
+      if (!uploadResponse.success || !uploadResponse.data?.imageUrl) {
+        toast.error(uploadResponse.message || 'Image upload failed');
+        setSending(false);
+        return;
+      }
+      imageUrl = uploadResponse.data.imageUrl;
+    }
+
     const response = await adminApi.sendCustomerNotification({
       mobileNumber: normalizedMobile,
-      title: title.trim(),
-      body: body.trim(),
+      title: needsText ? title.trim() : 'MandiPlus',
+      body: needsText ? body.trim() : '',
+      ...(imageUrl ? { imageUrl } : {}),
       type: normalizedLink === MANDIPLUS_PLAY_STORE_URL ? 'APP_UPDATE' : 'MANUAL',
       payload: {
         screen: 'notifications',
         source: 'admin-dashboard',
+        contentMode,
         ...(normalizedLink ? { url: normalizedLink } : {}),
       },
     });
@@ -230,6 +325,7 @@ export default function AdminNotificationsPage() {
       }
       setBody('');
       setLinkUrl('');
+      clearImage();
     } else {
       toast.error(response.message || 'Notification send failed');
     }
@@ -344,38 +440,153 @@ export default function AdminNotificationsPage() {
               </div>
             </div>
 
-            <div>
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <label className="block text-sm font-semibold text-slate-700">
-                  Title
-                </label>
-                <span className="text-xs text-slate-400">{title.length}/{MAX_TITLE_LENGTH}</span>
+            <fieldset>
+              <legend className="mb-2 text-sm font-semibold text-slate-700">
+                Notification content
+              </legend>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {CONTENT_MODES.map((mode) => {
+                  const Icon = mode.icon;
+                  const selected = contentMode === mode.id;
+                  return (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      onClick={() => setContentMode(mode.id)}
+                      aria-pressed={selected}
+                      className={`rounded-xl border p-3 text-left transition ${
+                        selected
+                          ? 'border-emerald-600 bg-emerald-50 ring-2 ring-emerald-100'
+                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Icon
+                        className={`h-5 w-5 ${selected ? 'text-emerald-700' : 'text-slate-500'}`}
+                      />
+                      <span className="mt-2 block text-sm font-bold text-slate-900">
+                        {mode.label}
+                      </span>
+                      <span className="mt-0.5 block text-xs leading-4 text-slate-500">
+                        {mode.description}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-              <input
-                value={title}
-                onChange={(event) => setTitle(event.target.value.slice(0, MAX_TITLE_LENGTH))}
-                placeholder="Notification title"
-                className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-              />
-            </div>
+              {contentMode === 'image' ? (
+                <p className="mt-2 text-xs text-slate-500">
+                  Android will still show the MandiPlus app name as the system label.
+                </p>
+              ) : null}
+            </fieldset>
 
-            <div>
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <label className="block text-sm font-semibold text-slate-700">
-                  Message
-                </label>
-                <span className={`text-xs ${remainingBody < 80 ? 'text-amber-600' : 'text-slate-400'}`}>
-                  {body.length}/{MAX_BODY_LENGTH}
-                </span>
+            {needsText ? (
+              <>
+                <div>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Title
+                    </label>
+                    <span className="text-xs text-slate-400">{title.length}/{MAX_TITLE_LENGTH}</span>
+                  </div>
+                  <input
+                    value={title}
+                    onChange={(event) => setTitle(event.target.value.slice(0, MAX_TITLE_LENGTH))}
+                    placeholder="Notification title"
+                    className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </div>
+
+                <div>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-sm font-semibold text-slate-700">
+                      Message
+                    </label>
+                    <span className={`text-xs ${remainingBody < 80 ? 'text-amber-600' : 'text-slate-400'}`}>
+                      {body.length}/{MAX_BODY_LENGTH}
+                    </span>
+                  </div>
+                  <textarea
+                    value={body}
+                    onChange={(event) => setBody(event.target.value.slice(0, MAX_BODY_LENGTH))}
+                    placeholder="Write the customer-facing notification content"
+                    rows={5}
+                    className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm leading-6 text-slate-950 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </div>
+              </>
+            ) : null}
+
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handleImageChange}
+              className="sr-only"
+            />
+            {needsImage ? (
+              <div>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Notification image
+                  </label>
+                  <span className="text-xs text-slate-400">JPEG, PNG or WebP · max 5 MB</span>
+                </div>
+                {imagePreviewUrl ? (
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-950">
+                    <div className="relative aspect-[16/9]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={imagePreviewUrl}
+                        alt="Selected notification"
+                        className="h-full w-full object-contain"
+                      />
+                      <div className="absolute right-2 top-2 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => imageInputRef.current?.click()}
+                          className="rounded-lg bg-white/95 px-3 py-2 text-xs font-bold text-slate-800 shadow-sm hover:bg-white"
+                        >
+                          Replace
+                        </button>
+                        <button
+                          type="button"
+                          onClick={clearImage}
+                          aria-label="Remove notification image"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-950/80 text-white shadow-sm hover:bg-slate-950"
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 bg-white px-3 py-2">
+                      <span className="min-w-0 truncate text-xs font-semibold text-slate-700">
+                        {imageFile?.name}
+                      </span>
+                      <span className="shrink-0 text-xs text-slate-500">
+                        {imageFile ? `${(imageFile.size / 1024 / 1024).toFixed(1)} MB` : ''}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    className="flex min-h-36 w-full flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-5 text-center transition hover:border-emerald-500 hover:bg-emerald-50"
+                  >
+                    <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-emerald-700 shadow-sm">
+                      <ImagePlus className="h-5 w-5" />
+                    </span>
+                    <span className="mt-3 text-sm font-bold text-slate-900">
+                      Choose an image
+                    </span>
+                    <span className="mt-1 text-xs text-slate-500">
+                      A 16:9 image keeps the important content visible on most phones.
+                    </span>
+                  </button>
+                )}
               </div>
-              <textarea
-                value={body}
-                onChange={(event) => setBody(event.target.value.slice(0, MAX_BODY_LENGTH))}
-                placeholder="Write the customer-facing notification content"
-                rows={8}
-                className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm leading-6 text-slate-950 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-              />
-            </div>
+            ) : null}
 
             <div>
               <div className="mb-1 flex items-center justify-between gap-2">
@@ -420,20 +631,32 @@ export default function AdminNotificationsPage() {
 
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
               <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">
-                Preview
+                Phone preview
               </div>
-              <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-                <div className="flex items-start gap-3">
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                {needsImage && imagePreviewUrl ? (
+                  <div className="aspect-[16/9] bg-slate-950">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={imagePreviewUrl}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                ) : null}
+                <div className="flex items-start gap-3 p-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
                     <BellRing className="h-5 w-5" />
                   </div>
                   <div className="min-w-0">
                     <p className="truncate text-sm font-bold text-slate-950">
-                      {title.trim() || 'Notification title'}
+                      {needsText ? title.trim() || 'Notification title' : 'MandiPlus'}
                     </p>
-                    <p className="mt-1 line-clamp-3 text-sm leading-5 text-slate-600">
-                      {body.trim() || 'Message content will appear here.'}
-                    </p>
+                    {needsText ? (
+                      <p className="mt-1 line-clamp-3 text-sm leading-5 text-slate-600">
+                        {body.trim() || 'Message content will appear here.'}
+                      </p>
+                    ) : null}
                     <p className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-slate-500">
                       {linkDestination ? (
                         <>
@@ -450,6 +673,11 @@ export default function AdminNotificationsPage() {
                   </div>
                 </div>
               </div>
+              {needsImage && !imagePreviewUrl ? (
+                <p className="mt-2 text-xs font-medium text-amber-700">
+                  Add an image to complete this notification.
+                </p>
+              ) : null}
             </div>
 
             {lastSent ? (
@@ -474,7 +702,7 @@ export default function AdminNotificationsPage() {
               className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-4 text-sm font-bold text-white shadow-sm hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
               {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Send notification
+              {sending ? (needsImage ? 'Uploading and sending' : 'Sending') : 'Send notification'}
             </button>
           </div>
         </section>
@@ -497,35 +725,54 @@ export default function AdminNotificationsPage() {
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {recentNotifications.map((item) => (
-                  <article key={item.id} className="px-4 py-3 hover:bg-slate-50">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="truncate text-sm font-bold text-slate-950">{item.title}</p>
-                          <StatusBadge status={item.deliveryStatus} />
+                {recentNotifications.map((item) => {
+                  const imageUrl = notificationImageUrl(item);
+                  return (
+                    <article key={item.id} className="px-4 py-3 hover:bg-slate-50">
+                      <div className="flex items-start gap-3">
+                        {imageUrl ? (
+                          <div className="h-16 w-24 shrink-0 overflow-hidden rounded-lg bg-slate-100">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={imageUrl}
+                              alt=""
+                              className="h-full w-full object-cover"
+                            />
+                          </div>
+                        ) : null}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="truncate text-sm font-bold text-slate-950">
+                              {item.title || 'Image notification'}
+                            </p>
+                            <StatusBadge status={item.deliveryStatus} />
+                          </div>
+                          {item.body ? (
+                            <p className="mt-1 line-clamp-2 text-sm leading-5 text-slate-600">{item.body}</p>
+                          ) : (
+                            <p className="mt-1 text-xs font-semibold text-slate-500">Image only</p>
+                          )}
                         </div>
-                        <p className="mt-1 line-clamp-2 text-sm leading-5 text-slate-600">{item.body}</p>
                       </div>
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-                      <span className="inline-flex items-center gap-1">
-                        <UserRound className="h-3.5 w-3.5" />
-                        {item.user?.name || 'Unknown customer'}
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <Smartphone className="h-3.5 w-3.5" />
-                        {item.user?.mobileNumber || 'No mobile'}
-                      </span>
-                      <span>{formatDateTime(item.sentAt || item.createdAt)}</span>
-                    </div>
-                    {item.errorMessage ? (
-                      <p className="mt-2 rounded-md bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">
-                        {item.errorMessage}
-                      </p>
-                    ) : null}
-                  </article>
-                ))}
+                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                        <span className="inline-flex items-center gap-1">
+                          <UserRound className="h-3.5 w-3.5" />
+                          {item.user?.name || 'Unknown customer'}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Smartphone className="h-3.5 w-3.5" />
+                          {item.user?.mobileNumber || 'No mobile'}
+                        </span>
+                        <span>{formatDateTime(item.sentAt || item.createdAt)}</span>
+                      </div>
+                      {item.errorMessage ? (
+                        <p className="mt-2 rounded-md bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">
+                          {item.errorMessage}
+                        </p>
+                      ) : null}
+                    </article>
+                  );
+                })}
               </div>
             )}
           </div>
