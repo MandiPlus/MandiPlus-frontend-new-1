@@ -166,6 +166,7 @@ export interface AdminCustomerNotification {
   id: string;
   title: string;
   body: string;
+  imageUrl?: string | null;
   type: string;
   payload: Record<string, unknown>;
   readAt?: string | null;
@@ -184,6 +185,7 @@ export interface SendCustomerNotificationPayload {
   mobileNumber: string;
   title: string;
   body: string;
+  imageUrl?: string;
   type?: string;
   payload?: Record<string, unknown>;
 }
@@ -2424,6 +2426,40 @@ class AdminApi {
         success: false,
         message:
           axiosError.response?.data?.message || "Failed to send notification",
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  };
+
+  public uploadCustomerNotificationImage = async (
+    file: File,
+  ): Promise<ApiResponse<{ imageUrl: string }>> => {
+    const formData = new FormData();
+    formData.append("image", file);
+    try {
+      const response = await this.client.post(
+        "/admin/notifications/image",
+        formData,
+        {
+          headers: {
+            "Content-Type": undefined,
+          },
+        },
+      );
+      const payload = response.data as
+        { imageUrl: string } | { data?: { imageUrl: string } };
+      const data =
+        "data" in payload && payload.data
+          ? payload.data
+          : (payload as { imageUrl: string });
+      return { success: true, data };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message ||
+          "Failed to upload notification image",
         error: error instanceof Error ? error.message : "Unknown error",
       };
     }
