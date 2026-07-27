@@ -100,14 +100,14 @@ const formatIndianMobile = (phone: string | undefined) => {
     return phone;
 };
 
-const normalizeNameForMatch = (value: string | undefined) =>
+const normalizeNameForMatch = (value: string | null | undefined) =>
     (value || '')
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
 
-const normalizePhoneForMatch = (value: string | undefined) => {
+const normalizePhoneForMatch = (value: string | null | undefined) => {
     const digits = (value || '').replace(/\D/g, '');
     if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
     return digits;
@@ -338,7 +338,6 @@ export default function UsersPage() {
     const verifiedMasterUsers = allUsers.filter(
         (user) => user.isLedgerMasterVerified && user.id === user.canonicalUserId,
     );
-    const verifiedMasterUserIds = new Set(verifiedMasterUsers.map((user) => user.id));
     const mergedUsersByMasterId = allUsers.reduce((map, user) => {
         if (!user.isMerged || !user.canonicalUserId || user.canonicalUserId === user.id) {
             return map;
@@ -407,18 +406,29 @@ export default function UsersPage() {
             .filter((user) => (
                 user.id !== bulkMergeModalMaster.id &&
                 !user.isMerged &&
-                !user.isLedgerMasterVerified &&
-                user.id === user.canonicalUserId &&
-                !verifiedMasterUserIds.has(user.id)
+                user.id === user.canonicalUserId
             ))
             .filter((user) => {
-                const lowerTerm = bulkMergeSearchTerm.trim().toLowerCase();
-                if (!lowerTerm) return true;
+                const normalizedTerm = normalizeNameForMatch(bulkMergeSearchTerm);
+                const digitTerm = bulkMergeSearchTerm.replace(/\D/g, '');
+                if (!normalizedTerm && !digitTerm) return true;
+
                 return (
-                    (user.name || '').toLowerCase().includes(lowerTerm) ||
-                    (user.mobileNumber || '').toLowerCase().includes(lowerTerm) ||
-                    (user.secondaryMobileNumber || '').toLowerCase().includes(lowerTerm) ||
-                    (user.state || '').toLowerCase().includes(lowerTerm)
+                    normalizeNameForMatch(user.name).includes(normalizedTerm) ||
+                    normalizeNameForMatch(user.state).includes(normalizedTerm) ||
+                    user.aliasNames?.some((name) =>
+                        normalizeNameForMatch(name).includes(normalizedTerm)
+                    ) ||
+                    Boolean(
+                        digitTerm &&
+                        (
+                            normalizePhoneForMatch(user.mobileNumber).includes(digitTerm) ||
+                            normalizePhoneForMatch(user.secondaryMobileNumber).includes(digitTerm) ||
+                            user.aliasPhones?.some((phone) =>
+                                normalizePhoneForMatch(phone).includes(digitTerm)
+                            )
+                        )
+                    )
                 );
             })
             .sort((left, right) => {
@@ -1413,7 +1423,6 @@ export default function UsersPage() {
             (user) =>
                 user.id === bulkMergeModalMaster.id ||
                 user.isMerged ||
-                user.isLedgerMasterVerified ||
                 user.id !== user.canonicalUserId,
         );
 
@@ -1427,9 +1436,28 @@ export default function UsersPage() {
 
         setBulkMergeLoading(true);
         try {
-            const failedUserIds: string[] = [];
+            const failedUsers: Array<{ id: string; message: string }> = [];
 
             for (const sourceUser of selectedSourceUsers) {
+                let removedMasterStatus = false;
+
+                if (sourceUser.isLedgerMasterVerified) {
+                    const unverifyResponse = await adminApi.unverifyMasterUser(
+                        sourceUser.id,
+                        `Preparing duplicate account for merge into ${bulkMergeModalMaster.name || bulkMergeModalMaster.id}`,
+                    );
+
+                    if (!unverifyResponse.success) {
+                        failedUsers.push({
+                            id: sourceUser.id,
+                            message: unverifyResponse.message || `Could not prepare ${sourceUser.name || 'user'} for merging`,
+                        });
+                        continue;
+                    }
+
+                    removedMasterStatus = true;
+                }
+
                 const response = await adminApi.mergeUsers({
                     sourceUserId: sourceUser.id,
                     targetUserId: bulkMergeModalMaster.id,
@@ -1438,18 +1466,34 @@ export default function UsersPage() {
                 });
 
                 if (!response.success) {
-                    failedUserIds.push(sourceUser.id);
+                    let failureMessage =
+                        response.message || `Failed to merge ${sourceUser.name || 'selected user'}`;
+
+                    if (removedMasterStatus) {
+                        const restoreResponse = await adminApi.verifyMasterUser(
+                            sourceUser.id,
+                            'Restored verified master status after failed merge',
+                        );
+                        if (!restoreResponse.success) {
+                            failureMessage += '; verified status could not be restored';
+                        }
+                    }
+
+                    failedUsers.push({
+                        id: sourceUser.id,
+                        message: failureMessage,
+                    });
                 }
             }
 
             await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
             await loadAllUsersBackground();
 
-            const mergedCount = selectedSourceUsers.length - failedUserIds.length;
-            if (failedUserIds.length > 0) {
-                setBulkMergeSelectedUserIds(failedUserIds);
+            const mergedCount = selectedSourceUsers.length - failedUsers.length;
+            if (failedUsers.length > 0) {
+                setBulkMergeSelectedUserIds(failedUsers.map((user) => user.id));
                 toast.error(
-                    `${mergedCount} merged, ${failedUserIds.length} failed. The failed child accounts remain selected for review.`,
+                    `${mergedCount} merged, ${failedUsers.length} failed. ${failedUsers[0].message}`,
                 );
             } else {
                 toast.success(
