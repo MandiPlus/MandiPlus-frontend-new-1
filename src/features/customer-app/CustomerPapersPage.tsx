@@ -7,6 +7,7 @@ import {
   CalendarDays,
   Check,
   ChevronRight,
+  FileText,
   LockKeyhole,
   RefreshCw,
   Search,
@@ -155,7 +156,10 @@ export default function CustomerPapersPage({
       setNotice("Premium pay karne ke baad insurance policy unlock hogi.");
       return;
     }
-    const url = tab === "policy" ? policyUrl : invoiceUrl || policyUrl;
+    // A paid invoice is available before the insurance policy is issued.
+    // Keep that useful document accessible while the policy is being prepared.
+    const url =
+      tab === "policy" ? policyUrl || invoiceUrl : invoiceUrl || policyUrl;
     if (!url) {
       setNotice("This document is still being prepared.");
       return;
@@ -285,6 +289,15 @@ export default function CustomerPapersPage({
                     (tab === "pending" || tab === "policy") &&
                     isCheckoutReady(invoice);
                   const locked = tab === "policy" && isPayableInvoice(invoice);
+                  const policyUrl = getInsuranceUrl(invoice);
+                  const invoiceUrl = getInvoicePdfUrl(invoice);
+                  const paymentConfirmed =
+                    String(invoice.paymentStatus || "").toUpperCase() ===
+                    "PAID";
+                  const policyPending =
+                    tab === "policy" &&
+                    paymentConfirmed &&
+                    !policyUrl;
                   return (
                     <button
                       key={invoice.id}
@@ -312,11 +325,17 @@ export default function CustomerPapersPage({
                     >
                       <span
                         className={`${styles.documentIcon} ${
-                          locked ? styles.documentIconLocked : ""
+                          locked
+                            ? styles.documentIconLocked
+                            : policyPending
+                              ? styles.documentIconPending
+                              : ""
                         }`}
                       >
                         {locked ? (
                           <LockKeyhole size={23} strokeWidth={2.1} />
+                        ) : policyPending ? (
+                          <FileText size={23} strokeWidth={2.1} />
                         ) : (
                           <ShieldCheck size={24} strokeWidth={2.1} />
                         )}
@@ -336,6 +355,13 @@ export default function CustomerPapersPage({
                         <span className={styles.documentDue}>
                           <strong>{money(invoicePremium(invoice))}</strong>
                           <small>Due amount</small>
+                        </span>
+                      ) : policyPending ? (
+                        <span className={styles.documentPending}>
+                          <strong>Insurance ban raha hai</strong>
+                          <small>
+                            {invoiceUrl ? "Invoice dekhein" : "Jald milega"}
+                          </small>
                         </span>
                       ) : selectable ? (
                         <span
