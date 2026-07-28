@@ -5,6 +5,8 @@ import { setCookie, deleteCookie } from 'cookies-next';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 const ACCESS_TOKEN_KEY = "accessToken";
 const TAB_ACCESS_TOKEN_KEY = "tabAccessToken";
+const IMPERSONATION_ACTIVE_KEY = "impersonationActive";
+const IMPERSONATION_ACCESS_TOKEN_KEY = "impersonationAccessToken";
 export const AUTH_TOKEN_CHANGED_EVENT = "mandiplus:auth-token-changed";
 
 // --- TYPES ---
@@ -54,6 +56,17 @@ export interface AgentRegisterPayload {
 
 export const getStoredAuthToken = (): string | null => {
     if (typeof window === "undefined") return null;
+
+    // Internal Test Access is intentionally tab-scoped. Never fall back to a
+    // shared browser login while this tab is impersonating another user: doing
+    // so can submit a form with a different account/identity than the UI shows.
+    if (sessionStorage.getItem(IMPERSONATION_ACTIVE_KEY) === "1") {
+        return (
+            sessionStorage.getItem(TAB_ACCESS_TOKEN_KEY) ||
+            sessionStorage.getItem(IMPERSONATION_ACCESS_TOKEN_KEY)
+        );
+    }
+
     return (
         sessionStorage.getItem(TAB_ACCESS_TOKEN_KEY) ||
         localStorage.getItem(ACCESS_TOKEN_KEY) ||
@@ -68,18 +81,25 @@ export const setAuthToken = (
     if (token) {
         axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
         if (typeof window !== 'undefined') {
-            if (options?.tabOnly) {
+            const useTabStorage =
+                Boolean(options?.tabOnly) ||
+                sessionStorage.getItem(IMPERSONATION_ACTIVE_KEY) === "1";
+            if (useTabStorage) {
                 sessionStorage.setItem(TAB_ACCESS_TOKEN_KEY, token);
+                if (sessionStorage.getItem(IMPERSONATION_ACTIVE_KEY) === "1") {
+                    sessionStorage.setItem(IMPERSONATION_ACCESS_TOKEN_KEY, token);
+                }
             } else {
                 localStorage.setItem(ACCESS_TOKEN_KEY, token);
                 sessionStorage.removeItem(TAB_ACCESS_TOKEN_KEY);
+                sessionStorage.removeItem(IMPERSONATION_ACCESS_TOKEN_KEY);
             }
             if (!options?.suppressEvent) {
                 window.dispatchEvent(
                     new CustomEvent(AUTH_TOKEN_CHANGED_EVENT, {
                         detail: {
                             token,
-                            tabOnly: Boolean(options?.tabOnly),
+                            tabOnly: useTabStorage,
                         },
                     }),
                 );
@@ -90,6 +110,7 @@ export const setAuthToken = (
         if (typeof window !== 'undefined') {
             localStorage.removeItem(ACCESS_TOKEN_KEY);
             sessionStorage.removeItem(TAB_ACCESS_TOKEN_KEY);
+            sessionStorage.removeItem(IMPERSONATION_ACCESS_TOKEN_KEY);
             if (!options?.suppressEvent) {
                 window.dispatchEvent(
                     new CustomEvent(AUTH_TOKEN_CHANGED_EVENT, {
