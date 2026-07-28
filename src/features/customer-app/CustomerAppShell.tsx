@@ -28,6 +28,7 @@ import {
 
 import ProtectedRoute from "@/features/auth/components/ProtectedRoute";
 import { useAuth } from "@/features/auth/context/AuthContext";
+import { getMyChannelPartnerDashboard } from "@/features/channel-partner/api";
 import { initials } from "./utils";
 import { CustomerSetupModal } from "./CustomerSetupModal";
 import styles from "./customer-app.module.css";
@@ -46,7 +47,7 @@ export function useCustomerAppShell() {
 
 export function CustomerAppShell({
   activeTab,
-  partnerActive = false,
+  partnerActive,
   showBottomNav = true,
   home = false,
   children,
@@ -59,8 +60,22 @@ export function CustomerAppShell({
 }) {
   const { user, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [partnerLookup, setPartnerLookup] = useState<{
+    userId: string;
+    active: boolean;
+  }>({ userId: "", active: false });
   const isInternalTeam =
     String(user?.identity || "").trim().toUpperCase() === "INTERNAL_TEAM";
+  const userId = String(user?.id || "");
+  const partnerHint =
+    String(user?.channelPartnerStatus || "").toUpperCase() === "ACTIVE" ||
+    user?.isChannelPartner === true;
+  const resolvedPartnerActive =
+    typeof partnerActive === "boolean"
+      ? partnerActive
+      : partnerLookup.userId === userId
+        ? partnerLookup.active
+        : partnerHint;
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -76,12 +91,36 @@ export function CustomerAppShell({
     };
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (typeof partnerActive === "boolean" || !userId) return;
+    let cancelled = false;
+
+    void getMyChannelPartnerDashboard({ scope: "profile" })
+      .then((payload) => {
+        if (cancelled) return;
+        setPartnerLookup({
+          userId,
+          active: String(payload?.profile?.status || "").toUpperCase() === "ACTIVE",
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPartnerLookup({ userId, active: false });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [partnerActive, userId]);
+
   const navItems = [
     { key: "home" as const, href: "/home", label: "Home", icon: Home },
     { key: "pay" as const, href: "/pay", label: "Pay", icon: WalletCards },
     { key: "create" as const, href: "/insurance", label: "Insurance\nbanao", icon: Plus },
     { key: "tracking" as const, href: "/tracking", label: "Tracking", icon: Route },
-    { key: "partner" as const, href: "/partner", label: "Partner", icon: UsersRound },
+    resolvedPartnerActive
+      ? { key: "partner" as const, href: "/partner", label: "Partner", icon: UsersRound }
+      : { key: "partner" as const, href: "/support", label: "Sahayata", icon: Headphones },
   ];
 
   return (
@@ -222,8 +261,8 @@ export function CustomerAppShell({
                     <DrawerLink href="/profile?section=language" icon={Languages} label="Language" />
                     <DrawerLink href="/profile?section=notifications" icon={Bell} label="Notifications" />
                     <DrawerLink href="/profile?section=security" icon={ShieldCheck} label="Security" />
-                    <DrawerLink href="/support" icon={Headphones} label="Help & support" />
-                    {partnerActive ? (
+                    <DrawerLink href="/support" icon={Headphones} label="Sahayata" />
+                    {resolvedPartnerActive ? (
                       <DrawerLink href="/partner" icon={UsersRound} label="Partner portal" />
                     ) : null}
                     <DrawerLink
