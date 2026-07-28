@@ -109,6 +109,8 @@ export const setAuthToken = (
 // Step 1: Send OTP
 export const sendOtp = async (data: SendOtpPayload): Promise<AuthResponse> => {
     try {
+        // Keep this payload compatible with the shared backend deployed for both
+        // the app and web. Older deployments reject the optional `client` field.
         const response = await axios.post(`${API_BASE_URL}/auth/send-otp`, data);
         return response.data;
     } catch (error) {

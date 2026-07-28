@@ -1,241 +1,215 @@
 "use client";
 
-import { useState } from "react";
-import { useSearchParams } from "next/navigation";
-import Link from "next/link";
-import Button from "@/shared/components/Button";
-import Input from "@/shared/components/Input";
-import Select from "@/shared/components/Select";
-import { register, sendOtp, verifyOtp } from "@/features/auth/api";
-import { toast } from "react-toastify";
-import { useAuth } from "../context/AuthContext"; // Import useAuth
 import Image from "next/image";
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowLeft, LoaderCircle } from "lucide-react";
 
-const indianStates = [
-  { value: "ANDHRA_PRADESH", label: "Andhra Pradesh" },
-  { value: "ARUNACHAL_PRADESH", label: "Arunachal Pradesh" },
-  { value: "ASSAM", label: "Assam" },
-  { value: "BIHAR", label: "Bihar" },
-  { value: "CHHATTISGARH", label: "Chhattisgarh" },
-  { value: "GOA", label: "Goa" },
-  { value: "GUJARAT", label: "Gujarat" },
-  { value: "HARYANA", label: "Haryana" },
-  { value: "HIMACHAL_PRADESH", label: "Himachal Pradesh" },
-  { value: "JHARKHAND", label: "Jharkhand" },
-  { value: "KARNATAKA", label: "Karnataka" },
-  { value: "KERALA", label: "Kerala" },
-  { value: "MADHYA_PRADESH", label: "Madhya Pradesh" },
-  { value: "MAHARASHTRA", label: "Maharashtra" },
-  { value: "MANIPUR", label: "Manipur" },
-  { value: "MEGHALAYA", label: "Meghalaya" },
-  { value: "MIZORAM", label: "Mizoram" },
-  { value: "NAGALAND", label: "Nagaland" },
-  { value: "ODISHA", label: "Odisha" },
-  { value: "PUNJAB", label: "Punjab" },
-  { value: "RAJASTHAN", label: "Rajasthan" },
-  { value: "SIKKIM", label: "Sikkim" },
-  { value: "TAMIL_NADU", label: "Tamil Nadu" },
-  { value: "TELANGANA", label: "Telangana" },
-  { value: "TRIPURA", label: "Tripura" },
-  { value: "UTTAR_PRADESH", label: "Uttar Pradesh" },
-  { value: "UTTARAKHAND", label: "Uttarakhand" },
-  { value: "WEST_BENGAL", label: "West Bengal" },
-  { value: "DELHI", label: "Delhi" },
-];
+import { register, sendOtp, verifyOtp } from "@/features/auth/api";
+import { useWebOtp } from "@/features/auth/hooks/useWebOtp";
+import { useAuth } from "../context/AuthContext";
+import styles from "./customer-auth.module.css";
 
-const roleOptions = [
-  { value: "BUYER", label: "Buyer" },
-  { value: "AGENT", label: "Agent" },
-  { value: "SUPPLIER", label: "Supplier" },
-  { value: "TRANSPORTER", label: "Transporter" },
-];
+type AuthStep = "phone" | "otp";
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-  return error instanceof Error ? error.message : fallback;
-};
-
-const RegisterPage = () => {
-  const searchParams = useSearchParams();
-  const { login } = useAuth(); // Get login function
-  const [isLoading, setIsLoading] = useState(false);
-  const [step, setStep] = useState<"FORM" | "OTP">("FORM");
+export default function RegisterPage() {
+  const { login } = useAuth();
+  const [step, setStep] = useState<AuthStep>("phone");
+  const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const verificationInFlight = useRef(false);
 
-  const initialMobile = searchParams.get('mobile') || "";
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = window.setTimeout(
+      () => setResendCooldown((current) => current - 1),
+      1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [resendCooldown]);
 
-  const [formData, setFormData] = useState({
-    name: "",
-    mobileNumber: initialMobile,
-    state: "",
-    identity: "",
-    isChannelPartner: false,
-    referredByChannelPartner: "",
-  });
+  const requestOtp = useCallback(async () => {
+    if (phone.length !== 10 || loading) {
+      if (phone.length !== 10) setError("Enter a valid 10-digit mobile number.");
+      return;
+    }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-
-    const { name, mobileNumber, state, identity } = formData;
-
+    setLoading(true);
+    setError("");
     try {
-      if (step === "FORM") {
-        if (!name || !mobileNumber || !state || !identity) {
-          toast.error("Please fill all fields");
-          setIsLoading(false);
-          return;
+      await sendOtp({ mobileNumber: phone });
+      setOtp("");
+      setStep("otp");
+      setResendCooldown(30);
+    } catch (nextError) {
+      setError(errorMessage(nextError, "Unable to send OTP. Please try again."));
+    } finally {
+      setLoading(false);
+    }
+  }, [loading, phone]);
+
+  const verifyAndContinue = useCallback(
+    async (code: string) => {
+      if (verificationInFlight.current || loading) return;
+      if (code.length !== 6) {
+        setError("Enter the OTP sent to your mobile number.");
+        return;
+      }
+
+      verificationInFlight.current = true;
+      setLoading(true);
+      setError("");
+      try {
+        const verification = await verifyOtp({ mobileNumber: phone, otp: code });
+        let response = verification;
+
+        if (verification.next === "REGISTER") {
+          response = await register({
+            name: "MandiPlus User",
+            mobileNumber: phone,
+            state: "RAJASTHAN",
+            identity: "BUYER",
+          });
         }
 
-        await sendOtp({ mobileNumber });
-        setStep("OTP");
-        toast.success("OTP sent. Please verify to complete signup.");
-        setIsLoading(false);
-        return;
-      }
+        if (!response.accessToken) {
+          throw new Error("Unable to start your account. Please try again.");
+        }
 
-      if (!otp || otp.length !== 6) {
-        toast.error("Enter a valid 6-digit OTP");
-        setIsLoading(false);
-        return;
-      }
-
-      await verifyOtp({ mobileNumber, otp });
-
-      const response = await register({
-        name,
-        mobileNumber,
-        state,
-        identity: identity as "BUYER" | "AGENT" | "SUPPLIER" | "CUSTOMER" | "TRANSPORTER",
-        ...(formData.isChannelPartner ? { isChannelPartner: true } : {}),
-        ...(formData.referredByChannelPartner.trim()
-          ? { referredByChannelPartner: formData.referredByChannelPartner.trim() }
-          : {}),
-      });
-
-      if (response.accessToken) {
         await login(response.accessToken, response.user);
-        toast.success("Account created successfully!");
+      } catch (nextError) {
+        setError(errorMessage(nextError, "The OTP entered is incorrect."));
+      } finally {
+        verificationInFlight.current = false;
+        setLoading(false);
       }
+    },
+    [loading, login, phone],
+  );
 
-    } catch (error: unknown) {
-      toast.error(getErrorMessage(error, "Registration failed"));
-    } finally {
-      setIsLoading(false);
-    }
+  useWebOtp({
+    enabled: step === "otp" && !loading,
+    onCode: (code) => {
+      setOtp(code);
+      void verifyAndContinue(code);
+    },
+  });
+
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (step === "phone") void requestOtp();
+    else void verifyAndContinue(otp);
   };
 
   return (
-    <div className="min-h-screen bg-gray-300 flex flex-col relative overflow-hidden">
-      <div className="w-full relative bg-gray-200 pb-8">
-        <Image
-          src="/images/truck-img.png"
-          alt="MandiPlus Truck"
-          width={1200}
-          height={800}
-          className="w-full h-auto block"
-          priority
-        />
-        <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-black/5 to-transparent" />
-      </div>
+    <main className={styles.screen}>
+      <div className={styles.authFrame}>
+        <section className={styles.hero} aria-label="Mandi Plus">
+          <Image
+            src="/customer-app/auth-mandi-helper-v3.webp"
+            alt="Mandi Plus customer at a mandi"
+            fill
+            sizes="(max-width: 760px) 100vw, 480px"
+            priority
+            className={styles.heroImage}
+          />
+        </section>
 
-      <div className="flex-1 bg-white -mt-8 px-6 py-8 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] relative z-10 flex flex-col">
-        <h2 className="text-2xl font-bold mb-1 text-gray-800" style={{ fontFamily: "Poppins, sans-serif" }}>
-          Welcome to <span className="text-[#4309ac]">MandiPlus</span>
-        </h2>
-        <p className="text-gray-800 mb-6">Complete your profile</p>
+        <section className={styles.sheet}>
+          <div className={styles.message}>
+            <h1>
+              {step === "phone"
+                ? "Mandi Plus mein aapka swagat hai"
+                : "OTP dalein"}
+            </h1>
+            <p>
+              {step === "phone"
+                ? "Aage badhne ke liye mobile number dalein"
+                : `Verification code bheja gaya hai +91 ${phone}.`}
+            </p>
+          </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 flex-1 flex flex-col">
-          {step === "FORM" ? (
-            <>
-              <Input
-                className="bg-gray-100/80"
-                placeholder="Full Name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              />
-
-              <Input
-                className={`bg-gray-100/80 ${initialMobile ? "opacity-70" : ""}`}
-                placeholder="Mobile Number"
+          <form onSubmit={submit} className={styles.form}>
+            {step === "phone" ? (
+              <input
+                aria-label="Mobile number"
+                inputMode="numeric"
+                autoComplete="tel"
+                placeholder="Mobile number dalein"
                 maxLength={10}
-                value={formData.mobileNumber}
-                onChange={(e) => setFormData({ ...formData, mobileNumber: e.target.value })}
-                readOnly={!!initialMobile}
+                value={phone}
+                onChange={(event) => {
+                  setPhone(event.target.value.replace(/\D/g, "").slice(0, 10));
+                  setError("");
+                }}
+                className={styles.phoneInput}
               />
-
-              <Select
-                className="bg-gray-200/80"
-                placeholder="Select State"
-                options={indianStates}
-                value={formData.state}
-                onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-              />
-
-              <Select
-                className="bg-gray-200/80"
-                placeholder="Select Role"
-                options={roleOptions}
-                value={formData.identity}
-                onChange={(e) => setFormData({ ...formData, identity: e.target.value })}
-              />
-
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                <label className="flex items-center gap-2 text-sm font-semibold text-gray-800">
-                  <input
-                    type="checkbox"
-                    checked={formData.isChannelPartner}
-                    onChange={(e) =>
-                      setFormData({ ...formData, isChannelPartner: e.target.checked })
-                    }
-                    className="h-4 w-4 rounded border-gray-300"
-                  />
-                  I want to register as a channel partner
-                </label>
-                <Input
-                  className="mt-3 bg-white"
-                  placeholder="Referred by channel partner code or mobile (optional)"
-                  value={formData.referredByChannelPartner}
-                  onChange={(e) =>
-                    setFormData({ ...formData, referredByChannelPartner: e.target.value })
-                  }
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="text-center text-sm text-gray-700">
-                OTP sent to {formData.mobileNumber}
-              </p>
-              <Input
-                className="bg-gray-100/80 text-center tracking-widest"
-                placeholder="Enter 6-digit OTP"
+            ) : (
+              <input
+                aria-label="OTP"
+                autoFocus
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="6-digit code"
                 maxLength={6}
                 value={otp}
-                onChange={(e) => setOtp(e.target.value)}
+                onChange={(event) => {
+                  setOtp(event.target.value.replace(/\D/g, "").slice(0, 6));
+                  setError("");
+                }}
+                className={styles.otpInput}
               />
-            </>
-          )}
+            )}
 
-          <div className="pt-2">
-            <Button
-              type="submit"
-              disabled={isLoading}
-              className={`w-full py-3 rounded-xl text-white ${isLoading ? "bg-gray-400" : "bg-[#4309ac]"}`}
-            >
-              {isLoading ? "Processing..." : step === "FORM" ? "Sign Up" : "Verify & Sign Up"}
-            </Button>
-          </div>
-        </form>
+            {error ? <div className={styles.error}>{error}</div> : null}
 
-        <p className="pt-6 text-center text-sm text-gray-700">
-          Already registered?{" "}
-          <Link href="/login" className="font-semibold text-[#4309ac]">
-            Login
-          </Link>
-        </p>
+            <button type="submit" disabled={loading} className={styles.primary}>
+              {loading ? <LoaderCircle size={20} className="animate-spin" /> : null}
+              {step === "phone" ? "Continue" : "OTP verify karein"}
+            </button>
+
+            {step === "otp" ? (
+              <div className={styles.otpActions}>
+                <button
+                  type="button"
+                  disabled={loading || resendCooldown > 0}
+                  onClick={() => void requestOtp()}
+                >
+                  {resendCooldown > 0
+                    ? `OTP dobara bhejein (${resendCooldown}s)`
+                    : "OTP dobara bhejein"}
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+                    setStep("phone");
+                    setOtp("");
+                    setError("");
+                  }}
+                >
+                  <ArrowLeft size={15} />
+                  Mobile number badlein
+                </button>
+              </div>
+            ) : null}
+          </form>
+
+          <p className={styles.terms}>
+            By signing in, you agree to our{" "}
+            <Link href="/terms-and-conditions">Terms &amp; Conditions</Link>,{" "}
+            <Link href="/privacy-policy">Privacy Policy</Link>, and{" "}
+            <Link href="/refund-policy">Refund Policy</Link>.
+          </p>
+        </section>
       </div>
-    </div>
+    </main>
   );
-};
+}
 
-export default RegisterPage;
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { adminApi } from '../api/admin.api';
 import {
@@ -197,11 +197,19 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         router.push('/admin/login');
     };
 
-    const canAccessSection = (section: AdminSection) => {
+    const canAccessSection = useCallback((section: AdminSection) => {
         if (section === 'analytics') {
             return Boolean(
                 accessProfile?.isFullAdmin ||
                 accessProfile?.allowedSections?.includes('reports'),
+            );
+        }
+
+        if (section === 'account-memberships') {
+            return Boolean(
+                accessProfile?.isFullAdmin ||
+                accessProfile?.allowedSections?.includes('app-customers') ||
+                accessProfile?.allowedSections?.includes('users'),
             );
         }
 
@@ -217,8 +225,17 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             return true;
         }
 
+        if (section === 'notifications') {
+            return Boolean(
+                accessProfile?.isFullAdmin ||
+                accessProfile?.allowedSections?.some((allowedSection) =>
+                    ['app-customers', 'app-invoices', 'insurance-payments', 'users'].includes(allowedSection),
+                ),
+            );
+        }
+
         return Boolean(accessProfile?.allowedSections?.includes(section));
-    };
+    }, [accessProfile]);
 
     return (
         <AdminContext.Provider value={{ isAuthenticated, loading, accessProfile, login, logout, canAccessSection }}>

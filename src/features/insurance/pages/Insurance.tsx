@@ -45,6 +45,11 @@ import {
     type InsuranceLearningUiEvent,
 } from '../learningContext';
 import { itemsData } from '../productCatalog';
+import {
+    formatInsuranceInvoiceMode,
+    normalizeInsuranceInvoiceMode,
+    resolveInsuranceInvoiceModeForSubmit,
+} from '../insuranceModeSubmit';
 
 // --- Types ---
 interface FormData {
@@ -312,6 +317,8 @@ const Insurance = () => {
     });
 
     const [weightmentSlip, setWeightmentSlip] = useState<File | null>(null);
+    const weightmentSlipRef = useRef<File | null>(null);
+    const invoiceModeRef = useRef<string>('');
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
     const [inputValue, setInputValue] = useState<string>('');
     const [language, setLanguage] = useState<'en' | 'hi' | null>(null);
@@ -348,6 +355,24 @@ const Insurance = () => {
 
     const normalizePhoneInput = (phone?: string | null) =>
         String(phone || '').replace(/\D/g, '').slice(-10);
+
+    const updateWeightmentSlip = (file: File | null) => {
+        weightmentSlipRef.current = file;
+        setWeightmentSlip(file);
+    };
+
+    useEffect(() => {
+        if (formData.notes) {
+            invoiceModeRef.current = formData.notes;
+        }
+    }, [formData.notes]);
+
+    const rememberInvoiceModeSelection = (value: string) => {
+        const selectedMode = normalizeInsuranceInvoiceMode(value);
+        if (selectedMode) {
+            invoiceModeRef.current = selectedMode;
+        }
+    };
 
     const identity = user?.identity || '';
     const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
@@ -772,9 +797,15 @@ const Insurance = () => {
             const supName = sanitizeText(resolvedFormData.supplierName || 'Unknown Supplier');
             submitData.append('supplierName', supName);
             // Auto-derive invoiceType: Cash = BUYER_INVOICE (buyer pays), Commission = SUPPLIER_INVOICE
-            const invoiceMode = (resolvedFormData.notes || '').toLowerCase();
+            const invoiceMode = resolveInsuranceInvoiceModeForSubmit(
+                resolvedFormData.notes,
+                invoiceModeRef.current,
+            );
             if (shouldUseDynamicQuestionFlow && !['cash', 'commission'].includes(invoiceMode)) {
                 throw new Error('Please select Cash or Commission before submitting.');
+            }
+            if (invoiceMode) {
+                resolvedFormData.notes = formatInsuranceInvoiceMode(invoiceMode);
             }
             const isCash = invoiceMode === 'cash';
             if (shouldRequireVerifiedParties) {
@@ -814,7 +845,11 @@ const Insurance = () => {
             submitData.append('invoiceType', isCash ? 'BUYER_INVOICE' : 'SUPPLIER_INVOICE');
 
             if (resolvedFormData.hsn) submitData.append('hsnCode', resolvedFormData.hsn);
-            if (resolvedFormData.notes) submitData.append('weighmentSlipNote', sanitizeText(resolvedFormData.notes));
+            if (invoiceMode) {
+                submitData.append('weighmentSlipNote', formatInsuranceInvoiceMode(invoiceMode));
+            } else if (resolvedFormData.notes) {
+                submitData.append('weighmentSlipNote', sanitizeText(resolvedFormData.notes));
+            }
             const driverPhone = normalizePhoneInput(resolvedFormData.driverPhone);
             if (driverPhone) {
                 if (driverPhone.length !== 10) {
@@ -853,7 +888,7 @@ const Insurance = () => {
                 }
             }
 
-            const finalFile = fileArgument || weightmentSlip;
+            const finalFile = fileArgument || weightmentSlipRef.current || weightmentSlip;
             if (finalFile) {
                 submitData.append('weighmentSlips', finalFile);
             }
@@ -926,7 +961,7 @@ const Insurance = () => {
         setPartyAddressSuggestions([]);
 
         if (fieldToEdit === 'weightmentSlip') {
-            setWeightmentSlip(null);
+            updateWeightmentSlip(null);
         } else if (fieldToEdit === 'invoiceDate') {
             setIsInvoiceDatePickerOpen(true);
             setInputValue(formData.invoiceDate || getTodayDateInputValue());
@@ -1192,6 +1227,10 @@ const Insurance = () => {
                         ? (isOptionalPhoneSkip(currentInput) ? '' : normalizePhoneInput(currentInput))
                     : (q.type === 'number' && currentInput) ? parseFloat(currentInput) : currentInput;
 
+            if (q.field === 'notes') {
+                rememberInvoiceModeSelection(currentInput);
+            }
+
             if (q.field === 'itemName') {
                 const selectedItem = itemsData.find(item => item.name === currentInput);
                 const hsnCode = selectedItem ? selectedItem.hsn : '';
@@ -1277,10 +1316,16 @@ const Insurance = () => {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        if (currentQuestion.field === 'notes') {
+            rememberInvoiceModeSelection(inputValue);
+        }
         void processInput(inputValue);
     };
 
     const handleOptionSelect = (opt: string) => {
+        if (currentQuestion.field === 'notes') {
+            rememberInvoiceModeSelection(opt);
+        }
         void processInput(opt);
     };
 
@@ -1545,6 +1590,9 @@ const Insurance = () => {
     };
 
     const applyTemplateToForm = (template: SupplierPartyAssistTemplate) => {
+        if (template.notes) {
+            rememberInvoiceModeSelection(template.notes);
+        }
         setFormData((prev) => ({
             ...prev,
             itemName: template.productName || prev.itemName,
@@ -1588,7 +1636,7 @@ const Insurance = () => {
             },
         });
         applyTemplateToForm(template);
-        setWeightmentSlip(null);
+        updateWeightmentSlip(null);
         setInputValue('');
         setError('');
         setCurrentQuestionIndex(
@@ -1736,7 +1784,7 @@ const Insurance = () => {
         if (!blob) return;
 
         const croppedFile = new File([blob], 'cropped-image.jpg', { type: 'image/jpeg' });
-        setWeightmentSlip(croppedFile);
+        updateWeightmentSlip(croppedFile);
         setIsCropping(false);
         setRotation(0);
 
@@ -2040,7 +2088,7 @@ const Insurance = () => {
                                 onClick={() => {
                                     setIsCropping(false);
                                     setImageSrc(null);
-                                    setWeightmentSlip(null);
+                                    updateWeightmentSlip(null);
                                     setRotation(0);
                                 }}
                                 className="flex flex-col items-center text-red-500 gap-1"
@@ -2401,7 +2449,7 @@ const Insurance = () => {
                                             </span>
                                         </div>
                                         <button
-                                            onClick={() => setWeightmentSlip(null)}
+                                            onClick={() => updateWeightmentSlip(null)}
                                             className="text-red-500 p-2 hover:bg-red-50 rounded-full transition-colors"
                                         >
                                             <TrashIcon className="w-5 h-5" />

@@ -4,12 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Menu, Transition } from '@headlessui/react';
 import { usePathname } from 'next/navigation';
 import { BellIcon } from '@heroicons/react/24/outline';
-import {
-    ArrowPathIcon,
-    DocumentTextIcon,
-    ExclamationTriangleIcon,
-    UserPlusIcon
-} from '@heroicons/react/24/solid';
+import { ArrowPathIcon, DocumentTextIcon, ExclamationTriangleIcon, UserPlusIcon } from '@heroicons/react/24/solid';
 import Link from 'next/link';
 import { useAdmin } from '../context/AdminContext';
 import { adminApi, ClaimRequest, InsuranceForm } from '../api/admin.api';
@@ -42,6 +37,7 @@ const adminTitles: Record<string, string> = {
     '/admin/dashboard': 'Admin Panel',
     '/admin/users': 'Users',
     '/admin/app-customers': 'App Customers',
+    '/admin/account-memberships': 'Account Memberships',
     '/admin/app-invoices': 'App Invoices',
     '/admin/quick-details': 'Quick Details',
     '/admin/app-payments': 'App Payments',
@@ -59,7 +55,10 @@ const adminTitles: Record<string, string> = {
     '/admin/impersonate': 'Impersonate',
     '/admin/reports': 'AI Reports',
     '/admin/analytics': 'Sales Analytics',
+    '/admin/market-intelligence': 'Market Pulse',
     '/admin/insurance-learning': 'Insurance Learning',
+    '/admin/cp-requests': 'CP Requests',
+    '/admin/developer-tools': 'Developer Tools',
 };
 
 function getTimestampValue(timestamp: string): number {
@@ -84,7 +83,7 @@ function formatTimestamp(timestamp: string): string {
         month: 'short',
         year: 'numeric',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
     });
 }
 
@@ -94,7 +93,7 @@ function getNotificationTypeUi(type: NotificationType) {
             label: 'User',
             classes: 'bg-green-100 text-green-800',
             iconClasses: 'bg-green-100 text-green-700',
-            Icon: UserPlusIcon
+            Icon: UserPlusIcon,
         };
     }
     if (type === 'invoice_created') {
@@ -102,7 +101,7 @@ function getNotificationTypeUi(type: NotificationType) {
             label: 'Invoice',
             classes: 'bg-blue-100 text-blue-800',
             iconClasses: 'bg-blue-100 text-blue-700',
-            Icon: DocumentTextIcon
+            Icon: DocumentTextIcon,
         };
     }
     if (type === 'claim_request') {
@@ -110,14 +109,14 @@ function getNotificationTypeUi(type: NotificationType) {
             label: 'Claim',
             classes: 'bg-amber-100 text-amber-800',
             iconClasses: 'bg-amber-100 text-amber-700',
-            Icon: ExclamationTriangleIcon
+            Icon: ExclamationTriangleIcon,
         };
     }
     return {
         label: 'PDF',
         classes: 'bg-purple-100 text-purple-800',
         iconClasses: 'bg-purple-100 text-purple-700',
-        Icon: ArrowPathIcon
+        Icon: ArrowPathIcon,
     };
 }
 
@@ -131,26 +130,52 @@ function isToday(timestamp: string): boolean {
     return isSameDay(new Date(value), new Date());
 }
 
-function buildNotifications(users: UserNotificationSource[], invoices: InsuranceForm[], claims: ClaimRequest[]): NotificationItem[] {
+function buildNotifications(
+    users: UserNotificationSource[],
+    invoices: InsuranceForm[],
+    claims: ClaimRequest[],
+): NotificationItem[] {
     const userEvents: NotificationItem[] = users
-        .filter((user) => Boolean(getFirstTimestampValue((user as any)?.createdAt, (user as any)?.created_at, (user as any)?.createdOn)))
+        .filter((user) =>
+            Boolean(
+                getFirstTimestampValue((user as any)?.createdAt, (user as any)?.created_at, (user as any)?.createdOn),
+            ),
+        )
         .map((user) => ({
             id: `user-${user.id || user._id || user.mobileNumber}`,
             type: 'user_joined' as const,
             description: `User joined: ${user.mobileNumber || 'Unknown number'}`,
-            timestamp: getFirstTimestampValue((user as any)?.createdAt, (user as any)?.created_at, (user as any)?.createdOn),
-            href: '/admin/users'
+            timestamp: getFirstTimestampValue(
+                (user as any)?.createdAt,
+                (user as any)?.created_at,
+                (user as any)?.createdOn,
+            ),
+            href: '/admin/users',
         }))
         .sort((a, b) => getTimestampValue(b.timestamp) - getTimestampValue(a.timestamp));
 
     const invoiceCreatedEvents: NotificationItem[] = invoices
-        .filter((invoice) => Boolean(getFirstTimestampValue((invoice as any)?.createdAt, (invoice as any)?.created_at, (invoice as any)?.createdOn, (invoice as any)?.date)))
+        .filter((invoice) =>
+            Boolean(
+                getFirstTimestampValue(
+                    (invoice as any)?.createdAt,
+                    (invoice as any)?.created_at,
+                    (invoice as any)?.createdOn,
+                    (invoice as any)?.date,
+                ),
+            ),
+        )
         .map((invoice) => ({
             id: `invoice-created-${invoice.id || invoice._id}`,
             type: 'invoice_created' as const,
             description: `Invoice created: ${invoice.invoiceNumber || 'N/A'} (${invoice.supplier || 'Unknown supplier'})`,
-            timestamp: getFirstTimestampValue((invoice as any)?.createdAt, (invoice as any)?.created_at, (invoice as any)?.createdOn, (invoice as any)?.date),
-            href: '/admin/insurance-forms'
+            timestamp: getFirstTimestampValue(
+                (invoice as any)?.createdAt,
+                (invoice as any)?.created_at,
+                (invoice as any)?.createdOn,
+                (invoice as any)?.date,
+            ),
+            href: '/admin/insurance-forms',
         }))
         .sort((a, b) => getTimestampValue(b.timestamp) - getTimestampValue(a.timestamp));
 
@@ -164,7 +189,7 @@ function buildNotifications(users: UserNotificationSource[], invoices: Insurance
             type: 'pdf_regenerated' as const,
             description: `PDF regenerated: ${invoice.invoiceNumber || 'N/A'}`,
             timestamp: invoice.updatedAt,
-            href: '/admin/insurance-forms'
+            href: '/admin/insurance-forms',
         }))
         .sort((a, b) => getTimestampValue(b.timestamp) - getTimestampValue(a.timestamp));
 
@@ -175,12 +200,12 @@ function buildNotifications(users: UserNotificationSource[], invoices: Insurance
             type: 'claim_request' as const,
             description: `Claim request: ${claim.invoice?.invoiceNumber || claim.invoice?.truckNumber || 'Unknown invoice'}`,
             timestamp: claim.createdAt,
-            href: '/admin/claims'
+            href: '/admin/claims',
         }))
         .sort((a, b) => getTimestampValue(b.timestamp) - getTimestampValue(a.timestamp));
 
     return [...userEvents, ...invoiceCreatedEvents, ...claimEvents, ...pdfRegeneratedEvents].sort(
-        (a, b) => getTimestampValue(b.timestamp) - getTimestampValue(a.timestamp)
+        (a, b) => getTimestampValue(b.timestamp) - getTimestampValue(a.timestamp),
     );
 }
 
@@ -219,7 +244,7 @@ export default function AdminHeader() {
                         : Promise.resolve({ success: true, data: { forms: [] } } as any),
                     canAccessSection('claims')
                         ? adminApi.getClaims()
-                        : Promise.resolve({ success: true, data: [] } as any)
+                        : Promise.resolve({ success: true, data: [] } as any),
                 ]);
 
                 if (!isMounted) return;
@@ -229,9 +254,11 @@ export default function AdminHeader() {
                     const payload: any = (usersRes as any).data ?? usersRes;
 
                     if (Array.isArray(payload)) return payload as UserNotificationSource[];
-                    if (payload?.users && Array.isArray(payload.users)) return payload.users as UserNotificationSource[];
+                    if (payload?.users && Array.isArray(payload.users))
+                        return payload.users as UserNotificationSource[];
                     if (payload?.data && Array.isArray(payload.data)) return payload.data as UserNotificationSource[];
-                    if (payload?.data?.users && Array.isArray(payload.data.users)) return payload.data.users as UserNotificationSource[];
+                    if (payload?.data?.users && Array.isArray(payload.data.users))
+                        return payload.data.users as UserNotificationSource[];
 
                     return [];
                 })();
@@ -242,10 +269,13 @@ export default function AdminHeader() {
 
                     if (Array.isArray(payload)) return payload as InsuranceForm[];
                     if (payload?.forms && Array.isArray(payload.forms)) return payload.forms as InsuranceForm[];
-                    if (payload?.invoices && Array.isArray(payload.invoices)) return payload.invoices as InsuranceForm[];
+                    if (payload?.invoices && Array.isArray(payload.invoices))
+                        return payload.invoices as InsuranceForm[];
                     if (payload?.data && Array.isArray(payload.data)) return payload.data as InsuranceForm[];
-                    if (payload?.data?.forms && Array.isArray(payload.data.forms)) return payload.data.forms as InsuranceForm[];
-                    if (payload?.data?.invoices && Array.isArray(payload.data.invoices)) return payload.data.invoices as InsuranceForm[];
+                    if (payload?.data?.forms && Array.isArray(payload.data.forms))
+                        return payload.data.forms as InsuranceForm[];
+                    if (payload?.data?.invoices && Array.isArray(payload.data.invoices))
+                        return payload.data.invoices as InsuranceForm[];
 
                     return [];
                 })();
@@ -258,7 +288,7 @@ export default function AdminHeader() {
                         invoices: invoices.length,
                         claims: claims.length,
                         sampleUser: users[0],
-                        sampleInvoice: invoices[0]
+                        sampleInvoice: invoices[0],
                     });
                 }
 
@@ -299,8 +329,7 @@ export default function AdminHeader() {
                 <h1 className="text-2xl font-extrabold tracking-tight">
                     {headerTitle === 'Admin Panel' ? (
                         <>
-                            <span className="text-slate-900">Admin</span>{' '}
-                            <span className="text-[#4309ac]">Panel</span>
+                            <span className="text-slate-900">Admin</span> <span className="text-[#4309ac]">Panel</span>
                         </>
                     ) : (
                         <span className="text-slate-900">{headerTitle}</span>
@@ -309,9 +338,7 @@ export default function AdminHeader() {
                 <div className="flex items-center">
                     <Menu as="div" className="relative">
                         <div>
-                            <Menu.Button
-                                className="relative rounded-full bg-white p-1 text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#4309ac] focus:ring-offset-2"
-                            >
+                            <Menu.Button className="relative rounded-full bg-white p-1 text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#4309ac] focus:ring-offset-2">
                                 <span className="sr-only">View notifications</span>
                                 <BellIcon className="h-6 w-6" aria-hidden="true" />
                                 {unreadCount > 0 && (
@@ -337,13 +364,13 @@ export default function AdminHeader() {
                                             <div className="text-sm font-semibold text-gray-900">Notifications</div>
                                             <div className="mt-0.5 text-xs text-gray-500">Recent admin activity</div>
                                         </div>
-                                    <button
-                                        type="button"
-                                        onClick={markNotificationsAsSeen}
-                                        className="rounded-md px-2 py-1 text-xs font-semibold text-[#4309ac] hover:bg-[#4309ac]/5"
-                                    >
-                                        Mark all as read
-                                    </button>
+                                        <button
+                                            type="button"
+                                            onClick={markNotificationsAsSeen}
+                                            className="rounded-md px-2 py-1 text-xs font-semibold text-[#4309ac] hover:bg-[#4309ac]/5"
+                                        >
+                                            Mark all as read
+                                        </button>
                                     </div>
                                 </div>
                                 {notifications.length === 0 ? (
@@ -351,12 +378,15 @@ export default function AdminHeader() {
                                 ) : (
                                     <div>
                                         {todayNotifications.length > 0 && (
-                                            <div className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Today</div>
+                                            <div className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                                                Today
+                                            </div>
                                         )}
                                         {todayNotifications.map((item) => {
                                             const typeUi = getNotificationTypeUi(item.type);
                                             const TypeIcon = typeUi.Icon;
-                                            const isUnread = getTimestampValue(item.timestamp) > getTimestampValue(lastSeenAt);
+                                            const isUnread =
+                                                getTimestampValue(item.timestamp) > getTimestampValue(lastSeenAt);
                                             return (
                                                 <Menu.Item key={item.id}>
                                                     {({ active }) => (
@@ -365,11 +395,16 @@ export default function AdminHeader() {
                                                             className={classNames(
                                                                 active ? 'bg-gray-50' : '',
                                                                 isUnread ? 'bg-[#4309ac]/[0.04]' : '',
-                                                                'group block border-b border-gray-50 px-4 py-3 transition-colors'
+                                                                'group block border-b border-gray-50 px-4 py-3 transition-colors',
                                                             )}
                                                         >
                                                             <div className="flex items-start gap-3">
-                                                                <div className={classNames('mt-0.5 flex h-9 w-9 items-center justify-center rounded-full', typeUi.iconClasses)}>
+                                                                <div
+                                                                    className={classNames(
+                                                                        'mt-0.5 flex h-9 w-9 items-center justify-center rounded-full',
+                                                                        typeUi.iconClasses,
+                                                                    )}
+                                                                >
                                                                     <TypeIcon className="h-5 w-5" aria-hidden="true" />
                                                                 </div>
 
@@ -382,15 +417,19 @@ export default function AdminHeader() {
                                                                             <span
                                                                                 className={classNames(
                                                                                     'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold',
-                                                                                    typeUi.classes
+                                                                                    typeUi.classes,
                                                                                 )}
                                                                             >
                                                                                 {typeUi.label}
                                                                             </span>
-                                                                            {isUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600" />}
+                                                                            {isUnread && (
+                                                                                <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600" />
+                                                                            )}
                                                                         </div>
                                                                     </div>
-                                                                    <p className="mt-1 text-xs text-gray-500">{formatTimestamp(item.timestamp)}</p>
+                                                                    <p className="mt-1 text-xs text-gray-500">
+                                                                        {formatTimestamp(item.timestamp)}
+                                                                    </p>
                                                                 </div>
                                                             </div>
                                                         </Link>
@@ -400,12 +439,15 @@ export default function AdminHeader() {
                                         })}
 
                                         {earlierNotifications.length > 0 && (
-                                            <div className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Earlier</div>
+                                            <div className="px-4 pt-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                                                Earlier
+                                            </div>
                                         )}
                                         {earlierNotifications.map((item) => {
                                             const typeUi = getNotificationTypeUi(item.type);
                                             const TypeIcon = typeUi.Icon;
-                                            const isUnread = getTimestampValue(item.timestamp) > getTimestampValue(lastSeenAt);
+                                            const isUnread =
+                                                getTimestampValue(item.timestamp) > getTimestampValue(lastSeenAt);
                                             return (
                                                 <Menu.Item key={item.id}>
                                                     {({ active }) => (
@@ -414,11 +456,16 @@ export default function AdminHeader() {
                                                             className={classNames(
                                                                 active ? 'bg-gray-50' : '',
                                                                 isUnread ? 'bg-[#4309ac]/[0.04]' : '',
-                                                                'group block border-b border-gray-50 px-4 py-3 transition-colors'
+                                                                'group block border-b border-gray-50 px-4 py-3 transition-colors',
                                                             )}
                                                         >
                                                             <div className="flex items-start gap-3">
-                                                                <div className={classNames('mt-0.5 flex h-9 w-9 items-center justify-center rounded-full', typeUi.iconClasses)}>
+                                                                <div
+                                                                    className={classNames(
+                                                                        'mt-0.5 flex h-9 w-9 items-center justify-center rounded-full',
+                                                                        typeUi.iconClasses,
+                                                                    )}
+                                                                >
                                                                     <TypeIcon className="h-5 w-5" aria-hidden="true" />
                                                                 </div>
 
@@ -431,15 +478,19 @@ export default function AdminHeader() {
                                                                             <span
                                                                                 className={classNames(
                                                                                     'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold',
-                                                                                    typeUi.classes
+                                                                                    typeUi.classes,
                                                                                 )}
                                                                             >
                                                                                 {typeUi.label}
                                                                             </span>
-                                                                            {isUnread && <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600" />}
+                                                                            {isUnread && (
+                                                                                <span className="h-2 w-2 shrink-0 rounded-full bg-blue-600" />
+                                                                            )}
                                                                         </div>
                                                                     </div>
-                                                                    <p className="mt-1 text-xs text-gray-500">{formatTimestamp(item.timestamp)}</p>
+                                                                    <p className="mt-1 text-xs text-gray-500">
+                                                                        {formatTimestamp(item.timestamp)}
+                                                                    </p>
                                                                 </div>
                                                             </div>
                                                         </Link>
@@ -479,7 +530,7 @@ export default function AdminHeader() {
                                             onClick={logout}
                                             className={classNames(
                                                 active ? 'bg-gray-100' : '',
-                                                'block w-full px-4 py-2 text-left text-sm text-gray-700'
+                                                'block w-full px-4 py-2 text-left text-sm text-gray-700',
                                             )}
                                         >
                                             Sign out

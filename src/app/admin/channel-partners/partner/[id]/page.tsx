@@ -16,6 +16,8 @@ import {
   CheckCircle,
   ChevronLeft,
   ChevronRight,
+  Clock3,
+  Route,
 } from "lucide-react";
 import {
   AdminLedgerUser,
@@ -85,6 +87,45 @@ function isRequestCanceled(error: unknown) {
 
 function searchable(value: unknown) {
   return String(value || "").toLowerCase();
+}
+
+function firstReadable(...values: Array<string | null | undefined>) {
+  return values.find((value) => {
+    const trimmed = String(value || "").trim();
+    return trimmed && !/^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(trimmed);
+  }) || "";
+}
+
+function parseDistanceKm(value?: string | number | null) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (!value) return null;
+  const match = String(value).replace(/,/g, "").match(/-?\d+(\.\d+)?/);
+  return match ? Number(match[0]) : null;
+}
+
+function tripProgress(row: ChannelPartnerTripPayload) {
+  const traveled = parseDistanceKm(row.lastLocation?.distanceTravel);
+  const total = parseDistanceKm(row.lastLocation?.totalDistance);
+  if (traveled !== null && total && total > 0) {
+    return Math.max(0, Math.min(100, Math.round((traveled / total) * 100)));
+  }
+
+  const remaining = parseDistanceKm(row.lastLocation?.distanceRemained);
+  if (remaining !== null && total && total > 0) {
+    return Math.max(0, Math.min(100, Math.round(((total - remaining) / total) * 100)));
+  }
+
+  const status = String(row.status || "").toUpperCase();
+  if (status === "ENDED" || status === "COMPLETED") return 100;
+  if (status === "ACTIVE" || status === "IN_PROGRESS") return 50;
+  return 0;
+}
+
+function tripProgressDetail(row: ChannelPartnerTripPayload) {
+  return [
+    row.lastLocation?.distanceRemained ? `${row.lastLocation.distanceRemained} left` : "",
+    row.lastLocation?.timeRemained || "",
+  ].filter(Boolean).join(" · ");
 }
 
 export default function PartnerDetailPage() {
@@ -1110,27 +1151,55 @@ function TrackingTable({ rows }: { rows: ChannelPartnerTripPayload[] }) {
       <thead className="bg-slate-50/70 border-b border-slate-200/60 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
         <tr>
           <Th>Vehicle</Th>
-          <Th>Invoice</Th>
           <Th>Route</Th>
-          <Th>Status</Th>
-          <Th>Last Location</Th>
-          <Th>Updated</Th>
+          <Th>Trip Progress</Th>
+          <Th>Current Location</Th>
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
-        {rows.map((row) => (
-          <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
-            <Td className="font-semibold text-slate-900">{row.vehicleNumber || "Vehicle pending"}</Td>
-            <Td className="text-slate-600 font-semibold">{row.invoice?.invoiceNumber || "-"}</Td>
-            <Td className="text-slate-700">
-              {row.src || "-"} <span className="text-slate-400 mx-1">→</span> {row.dest || "-"}
-            </Td>
-            <Td><StatusPill status={row.status} /></Td>
-            <Td className="max-w-md truncate text-slate-500">{row.lastLocation?.address || "Latest location unavailable"}</Td>
-            <Td className="text-slate-500">{formatDate(row.updatedAt)}</Td>
-          </tr>
-        ))}
-        {!rows.length ? <EmptyRow colSpan={6} label="No trips match this view." /> : null}
+        {rows.map((row) => {
+          const source = firstReadable(row.sourceName, row.src) || "Pickup point";
+          const destination = firstReadable(row.destinationName, row.dest) || "Delivery point";
+          const progress = tripProgress(row);
+          const detail = tripProgressDetail(row);
+          return (
+            <tr key={row.id} className="hover:bg-slate-50/50 transition-colors">
+              <Td>
+                <p className="font-semibold text-slate-900">{row.vehicleNumber || "Vehicle pending"}</p>
+                <p className="text-xs text-slate-500">{row.invoice?.invoiceNumber || "Invoice pending"}</p>
+              </Td>
+              <Td className="min-w-[18rem]">
+                <div className="flex items-start gap-2">
+                  <Route className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+                  <div>
+                    <p className="font-semibold text-slate-800">{source}</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500">to {destination}</p>
+                  </div>
+                </div>
+              </Td>
+              <Td className="min-w-[14rem]">
+                <div className="flex items-center justify-between gap-3">
+                  <StatusPill status={row.status} />
+                  <span className="text-sm font-bold text-slate-900">{progress}%</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${progress}%` }} />
+                </div>
+                {detail ? <p className="mt-1 text-xs text-slate-500">{detail}</p> : null}
+              </Td>
+              <Td className="max-w-sm">
+                <p className="truncate font-medium text-slate-700">{row.lastLocation?.address || "Current location pending"}</p>
+                {row.lastLocation?.timeRecorded ? (
+                  <p className="mt-1 inline-flex items-center gap-1 text-xs text-slate-500">
+                    <Clock3 className="h-3.5 w-3.5" />
+                    {formatDate(row.lastLocation.timeRecorded)}
+                  </p>
+                ) : null}
+              </Td>
+            </tr>
+          );
+        })}
+        {!rows.length ? <EmptyRow colSpan={4} label="No trips match this view." /> : null}
       </tbody>
     </Table>
   );

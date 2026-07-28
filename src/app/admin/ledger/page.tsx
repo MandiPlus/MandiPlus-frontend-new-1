@@ -25,6 +25,8 @@ type GcaAggregateLedgerRow = {
   totalPremiumAmount: number;
   totalPaidAmount: number;
   totalPendingAmount: number;
+  paidCount: number;
+  pendingCount: number;
   ledger: AdminMasterLedgerPayload;
 };
 
@@ -66,6 +68,9 @@ function getPaymentBadgeClasses(status?: string | null) {
   }
   if (normalized === 'REFUNDED') {
     return 'border-slate-200 bg-slate-100 text-slate-700';
+  }
+  if (normalized === 'NOT_REQUIRED') {
+    return 'border-slate-200 bg-slate-50 text-slate-700';
   }
   return 'border-sky-200 bg-sky-50 text-sky-700';
 }
@@ -322,6 +327,8 @@ export default function AdminLedgerPage() {
             totalPremiumAmount: row.totalPremiumAmount,
             totalPaidAmount: row.totalPaidAmount,
             totalPendingAmount: row.totalPendingAmount,
+            paidCount: row.paidCount,
+            pendingCount: row.pendingCount,
             ledger: null as any,
           }));
 
@@ -448,9 +455,8 @@ export default function AdminLedgerPage() {
           totalPaidAmount: accumulator.totalPaidAmount + row.totalPaidAmount,
           totalPendingAmount:
             accumulator.totalPendingAmount + row.totalPendingAmount,
-          paidCount: accumulator.paidCount + row.ledger.summary.paidCount,
-          pendingCount:
-            accumulator.pendingCount + row.ledger.summary.pendingCount,
+          paidCount: accumulator.paidCount + row.paidCount,
+          pendingCount: accumulator.pendingCount + row.pendingCount,
         }),
         {
           totalInvoices: 0,
@@ -790,8 +796,10 @@ export default function AdminLedgerPage() {
                     <option value="ALL">All</option>
                     <option value="PAID">Paid</option>
                     <option value="PENDING">Pending</option>
+                    <option value="PARTIAL">Partial</option>
                     <option value="FAILED">Failed</option>
                     <option value="REFUNDED">Refunded</option>
+                    <option value="NOT_REQUIRED">Not Required</option>
                   </select>
                 </label>
               </div>

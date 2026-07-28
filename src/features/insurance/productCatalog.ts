@@ -2,6 +2,7 @@ export const itemsData = [
     { name: "Tender Coconut", hsn: "08011910" },
     { name: "Kiwi", hsn: "08105000" },
     { name: "Mango", hsn: "08045020" },
+    { name: "Banana", hsn: "08039010" },
     { name: "Papaya (Papita)", hsn: "08072000" },
     { name: "Pomegranate (Anar)", hsn: "08109010" },
     { name: "Oranges", hsn: "08051000" },

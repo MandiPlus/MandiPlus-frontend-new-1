@@ -128,7 +128,7 @@ interface AiSummaryData {
 
 export default function TeamDailyLogsPage() {
   const router = useRouter();
-  const { isAuthenticated, loading: authLoading } = useAdmin();
+  const { isAuthenticated, loading: authLoading, accessProfile } = useAdmin();
   const [adminEmail, setAdminEmail] = useState('');
 
   useEffect(() => {
@@ -137,7 +137,9 @@ export default function TeamDailyLogsPage() {
     }
   }, [isAuthenticated]);
 
-  const isAllowedAdmin = ['admin@mandiplus.com', 'om@mandiplus.com'].includes(adminEmail);
+  const isAllowedAdmin =
+    Boolean(accessProfile?.isFullAdmin) ||
+    ['admin@mandiplus.com', 'om@mandiplus.com'].includes(adminEmail);
 
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -296,8 +298,8 @@ export default function TeamDailyLogsPage() {
   };
 
   useEffect(() => {
-    if (isAuthenticated && isAllowedAdmin) fetchTeamData();
-  }, [isAuthenticated, isAllowedAdmin, filterDate, filterMember, filterCategory]);
+    if (isAuthenticated) fetchTeamData();
+  }, [isAuthenticated, filterDate, filterMember, filterCategory]);
 
   const uniqueMembers = useMemo(() => {
     const map = new Map<string, string>();

@@ -384,9 +384,9 @@ export default function AnalyticsDashboardPage() {
             return;
         }
 
-        const fetchLiveData = async () => {
+        const fetchLiveData = async (silent = false) => {
             try {
-                setLoading(true);
+                if (!silent) setLoading(true);
                 setError('');
 
                 const token = localStorage.getItem('adminToken');
@@ -468,15 +468,22 @@ export default function AnalyticsDashboardPage() {
                 });
             } catch {
                 setError('Failed to load analytics from database.');
-                setRecords([]);
-                setComparisonRecords([]);
-                setClaimRecords([]);
+                if (!silent) {
+                    setRecords([]);
+                    setComparisonRecords([]);
+                    setClaimRecords([]);
+                }
             } finally {
-                setLoading(false);
+                if (!silent) setLoading(false);
             }
         };
 
         fetchLiveData();
+        const refreshId = window.setInterval(() => {
+            fetchLiveData(true);
+        }, 30000);
+
+        return () => window.clearInterval(refreshId);
     }, [isAuthenticated, router, fromDate, toDate, supplier, buyer]);
 
     const filteredRecords = useMemo(() => {

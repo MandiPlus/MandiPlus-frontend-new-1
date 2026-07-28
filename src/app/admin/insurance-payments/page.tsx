@@ -30,6 +30,7 @@ const PAYMENT_STATUS_OPTIONS = [
   'PARTIAL',
   'FAILED',
   'REFUNDED',
+  'NOT_REQUIRED',
 ];
 const PAYMENT_METHOD_OPTIONS = [
   'BULK',
@@ -97,7 +98,7 @@ function getPaymentStatusBadgeClasses(status?: string | null) {
     return 'border-slate-200 bg-slate-50 text-slate-700';
   }
   if (normalized === 'NOT_REQUIRED') {
-    return 'border-red-200 bg-red-50 text-red-700';
+    return 'border-slate-200 bg-slate-50 text-slate-700';
   }
   return 'border-red-200 bg-red-50 text-red-700';
 }
@@ -165,6 +166,8 @@ function getEffectivePaidAmount(row: InsurancePaymentRow): number {
 }
 
 function getEffectiveBalance(row: InsurancePaymentRow): number {
+  const status = String(row.paymentStatus || '').toUpperCase();
+  if (status !== 'PENDING' && status !== 'PARTIAL') return 0;
   const premium = Number(row.premiumAmount || 0);
   const paid = getEffectivePaidAmount(row);
   return Math.max(premium - paid, 0);

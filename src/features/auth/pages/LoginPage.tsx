@@ -3,10 +3,11 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { ArrowLeft } from "lucide-react";
 import { checkUser, sendOtp, verifyOtp } from "@/features/auth/api";
+import { useWebOtp } from "@/features/auth/hooks/useWebOtp";
 import { useAuth } from "../context/AuthContext";
 
 const getErrorMessage = (error: unknown, fallback: string) => {
@@ -23,6 +24,7 @@ const LoginPage = () => {
   const [mobileNumber, setMobileNumber] = useState("");
   const [otp, setOtp] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
+  const verificationInFlightRef = useRef(false);
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -49,38 +51,18 @@ const LoginPage = () => {
     }
   }, [resendCooldown, mobileNumber]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
+  const verifyOtpAndLogin = useCallback(
+    async (code: string) => {
+      if (verificationInFlightRef.current) return;
+      if (code.length !== 6) {
+        toast.error("6 digit OTP daalo");
+        return;
+      }
 
-    try {
-      if (step === "PHONE") {
-        if (mobileNumber.length !== 10) {
-          toast.error("10 digit mobile number daalo");
-          setIsLoading(false);
-          return;
-        }
-
-        const userCheck = await checkUser({ mobileNumber });
-        if (!userCheck.exists) {
-          toast.info("Naya user hai. Signup complete karo.");
-          router.push(`/register?mobile=${mobileNumber}`);
-          setIsLoading(false);
-          return;
-        }
-
-        await sendOtp({ mobileNumber });
-        setStep("OTP");
-        setResendCooldown(30);
-        toast.success(`OTP ${mobileNumber} par bhej diya`);
-      } else {
-        if (otp.length !== 6) {
-          toast.error("6 digit OTP daalo");
-          setIsLoading(false);
-          return;
-        }
-
-        const response = await verifyOtp({ mobileNumber, otp });
+      verificationInFlightRef.current = true;
+      setIsLoading(true);
+      try {
+        const response = await verifyOtp({ mobileNumber, otp: code });
 
         if (response.next === "REGISTER") {
           toast.info("Naya user hai. Signup complete karo.");
@@ -93,7 +75,51 @@ const LoginPage = () => {
             toast.error("Login failed: access token missing");
           }
         }
+      } catch (error: unknown) {
+        toast.error(getErrorMessage(error, "Kuch error aaya"));
+      } finally {
+        verificationInFlightRef.current = false;
+        setIsLoading(false);
       }
+    },
+    [login, mobileNumber, router],
+  );
+
+  useWebOtp({
+    enabled: step === "OTP" && !isLoading,
+    onCode: (code) => {
+      setOtp(code);
+      void verifyOtpAndLogin(code);
+    },
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (step === "OTP") {
+      await verifyOtpAndLogin(otp);
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      if (mobileNumber.length !== 10) {
+        toast.error("10 digit mobile number daalo");
+        return;
+      }
+
+      const userCheck = await checkUser({ mobileNumber });
+      if (!userCheck.exists) {
+        toast.info("Naya user hai. Signup complete karo.");
+        router.push(`/register?mobile=${mobileNumber}`);
+        return;
+      }
+
+      await sendOtp({ mobileNumber });
+      setStep("OTP");
+      setResendCooldown(30);
+      toast.success(`OTP ${mobileNumber} par bhej diya`);
     } catch (error: unknown) {
       toast.error(getErrorMessage(error, "Kuch error aaya"));
     } finally {

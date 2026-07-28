@@ -18,7 +18,7 @@ import {
 
 type Coord = { lat: number; lng: number };
 
-const TripLeafletMap = dynamic(() => import('@/components/maps/TripLeafletMap'), {
+const TripGoogleMap = dynamic(() => import('@/components/maps/TripGoogleMap'), {
   ssr: false,
   loading: () => (
     <div className="flex h-full items-center justify-center p-6 text-sm text-slate-600">
@@ -930,7 +930,7 @@ export default function AdminTripsPage() {
 
             <div className="min-h-[420px] flex-1 bg-white p-4">
               <div className="h-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
-                <TripLeafletMap
+                <TripGoogleMap
                   center={trackCenter}
                   current={trackCurrent}
                   source={trackSource}

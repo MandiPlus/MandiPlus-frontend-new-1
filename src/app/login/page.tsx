@@ -1,4 +1,5 @@
-import LoginPage from "@/features/auth/pages/LoginPage";
+import { redirect } from "next/navigation";
+
 export default function Page() {
-    return <LoginPage />;
+  redirect("/register");
 }

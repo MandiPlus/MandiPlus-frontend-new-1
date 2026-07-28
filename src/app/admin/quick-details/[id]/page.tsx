@@ -1,20 +1,25 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeftIcon,
+  ArrowPathIcon,
+  ArrowTopRightOnSquareIcon,
+  CheckCircleIcon,
   DocumentTextIcon,
+  MagnifyingGlassPlusIcon,
   MicrophoneIcon,
   PaperClipIcon,
   TrashIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { toast } from 'react-toastify';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import {
   AdminLedgerUser,
   AdminQuickDetail,
-  AdminQuickDetailMedia,
+  AdminQuickDetailAutofillResult,
   adminApi,
 } from '@/features/admin/api/admin.api';
 import { getHsnForProduct, itemsData } from '@/features/insurance/productCatalog';
@@ -25,6 +30,8 @@ type InvoiceKind = 'cash' | 'commission';
 type QuickInvoiceForm = {
   invoiceKind: InvoiceKind;
   insuredUserId: string;
+  supplierUserId: string;
+  buyerUserId: string;
   invoiceDate: string;
   supplierName: string;
   supplierAddress: string;
@@ -52,6 +59,8 @@ const labelClass = 'block text-xs font-bold uppercase tracking-wide text-slate-6
 const emptyForm = (): QuickInvoiceForm => ({
   invoiceKind: 'cash',
   insuredUserId: '',
+  supplierUserId: '',
+  buyerUserId: '',
   invoiceDate: new Date().toISOString().slice(0, 10),
   supplierName: '',
   supplierAddress: '',
@@ -146,6 +155,7 @@ function applyInsuredUser(form: QuickInvoiceForm, user: AdminLedgerUser | null):
   if (form.invoiceKind === 'cash') {
     return {
       ...base,
+      buyerUserId: user?.id || '',
       billToName: user?.name || '',
       billToAddress: address,
       shipToName: user?.name || '',
@@ -154,79 +164,157 @@ function applyInsuredUser(form: QuickInvoiceForm, user: AdminLedgerUser | null):
   }
   return {
     ...base,
+    supplierUserId: user?.id || '',
     supplierName: user?.name || '',
     supplierAddress: address,
   };
 }
 
-function MediaTile({ media }: { media: AdminQuickDetailMedia }) {
-  if (media.kind === 'image') {
-    return (
-      <a href={media.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-slate-200 bg-white">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={media.url} alt={media.name || 'Quick detail image'} className="h-40 w-full object-cover" />
-      </a>
-    );
-  }
-
-  if (media.kind === 'audio') {
-    return (
-      <div className="rounded-lg border border-slate-200 bg-white p-3">
-        <div className="mb-2 flex items-center gap-2 text-xs font-bold text-slate-600">
-          <MicrophoneIcon className="h-4 w-4" />
-          Voice note
-        </div>
-        <audio controls src={media.url} className="w-full" />
-      </div>
-    );
-  }
-
-  return (
-    <a
-      href={media.url}
-      target="_blank"
-      rel="noreferrer"
-      className="flex min-h-20 items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 text-sm font-bold text-slate-800 hover:bg-slate-50"
-    >
-      <DocumentTextIcon className="h-5 w-5 shrink-0 text-slate-500" />
-      <span className="min-w-0 truncate">{media.name || (media.kind === 'pdf' ? 'PDF' : 'File')}</span>
-    </a>
-  );
+function isPresent(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0;
+  return String(value ?? '').trim() !== '';
 }
 
-function DetailField({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-black text-slate-900">{value || '-'}</p>
-    </div>
+function normalizeLookup(value: unknown) {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function canonicalProduct(value: unknown, hsn: unknown) {
+  const hsnText = String(hsn ?? '').trim();
+  const byHsn = itemsData.find((item) => item.hsn === hsnText);
+  if (byHsn) return byHsn;
+
+  const wanted = normalizeLookup(value);
+  if (!wanted) return null;
+  const exact = itemsData.find((item) => normalizeLookup(item.name) === wanted);
+  if (exact) return exact;
+  return itemsData
+    .map((item) => ({ item, candidate: normalizeLookup(item.name) }))
+    .filter(({ candidate }) => candidate.length >= 4 && (candidate.includes(wanted) || wanted.includes(candidate)))
+    .sort((left, right) => right.candidate.length - left.candidate.length)[0]?.item || null;
+}
+
+function onboardingProduct(code: unknown) {
+  const names: Record<string, string> = {
+    TENDER_COCONUT: 'Tender Coconut',
+    TOMATO: 'Tomato',
+    MANGO: 'Mango',
+    BANANA: 'Banana',
+    ONION: 'Onion',
+    POTATO: 'Potato',
+    POMEGRANATE: 'Pomegranate (Anar)',
+  };
+  return canonicalProduct(names[String(code || '')] || '', '');
+}
+
+function toDateInput(value: unknown) {
+  const text = String(value ?? '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const match = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (!match) return '';
+  return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
+}
+
+function mapAutofillDraft(
+  raw: Record<string, unknown>,
+  users: AdminLedgerUser[],
+): Partial<QuickInvoiceForm> {
+  const invoiceType = String(raw.invoice_type || raw.notes || '').toUpperCase();
+  const invoiceKind: InvoiceKind = invoiceType.includes('SUPPLIER') || invoiceType.includes('COMMISSION')
+    ? 'commission'
+    : 'cash';
+  const product = canonicalProduct(raw.commodity || raw.product_name, raw.hsn_code);
+  const suggestedUserId = String(
+    raw.customer_user_id || raw.customerUserId || (invoiceKind === 'cash' ? raw.buyer_id : raw.seller_id) || '',
   );
+  const insuredUserId = users.some((user) => user.id === suggestedUserId) ? suggestedUserId : '';
+  const buyerUserId = String(raw.buyer_id || '');
+  const supplierUserId = String(raw.seller_id || raw.supplier_id || '');
+
+  return {
+    invoiceKind,
+    ...(insuredUserId ? { insuredUserId } : {}),
+    ...(users.some((user) => user.id === buyerUserId) ? { buyerUserId } : {}),
+    ...(users.some((user) => user.id === supplierUserId) ? { supplierUserId } : {}),
+    invoiceDate: toDateInput(raw.invoice_date),
+    supplierName: String(raw.seller_name || raw.supplier_name || ''),
+    supplierAddress: String(raw.supplier_address || ''),
+    placeOfSupply: String(raw.place_of_supply || ''),
+    billToName: String(raw.buyer_name || ''),
+    billToAddress: String(raw.buyer_address || ''),
+    shipToName: String(raw.buyer_name || ''),
+    shipToAddress: String(raw.buyer_address || ''),
+    productName: product?.name || '',
+    hsnCode: product?.hsn || String(raw.hsn_code || ''),
+    quantity: isPresent(raw.quantity) ? String(raw.quantity) : '',
+    rate: isPresent(raw.rate) ? String(raw.rate) : '',
+    vehicleNumber: String(raw.vehicle_number || raw.truck_number || ''),
+    ownerName: String(raw.owner_name || ''),
+    insuredPartyPhone: String(raw.insured_party_phone || raw.buyer_phone || raw.seller_phone || ''),
+    driverPhone: String(raw.driver_phone || ''),
+    driverSecondaryPhone: String(raw.driver_secondary_phone || ''),
+  };
+}
+
+function productSourceLabel(source: unknown) {
+  const value = String(source || '');
+  if (value === 'customer_quick_detail_selection') return 'Selected by customer';
+  if (value === 'onboarding_primary_commodity') return 'From customer onboarding';
+  if (value === 'document_extraction') return 'Read from uploaded details';
+  if (value === 'customer_invoice_profile') return 'From saved invoice profile';
+  if (value.includes('history') || value.includes('learning')) return 'From verified invoice history';
+  if (value) return 'Matched to product catalogue';
+  return '';
 }
 
 export default function AdminQuickDetailDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { isAuthenticated, loading: authLoading, canAccessSection } = useAdmin();
+  const canAccessQuickDetails = canAccessSection('app-quick-details');
   const [detail, setDetail] = useState<AdminQuickDetail | null>(null);
   const [verifiedUsers, setVerifiedUsers] = useState<AdminLedgerUser[]>([]);
   const [form, setForm] = useState<QuickInvoiceForm>(() => emptyForm());
   const [weighmentSlips, setWeighmentSlips] = useState<File[]>([]);
+  const [activeMediaIndex, setActiveMediaIndex] = useState(0);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [autofillStatus, setAutofillStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
+  const [autofillMessage, setAutofillMessage] = useState('');
+  const [autofillRequested, setAutofillRequested] = useState(false);
+  const [persistedAutofill, setPersistedAutofill] = useState<AdminQuickDetailAutofillResult | null>(null);
+  const [productAutofillSource, setProductAutofillSource] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dirtyFieldsRef = useRef(new Set<keyof QuickInvoiceForm>());
+  const appliedAutofillRef = useRef('');
 
   const selectedInsuredUser = useMemo(
     () => verifiedUsers.find((user) => user.id === form.insuredUserId) || null,
     [form.insuredUserId, verifiedUsers],
   );
+  const invoiceAttachmentUrls = useMemo(
+    () => (detail?.media || [])
+      .filter((media) => media.kind === 'image' || media.kind === 'pdf')
+      .map((media) => media.url),
+    [detail?.media],
+  );
+  const activeMedia = detail?.media?.[activeMediaIndex] || detail?.media?.[0] || null;
 
-  const updateForm = (patch: Partial<QuickInvoiceForm>) => {
+  const updateForm = (patch: Partial<QuickInvoiceForm>, markDirty = true) => {
+    if (markDirty) {
+      Object.keys(patch).forEach((field) => dirtyFieldsRef.current.add(field as keyof QuickInvoiceForm));
+    }
     setForm((current) => ({ ...current, ...patch }));
   };
 
   const loadPage = useCallback(async () => {
-    if (!isAuthenticated || !canAccessSection('app-quick-details') || !params?.id) return;
+    if (!isAuthenticated || !canAccessQuickDetails || !params?.id) return;
     setLoading(true);
     setError(null);
     const [detailResponse, usersResponse] = await Promise.all([
@@ -247,21 +335,131 @@ export default function AdminQuickDetailDetailPage() {
       : [];
 
     const matchedUser = users.find((user) => user.id === detailResponse.data?.user?.id) || null;
+    const primaryProduct = canonicalProduct(detailResponse.data?.commodity, '') || onboardingProduct(
+      detailResponse.data?.user?.primaryCommodityCode,
+    );
+    dirtyFieldsRef.current.clear();
+    appliedAutofillRef.current = '';
+    setProductAutofillSource(
+      detailResponse.data?.commodity
+        ? 'Selected by customer'
+        : primaryProduct
+          ? 'From customer onboarding'
+          : '',
+    );
     setVerifiedUsers(users);
     setDetail(detailResponse.data);
-    setForm((current) => applyInsuredUser(current, matchedUser));
+    setPersistedAutofill(detailResponse.data.autofill || null);
+    setForm((current) => ({
+      ...applyInsuredUser(current, matchedUser),
+      ...(primaryProduct
+        ? { productName: primaryProduct.name, hsnCode: primaryProduct.hsn }
+        : {}),
+    }));
     setLoading(false);
-  }, [canAccessSection, isAuthenticated, params?.id]);
+  }, [canAccessQuickDetails, isAuthenticated, params?.id]);
 
   useEffect(() => {
     void loadPage();
   }, [loadPage]);
 
+  useEffect(() => {
+    if (!autofillRequested) {
+      setAutofillStatus('idle');
+      setAutofillMessage('');
+      return;
+    }
+
+    if (!persistedAutofill) {
+      setAutofillStatus('idle');
+      setAutofillMessage('');
+      return;
+    }
+
+    if (persistedAutofill.status === 'completed' && persistedAutofill.draft) {
+      const resultKey = `${persistedAutofill.fingerprint || detail?.id || ''}:${persistedAutofill.completedAt || ''}`;
+      if (appliedAutofillRef.current !== resultKey) {
+        const patch = mapAutofillDraft(persistedAutofill.draft, verifiedUsers);
+        const productResolution = persistedAutofill.suggestions?.productResolution as
+          | { source?: unknown }
+          | undefined;
+        setProductAutofillSource((current) => productSourceLabel(productResolution?.source) || current);
+        let appliedCount = 0;
+        setForm((current) => {
+          const next = { ...current };
+          (Object.entries(patch) as Array<[keyof QuickInvoiceForm, string]>).forEach(([field, value]) => {
+            if (!isPresent(value) || dirtyFieldsRef.current.has(field)) return;
+            if (String(next[field] ?? '') !== String(value)) appliedCount += 1;
+            (next[field] as string) = value;
+          });
+          return next;
+        });
+        appliedAutofillRef.current = resultKey;
+        setAutofillMessage(
+          persistedAutofill.attachmentsRead > 0
+            ? `Saved document result applied${appliedCount ? ` to ${appliedCount} field${appliedCount === 1 ? '' : 's'}` : ''}.`
+            : 'Saved customer details applied. Review the remaining fields.',
+        );
+      }
+      setAutofillStatus('done');
+      return;
+    }
+
+    if (persistedAutofill.status === 'failed') {
+      setAutofillStatus('error');
+      setAutofillMessage(persistedAutofill.error || 'Background autofill could not finish. You can retry or continue manually.');
+      return;
+    }
+
+    setAutofillStatus('loading');
+    setAutofillMessage(
+      persistedAutofill.status === 'processing'
+        ? 'Reading the uploaded details in the background…'
+        : 'Autofill is queued and will appear here automatically.',
+    );
+  }, [autofillRequested, detail?.id, persistedAutofill, verifiedUsers]);
+
+  useEffect(() => {
+    if (!autofillRequested || !detail?.id || !persistedAutofill || !['not_started', 'pending', 'processing'].includes(persistedAutofill.status)) return;
+    let active = true;
+
+    const refreshSavedAutofill = async () => {
+      const response = await adminApi.getAdminQuickDetailAutofill(detail.id);
+      if (active && response.success && response.data) setPersistedAutofill(response.data);
+    };
+
+    const timer = window.setInterval(() => void refreshSavedAutofill(), 2500);
+    void refreshSavedAutofill();
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [autofillRequested, detail?.id, persistedAutofill]);
+
+  const fetchFromGemini = useCallback(async () => {
+    if (!detail?.id) return;
+    setAutofillRequested(true);
+    setAutofillStatus('loading');
+    setAutofillMessage('Fetching from Gemini…');
+
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+
+    const response = await adminApi.autofillAdminQuickDetail(detail.id);
+    if (!response.success || !response.data) {
+      setAutofillStatus('error');
+      setAutofillMessage(response.message || 'Could not fetch details. Try again.');
+      return;
+    }
+    setPersistedAutofill(response.data);
+  }, [detail?.id]);
+
   const handleProductChange = (productName: string) => {
+    setProductAutofillSource(productName ? 'Selected by admin' : '');
     updateForm({ productName, hsnCode: getHsnForProduct(productName) });
   };
 
   const handleInvoiceKindChange = (invoiceKind: InvoiceKind) => {
+    dirtyFieldsRef.current.add('invoiceKind');
     setForm((current) => applyInsuredUser({ ...current, invoiceKind }, selectedInsuredUser));
   };
 
@@ -324,8 +522,8 @@ export default function AdminQuickDetailDetailPage() {
       const response = await adminApi.createAdminInvoice({
         userId: insuredUser.id,
         customerUserId: insuredUser.id,
-        buyerUserId: form.invoiceKind === 'cash' ? insuredUser.id : undefined,
-        supplierUserId: form.invoiceKind === 'commission' ? insuredUser.id : undefined,
+        buyerUserId: form.buyerUserId || (form.invoiceKind === 'cash' ? insuredUser.id : undefined),
+        supplierUserId: form.supplierUserId || (form.invoiceKind === 'commission' ? insuredUser.id : undefined),
         invoiceDate: form.invoiceDate,
         invoiceType: form.invoiceKind === 'cash' ? 'BUYER_INVOICE' : 'SUPPLIER_INVOICE',
         supplierName: form.supplierName.trim(),
@@ -349,6 +547,7 @@ export default function AdminQuickDetailDetailPage() {
         weighmentSlipNote: form.invoiceKind === 'cash' ? 'cash' : 'commission',
         sourceSurface: 'ADMIN_QUICK_DETAILS',
         weighmentSlips,
+        weighmentSlipUrls: invoiceAttachmentUrls,
       });
 
       if (!response.success) {
@@ -377,7 +576,7 @@ export default function AdminQuickDetailDetailPage() {
     router.push('/admin/quick-details');
   };
 
-  if (!authLoading && (!isAuthenticated || !canAccessSection('app-quick-details'))) {
+  if (!authLoading && (!isAuthenticated || !canAccessQuickDetails)) {
     return (
       <div className="p-4">
         <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700">
@@ -427,16 +626,64 @@ export default function AdminQuickDetailDetailPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">User sent details</p>
+            <p className="mt-2 whitespace-pre-wrap text-base font-semibold leading-7 text-slate-950">
+              {detail.details || 'No written note. Review the uploaded attachment.'}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 border-t border-slate-100 pt-3 text-sm lg:min-w-[360px] lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+            <div>
+              <p className="text-xs font-bold text-slate-500">Customer</p>
+              <p className="mt-0.5 font-bold text-slate-900">{detail.user?.name || 'Unknown user'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-500">Mobile</p>
+              <p className="mt-0.5 font-bold text-slate-900">{formatPhone(detail.user?.mobileNumber)}</p>
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-500">Identity</p>
+              <p className="mt-0.5 font-bold text-slate-900">{detail.user?.identity || '-'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-500">State</p>
+              <p className="mt-0.5 font-bold text-slate-900">{String(detail.user?.state || '-').replace(/_/g, ' ')}</p>
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-500">Commodity</p>
+              <p className="mt-0.5 font-bold text-slate-900">{detail.commodity || '-'}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(480px,0.92fr)]">
+        <section className="order-2 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
             <div>
-              <h2 className="text-lg font-black text-slate-950">Invoice form</h2>
-              <p className="mt-1 text-sm font-semibold text-slate-500">Same invoice fields used by the insurance flow.</p>
+              <h2 className="text-lg font-black text-slate-950">Invoice details</h2>
+              <p className="mt-1 text-sm font-semibold text-slate-500">Review and create the insurance invoice.</p>
             </div>
             <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black uppercase tracking-wide text-emerald-700">
               {form.invoiceKind === 'cash' ? 'Cash' : 'Commission'}
             </span>
+          </div>
+
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => void fetchFromGemini()}
+              disabled={autofillStatus === 'loading'}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-70"
+            >
+              <ArrowPathIcon className={`h-4 w-4 ${autofillStatus === 'loading' ? 'animate-spin' : ''}`} />
+              {autofillStatus === 'loading' ? 'Fetching from Gemini…' : 'Fetch from Gemini'}
+            </button>
+            {autofillStatus === 'error' ? (
+              <p className="mt-2 text-xs font-semibold text-amber-700">{autofillMessage}</p>
+            ) : null}
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -457,6 +704,8 @@ export default function AdminQuickDetailDetailPage() {
                 value={form.insuredUserId}
                 onChange={(event) => {
                   const user = verifiedUsers.find((item) => item.id === event.target.value) || null;
+                  ['insuredUserId', 'buyerUserId', 'supplierUserId', 'insuredPartyPhone', 'billToName', 'billToAddress', 'shipToName', 'shipToAddress', 'supplierName', 'supplierAddress']
+                    .forEach((field) => dirtyFieldsRef.current.add(field as keyof QuickInvoiceForm));
                   setForm((current) => applyInsuredUser(current, user));
                 }}
                 className={fieldClass}
@@ -487,11 +736,13 @@ export default function AdminQuickDetailDetailPage() {
             </label>
             <label className={labelClass}>
               Supplier name
-              <input value={form.supplierName} onChange={(event) => updateForm({ supplierName: event.target.value })} className={fieldClass} />
+              <input value={form.supplierName} onChange={(event) => updateForm({ supplierName: event.target.value, supplierUserId: '' })} className={fieldClass} />
+              {form.supplierUserId ? <span className="mt-1 flex items-center gap-1 text-xs font-semibold normal-case tracking-normal text-emerald-700"><CheckCircleIcon className="h-3.5 w-3.5" /> Verified supplier match</span> : null}
             </label>
             <label className={labelClass}>
               Bill to name
-              <input value={form.billToName} onChange={(event) => updateForm({ billToName: event.target.value })} className={fieldClass} />
+              <input value={form.billToName} onChange={(event) => updateForm({ billToName: event.target.value, buyerUserId: '' })} className={fieldClass} />
+              {form.buyerUserId ? <span className="mt-1 flex items-center gap-1 text-xs font-semibold normal-case tracking-normal text-emerald-700"><CheckCircleIcon className="h-3.5 w-3.5" /> Verified buyer match</span> : null}
             </label>
             <label className={`${labelClass} sm:col-span-2`}>
               Supplier address
@@ -517,6 +768,12 @@ export default function AdminQuickDetailDetailPage() {
                   <option key={item.name} value={item.name}>{item.name}</option>
                 ))}
               </select>
+              {productAutofillSource && form.productName ? (
+                <span className="mt-1 flex items-center gap-1 text-xs font-semibold normal-case tracking-normal text-emerald-700">
+                  <CheckCircleIcon className="h-3.5 w-3.5" />
+                  {productAutofillSource}
+                </span>
+              ) : null}
             </label>
             <label className={labelClass}>
               HSN
@@ -539,7 +796,7 @@ export default function AdminQuickDetailDetailPage() {
               <input value={form.ownerName} onChange={(event) => updateForm({ ownerName: event.target.value })} className={fieldClass} />
             </label>
             <label className={`${labelClass} sm:col-span-2`}>
-              Weighment slip / supporting files
+              Add another supporting file <span className="normal-case text-slate-400">(optional)</span>
               <input
                 type="file"
                 accept="image/*,application/pdf"
@@ -547,6 +804,12 @@ export default function AdminQuickDetailDetailPage() {
                 onChange={(event) => setWeighmentSlips(Array.from(event.target.files || []))}
                 className={fileFieldClass}
               />
+              {invoiceAttachmentUrls.length > 0 ? (
+                <span className="mt-2 flex items-center gap-1.5 text-xs font-semibold normal-case tracking-normal text-emerald-700">
+                  <CheckCircleIcon className="h-4 w-4" />
+                  {invoiceAttachmentUrls.length} user upload{invoiceAttachmentUrls.length === 1 ? '' : 's'} already attached as weighment slip.
+                </span>
+              ) : null}
             </label>
           </div>
 
@@ -571,42 +834,113 @@ export default function AdminQuickDetailDetailPage() {
           </div>
         </section>
 
-        <aside className="space-y-4">
-          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="text-lg font-black text-slate-950">User provided details</h2>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              <DetailField label="User" value={detail.user?.name || 'Unknown user'} />
-              <DetailField label="Mobile" value={formatPhone(detail.user?.mobileNumber)} />
-              <DetailField label="Identity" value={detail.user?.identity || '-'} />
-              <DetailField label="State" value={detail.user?.state || '-'} />
-              <DetailField label="Submitted" value={formatDateTime(detail.createdAt)} />
-              {detail.audioDurationMillis ? <DetailField label="Voice duration" value={formatDuration(detail.audioDurationMillis)} /> : null}
+        <aside className="order-1 space-y-4 xl:sticky xl:top-4 xl:self-start">
+          <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <PaperClipIcon className="h-5 w-5 text-slate-500" />
+                <div>
+                  <h2 className="text-base font-black text-slate-950">Uploaded proof</h2>
+                  <p className="text-xs font-semibold text-slate-500">
+                    {detail.media?.length || 0} attachment{detail.media?.length === 1 ? '' : 's'} · submitted {formatDateTime(detail.createdAt)}
+                  </p>
+                </div>
+              </div>
+              {invoiceAttachmentUrls.length > 0 ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">
+                  <CheckCircleIcon className="h-3.5 w-3.5" />
+                  Weighment slip attached
+                </span>
+              ) : null}
             </div>
-            {detail.details ? (
-              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Details</p>
-                <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-900">{detail.details}</p>
+
+            {activeMedia ? (
+              <div className="bg-slate-100 p-3">
+                <div className="relative flex h-[min(68vh,760px)] min-h-[460px] items-center justify-center overflow-hidden rounded-md border border-slate-200 bg-white">
+                  {activeMedia.kind === 'image' ? (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={activeMedia.url}
+                        alt={activeMedia.name || 'User uploaded invoice detail'}
+                        className="h-full w-full object-contain"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowImageModal(true)}
+                        className="absolute bottom-3 right-3 inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-xs font-bold text-slate-800 shadow-sm hover:bg-white"
+                      >
+                        <MagnifyingGlassPlusIcon className="h-4 w-4" />
+                        View larger
+                      </button>
+                    </>
+                  ) : activeMedia.kind === 'pdf' ? (
+                    <iframe src={activeMedia.url} title={activeMedia.name || 'Uploaded PDF'} className="h-full w-full" />
+                  ) : activeMedia.kind === 'audio' ? (
+                    <div className="w-full max-w-md p-6 text-center">
+                      <MicrophoneIcon className="mx-auto h-10 w-10 text-slate-400" />
+                      <p className="mt-3 text-sm font-bold text-slate-900">Voice note</p>
+                      {detail.audioDurationMillis ? <p className="mt-1 text-xs text-slate-500">{formatDuration(detail.audioDurationMillis)}</p> : null}
+                      <audio controls src={activeMedia.url} className="mt-5 w-full" />
+                    </div>
+                  ) : (
+                    <a href={activeMedia.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm font-bold text-slate-700 hover:text-slate-950">
+                      <DocumentTextIcon className="h-6 w-6" />
+                      Open {activeMedia.name || 'attachment'}
+                    </a>
+                  )}
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-3 px-1">
+                  <p className="min-w-0 truncate text-xs font-semibold text-slate-600">{activeMedia.name || 'Uploaded attachment'}</p>
+                  <a href={activeMedia.url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-slate-700 hover:text-slate-950">
+                    Open original <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <p className="p-6 text-sm font-bold text-slate-500">No attachments provided.</p>
+            )}
+
+            {(detail.media?.length || 0) > 1 ? (
+              <div className="flex gap-2 overflow-x-auto border-t border-slate-100 p-3">
+                {detail.media.map((media, index) => (
+                  <button
+                    key={`${detail.id}-${media.url}-${index}`}
+                    type="button"
+                    onClick={() => setActiveMediaIndex(index)}
+                    className={`h-16 w-20 shrink-0 overflow-hidden rounded-md border bg-white p-1 ${activeMediaIndex === index ? 'border-emerald-500 ring-2 ring-emerald-100' : 'border-slate-200'}`}
+                    aria-label={`View attachment ${index + 1}`}
+                  >
+                    {media.kind === 'image' ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={media.url} alt="" className="h-full w-full object-contain" />
+                    ) : media.kind === 'audio' ? (
+                      <MicrophoneIcon className="mx-auto h-full w-6 text-slate-500" />
+                    ) : (
+                      <DocumentTextIcon className="mx-auto h-full w-6 text-slate-500" />
+                    )}
+                  </button>
+                ))}
               </div>
             ) : null}
           </section>
-
-          <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center gap-2">
-              <PaperClipIcon className="h-5 w-5 text-slate-500" />
-              <h2 className="text-lg font-black text-slate-950">Attachments</h2>
-            </div>
-            {detail.media?.length ? (
-              <div className="mt-4 grid gap-3">
-                {detail.media.map((media, index) => (
-                  <MediaTile key={`${detail.id}-${media.url}-${index}`} media={media} />
-                ))}
-              </div>
-            ) : (
-              <p className="mt-3 text-sm font-bold text-slate-500">No attachments provided.</p>
-            )}
-          </section>
         </aside>
       </div>
+
+      {showImageModal && activeMedia?.kind === 'image' ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4" role="dialog" aria-modal="true" aria-label="Uploaded image preview">
+          <button
+            type="button"
+            onClick={() => setShowImageModal(false)}
+            className="absolute right-5 top-5 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+            aria-label="Close image preview"
+          >
+            <XMarkIcon className="h-6 w-6" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={activeMedia.url} alt={activeMedia.name || 'Uploaded image'} className="max-h-full max-w-full object-contain" />
+        </div>
+      ) : null}
     </div>
   );
 }

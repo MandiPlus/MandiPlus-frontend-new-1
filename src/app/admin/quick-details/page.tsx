@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowPathIcon,
@@ -136,6 +136,12 @@ function QuickDetailCard({
         </div>
       </div>
 
+      {row.commodity ? (
+        <p className="mt-3 inline-flex rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-800">
+          {row.commodity}
+        </p>
+      ) : null}
+
       {hasDetails ? (
         <p className={`mt-4 whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-sm font-semibold leading-6 text-slate-800 ${viewMode === 'grid' ? 'line-clamp-5' : ''}`}>
           {row.details}
@@ -178,33 +184,55 @@ export default function AdminQuickDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const refreshingRef = useRef(false);
 
-  const loadRows = useCallback(async () => {
-    if (!isAuthenticated || !canAccessSection('app-quick-details')) return;
-    setLoading(true);
-    setError(null);
-    const response = await adminApi.getAdminQuickDetails({
-      page,
-      limit: ITEMS_PER_PAGE,
-      search: search.trim() || undefined,
-      user: userFilter.trim() || undefined,
-      mobileNumber: mobileFilter.trim() || undefined,
-      startDate: startDate || undefined,
-      endDate: endDate || undefined,
-    });
-    if (response.success) {
-      setRows(response.data || []);
-      setTotal(response.total || 0);
-      setTotalPages(response.totalPages || 1);
-    } else {
-      setError(response.message || 'Failed to load quick details.');
+  const loadRows = useCallback(async (silent = false) => {
+    if (
+      !isAuthenticated ||
+      !canAccessSection('app-quick-details') ||
+      refreshingRef.current
+    ) return;
+    refreshingRef.current = true;
+    if (!silent) setLoading(true);
+    try {
+      const response = await adminApi.getAdminQuickDetails({
+        page,
+        limit: ITEMS_PER_PAGE,
+        search: search.trim() || undefined,
+        user: userFilter.trim() || undefined,
+        mobileNumber: mobileFilter.trim() || undefined,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+      });
+      if (response.success) {
+        setRows(response.data || []);
+        setTotal(response.total || 0);
+        setTotalPages(response.totalPages || 1);
+        setError(null);
+      } else if (!silent) {
+        setError(response.message || 'Failed to load quick details.');
+      }
+    } finally {
+      refreshingRef.current = false;
+      if (!silent) setLoading(false);
     }
-    setLoading(false);
   }, [canAccessSection, endDate, isAuthenticated, mobileFilter, page, search, startDate, userFilter]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadRows();
+  }, [loadRows]);
+
+  useEffect(() => {
+    const refreshVisiblePage = () => {
+      if (document.visibilityState === 'visible') void loadRows(true);
+    };
+    const intervalId = window.setInterval(refreshVisiblePage, 2500);
+    document.addEventListener('visibilitychange', refreshVisiblePage);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', refreshVisiblePage);
+    };
   }, [loadRows]);
 
   const deleteRow = async (row: AdminQuickDetail) => {

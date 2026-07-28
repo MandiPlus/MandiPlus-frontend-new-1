@@ -6,10 +6,12 @@ import { adminApi, AdminAccountRow } from '../api/admin.api';
 import { ADMIN_NAV_ITEMS } from '../access';
 import { useAdmin } from '../context/AdminContext';
 
-const assignableSections = ADMIN_NAV_ITEMS.map((item) => ({
-  value: item.section,
-  label: item.name,
-}));
+const assignableSections = ADMIN_NAV_ITEMS
+  .filter((item) => item.section !== 'app-invoices')
+  .map((item) => ({
+    value: item.section,
+    label: item.name,
+  }));
 const ALL_SECTION_VALUES = assignableSections.map((item) => item.value);
 const FULL_ACCESS_VALUE = '__full_access__';
 

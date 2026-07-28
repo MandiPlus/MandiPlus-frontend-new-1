@@ -506,7 +506,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     const ITEMS_PER_PAGE = 20;
     const [serverTotal, setServerTotal] = useState(0);
     const [serverTotalPages, setServerTotalPages] = useState(1);
-    const [summaryStats, setSummaryStats] = useState({ totalRows: 0, verifiedCount: 0, rejectedCount: 0, pendingPaymentCount: 0, paidCount: 0, totalPremium: 0, totalPaidAmount: 0 });
+    const [summaryStats, setSummaryStats] = useState({ totalRows: 0, verifiedCount: 0, rejectedCount: 0, pendingInsuranceCount: null as number | null, pendingPaymentCount: 0, paidCount: 0, totalPremium: 0, totalPaidAmount: 0 });
     const debouncedFilters = useDebounce(filters, 500);
 
     const buildActiveFilters = useCallback((sourceFilters: InsuranceFormFilters): InvoiceFilterParams => {
@@ -514,6 +514,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
 
         if (!appQueueMode) {
             activeFilters.excludeUnverifiedAppSubmissions = true;
+            activeFilters.excludeVerifiedNonRejected = true;
         }
 
         if (sourceFilters.invoiceType) {
@@ -572,7 +573,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     }, [appQueueMode]);
 
     const normalizeInvoices = useCallback((rawInvoices: any[]) => {
-        return rawInvoices.map((raw: any) => {
+        const normalized = rawInvoices.map((raw: any) => {
             const inv = {
                 ...raw,
                 id: getInvoiceId(raw),
@@ -589,7 +590,13 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                 },
             };
         });
-    }, [insuranceOverrides]);
+
+        // Keep the workflow boundary intact even if an older API response or
+        // stale request returns a row that has already moved to Payments.
+        return appQueueMode
+            ? normalized
+            : normalized.filter((invoice) => !invoice.isVerified || invoice.isRejected);
+    }, [appQueueMode, insuranceOverrides]);
 
     const fetchInvoices = useCallback(async () => {
         setLoading(true);
@@ -617,6 +624,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                     totalRows: summaryResponse.totalRows || 0,
                     verifiedCount: summaryResponse.verifiedCount || 0,
                     rejectedCount: summaryResponse.rejectedCount || 0,
+                    pendingInsuranceCount: summaryResponse.pendingInsuranceCount ?? null,
                     pendingPaymentCount: summaryResponse.pendingPaymentCount || 0,
                     paidCount: summaryResponse.paidCount || 0,
                     totalPremium: summaryResponse.totalPremium || 0,
@@ -1653,6 +1661,9 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         if (s === 'PAID') {
             return { label: 'PAID', classes: 'border-emerald-200 bg-emerald-50 text-emerald-700' };
         }
+        if (s === 'PARTIAL') {
+            return { label: 'PARTIAL', classes: 'border-orange-200 bg-orange-50 text-orange-700' };
+        }
         if (s === 'FAILED') {
             return { label: 'FAILED', classes: 'border-rose-200 bg-rose-50 text-rose-700' };
         }
@@ -1663,7 +1674,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
             return { label: 'PENDING', classes: 'border-red-200 bg-red-50 text-red-700' };
         }
         if (s === 'NOT_REQUIRED' || inv.isPaymentRequired === false) {
-            return { label: 'PENDING', classes: 'border-red-200 bg-red-50 text-red-700' };
+            return { label: 'NOT_REQUIRED', classes: 'border-slate-200 bg-slate-50 text-slate-700' };
         }
 
         return { label: raw || 'PENDING', classes: 'border-red-200 bg-red-50 text-red-700' };
@@ -2300,7 +2311,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                 </div>
 
                 <div className="bg-white text-black p-3 sm:p-4 rounded-lg shadow mb-4 sm:mb-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-9 gap-3 sm:gap-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-9">
                         <select
                             name="invoiceType"
                             value={filters.invoiceType || ''}
@@ -2386,7 +2397,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                         >
                             <option value="">{appQueueMode ? 'All app statuses' : 'Status'}</option>
                             <option value="pending">Pending review</option>
-                            <option value="verified">Verified</option>
+                            {appQueueMode ? <option value="verified">Verified</option> : null}
                             <option value="rejected">Rejected</option>
                         </select>
                     </div>

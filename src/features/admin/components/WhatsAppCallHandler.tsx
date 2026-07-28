@@ -36,6 +36,16 @@ type OutboundRingingEvent = {
   to: string;
 };
 
+type ActiveCallRecord = {
+  call_id: string;
+  from?: string;
+  to?: string;
+  status?: string;
+  sdp_offer?: string;
+  started_at?: string | number;
+  phone_number_id?: string;
+};
+
 type WsEvent =
   | IncomingCallEvent
   | CallAnsweredEvent
@@ -338,6 +348,48 @@ export function WhatsAppCallHandler() {
     }
   }, [cleanup]);
 
+  const handleIncomingCall = useCallback((ev: IncomingCallEvent) => {
+    if (ev.call_id && ev.call_id === callIdRef.current && callStateRef.current !== 'idle') {
+      return;
+    }
+    setCallId(ev.call_id);
+    setCallerNumber(ev.from);
+    setSdpOffer(ev.sdp_offer);
+    setCallState('ringing');
+    setDuration(0);
+    setError('');
+    setIsExpanded(true);
+    startRing();
+    showCallNotification(ev.from);
+  }, [showCallNotification, startRing]);
+
+  const syncActiveRingingCall = useCallback(async () => {
+    if (!isAllowed) return;
+    if (['ringing', 'connecting', 'active'].includes(callStateRef.current)) return;
+
+    try {
+      const res = await fetch(`${botBaseUrl}/admin/calls/active`, {
+        headers: botAuthHeaders,
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const activeCalls = Array.isArray(data?.items) ? data.items as ActiveCallRecord[] : [];
+      const ringingCall = activeCalls.find((call) =>
+        call?.status === 'ringing' && call.call_id && call.from && call.sdp_offer
+      );
+      if (!ringingCall) return;
+
+      handleIncomingCall({
+        type: 'incoming_call',
+        call_id: ringingCall.call_id,
+        from: ringingCall.from || '',
+        to: ringingCall.to || '',
+        sdp_offer: ringingCall.sdp_offer || '',
+        timestamp: String(ringingCall.started_at || ''),
+      });
+    } catch {}
+  }, [botAuthHeaders, botBaseUrl, handleIncomingCall, isAllowed]);
+
   const connectWebSocket = useCallback(() => {
     if (!isAllowed) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -353,15 +405,7 @@ export function WhatsAppCallHandler() {
 
         if (data.type === 'incoming_call') {
           const ev = data as IncomingCallEvent;
-          setCallId(ev.call_id);
-          setCallerNumber(ev.from);
-          setSdpOffer(ev.sdp_offer);
-          setCallState('ringing');
-          setDuration(0);
-          setError('');
-          setIsExpanded(true);
-          startRing();
-          showCallNotification(ev.from);
+          handleIncomingCall(ev);
         } else if (data.type === 'call_answered') {
           const ev = data as CallAnsweredEvent;
           if (pcRef.current) handleOutboundCallAnswered(ev);
@@ -386,7 +430,7 @@ export function WhatsAppCallHandler() {
 
     ws.onclose = () => { reconnectTimeoutRef.current = setTimeout(() => connectWebSocketRef.current(), 5000); };
     ws.onerror = () => { ws.close(); };
-  }, [wsUrl, isAllowed, cleanup, handleOutboundCallAnswered, startRing, showCallNotification]);
+  }, [wsUrl, isAllowed, cleanup, handleIncomingCall, handleOutboundCallAnswered]);
 
   // Always keep the ref pointing to the latest callback so onclose reconnects correctly
   useEffect(() => { connectWebSocketRef.current = connectWebSocket; });
@@ -399,6 +443,15 @@ export function WhatsAppCallHandler() {
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     };
   }, [connectWebSocket, isAllowed]);
+
+  useEffect(() => {
+    if (!isAllowed) return;
+    void syncActiveRingingCall();
+    const interval = setInterval(() => {
+      void syncActiveRingingCall();
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [isAllowed, syncActiveRingingCall]);
 
   const handleAccept = async () => {
     if (!callId || !sdpOffer) return;
