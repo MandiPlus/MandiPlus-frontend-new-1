@@ -190,7 +190,8 @@ const HomePage = () => {
     setIsMounted(true);
   }, []);
 
-  const isCustomer = user?.identity === "CUSTOMER";
+  const isCustomer =
+    Boolean(user?.isCustomer) || user?.identity === "CUSTOMER";
   const isTransporter = user?.identity === "TRANSPORTER";
   const isInternalUser =
     user?.identity === "INTERNAL_TEAM" || user?.identity === "FIELD_AGENT";
@@ -617,7 +618,7 @@ const HomePage = () => {
 
       // 4. Final Wait & Refresh
       const fresh =
-        user?.identity === "CUSTOMER"
+        isCustomer
           ? await getCustomerDashboardInvoices()
           : await getMyInsuranceForms();
       setInvoices(fresh);

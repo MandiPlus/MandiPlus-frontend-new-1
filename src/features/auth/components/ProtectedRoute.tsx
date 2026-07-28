@@ -9,9 +9,11 @@ import { usePathname } from "next/navigation";
 export default function ProtectedRoute({
     children,
     allowedIdentities,
+    allowCustomerCapability = false,
 }: {
     children: React.ReactNode;
     allowedIdentities?: string[];
+    allowCustomerCapability?: boolean;
 }) {
     const { user, loading } = useAuth();
     const router = useRouter();
@@ -43,7 +45,8 @@ export default function ProtectedRoute({
             const identity = user?.identity;
             const isAllowed =
                 (!identity && pathname === "/home") ||
-                (identity && allowedIdentities.includes(identity));
+                (identity && allowedIdentities.includes(identity)) ||
+                (allowCustomerCapability && Boolean(user?.isCustomer));
             if (!isAllowed) {
                 const fallback = getRedirectByIdentity(identity);
                 if (pathname !== fallback) {
@@ -51,7 +54,15 @@ export default function ProtectedRoute({
                 }
             }
         }
-    }, [allowedIdentities, isClient, loading, pathname, router, user]);
+    }, [
+        allowCustomerCapability,
+        allowedIdentities,
+        isClient,
+        loading,
+        pathname,
+        router,
+        user,
+    ]);
 
     if (loading || !isClient) {
         return (
@@ -69,7 +80,8 @@ export default function ProtectedRoute({
         const identity = user?.identity;
         const isAllowed =
             (!identity && pathname === "/home") ||
-            (identity && allowedIdentities.includes(identity));
+            (identity && allowedIdentities.includes(identity)) ||
+            (allowCustomerCapability && Boolean(user?.isCustomer));
         if (!isAllowed) {
             return (
                 <div className="min-h-screen flex items-center justify-center">

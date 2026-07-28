@@ -135,6 +135,7 @@ export interface CustomerAccountUserSummary {
   mobileNumber?: string | null;
   secondaryMobileNumber?: string | null;
   identity?: string | null;
+  isCustomer?: boolean;
   state?: string | null;
   isLedgerMasterVerified?: boolean;
   createdAt?: string | null;

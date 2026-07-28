@@ -62,7 +62,7 @@ const MyInsuranceForms = () => {
     setNotice("");
     try {
       const data =
-        user.identity === "CUSTOMER"
+        Boolean(user.isCustomer) || user.identity === "CUSTOMER"
           ? await getCustomerDashboardInvoices()
           : user.identity === "TRANSPORTER"
           ? await getTransporterDashboardInvoices()
