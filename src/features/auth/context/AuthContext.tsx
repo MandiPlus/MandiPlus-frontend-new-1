@@ -23,6 +23,7 @@ const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 const WARNING_WINDOW_MS = 15 * 60 * 1000;
 const IMPERSONATION_ACTIVE_KEY = "impersonationActive";
 const IMPERSONATION_ADMIN_TOKEN_KEY = "impersonationAdminToken";
+const IMPERSONATION_ACCESS_TOKEN_KEY = "impersonationAccessToken";
 const IMPERSONATED_USER_NAME_KEY = "impersonatedUserName";
 const IMPERSONATED_USER_ID_KEY = "impersonatedUserId";
 const IMPERSONATION_STARTED_AT_KEY = "impersonationStartedAt";
@@ -124,6 +125,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
         sessionStorage.removeItem("tabAccessToken");
+        sessionStorage.removeItem(IMPERSONATION_ACCESS_TOKEN_KEY);
         setUser(null);
         setAuthToken(null);
         setShowSessionWarning(false);
@@ -136,6 +138,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         impersonationStorage?.removeItem(IMPERSONATED_USER_NAME_KEY);
         impersonationStorage?.removeItem(IMPERSONATED_USER_ID_KEY);
         impersonationStorage?.removeItem(IMPERSONATION_STARTED_AT_KEY);
+        impersonationStorage?.removeItem(IMPERSONATION_ACCESS_TOKEN_KEY);
         setIsImpersonating(false);
         setImpersonatedUserName("");
     };
@@ -309,6 +312,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         localStorage.setItem("adminToken", adminToken);
         sessionStorage.removeItem("tabAccessToken");
+        sessionStorage.removeItem(IMPERSONATION_ACCESS_TOKEN_KEY);
         localStorage.removeItem("accessToken");
         localStorage.removeItem("user");
         setAuthToken(null, { suppressEvent: true });
