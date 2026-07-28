@@ -140,6 +140,86 @@ select option {
   animation: trackingTruckPulse 1.8s ease-out infinite;
 }
 
+.tracking-leaflet-truck {
+  position: relative;
+  width: 78px;
+  height: 78px;
+  pointer-events: none;
+}
+
+.tracking-leaflet-truck img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  transform-origin: 50% 50%;
+  filter: drop-shadow(0 10px 14px rgba(15, 23, 42, 0.34));
+}
+
+.tracking-leaflet-truck .tracking-truck-pulse {
+  left: 18px;
+  top: 18px;
+}
+
+.tracking-leaflet-truck.is-online .tracking-truck-pulse,
+.fleet-leaflet-truck.is-online .tracking-truck-pulse {
+  animation: trackingTruckPulse 1.8s ease-out infinite;
+}
+
+.fleet-leaflet-truck {
+  position: relative;
+  width: 88px;
+  height: 72px;
+  cursor: pointer;
+}
+
+.fleet-leaflet-truck__marker {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 54px;
+  height: 54px;
+  transform: translateX(-50%);
+}
+
+.fleet-leaflet-truck__marker img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 8px 12px rgba(15, 23, 42, 0.28));
+}
+
+.fleet-leaflet-truck__marker .tracking-truck-pulse {
+  left: 6px;
+  top: 6px;
+}
+
+.fleet-leaflet-truck__label {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  max-width: 88px;
+  transform: translateX(-50%);
+  overflow: hidden;
+  border: 1px solid rgba(32, 48, 68, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.18);
+  color: #171914;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 11px;
+  padding: 3px 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @keyframes trackingTruckPulse {
   0% { opacity: 0.55; transform: scale(0.72); }
   100% { opacity: 0; transform: scale(1.62); }

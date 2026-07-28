@@ -25,9 +25,14 @@ import {
   TrackingData,
   TrackingRoute,
 } from '@/features/tracking/api';
-import FleetGoogleMap, { type FleetMapItem } from '@/components/maps/FleetGoogleMap';
+import type { FleetMapItem } from '@/components/maps/FleetLeafletMap';
 
-const TripGoogleMap = dynamic(() => import('@/components/maps/TripGoogleMap'), {
+const FleetLeafletMap = dynamic(() => import('@/components/maps/FleetLeafletMap'), {
+  ssr: false,
+  loading: () => <MapLoading label="Loading vehicles…" />,
+});
+
+const TripLeafletMap = dynamic(() => import('@/components/maps/TripLeafletMap'), {
   ssr: false,
   loading: () => <MapLoading label="Loading location…" />,
 });
@@ -305,7 +310,7 @@ export default function TrackingFleetPage() {
 
   useEffect(() => {
     // Start downloading the detail map while the overview and vehicle API load.
-    void import('@/components/maps/TripGoogleMap');
+    void import('@/components/maps/TripLeafletMap');
     void loadTrips();
   }, [loadTrips]);
 
@@ -519,7 +524,7 @@ export default function TrackingFleetPage() {
             ) : null}
 
             <div className="relative h-[340px] overflow-hidden rounded-[24px] border border-[#e7ebf3] bg-[#eef3fa] shadow-[0_10px_24px_rgba(32,48,68,0.06)] sm:h-[420px]">
-              <FleetGoogleMap
+              <FleetLeafletMap
                 vehicles={fleetMapItems}
                 onVehicleSelect={(item) => {
                   const match = trips.find((trip) => trip.id === item.id);
@@ -678,7 +683,7 @@ function TripDetail({
       ) : null}
 
       <div className="relative h-[390px] overflow-hidden rounded-[24px] border border-[#e7ebf3] bg-[#eef3fa] shadow-[0_10px_24px_rgba(32,48,68,0.06)] sm:h-[520px]">
-        <TripGoogleMap
+        <TripLeafletMap
           center={center}
           current={isCoord(tracking?.location) ? tracking.location : null}
           source={isCoord(tracking?.origin) ? tracking.origin : null}

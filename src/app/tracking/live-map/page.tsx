@@ -7,7 +7,7 @@ import { useSearchParams } from 'next/navigation';
 
 type Coord = { lat: number; lng: number };
 
-const TripGoogleMap = dynamic(() => import('@/components/maps/TripGoogleMap'), {
+const TripLeafletMap = dynamic(() => import('@/components/maps/TripLeafletMap'), {
   ssr: false,
   loading: () => (
     <div className="flex h-full items-center justify-center rounded-xl border border-white/10 bg-[#171a21] text-sm text-slate-200 shadow-xl">
@@ -82,7 +82,7 @@ export default function LiveMapPage() {
         </header>
 
         <div className="relative flex-1 p-1.5 sm:p-2">
-          <TripGoogleMap
+          <TripLeafletMap
             center={center}
             current={current}
             destination={destination}
