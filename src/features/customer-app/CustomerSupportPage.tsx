@@ -98,7 +98,7 @@ export default function CustomerSupportPage() {
         >
           <ArrowLeft size={24} strokeWidth={2.4} />
         </button>
-        <h1 className={styles.secondaryHeading}>Help</h1>
+        <h1 className={styles.secondaryHeading}>Sahayata</h1>
         <span />
       </header>
 
