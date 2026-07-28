@@ -119,6 +119,7 @@ select option {
   width: 72px;
   height: 72px;
   object-fit: contain;
+  transform: translate(-50%, -50%) rotate(var(--truck-heading, 0deg));
   transform-origin: 50% 50%;
   filter: drop-shadow(0 10px 14px rgba(15, 23, 42, 0.34));
   transition: transform 90ms linear;
