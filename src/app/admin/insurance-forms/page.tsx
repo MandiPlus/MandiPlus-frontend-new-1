@@ -500,7 +500,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         buyerName: '',
         productName: '',
         sourceSurface: appQueueMode ? 'USER_APP' : '',
-        verificationStatus: appQueueMode ? 'pending' : '',
+        verificationStatus: '',
     });
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 20;
@@ -549,7 +549,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         }
 
         if (appQueueMode && sourceFilters.sourceSurface === 'USER_APP') {
-            activeFilters.sourceSurfaces = 'USER_APP,ADMIN_QUICK_DETAILS';
+            activeFilters.sourceSurfaces = 'USER_APP,USER_APP_BETA,ADMIN_QUICK_DETAILS';
         } else if (sourceFilters.sourceSurface?.trim()) {
             activeFilters.sourceSurface = sourceFilters.sourceSurface.trim();
         }
@@ -1355,11 +1355,15 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         if (inv.isRejected) return;
 
         const reasonInput = window.prompt(
-            'Enter rejection reason (optional):',
+            'Enter rejection reason:',
             inv.rejectionReason || '',
         );
         if (reasonInput === null) return;
-        const rejectionReason = reasonInput.trim() || undefined;
+        const rejectionReason = reasonInput.trim();
+        if (!rejectionReason) {
+            toast.error('Rejection reason is required.');
+            return;
+        }
         void executeRejectInvoice(inv, rejectionReason);
     };
 
