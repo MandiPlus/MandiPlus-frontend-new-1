@@ -122,6 +122,16 @@ function bearing(first: MapCoord, second: MapCoord) {
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
+function normalizeBearing(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return ((value % 360) + 360) % 360;
+}
+
+function continuousBearing(previous: number, target: number) {
+  const shortestTurn = ((normalizeBearing(target) - normalizeBearing(previous) + 540) % 360) - 180;
+  return previous + shortestTurn;
+}
+
 function buildMetrics(points: MapCoord[]): RouteMetrics {
   const cumulative = [0];
   for (let index = 1; index < points.length; index += 1) {
@@ -234,22 +244,15 @@ function secondsSince(value?: string | null) {
 }
 
 function routeHeadingAtDistance(metrics: RouteMetrics, distance: number, speedMps: number) {
-  // Use the road tangent around the vehicle instead of one tiny route segment.
-  // Dense OSRM points can otherwise make the marker twitch at every bend.
-  const tangentWindow = Math.max(55, Math.min(140, speedMps * 8));
-  const behind = pointAtDistance(metrics, Math.max(0, distance - tangentWindow * 0.42));
+  const currentPoint = pointAtDistance(metrics, distance);
+  const lookDistance = Math.max(35, speedMps * 5);
   const ahead = pointAtDistance(
     metrics,
-    Math.min(metrics.totalDistance, distance + tangentWindow * 0.58),
+    Math.min(metrics.totalDistance, distance + lookDistance),
   );
-  if (distanceMeters(behind, ahead) >= 0.5) return bearing(behind, ahead);
-  const currentPoint = pointAtDistance(metrics, distance);
+  if (distanceMeters(currentPoint, ahead) >= 0.5) return bearing(currentPoint, ahead);
+  const behind = pointAtDistance(metrics, Math.max(0, distance - lookDistance));
   return bearing(behind, currentPoint);
-}
-
-function smoothBearing(previous: number, target: number, strength = 0.16) {
-  const shortestTurn = ((target - previous + 540) % 360) - 180;
-  return previous + shortestTurn * strength;
 }
 
 function createRouteState(
@@ -354,13 +357,15 @@ function createTruckOverlay(
     }
 
     setRotation(degrees: number) {
-      this.rotation = degrees;
+      this.rotation = Number.isFinite(degrees) ? degrees : this.rotation;
       this.applyRotation();
     }
 
     private applyRotation() {
-      const image = this.element?.querySelector('img');
-      if (image) image.style.transform = `translate(-50%, -50%) rotate(${this.rotation}deg)`;
+      if (!this.element) return;
+      const heading = normalizeBearing(this.rotation);
+      this.element.style.setProperty('--truck-heading', `${heading}deg`);
+      this.element.dataset.heading = heading.toFixed(1);
     }
   }
 
@@ -469,7 +474,7 @@ export default function TripGoogleMap({
     }
 
     const startedAt = performance.now();
-    let smoothedHeading = routeState.initialBearing;
+    let renderedHeading = routeState.initialBearing;
     cameraFrameRef.current = 0;
     routeFrameRef.current = 0;
 
@@ -481,9 +486,9 @@ export default function TripGoogleMap({
       );
       const position = pointAtDistance(routeState.metrics, distance);
       const roadHeading = routeHeadingAtDistance(routeState.metrics, distance, routeState.speedMps);
-      smoothedHeading = smoothBearing(smoothedHeading, roadHeading);
+      renderedHeading = continuousBearing(renderedHeading, roadHeading);
       overlay.setPosition(position);
-      overlay.setRotation(smoothedHeading);
+      overlay.setRotation(renderedHeading);
 
       if (now - routeFrameRef.current >= 180) {
         routeFrameRef.current = now;
