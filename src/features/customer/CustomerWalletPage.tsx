@@ -116,7 +116,10 @@ export default function CustomerWalletPage() {
   }, [statement, activeFilter, searchTerm]);
 
   return (
-    <ProtectedRoute allowedIdentities={["CUSTOMER"]}>
+    <ProtectedRoute
+      allowedIdentities={["CUSTOMER"]}
+      allowCustomerCapability
+    >
       <div className="min-h-screen bg-[#e0d7fc] pb-20">
         <div className="bg-white px-5 py-4 rounded-b-4xl">
           <div className="flex items-center justify-between">

@@ -45,6 +45,7 @@ export function useCustomerAppData(): CustomerAppData {
   const identity = String(user?.identity || "").toUpperCase();
   const billingType = String(user?.billingType || "").toUpperCase();
   const hasWallet =
+    Boolean(user?.isCustomer) ||
     identity === "CUSTOMER" ||
     (identity === "TRANSPORTER" && billingType === "BULK");
 
