@@ -169,7 +169,21 @@ export default function CustomerPapersPage({
         throw new Error("PhonePe checkout URL was not returned.");
       window.location.assign(checkout.redirectUrl);
     } catch (error) {
-      setNotice(readableError(error, "Could not start PhonePe. Please retry."));
+      const message = readableError(
+        error,
+        "Could not start PhonePe. Please retry.",
+      );
+      if (/all selected invoices are already paid/i.test(message)) {
+        const query = new URLSearchParams({ source: "wallet" });
+        invoices.forEach((invoice) => {
+          query.append("invoiceId", invoice.id);
+          query.append("invoiceNumber", invoice.invoiceNumber || "");
+          query.append("vehicle", invoiceVehicle(invoice));
+        });
+        router.replace(`/payment/success?${query.toString()}`);
+        return;
+      }
+      setNotice(message);
     } finally {
       setPaying(false);
     }
