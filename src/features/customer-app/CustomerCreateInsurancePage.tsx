@@ -32,7 +32,6 @@ import Lottie from "lottie-react";
 import { useAuth } from "@/features/auth/context/AuthContext";
 import {
   createCustomerWebPaymentCheckout,
-  getCustomerInvoiceById,
   getCustomerPaymentCheckoutStatus,
 } from "@/features/customer/api";
 import {
@@ -59,6 +58,7 @@ import {
   readCustomerInvoicePaymentAttempt,
   writeCustomerInvoicePaymentAttempt,
   type CustomerInvoicePaymentAttempt,
+  type CustomerInvoicePaymentReference,
 } from "./payment-attempt";
 import { money, readableError } from "./utils";
 import styles from "./customer-app.module.css";
@@ -82,7 +82,7 @@ type CachedLiveTranscriptionToken = CustomerLiveTranscriptionToken & {
 
 type EagerExtraction = {
   key: string;
-  promise: Promise<Record<string, unknown>>;
+  promise: Promise<PromiseSettledResult<Record<string, unknown>>[]>;
 };
 
 const DEFAULT_TENDER_COCONUT_PRICING: CustomerAppPricing["tenderCoconut"] = {
@@ -256,6 +256,10 @@ export default function CustomerCreateInsurancePage() {
   const [draft, setDraft] = useState<CustomerInvoiceDraft>(() =>
     emptyDraft(user),
   );
+  const draftRef = useRef(draft);
+  const [batchDrafts, setBatchDrafts] = useState<CustomerInvoiceDraft[]>([]);
+  const batchDraftsRef = useRef(batchDrafts);
+  const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [zoomedFileIndex, setZoomedFileIndex] = useState<number | null>(null);
@@ -278,17 +282,39 @@ export default function CustomerCreateInsurancePage() {
   >({});
   const [amountBreakdownOpen, setAmountBreakdownOpen] = useState(false);
 
+  draftRef.current = draft;
+  batchDraftsRef.current = batchDrafts;
+
   const isTenderCoconut = isTenderCoconutProduct(draft.product);
   const amountBreakdown = useMemo(
     () => resolveInvoiceAmountBreakdown(draft, pricing),
     [draft, pricing],
   );
   const total = amountBreakdown.totalAmount;
-  const premium = Number((total * 0.002).toFixed(2));
+  const paymentDrafts = useMemo(() => {
+    if (!batchDrafts.length) return [draft];
+    return batchDrafts.map((batchDraft, index) =>
+      index === activeFileIndex ? draft : batchDraft,
+    );
+  }, [activeFileIndex, batchDrafts, draft]);
+  const payablePremium = useMemo(
+    () =>
+      Number(
+        paymentDrafts
+          .reduce(
+            (sum, paymentDraft) =>
+              sum + customerInvoicePremium(paymentDraft, pricing),
+            0,
+          )
+          .toFixed(2),
+      ),
+    [paymentDrafts, pricing],
+  );
   const pendingVoiceAnswers = Object.values(voiceAnswers).filter(
     (state) => state === "processing",
   ).length;
-  const validationIssue = validateDraft(draft);
+  const validationIssue =
+    paymentDrafts.map(validateDraft).find(Boolean) || "";
   const activeMissingKey = missingOpen ? missingKeys[missingIndex] : undefined;
   const activeQuestion = activeMissingKey
     ? MISSING_QUESTIONS[activeMissingKey]
@@ -397,7 +423,9 @@ export default function CustomerCreateInsurancePage() {
         paymentAttemptRef.current = null;
         setPaymentRetryPromptOpen(false);
         router.replace(
-          `/payment/success?invoiceId=${encodeURIComponent(attempt.invoiceId)}`,
+          customerInvoiceSuccessUrl({
+            invoices: paymentAttemptReferences(attempt),
+          }),
         );
         return;
       }
@@ -445,7 +473,11 @@ export default function CustomerCreateInsurancePage() {
     setPaymentStatusChecking(false);
     setPaymentRetryPromptOpen(false);
     setFiles([]);
-    setDraft(emptyDraft(user));
+    const nextDraft = emptyDraft(user);
+    batchDraftsRef.current = [];
+    setBatchDrafts([]);
+    setActiveFileIndex(0);
+    setDraft(nextDraft);
     setExtractionState("idle");
     setNotice("");
     setSourceOpen(false);
@@ -470,6 +502,19 @@ export default function CustomerCreateInsurancePage() {
   }, [user]);
 
   useEffect(() => {
+    if (!batchDraftsRef.current.length) return;
+    setBatchDrafts((current) => {
+      if (!current[activeFileIndex] || current[activeFileIndex] === draft) {
+        return current;
+      }
+      const next = [...current];
+      next[activeFileIndex] = draft;
+      batchDraftsRef.current = next;
+      return next;
+    });
+  }, [activeFileIndex, draft]);
+
+  useEffect(() => {
     const userId = String(user?.id || "");
     if (!userId) return;
 
@@ -481,7 +526,12 @@ export default function CustomerCreateInsurancePage() {
     }
 
     paymentAttemptRef.current = attempt;
-    setDraft(attempt.draft);
+    const restoredDrafts =
+      attempt.drafts?.length ? attempt.drafts : [attempt.draft];
+    batchDraftsRef.current = restoredDrafts;
+    setBatchDrafts(restoredDrafts);
+    setActiveFileIndex(0);
+    setDraft(restoredDrafts[0]);
     setStage("review");
     void checkReturningPayment();
   }, [checkReturningPayment, user?.id]);
@@ -557,13 +607,25 @@ export default function CustomerCreateInsurancePage() {
     if (eagerExtractionRef.current?.key === key) {
       return eagerExtractionRef.current.promise;
     }
-    const promise = extractCustomerInvoice(nextFiles);
+    const previousDrafts = batchDraftsRef.current;
+    const promise = Promise.allSettled(
+      nextFiles.map((file, index) =>
+        extractCustomerInvoice(
+          [file],
+          previousDrafts[index]?.product || draftRef.current.product,
+        ),
+      ),
+    );
     eagerExtractionRef.current = { key, promise };
     setExtractionState("reading");
     void promise
-      .then(() => {
+      .then((results) => {
         if (eagerExtractionRef.current?.key === key) {
-          setExtractionState("ready");
+          setExtractionState(
+            results.some((result) => result.status === "fulfilled")
+              ? "ready"
+              : "failed",
+          );
         }
       })
       .catch(() => {
@@ -638,7 +700,7 @@ export default function CustomerCreateInsurancePage() {
       const task = queueDocumentExtraction(nextFiles);
       if (task) {
         const extractionKey = fileSetKey(nextFiles);
-        void Promise.allSettled([task]).then((results) => {
+        void task.then((results) => {
           if (eagerExtractionRef.current?.key !== extractionKey) return;
           setStage("review");
           applyExtractionResults(results);
@@ -650,7 +712,7 @@ export default function CustomerCreateInsurancePage() {
       const task = queueDocumentExtraction(nextFiles);
       if (task) {
         const extractionKey = fileSetKey(nextFiles);
-        void Promise.allSettled([task]).then((results) => {
+        void task.then((results) => {
           if (eagerExtractionRef.current?.key !== extractionKey) return;
           setStage("review");
           applyExtractionResults(results);
@@ -661,7 +723,12 @@ export default function CustomerCreateInsurancePage() {
 
   const removeFirstFile = () => {
     const nextFiles = files.slice(1);
+    const nextDrafts = paymentDrafts.slice(1);
     setFiles(nextFiles);
+    batchDraftsRef.current = nextDrafts;
+    setBatchDrafts(nextDrafts);
+    setActiveFileIndex(0);
+    if (nextDrafts[0]) setDraft(nextDrafts[0]);
     setNotice("");
     queueDocumentExtraction(nextFiles);
     if (!nextFiles.length) setExtractionState("idle");
@@ -677,34 +744,40 @@ export default function CustomerCreateInsurancePage() {
   const applyExtractionResults = (
     results: PromiseSettledResult<Record<string, unknown>>[],
   ) => {
-    const successful = results
-      .filter(
-        (
-          result,
-        ): result is PromiseFulfilledResult<Record<string, unknown>> =>
-          result.status === "fulfilled",
-      )
-      .map((result) => result.value);
-    if (!successful.length) {
+    const previousDrafts = batchDraftsRef.current;
+    const nextDrafts = results.map((result, index) => {
+      const baseDraft =
+        previousDrafts[index] ||
+        (index === activeFileIndex
+          ? draftRef.current
+          : freshBatchDraft(draftRef.current));
+      return result.status === "fulfilled"
+        ? applyExtraction(baseDraft, result.value)
+        : baseDraft;
+    });
+    if (!nextDrafts.length) {
       setExtractionState("failed");
       setNotice(
         "Details scan nahi ho paaye. Aap manually details bhar sakte hain.",
       );
-      setDraft((current) => {
-        openMissingDetails(current);
-        return current;
-      });
       return;
     }
-    setDraft((current) => {
-      const next = successful.reduce<CustomerInvoiceDraft>(
-        (working, response) => applyExtraction(working, response),
-        current,
-      );
-      openMissingDetails(next);
-      return next;
-    });
-    setExtractionState("ready");
+    const firstFailedIndex = results.findIndex(
+      (result) => result.status === "rejected",
+    );
+    batchDraftsRef.current = nextDrafts;
+    setBatchDrafts(nextDrafts);
+    setActiveFileIndex(0);
+    setDraft(nextDrafts[0]);
+    openMissingDetails(nextDrafts[0]);
+    setNotice(
+      firstFailedIndex >= 0
+        ? `Invoice ${firstFailedIndex + 1} scan nahi ho paaya. Details manually add karein.`
+        : "",
+    );
+    setExtractionState(
+      firstFailedIndex === 0 && results.length === 1 ? "failed" : "ready",
+    );
   };
 
   const advanceMissingDetails = () => {
@@ -904,10 +977,19 @@ export default function CustomerCreateInsurancePage() {
   }, [activeMissingKey, missingOpen]);
 
   const submitAndPay = async () => {
-    const validation = validateDraft(draft);
-    if (validation) {
-      setNotice(validation);
-      openMissingDetails(draft);
+    const invalidDraftIndex = paymentDrafts.findIndex((item) =>
+      Boolean(validateDraft(item)),
+    );
+    if (invalidDraftIndex >= 0) {
+      const invalidDraft = paymentDrafts[invalidDraftIndex];
+      setActiveFileIndex(invalidDraftIndex);
+      setDraft(invalidDraft);
+      setNotice(
+        paymentDrafts.length > 1
+          ? `Invoice ${invalidDraftIndex + 1}: ${validateDraft(invalidDraft)}`
+          : validateDraft(invalidDraft),
+      );
+      openMissingDetails(invalidDraft);
       return;
     }
     if (!user?.id) {
@@ -926,69 +1008,172 @@ export default function CustomerCreateInsurancePage() {
     setNotice("");
     setPaymentRetryPromptOpen(false);
     try {
-      const fingerprint = customerInvoicePaymentFingerprint(draft, pricing);
+      const fingerprint = JSON.stringify(
+        paymentDrafts.map((item) =>
+          customerInvoicePaymentFingerprint(item, pricing),
+        ),
+      );
       const previousAttempt =
         paymentAttemptRef.current || readCustomerInvoicePaymentAttempt();
-      const canReuseCreatedInvoice =
+      const previousReferences = previousAttempt
+        ? paymentAttemptReferences(previousAttempt)
+        : [];
+      const canReuseCreatedInvoices =
         previousAttempt !== null &&
         previousAttempt.userId === userId &&
         previousAttempt.fingerprint === fingerprint;
-      let invoiceId = canReuseCreatedInvoice
-        ? previousAttempt.invoiceId
-        : "";
-      let invoice:
-        | Awaited<ReturnType<typeof createCustomerInvoice>>
-        | Awaited<ReturnType<typeof getCustomerInvoiceById>>
-        | null = null;
+      type CreatedCustomerInvoice = Awaited<
+        ReturnType<typeof createCustomerInvoice>
+      >;
+      const createdInvoiceByIndex = new Map<number, CreatedCustomerInvoice>();
+      const referenceByIndex = new Map<
+        number,
+        CustomerInvoicePaymentReference
+      >();
 
-      if (!invoiceId) {
-        invoice = await createCustomerInvoice(
-          userId,
-          draft,
-          files,
-          pricing,
-        );
-        if (!invoice?.id) {
-          throw new Error("Invoice was created without an ID.");
+      if (canReuseCreatedInvoices) {
+        previousReferences.forEach((reference, position) => {
+          const draftIndex = Number.isInteger(reference.draftIndex)
+            ? Number(reference.draftIndex)
+            : position;
+          if (
+            draftIndex < 0 ||
+            draftIndex >= paymentDrafts.length ||
+            referenceByIndex.has(draftIndex)
+          ) {
+            return;
+          }
+          referenceByIndex.set(draftIndex, {
+            ...reference,
+            draftIndex,
+          });
+        });
+      }
+
+      const missingDraftIndexes = paymentDrafts
+        .map((_, index) => index)
+        .filter((index) => !referenceByIndex.has(index));
+      if (missingDraftIndexes.some((index) => !files[index])) {
+        throw new Error("Har invoice ki weighment slip dobara upload karein.");
+      }
+
+      const creationResults = await Promise.allSettled(
+        missingDraftIndexes.map((index) =>
+          createCustomerInvoice(
+            userId,
+            paymentDrafts[index],
+            [files[index]],
+            pricing,
+          ),
+        ),
+      );
+      const creationErrors: Array<{ index: number; error: unknown }> = [];
+      creationResults.forEach((result, position) => {
+        const draftIndex = missingDraftIndexes[position];
+        if (result.status === "rejected") {
+          creationErrors.push({ index: draftIndex, error: result.reason });
+          return;
         }
-        invoiceId = invoice.id;
-      } else {
-        invoice = await getCustomerInvoiceById(invoiceId);
+        const createdInvoice = result.value;
+        if (!createdInvoice?.id) {
+          creationErrors.push({
+            index: draftIndex,
+            error: new Error("Invoice was created without an ID."),
+          });
+          return;
+        }
+        createdInvoiceByIndex.set(draftIndex, createdInvoice);
+        referenceByIndex.set(draftIndex, {
+          id: String(createdInvoice.id),
+          invoiceNumber: String(createdInvoice.invoiceNumber || ""),
+          vehicleNumber: String(
+            createdInvoice.vehicleNumber ||
+              createdInvoice.truckNumber ||
+              paymentDrafts[draftIndex].vehicleNumber,
+          ),
+          draftIndex,
+        });
+      });
+
+      const invoiceReferences = [...referenceByIndex.entries()]
+        .sort(([leftIndex], [rightIndex]) => leftIndex - rightIndex)
+        .map(([, reference]) => reference);
+      const resumableAttempt: CustomerInvoicePaymentAttempt | null =
+        invoiceReferences.length
+          ? {
+              version: 2,
+              userId,
+              invoiceId: invoiceReferences[0].id,
+              invoiceReferences,
+              merchantOrderId: null,
+              phase: "draft",
+              fingerprint,
+              draft: paymentDrafts[0],
+              drafts: paymentDrafts,
+              createdAt: Date.now(),
+            }
+          : null;
+      if (resumableAttempt) {
+        writeCustomerInvoicePaymentAttempt(resumableAttempt);
+        paymentAttemptRef.current = resumableAttempt;
+      }
+
+      if (
+        creationErrors.length ||
+        invoiceReferences.length !== paymentDrafts.length
+      ) {
+        const firstFailure = creationErrors[0];
+        const failureMessage = firstFailure
+          ? readableError(firstFailure.error, "Invoice create nahi ho saka.")
+          : "Invoice create nahi ho saka.";
+        const failedInvoiceNumber = firstFailure
+          ? firstFailure.index + 1
+          : referenceByIndex.size + 1;
+        throw new Error(
+          `Invoice ${failedInvoiceNumber}: ${failureMessage} Dobara Pay karein; bane hue invoices repeat nahi honge.`,
+        );
       }
 
       const createdInvoiceAttempt: CustomerInvoicePaymentAttempt = {
-        version: 2,
-        userId,
-        invoiceId,
-        merchantOrderId: null,
-        phase: "draft",
-        fingerprint,
-        draft,
-        createdAt: Date.now(),
+        ...(resumableAttempt as CustomerInvoicePaymentAttempt),
+        invoiceReferences,
       };
-      writeCustomerInvoicePaymentAttempt(createdInvoiceAttempt);
-      paymentAttemptRef.current = createdInvoiceAttempt;
-
-      if (String(invoice?.paymentStatus || "").toUpperCase() === "PAID") {
+      const unpaidInvoiceReferences = invoiceReferences.filter((reference) => {
+        const draftIndex = Number(reference.draftIndex);
+        const createdInvoice = createdInvoiceByIndex.get(draftIndex);
+        return (
+          !createdInvoice ||
+          String(createdInvoice.paymentStatus || "").toUpperCase() !== "PAID"
+        );
+      });
+      if (!unpaidInvoiceReferences.length) {
         clearCustomerInvoicePaymentAttempt();
         paymentAttemptRef.current = null;
-        const successParams = new URLSearchParams({
-          invoiceId,
-          source: "wallet",
-        });
-        if (invoice?.invoiceNumber) {
-          successParams.set("invoiceNumber", invoice.invoiceNumber);
-        }
-        const vehicleNumber =
-          invoice?.vehicleNumber || invoice?.truckNumber || "";
-        if (vehicleNumber) successParams.set("vehicle", vehicleNumber);
-        router.replace(`/payment/success?${successParams.toString()}`);
+        router.replace(
+          customerInvoiceSuccessUrl({
+            invoices: invoiceReferences,
+            source: "wallet",
+          }),
+        );
         return;
       }
 
+      const unpaidInvoiceIds = new Set(
+        unpaidInvoiceReferences.map((reference) => reference.id),
+      );
+      const unpaidPremium = invoiceReferences.reduce((sum, reference) => {
+        const draftIndex = Number(reference.draftIndex);
+        return unpaidInvoiceIds.has(reference.id) &&
+          Number.isInteger(draftIndex) &&
+          paymentDrafts[draftIndex]
+          ? sum + customerInvoicePremium(paymentDrafts[draftIndex], pricing)
+          : sum;
+      }, 0);
       const checkout = await createCustomerWebPaymentCheckout(
-        [invoiceId],
-        premium,
+        unpaidInvoiceReferences.map((reference) => reference.id),
+        createdInvoiceByIndex.size === paymentDrafts.length
+          ? Number(unpaidPremium.toFixed(2))
+          : undefined,
       );
       if (!checkout.redirectUrl) {
         throw new Error("PhonePe checkout URL was not returned.");
@@ -1006,9 +1191,13 @@ export default function CustomerCreateInsurancePage() {
       window.location.assign(checkout.redirectUrl);
     } catch (error) {
       const paymentError = readableError(error, "");
+      const attemptedPayment =
+        paymentAttemptRef.current || readCustomerInvoicePaymentAttempt();
       const attemptedInvoiceId =
-        paymentAttemptRef.current?.invoiceId ||
-        readCustomerInvoicePaymentAttempt()?.invoiceId;
+        attemptedPayment?.invoiceId;
+      const attemptedReferences = attemptedPayment
+        ? paymentAttemptReferences(attemptedPayment)
+        : [];
       if (
         attemptedInvoiceId &&
         /all selected invoices are already paid/i.test(paymentError)
@@ -1016,9 +1205,12 @@ export default function CustomerCreateInsurancePage() {
         clearCustomerInvoicePaymentAttempt();
         paymentAttemptRef.current = null;
         router.replace(
-          `/payment/success?invoiceId=${encodeURIComponent(
-            attemptedInvoiceId,
-          )}&source=wallet`,
+          customerInvoiceSuccessUrl({
+            invoices: attemptedReferences.length
+              ? attemptedReferences
+              : [{ id: attemptedInvoiceId }],
+            source: "wallet",
+          }),
         );
         return;
       }
@@ -1030,6 +1222,15 @@ export default function CustomerCreateInsurancePage() {
       );
       setStage("review");
     }
+  };
+
+  const selectReviewDraft = (index: number) => {
+    const nextDraft = paymentDrafts[index];
+    if (!nextDraft || index === activeFileIndex) return;
+    setActiveFileIndex(index);
+    setDraft(nextDraft);
+    setNotice("");
+    openMissingDetails(nextDraft);
   };
 
   if (stage === "capture") {
@@ -1209,8 +1410,23 @@ export default function CustomerCreateInsurancePage() {
           <div className={styles.reviewFileStrip} aria-label="Uploaded invoices">
             {files.map((file, index) => (
               <div
-                className={styles.reviewFileThumb}
+                className={`${styles.reviewFileThumb} ${
+                  index === activeFileIndex
+                    ? styles.reviewFileThumbActive
+                    : ""
+                }`}
                 key={`${file.name}-${index}`}
+                role="tab"
+                tabIndex={0}
+                aria-selected={index === activeFileIndex}
+                aria-label={`Review invoice ${index + 1}`}
+                onClick={() => selectReviewDraft(index)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    selectReviewDraft(index);
+                  }
+                }}
               >
                 {previewUrls[index] ? (
                   <>
@@ -1221,7 +1437,10 @@ export default function CustomerCreateInsurancePage() {
                     />
                     <button
                       type="button"
-                      onClick={() => setZoomedFileIndex(index)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setZoomedFileIndex(index);
+                      }}
                       aria-label={`Zoom invoice ${index + 1}`}
                     >
                       <ZoomIn size={14} />
@@ -1504,7 +1723,7 @@ export default function CustomerCreateInsurancePage() {
                 ? "Details save ho rahi hain"
                 : validationIssue
                   ? "Details poori karein"
-                  : `Pay ${payableMoney(premium)}`}
+                  : `Pay ${payableMoney(payablePremium)}`}
         </button>
       </div>
 
@@ -1958,6 +2177,61 @@ function validateDraft(draft: CustomerInvoiceDraft) {
     return "Driver ka sahi 10 digit mobile number add karein.";
   }
   return "";
+}
+
+function freshBatchDraft(template: CustomerInvoiceDraft) {
+  return {
+    ...template,
+    supplierName: "",
+    supplierAddress: "",
+    quantity: "",
+    rate: "",
+    totalAmount: "",
+    vehicleNumber: "",
+    vehicleTonnage: "",
+    driverPhone: "",
+    ownerName: "",
+    note: "",
+    invoiceDate: today(),
+  };
+}
+
+function customerInvoiceSuccessUrl({
+  invoices,
+  source,
+}: {
+  invoices: CustomerInvoicePaymentReference[];
+  source?: "wallet";
+}) {
+  const params = new URLSearchParams();
+  invoices.forEach((invoice) => {
+    if (!invoice.id) return;
+    params.append("invoiceId", invoice.id);
+    params.append("invoiceNumber", invoice.invoiceNumber || "");
+    params.append("vehicle", invoice.vehicleNumber || "");
+  });
+  if (source) params.set("source", source);
+  return `/payment/success?${params.toString()}`;
+}
+
+function paymentAttemptReferences(
+  attempt: CustomerInvoicePaymentAttempt,
+): CustomerInvoicePaymentReference[] {
+  if (attempt.invoiceReferences?.length) {
+    return attempt.invoiceReferences;
+  }
+  return attempt.invoiceId ? [{ id: attempt.invoiceId }] : [];
+}
+
+function customerInvoicePremium(
+  draft: CustomerInvoiceDraft,
+  pricing: CustomerAppPricing["tenderCoconut"],
+) {
+  return Number(
+    (resolveInvoiceAmountBreakdown(draft, pricing).totalAmount * 0.002).toFixed(
+      2,
+    ),
+  );
 }
 
 function resolveInvoiceAmountBreakdown(

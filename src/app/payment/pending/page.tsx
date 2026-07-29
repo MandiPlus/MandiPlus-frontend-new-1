@@ -45,6 +45,24 @@ function matchingPaidInvoice(
   );
 }
 
+function mergeSuccessInvoices(
+  paidInvoices: CustomerPaymentStatusInvoice[],
+  attemptInvoices: CustomerPaymentStatusInvoice[],
+) {
+  const merged = new Map<string, CustomerPaymentStatusInvoice>();
+  [...attemptInvoices, ...paidInvoices].forEach((invoice) => {
+    if (!invoice.id) return;
+    const current = merged.get(invoice.id);
+    merged.set(invoice.id, {
+      ...current,
+      ...invoice,
+      invoiceNumber: invoice.invoiceNumber || current?.invoiceNumber,
+      vehicleNumber: invoice.vehicleNumber || current?.vehicleNumber,
+    });
+  });
+  return Array.from(merged.values());
+}
+
 function PendingContent() {
   const router = useRouter();
   const params = useSearchParams();
@@ -97,16 +115,22 @@ function PendingContent() {
 
           if (result.paid) {
             if (shouldReturnToInvoice) {
-              if (matchingInvoicePaymentAttempt) {
-                clearCustomerInvoicePaymentAttempt();
-              }
               const paidInvoices =
                 !isWalletTopup && 'invoices' in result
                   ? result.invoices || []
                   : [];
+              const attemptInvoices =
+                matchingInvoicePaymentAttempt?.invoiceReferences?.map(
+                  (invoice) => ({
+                    id: invoice.id,
+                    invoiceNumber: invoice.invoiceNumber,
+                    vehicleNumber: invoice.vehicleNumber,
+                  }),
+                ) || [];
               const paidInvoice = matchingPaidInvoice(paidInvoices, [
                 invoiceId,
                 matchingInvoicePaymentAttempt?.invoiceId,
+                ...attemptInvoices.map((invoice) => invoice.id),
               ]);
               const orderedPaidInvoices = paidInvoice
                 ? [
@@ -116,16 +140,22 @@ function PendingContent() {
                     ),
                   ]
                 : paidInvoices;
-              const successInvoices = orderedPaidInvoices.length
-                ? orderedPaidInvoices
-                : [
+              const successInvoices = mergeSuccessInvoices(
+                orderedPaidInvoices,
+                attemptInvoices.length
+                  ? attemptInvoices
+                  : [
                     {
                       id:
                         invoiceId ||
                         matchingInvoicePaymentAttempt?.invoiceId ||
                         '',
                     },
-                  ];
+                  ],
+              );
+              if (matchingInvoicePaymentAttempt) {
+                clearCustomerInvoicePaymentAttempt();
+              }
               router.replace(
                 customerInvoiceSuccessUrl({
                   invoices: successInvoices,

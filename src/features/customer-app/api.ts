@@ -72,9 +72,14 @@ function isUnsupportedPropertyError(error: unknown, property: string) {
   );
 }
 
-export async function extractCustomerInvoice(files: File[]) {
+export async function extractCustomerInvoice(
+  files: File[],
+  currentProduct?: string,
+) {
   const form = new FormData();
   files.forEach((file) => form.append("documents", file));
+  form.append("fastMode", "true");
+  if (currentProduct) form.append("currentProduct", currentProduct);
   return customerRequest<Record<string, unknown>>({
     method: "POST",
     url: "/invoices/extract-invoice-fields",

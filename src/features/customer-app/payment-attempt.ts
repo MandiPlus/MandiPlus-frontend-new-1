@@ -13,11 +13,20 @@ export type CustomerInvoicePaymentAttempt = {
   version: 2;
   userId: string;
   invoiceId: string;
+  invoiceReferences?: CustomerInvoicePaymentReference[];
   merchantOrderId: string | null;
   phase: "draft" | "redirecting" | "retry";
   fingerprint: string;
   draft: CustomerInvoiceDraft;
+  drafts?: CustomerInvoiceDraft[];
   createdAt: number;
+};
+
+export type CustomerInvoicePaymentReference = {
+  id: string;
+  invoiceNumber?: string;
+  vehicleNumber?: string;
+  draftIndex?: number;
 };
 
 export function customerInvoicePaymentFingerprint(
@@ -91,6 +100,23 @@ export function readCustomerInvoicePaymentAttempt() {
     return {
       ...(attempt as CustomerInvoicePaymentAttempt),
       phase,
+      drafts: Array.isArray(attempt.drafts)
+        ? attempt.drafts.map((draft) => ({
+            ...(draft as CustomerInvoiceDraft),
+          }))
+        : undefined,
+      invoiceReferences: Array.isArray(attempt.invoiceReferences)
+        ? attempt.invoiceReferences
+            .map((reference) => ({
+              id: String(reference?.id || "").trim(),
+              invoiceNumber: String(reference?.invoiceNumber || "").trim(),
+              vehicleNumber: String(reference?.vehicleNumber || "").trim(),
+              draftIndex: Number.isInteger(reference?.draftIndex)
+                ? Number(reference.draftIndex)
+                : undefined,
+            }))
+            .filter((reference) => reference.id)
+        : undefined,
     };
   } catch {
     clearCustomerInvoicePaymentAttempt();

@@ -1732,6 +1732,20 @@
   background: var(--mp-soft);
 }
 
+.reviewFileThumb {
+  cursor: pointer;
+}
+
+.reviewFileThumbActive {
+  border-color: var(--mp-navy);
+  box-shadow: 0 0 0 2px rgba(32, 48, 68, 0.18);
+}
+
+.reviewFileThumb:focus-visible {
+  outline: 2px solid var(--mp-navy);
+  outline-offset: 2px;
+}
+
 .reviewFileThumb img,
 .singleReviewFile img {
   width: 100%;
