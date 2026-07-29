@@ -100,7 +100,16 @@ export interface CustomerPaymentCheckoutStatus {
   state?: string | null;
   invoiceCount: number;
   paid: boolean;
-  invoices?: InsuranceForm[];
+  invoices?: CustomerPaymentStatusInvoice[];
+}
+
+export interface CustomerPaymentStatusInvoice {
+  id: string;
+  invoiceNumber?: string;
+  vehicleNumber?: string;
+  paymentStatus?: string;
+  paymentAmount?: number;
+  paymentCompletedAt?: string | null;
 }
 
 function getAuthHeader() {
