@@ -1,5 +1,9 @@
 'use client';
-import { getCustomerPaymentCheckoutStatus } from '@/features/customer/api';
+import {
+  getCustomerPaymentCheckoutStatus,
+  getCustomerWalletTopupStatus,
+  type CustomerPaymentStatusInvoice,
+} from '@/features/customer/api';
 import {
   clearCustomerInvoicePaymentAttempt,
   readCustomerInvoicePaymentAttempt,
@@ -8,10 +12,45 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
+const CUSTOMER_PAYMENT_STATUS_ATTEMPTS = 6;
+const CUSTOMER_PAYMENT_STATUS_INTERVAL_MS = 1_500;
+
+function customerInvoiceSuccessUrl({
+  invoiceId,
+  invoiceNumber,
+  vehicle,
+  merchantOrderId,
+}: {
+  invoiceId?: string | null;
+  invoiceNumber?: string | null;
+  vehicle?: string | null;
+  merchantOrderId?: string | null;
+}) {
+  const query = new URLSearchParams();
+  if (invoiceId) query.set('invoiceId', invoiceId);
+  if (invoiceNumber) query.set('invoiceNumber', invoiceNumber);
+  if (vehicle) query.set('vehicle', vehicle);
+  if (merchantOrderId) query.set('merchantOrderId', merchantOrderId);
+  return `/payment/success?${query.toString()}`;
+}
+
+function matchingPaidInvoice(
+  invoices: CustomerPaymentStatusInvoice[] | undefined,
+  preferredInvoiceIds: Array<string | null | undefined>,
+) {
+  if (!invoices?.length) return null;
+  const preferredIds = preferredInvoiceIds.filter(Boolean);
+  return (
+    invoices.find((invoice) => preferredIds.includes(invoice.id)) ||
+    invoices[0]
+  );
+}
+
 function PendingContent() {
   const router = useRouter();
   const params = useSearchParams();
   const invoiceId = params.get('invoiceId');
+  const isWalletTopup = params.get('walletTopup') === '1';
   const isCustomerInvoiceReturn = params.get('customerInvoice') === '1';
   const merchantOrderId = params.get('merchantOrderId') || params.get('merchantTransactionId');
   const [checking, setChecking] = useState(Boolean(merchantOrderId));
@@ -25,61 +64,107 @@ function PendingContent() {
     const checkStatus = async () => {
       if (!merchantOrderId) return;
       setChecking(true);
-      const invoicePaymentAttempt = readCustomerInvoicePaymentAttempt();
+      const invoicePaymentAttempt = isWalletTopup
+        ? null
+        : readCustomerInvoicePaymentAttempt();
+      const matchingInvoicePaymentAttempt =
+        invoicePaymentAttempt?.merchantOrderId === merchantOrderId
+          ? invoicePaymentAttempt
+          : null;
       const shouldReturnToInvoice =
         isCustomerInvoiceReturn ||
-        invoicePaymentAttempt?.merchantOrderId === merchantOrderId;
+        Boolean(matchingInvoicePaymentAttempt);
       const returnToInvoiceRetry = () => {
-        if (invoicePaymentAttempt?.merchantOrderId === merchantOrderId) {
+        if (matchingInvoicePaymentAttempt) {
           writeCustomerInvoicePaymentAttempt({
-            ...invoicePaymentAttempt,
+            ...matchingInvoicePaymentAttempt,
             phase: 'retry',
           });
         }
         router.replace('/insurance?paymentReturn=1');
       };
       try {
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-          const result = await getCustomerPaymentCheckoutStatus(merchantOrderId);
+        for (
+          let attempt = 0;
+          attempt < CUSTOMER_PAYMENT_STATUS_ATTEMPTS;
+          attempt += 1
+        ) {
+          const result = isWalletTopup
+            ? await getCustomerWalletTopupStatus(merchantOrderId)
+            : await getCustomerPaymentCheckoutStatus(merchantOrderId);
           if (cancelled) return;
           const state = String(result.state || '').toUpperCase();
           const failed = ['FAILED', 'CANCELLED', 'EXPIRED', 'DECLINED'].includes(state);
 
           if (result.paid) {
             if (shouldReturnToInvoice) {
-              if (invoicePaymentAttempt) {
+              if (matchingInvoicePaymentAttempt) {
                 clearCustomerInvoicePaymentAttempt();
               }
+              const paidInvoice =
+                !isWalletTopup && 'invoices' in result
+                  ? matchingPaidInvoice(result.invoices, [
+                      invoiceId,
+                      matchingInvoicePaymentAttempt?.invoiceId,
+                    ])
+                  : null;
               const paidInvoiceId =
-                invoicePaymentAttempt?.invoiceId || invoiceId;
+                invoiceId ||
+                matchingInvoicePaymentAttempt?.invoiceId ||
+                paidInvoice?.id;
               router.replace(
-                paidInvoiceId
-                  ? `/payment/success?invoiceId=${encodeURIComponent(paidInvoiceId)}`
-                  : '/payment/success',
+                customerInvoiceSuccessUrl({
+                  invoiceId: paidInvoiceId,
+                  invoiceNumber: paidInvoice?.invoiceNumber,
+                  vehicle: paidInvoice?.vehicleNumber,
+                  merchantOrderId,
+                }),
               );
               return;
             }
             setStatus('success');
-            setMessage('Your payment has been confirmed. Receipts and policy updates will be shared on WhatsApp.');
-            return;
-          }
-
-          if (shouldReturnToInvoice) {
-            returnToInvoiceRetry();
+            setMessage(
+              isWalletTopup
+                ? 'Payment confirmed. Credit has been added to your MandiPlus Wallet.'
+                : 'Your payment has been confirmed. Receipts and policy updates will be shared on WhatsApp.',
+            );
             return;
           }
 
           if (failed) {
+            if (shouldReturnToInvoice) {
+              returnToInvoiceRetry();
+              return;
+            }
             setStatus('failed');
-            setMessage('Payment was not completed. Your invoices and full pending dues remain unchanged.');
+            setMessage(
+              isWalletTopup
+                ? 'Payment was not completed. Your wallet balance remains unchanged.'
+                : 'Payment was not completed. Your invoices and full pending dues remain unchanged.',
+            );
+            return;
+          }
+
+          if (
+            shouldReturnToInvoice &&
+            attempt === CUSTOMER_PAYMENT_STATUS_ATTEMPTS - 1
+          ) {
+            returnToInvoiceRetry();
             return;
           }
 
           setStatus('pending');
-          setMessage('Payment is not confirmed yet. Your dues will remain visible until PhonePe confirms it.');
-          if (attempt < 2) {
+          setMessage(
+            isWalletTopup
+              ? 'Payment is not confirmed yet. Credit will be added only after PhonePe confirms it.'
+              : 'Payment is not confirmed yet. Your dues will remain visible until PhonePe confirms it.',
+          );
+          if (attempt < CUSTOMER_PAYMENT_STATUS_ATTEMPTS - 1) {
             await new Promise<void>((resolve) => {
-              retryTimer = setTimeout(resolve, 2000);
+              retryTimer = setTimeout(
+                resolve,
+                CUSTOMER_PAYMENT_STATUS_INTERVAL_MS,
+              );
             });
           }
         }
@@ -103,7 +188,13 @@ function PendingContent() {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [invoiceId, isCustomerInvoiceReturn, merchantOrderId, router]);
+  }, [
+    invoiceId,
+    isCustomerInvoiceReturn,
+    isWalletTopup,
+    merchantOrderId,
+    router,
+  ]);
 
   const isSuccess = status === 'success';
   const isFailed = status === 'failed';
@@ -125,7 +216,15 @@ function PendingContent() {
           </svg>
         </div>
         <h1 className="text-2xl font-bold text-gray-800 mb-2">
-          {checking ? 'Checking Payment' : isSuccess ? 'Payment Successful!' : isFailed ? 'Payment Failed' : 'Payment Pending'}
+          {checking
+            ? 'Checking Payment'
+            : isSuccess
+              ? isWalletTopup
+                ? 'Money added'
+                : 'Payment Successful!'
+              : isFailed
+                ? 'Payment Failed'
+                : 'Payment Pending'}
         </h1>
         <p className="text-gray-500 mb-6">
           {message || 'Your payment is being processed. This may take a few minutes. You will be notified on WhatsApp once confirmed.'}
@@ -137,10 +236,10 @@ function PendingContent() {
           <p className="text-xs text-gray-400 mb-6">Payment Ref: {merchantOrderId}</p>
         )}
         <a
-          href="/insurance?paymentReturn=1"
+          href={isWalletTopup ? '/customer/wallet' : '/insurance?paymentReturn=1'}
           className="block w-full bg-[#075E54] text-white py-3 rounded-xl font-semibold hover:bg-[#128C7E] transition-colors"
         >
-          Back to Insurance
+          {isWalletTopup ? 'Back to Wallet' : 'Back to Insurance'}
         </a>
       </div>
     </div>
