@@ -1,39 +1,206 @@
-'use client';
-import { useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
+"use client";
+
+import {
+  ArrowLeft,
+  Download,
+  LoaderCircle,
+  MessageCircle,
+} from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
+import { getCustomerDashboardInvoices } from "@/features/customer/api";
+import {
+  clearCustomerInvoicePaymentAttempt,
+} from "@/features/customer-app/payment-attempt";
+import {
+  getInvoicePdfUrl,
+  invoiceVehicle,
+  type CustomerInvoice,
+} from "@/features/customer-app/utils";
+
+import styles from "./payment-success.module.css";
+
+const PDF_POLL_INTERVAL_MS = 1_500;
 
 function SuccessContent() {
+  const router = useRouter();
   const params = useSearchParams();
-  const invoiceId = params.get('invoiceId');
-  const paidFromWallet = params.get('source') === 'wallet';
+  const invoiceId = params.get("invoiceId") || "";
+  const fallbackInvoiceNumber = params.get("invoiceNumber") || "";
+  const fallbackVehicle = params.get("vehicle") || "";
+  const [invoice, setInvoice] = useState<CustomerInvoice | null>(null);
+  const [loadedPdfUrl, setLoadedPdfUrl] = useState("");
+  const [hasLoadedInvoiceList, setHasLoadedInvoiceList] = useState(false);
+  const [loadError, setLoadError] = useState("");
+
+  const refreshInvoice = useCallback(async () => {
+    if (!invoiceId) return false;
+    try {
+      const invoices = (await getCustomerDashboardInvoices()) as CustomerInvoice[];
+      const latestInvoice =
+        invoices.find((candidate) => String(candidate.id) === invoiceId) || null;
+      if (latestInvoice) {
+        setInvoice(latestInvoice);
+        setLoadError("");
+      }
+      setHasLoadedInvoiceList(true);
+      return Boolean(latestInvoice && getInvoicePdfUrl(latestInvoice));
+    } catch {
+      setHasLoadedInvoiceList(true);
+      setLoadError(
+        "Invoice details refresh nahi ho paaye. Hum dobara check kar rahe hain.",
+      );
+      return false;
+    }
+  }, [invoiceId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const poll = async () => {
+      const pdfReady = await refreshInvoice();
+      if (cancelled || pdfReady) return;
+      timer = window.setTimeout(poll, PDF_POLL_INTERVAL_MS);
+    };
+
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [refreshInvoice]);
+
+  const pdfUrl = useMemo(
+    () => (invoice ? getInvoicePdfUrl(invoice) : ""),
+    [invoice],
+  );
+  const invoiceNumber =
+    String(invoice?.invoiceNumber || fallbackInvoiceNumber).trim() ||
+    "Invoice generated";
+  const vehicle =
+    invoice && invoiceVehicle(invoice) !== "Vehicle not added"
+      ? invoiceVehicle(invoice)
+      : fallbackVehicle;
+
+  const shareInvoice = async () => {
+    if (!pdfUrl) return;
+    const shareData = {
+      title: invoiceNumber,
+      text: `${invoiceNumber}${vehicle ? ` · ${vehicle}` : ""} — MandiPlus`,
+      url: pdfUrl,
+    };
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+      }
+    }
+    window.open(
+      `https://wa.me/?text=${encodeURIComponent(
+        `${shareData.text}\n${shareData.url}`,
+      )}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  };
+
+  const goHome = () => {
+    clearCustomerInvoicePaymentAttempt();
+    router.replace("/home");
+  };
 
   return (
-    <div className="min-h-screen bg-[#efeae2] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
-        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg className="w-10 h-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
+    <main className={styles.page}>
+      <div className={styles.shell}>
+        <header className={styles.header}>
+          <button
+            type="button"
+            className={styles.backButton}
+            onClick={goHome}
+            aria-label="Back"
+          >
+            <ArrowLeft size={28} strokeWidth={2.5} />
+          </button>
+          <h1 className={styles.title}>Invoice generated</h1>
+        </header>
+
+        <section className={styles.insuranceBanner}>
+          <strong>Insurance ban rha hai</strong>
+        </section>
+
+        <section className={styles.invoiceCard}>
+          <header className={styles.invoiceHeading}>
+            <strong>{vehicle || invoiceNumber}</strong>
+          </header>
+
+          <div className={styles.pdfFrame}>
+            {pdfUrl ? (
+              <iframe
+                key={pdfUrl}
+                src={`${pdfUrl}#toolbar=0&navpanes=0&view=FitH`}
+                title={`Invoice PDF ${invoiceNumber}`}
+                onLoad={() => setLoadedPdfUrl(pdfUrl)}
+              />
+            ) : null}
+            {!pdfUrl || loadedPdfUrl !== pdfUrl ? (
+              <div
+                className={styles.pdfLoader}
+                role="status"
+                aria-live="polite"
+              >
+                <LoaderCircle size={34} />
+                <strong>Invoice PDF tayyar ho raha hai...</strong>
+                <span>
+                  PDF available hote hi yahin automatically dikh jayega.
+                </span>
+              </div>
+            ) : null}
+          </div>
+
+          {loadError ? (
+            <p className={styles.statusMessage}>{loadError}</p>
+          ) : !invoice && hasLoadedInvoiceList ? (
+            <p className={styles.statusMessage}>
+              Invoice sync ho raha hai. Page khula rakhein.
+            </p>
+          ) : null}
+        </section>
+
+        <div className={styles.actions}>
+          <button
+            type="button"
+            className={styles.action}
+            onClick={() => void shareInvoice()}
+            aria-disabled={!pdfUrl}
+            disabled={!pdfUrl}
+          >
+            <MessageCircle size={23} />
+            Send
+          </button>
+          <a
+            className={styles.action}
+            href={pdfUrl || undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+            download
+            aria-disabled={!pdfUrl}
+          >
+            <Download size={23} />
+            Download
+          </a>
         </div>
-        <h1 className="text-2xl font-bold text-gray-800 mb-2">
-          {paidFromWallet ? 'Invoice generated' : 'Payment Successful!'}
-        </h1>
-        <p className="text-gray-500 mb-6">
-          {paidFromWallet
-            ? 'Amount was deducted from your MandiPlus Wallet. Your documents will be shared on WhatsApp shortly.'
-            : 'Your insurance premium has been paid successfully. You will receive a confirmation on WhatsApp shortly.'}
-        </p>
-        {invoiceId && (
-          <p className="text-xs text-gray-400 mb-6">Invoice ID: {invoiceId}</p>
-        )}
-        <a
-          href="/home"
-          className="block w-full bg-[#075E54] text-white py-3 rounded-xl font-semibold hover:bg-[#128C7E] transition-colors"
-        >
-          Go to Home
-        </a>
       </div>
-    </div>
+    </main>
   );
 }
 

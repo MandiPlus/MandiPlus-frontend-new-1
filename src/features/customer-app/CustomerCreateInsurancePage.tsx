@@ -645,16 +645,38 @@ export default function CustomerCreateInsurancePage() {
       let invoiceId = canReuseCreatedInvoice
         ? previousAttempt.invoiceId
         : "";
+      let createdInvoice: Awaited<
+        ReturnType<typeof createCustomerInvoice>
+      > | null = null;
 
       if (!invoiceId) {
-        const invoice = await createCustomerInvoice(
+        createdInvoice = await createCustomerInvoice(
           userId,
           draft,
           files,
           pricing || undefined,
         );
-        if (!invoice?.id) throw new Error("Invoice was created without an ID.");
-        invoiceId = invoice.id;
+        if (!createdInvoice?.id) {
+          throw new Error("Invoice was created without an ID.");
+        }
+        invoiceId = createdInvoice.id;
+      }
+
+      if (
+        String(createdInvoice?.paymentStatus || "").toUpperCase() === "PAID"
+      ) {
+        clearCustomerInvoicePaymentAttempt();
+        paymentAttemptRef.current = null;
+        router.replace(
+          customerInvoiceSuccessUrl({
+            invoiceId,
+            source: "wallet",
+            invoiceNumber: createdInvoice?.invoiceNumber,
+            vehicleNumber:
+              createdInvoice?.vehicleNumber || createdInvoice?.truckNumber,
+          }),
+        );
+        return;
       }
 
       const createdInvoiceAttempt: CustomerInvoicePaymentAttempt = {
@@ -690,6 +712,24 @@ export default function CustomerCreateInsurancePage() {
       paymentAttemptRef.current = attempt;
       window.location.assign(checkout.redirectUrl);
     } catch (error) {
+      const paymentError = readableError(error, "");
+      const attemptedInvoiceId =
+        paymentAttemptRef.current?.invoiceId ||
+        readCustomerInvoicePaymentAttempt()?.invoiceId;
+      if (
+        attemptedInvoiceId &&
+        /all selected invoices are already paid/i.test(paymentError)
+      ) {
+        clearCustomerInvoicePaymentAttempt();
+        paymentAttemptRef.current = null;
+        router.replace(
+          customerInvoiceSuccessUrl({
+            invoiceId: attemptedInvoiceId,
+            source: "wallet",
+          }),
+        );
+        return;
+      }
       setNotice(
         readableError(
           error,
@@ -1997,6 +2037,24 @@ function validateDraft(draft: CustomerInvoiceDraft) {
     return "Buyer ka 10 digit mobile number add karein.";
   }
   return "";
+}
+
+function customerInvoiceSuccessUrl({
+  invoiceId,
+  source,
+  invoiceNumber,
+  vehicleNumber,
+}: {
+  invoiceId: string;
+  source?: "wallet";
+  invoiceNumber?: string | null;
+  vehicleNumber?: string | null;
+}) {
+  const params = new URLSearchParams({ invoiceId });
+  if (source) params.set("source", source);
+  if (invoiceNumber) params.set("invoiceNumber", invoiceNumber);
+  if (vehicleNumber) params.set("vehicle", vehicleNumber);
+  return `/payment/success?${params.toString()}`;
 }
 
 function text(value: unknown) {
