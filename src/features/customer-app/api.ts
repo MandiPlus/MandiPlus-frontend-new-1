@@ -129,6 +129,30 @@ export async function getCustomerInvoiceProfile() {
   });
 }
 
+export type CustomerLiveTranscriptionToken = {
+  provider: "gemini-live" | "assemblyai";
+  token: string;
+  websocketUrl: string;
+  expiresInSeconds: number;
+  maxSessionDurationSeconds: number;
+  model: string;
+};
+
+export async function getCustomerLiveTranscriptionToken(
+  languageCode: string,
+) {
+  const response = await customerRequest<{
+    success: boolean;
+    data: CustomerLiveTranscriptionToken;
+  }>({
+    method: "POST",
+    url: "/invoices/customer/live-transcription-token",
+    data: { languageCode },
+    timeout: 3500,
+  });
+  return response.data;
+}
+
 export type CustomerChannelPartnerRequestStatus =
   | "PENDING"
   | "APPROVED"

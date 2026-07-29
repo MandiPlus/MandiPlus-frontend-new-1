@@ -2494,12 +2494,12 @@
 
 .missingDetailsModal {
   position: fixed;
-  z-index: 170;
+  z-index: 180;
   inset: 0;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  padding: 18px;
+  padding: 24px;
 }
 
 .paymentRetryModal {
@@ -2566,102 +2566,112 @@
 .missingDetailsBackdrop {
   position: absolute;
   inset: 0;
-  border: 0;
-  background: rgba(17, 24, 39, 0.42);
+  background: rgba(31, 39, 57, 0.52);
   backdrop-filter: blur(2px);
 }
 
 .missingDetailsSheet {
   position: relative;
   display: grid;
-  width: min(100%, 440px);
-  gap: 19px;
-  border: 1px solid var(--mp-line);
-  border-radius: 24px;
-  padding: 20px;
-  background: #fff;
-  box-shadow: 0 24px 64px rgba(31, 48, 69, 0.24);
-  animation: sheetIn 180ms ease-out;
+  width: min(100%, 480px);
+  gap: 4px;
+  padding: 22px;
+  border: 1px solid rgba(218, 222, 233, 0.9);
+  border-radius: 30px;
+  color: var(--mp-ink);
+  background: var(--mp-surface);
+  box-shadow: 0 24px 70px rgba(32, 48, 68, 0.22);
+  animation: sheetIn 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.missingDetailsHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.missingDetailsHeader h2,
-.missingDetailsSheet h3,
-.missingDetailsHeader p {
+.missingDetailsQuestion,
+.missingVoiceLabel {
   margin: 0;
-}
-
-.missingDetailsHeader h2 {
-  color: var(--mp-ink);
-  font-size: 19px;
-  font-weight: 950;
-}
-
-.missingDetailsHeader p {
-  margin-top: 3px;
-  color: var(--mp-muted);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.missingDetailsHeader > button {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  color: var(--mp-ink);
-  background: var(--mp-soft);
-}
-
-.missingDetailsSheet h3 {
-  color: var(--mp-ink);
-  font-size: 23px;
-  font-weight: 950;
-  line-height: 1.2;
 }
 
 .missingDetailsQuestion {
   width: 100%;
+  font-size: clamp(29px, 7.5vw, 36px);
+  font-weight: 950;
+  line-height: 1.12;
+  letter-spacing: -0.035em;
   text-align: center;
   text-wrap: balance;
 }
 
 .missingVoiceArea {
   display: grid;
-  min-height: 210px;
-  place-items: center;
-  align-content: center;
-  gap: 12px;
+  justify-items: center;
+  gap: 0;
 }
 
 .missingVoiceControl {
   position: relative;
   display: grid;
-  width: 144px;
-  height: 144px;
+  width: 220px;
+  height: 187px;
   place-items: center;
+}
+
+.missingVoiceControlPrompt {
+  height: 108px;
 }
 
 .missingVoiceButton {
   position: relative;
   z-index: 2;
   display: grid;
-  width: 86px;
-  height: 86px;
+  width: 220px;
+  height: 187px;
   place-items: center;
   border: 0;
+  border-radius: 24px;
+  color: #6752cc;
+  background: transparent;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 150ms ease;
+}
+
+.missingVoiceButton:active {
+  transform: scale(0.94);
+}
+
+.missingVoiceButton:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.missingVoiceButtonPrompt {
+  height: 108px;
+}
+
+.missingVoiceButtonRecording {
+  background: transparent !important;
+}
+
+.missingMutedMic {
+  display: grid;
+  width: 82px;
+  height: 82px;
+  place-items: center;
+  border: 1px solid var(--mp-line);
   border-radius: 50%;
-  color: #fff;
-  background: var(--mp-navy);
-  box-shadow: 0 10px 26px rgba(31, 48, 69, 0.22);
+  color: #7661de;
+  background: var(--mp-soft);
+}
+
+.missingListeningAnimation {
+  width: 220px;
+  height: 187px;
+}
+
+.missingVoiceLabel {
+  margin-top: -12px;
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 22px;
+  text-align: center;
 }
 
 .voiceRadar {

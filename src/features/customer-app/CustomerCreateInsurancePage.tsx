@@ -13,13 +13,12 @@ import {
   ArrowLeft,
   CalendarDays,
   Camera,
-  Check,
   ChevronDown,
   FileText,
   FolderOpen,
   ImagePlus,
   LoaderCircle,
-  Mic,
+  MicOff,
   Phone,
   RefreshCw,
   Trash2,
@@ -28,6 +27,7 @@ import {
   X,
   ZoomIn,
 } from "lucide-react";
+import Lottie from "lottie-react";
 
 import { useAuth } from "@/features/auth/context/AuthContext";
 import {
@@ -41,14 +41,18 @@ import {
   extractCustomerInvoiceVoice,
   getCustomerAppPricing,
   getCustomerInvoiceProfile,
+  getCustomerLiveTranscriptionToken,
   isTenderCoconutProduct,
   matchingCustomerInvoiceRate,
   roundCustomerInvoiceMoney,
   type CustomerAppPricing,
   type CustomerInvoiceDraft,
+  type CustomerLiveTranscriptionToken,
   type InvoiceVoiceTargetField,
 } from "./api";
 import { CustomerAppShell } from "./CustomerAppShell";
+import { CustomerQuestionnaireVoiceSession } from "./customer-live-transcription";
+import listeningFaceAnimation from "./listening-face.json";
 import {
   clearCustomerInvoicePaymentAttempt,
   customerInvoicePaymentFingerprint,
@@ -71,6 +75,10 @@ type MissingDetailKey =
   | "insuredPartyPhone";
 type RecordingPurpose = MissingDetailKey;
 type VoiceAnswerState = "processing" | "saved" | "failed";
+type VoicePhase = "idle" | "prompt" | "requesting" | "recording" | "failed";
+type CachedLiveTranscriptionToken = CustomerLiveTranscriptionToken & {
+  expiresAt: number;
+};
 
 type EagerExtraction = {
   key: string;
@@ -83,6 +91,36 @@ const DEFAULT_TENDER_COCONUT_PRICING: CustomerAppPricing["tenderCoconut"] = {
   amount30Ton: 140000,
   updatedAt: null,
 };
+const LIVE_TRANSCRIPTION_TOKEN_MIN_TTL_MS = 5000;
+
+function questionnaireSpeechLocale(language: unknown) {
+  const locales: Record<string, string> = {
+    en: "en-IN",
+    hi: "hi-IN",
+    kn: "kn-IN",
+    mr: "mr-IN",
+    ta: "ta-IN",
+    te: "te-IN",
+  };
+  return locales[String(language || "hi").toLowerCase()] || "hi-IN";
+}
+
+function missingVoiceEndSilenceMillis(key: MissingDetailKey) {
+  switch (key) {
+    case "quantity":
+    case "totalAmount":
+      return 350;
+    case "supplierName":
+    case "buyerName":
+      return 450;
+    case "buyerAddress":
+      return 700;
+    case "insuredPartyPhone":
+      return 850;
+    default:
+      return 450;
+  }
+}
 
 const TENDER_LOGISTICS_CHOICES = [
   { value: "25", label: "25 ton", compactLabel: "25t" },
@@ -196,6 +234,12 @@ export default function CustomerCreateInsurancePage() {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderStreamRef = useRef<MediaStream | null>(null);
   const questionAudioRef = useRef<HTMLAudioElement | null>(null);
+  const questionnaireVoiceSessionRef =
+    useRef<CustomerQuestionnaireVoiceSession | null>(null);
+  const liveTranscriptionTokenRef =
+    useRef<CachedLiveTranscriptionToken | null>(null);
+  const liveTranscriptionTokenPromiseRef =
+    useRef<Promise<CachedLiveTranscriptionToken | null> | null>(null);
   const recordingStartedAtRef = useRef(0);
   const recordingPurposeRef = useRef<RecordingPurpose | null>(null);
   const questionGenerationRef = useRef<
@@ -224,6 +268,8 @@ export default function CustomerCreateInsurancePage() {
     );
   const [recordingPurpose, setRecordingPurpose] =
     useState<RecordingPurpose | null>(null);
+  const [voicePhase, setVoicePhase] = useState<VoicePhase>("idle");
+  const [listeningDotCount, setListeningDotCount] = useState(0);
   const [missingKeys, setMissingKeys] = useState<MissingDetailKey[]>([]);
   const [missingIndex, setMissingIndex] = useState(0);
   const [missingOpen, setMissingOpen] = useState(false);
@@ -249,6 +295,67 @@ export default function CustomerCreateInsurancePage() {
     : null;
   const isFinalizingReview =
     stage === "review" && !missingOpen && pendingVoiceAnswers > 0;
+
+  const requestLiveTranscriptionToken = useCallback(() => {
+    const cached = liveTranscriptionTokenRef.current;
+    if (
+      cached &&
+      cached.expiresAt - Date.now() > LIVE_TRANSCRIPTION_TOKEN_MIN_TTL_MS
+    ) {
+      return Promise.resolve(cached);
+    }
+    if (liveTranscriptionTokenPromiseRef.current) {
+      return liveTranscriptionTokenPromiseRef.current;
+    }
+
+    const request = getCustomerLiveTranscriptionToken(
+      questionnaireSpeechLocale(user?.preferredLanguage),
+    )
+      .then((credential) => {
+        if (!credential?.token || !credential.websocketUrl) return null;
+        const prepared: CachedLiveTranscriptionToken = {
+          ...credential,
+          expiresAt:
+            Date.now() +
+            Math.max(1, credential.expiresInSeconds || 60) * 1000,
+        };
+        liveTranscriptionTokenRef.current = prepared;
+        return prepared;
+      })
+      .catch(() => null)
+      .finally(() => {
+        liveTranscriptionTokenPromiseRef.current = null;
+      });
+    liveTranscriptionTokenPromiseRef.current = request;
+    return request;
+  }, [user?.preferredLanguage]);
+
+  const consumeLiveTranscriptionToken = useCallback(async () => {
+    const credential = await requestLiveTranscriptionToken();
+    if (credential && liveTranscriptionTokenRef.current === credential) {
+      liveTranscriptionTokenRef.current = null;
+    }
+    return credential;
+  }, [requestLiveTranscriptionToken]);
+
+  const stopQuestionnaireVoiceSession = useCallback(() => {
+    const session = questionnaireVoiceSessionRef.current;
+    questionnaireVoiceSessionRef.current = null;
+    if (session) void session.stop();
+  }, []);
+
+  useEffect(() => {
+    if (voicePhase !== "recording") return;
+    const interval = window.setInterval(() => {
+      setListeningDotCount((current) => (current + 1) % 4);
+    }, 420);
+    return () => window.clearInterval(interval);
+  }, [voicePhase]);
+
+  useEffect(() => {
+    if (!activeQuestion?.target) return;
+    void requestLiveTranscriptionToken();
+  }, [activeQuestion?.target, requestLiveTranscriptionToken]);
 
   const checkReturningPayment = useCallback(async () => {
     const userId = String(user?.id || "");
@@ -434,10 +541,11 @@ export default function CustomerCreateInsurancePage() {
       if (recorderRef.current?.state === "recording") {
         recorderRef.current.stop();
       }
+      stopQuestionnaireVoiceSession();
       recorderStreamRef.current?.getTracks().forEach((track) => track.stop());
       questionAudioRef.current?.pause();
     },
-    [],
+    [stopQuestionnaireVoiceSession],
   );
 
   const queueDocumentExtraction = useCallback((nextFiles: File[]) => {
@@ -600,6 +708,7 @@ export default function CustomerCreateInsurancePage() {
   };
 
   const advanceMissingDetails = () => {
+    setVoicePhase("idle");
     if (missingIndex >= missingKeys.length - 1) {
       setMissingOpen(false);
       return;
@@ -646,6 +755,7 @@ export default function CustomerCreateInsurancePage() {
     }
     if (recorderRef.current?.state === "recording") return;
     setNotice("");
+    setVoicePhase("requesting");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -670,9 +780,12 @@ export default function CustomerCreateInsurancePage() {
         if (event.data.size) chunks.push(event.data);
       };
       recorder.onerror = () => {
+        stopQuestionnaireVoiceSession();
+        setVoicePhase("failed");
         setNotice("Voice save nahi hui. Ek baar phir boliye.");
       };
       recorder.onstop = () => {
+        stopQuestionnaireVoiceSession();
         const stoppedPurpose = recordingPurposeRef.current;
         const duration = Date.now() - recordingStartedAtRef.current;
         const finalType = recorder.mimeType || mimeType || "audio/webm";
@@ -689,20 +802,38 @@ export default function CustomerCreateInsurancePage() {
         setRecordingPurpose(null);
 
         if (!stoppedPurpose || blob.size === 0 || duration < 250) {
+          setVoicePhase("failed");
           setNotice("Voice save nahi hui. Ek baar phir boliye.");
           return;
         }
         advanceMissingDetails();
         processQuestionVoice(stoppedPurpose, audio);
       };
-      recorder.start();
+      stopQuestionnaireVoiceSession();
+      const voiceSession = new CustomerQuestionnaireVoiceSession({
+        silenceMillis: missingVoiceEndSilenceMillis(purpose),
+        getCredential: consumeLiveTranscriptionToken,
+        onTurnEnd: () => {
+          const activeRecorder = recorderRef.current;
+          if (activeRecorder && activeRecorder.state !== "inactive") {
+            activeRecorder.stop();
+          }
+        },
+      });
+      questionnaireVoiceSessionRef.current = voiceSession;
+      setListeningDotCount(0);
+      recorder.start(100);
       setRecordingPurpose(purpose);
+      setVoicePhase("recording");
+      void voiceSession.start(stream);
     } catch {
+      stopQuestionnaireVoiceSession();
       recorderStreamRef.current?.getTracks().forEach((track) => track.stop());
       recorderStreamRef.current = null;
       recorderRef.current = null;
       recordingPurposeRef.current = null;
       setRecordingPurpose(null);
+      setVoicePhase("failed");
       setNotice("Microphone permission allow karke dobara try karein.");
     }
   };
@@ -727,6 +858,7 @@ export default function CustomerCreateInsurancePage() {
   useEffect(() => {
     if (!missingOpen || !activeMissingKey || !activeQuestion) return;
     let active = true;
+    setVoicePhase("prompt");
     const audio = questionAudioRef.current || new Audio();
     questionAudioRef.current = audio;
     audio.src = activeQuestion.audio;
@@ -736,6 +868,8 @@ export default function CustomerCreateInsurancePage() {
     const startAnswer = () => {
       if (active && activeQuestion.target) {
         void startRecording(activeMissingKey);
+      } else if (active) {
+        setVoicePhase("idle");
       }
     };
     audio.onended = startAnswer;
@@ -754,6 +888,7 @@ export default function CustomerCreateInsurancePage() {
         }
       }
       if (active) {
+        setVoicePhase("idle");
         setNotice("Question audio play nahi hua. Mic tap karke jawab boliye.");
       }
     })();
@@ -1447,33 +1582,20 @@ export default function CustomerCreateInsurancePage() {
 
       {missingOpen && activeMissingKey && activeQuestion ? (
         <div className={styles.missingDetailsModal}>
-          <button
-            type="button"
+          <div
             className={styles.missingDetailsBackdrop}
-            onClick={() => setMissingOpen(false)}
-            aria-label="Close details"
+            aria-hidden="true"
           />
-          <section className={styles.missingDetailsSheet}>
-            <div className={styles.missingDetailsHeader}>
-              <div>
-                <h2>Details bataiye</h2>
-                <p>
-                  {missingIndex + 1} of {missingKeys.length}
-                  {pendingVoiceAnswers
-                    ? ` · ${pendingVoiceAnswers} save ho raha hai`
-                    : ""}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setMissingOpen(false)}
-                aria-label="Close"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            <h3 className={styles.missingDetailsQuestion}>
+          <section
+            className={styles.missingDetailsSheet}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="missing-detail-question"
+          >
+            <h3
+              id="missing-detail-question"
+              className={styles.missingDetailsQuestion}
+            >
               {activeQuestion.label}
             </h3>
 
@@ -1500,36 +1622,52 @@ export default function CustomerCreateInsurancePage() {
               </div>
             ) : (
               <div className={styles.missingVoiceArea}>
-                <div className={styles.missingVoiceControl}>
-                  {recordingPurpose === activeMissingKey ? (
-                    <>
-                      <span className={styles.voiceRadar} />
-                      <span
-                        className={`${styles.voiceRadar} ${styles.voiceRadarDelayed}`}
-                      />
-                    </>
-                  ) : null}
+                <div
+                  className={`${styles.missingVoiceControl} ${
+                    voicePhase === "recording"
+                      ? ""
+                      : styles.missingVoiceControlPrompt
+                  }`}
+                >
                   <button
                     type="button"
                     className={`${styles.missingVoiceButton} ${
-                      recordingPurpose === activeMissingKey
+                      voicePhase === "recording"
                         ? styles.missingVoiceButtonRecording
-                        : ""
+                        : styles.missingVoiceButtonPrompt
                     }`}
                     onClick={() => handleVoicePress(activeMissingKey)}
+                    disabled={
+                      voicePhase === "requesting" || voicePhase === "prompt"
+                    }
                     aria-label={
-                      recordingPurpose === activeMissingKey
+                      voicePhase === "recording"
                         ? "Answer complete"
                         : "Speak answer"
                     }
                   >
-                    {recordingPurpose === activeMissingKey ? (
-                      <Check size={31} />
+                    {voicePhase === "recording" ? (
+                      <Lottie
+                        animationData={listeningFaceAnimation}
+                        autoplay
+                        loop
+                        className={styles.missingListeningAnimation}
+                        rendererSettings={{
+                          preserveAspectRatio: "xMidYMid meet",
+                        }}
+                      />
                     ) : (
-                      <Mic size={31} />
+                      <span className={styles.missingMutedMic}>
+                        <MicOff size={42} strokeWidth={2.35} />
+                      </span>
                     )}
                   </button>
                 </div>
+                {voicePhase === "recording" ? (
+                  <p className={styles.missingVoiceLabel}>
+                    {`listening${".".repeat(listeningDotCount)}`}
+                  </p>
+                ) : null}
               </div>
             )}
           </section>
