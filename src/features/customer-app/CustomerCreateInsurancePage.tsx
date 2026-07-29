@@ -13,13 +13,12 @@ import {
   ArrowLeft,
   CalendarDays,
   Camera,
-  Check,
   ChevronDown,
   FileText,
   FolderOpen,
   ImagePlus,
   LoaderCircle,
-  Mic,
+  MicOff,
   Phone,
   RefreshCw,
   Trash2,
@@ -28,6 +27,7 @@ import {
   X,
   ZoomIn,
 } from "lucide-react";
+import Lottie from "lottie-react";
 
 import { useAuth } from "@/features/auth/context/AuthContext";
 import {
@@ -39,15 +39,19 @@ import {
   extractCustomerInvoice,
   extractCustomerInvoiceVoice,
   getCustomerAppPricing,
+  getCustomerLiveTranscriptionToken,
   getCustomerTenderCoconutPrefill,
   isTenderCoconutProduct,
   matchingCustomerInvoiceRate,
   roundCustomerInvoiceMoney,
   type CustomerAppPricing,
   type CustomerInvoiceDraft,
+  type CustomerLiveTranscriptionToken,
   type TenderCoconutPrefill,
 } from "./api";
 import { CustomerAppShell } from "./CustomerAppShell";
+import { CustomerQuestionnaireVoiceSession } from "./customer-live-transcription";
+import listeningFaceAnimation from "./listening-face.json";
 import {
   clearCustomerInvoicePaymentAttempt,
   customerInvoicePaymentFingerprint,
@@ -77,6 +81,9 @@ type MissingQuestion = {
   label: string;
   audio: string;
   targetField?: string;
+};
+type CachedLiveTranscriptionToken = CustomerLiveTranscriptionToken & {
+  expiresAt: number;
 };
 
 const TENDER_MISSING_QUESTIONS: Record<MissingDetailKey, MissingQuestion> = {
@@ -123,6 +130,41 @@ const TENDER_LOGISTICS_CHOICES = [
 ] as const;
 
 const today = () => new Date().toISOString().slice(0, 10);
+const LIVE_TRANSCRIPTION_TOKEN_MIN_TTL_MS = 5000;
+
+function questionnaireSpeechLocale(language: unknown) {
+  const locales: Record<string, string> = {
+    en: "en-IN",
+    hi: "hi-IN",
+    kn: "kn-IN",
+    mr: "mr-IN",
+    ta: "ta-IN",
+    te: "te-IN",
+  };
+  return locales[String(language || "hi").toLowerCase()] || "hi-IN";
+}
+
+function missingVoiceEndSilenceMillis(key: MissingDetailKey) {
+  switch (key) {
+    case "quantity":
+    case "totalAmount":
+      return 350;
+    case "supplierName":
+    case "buyerName":
+      return 450;
+    case "buyerAddress":
+      return 700;
+    case "insuredPartyPhone":
+      return 850;
+    default:
+      return 450;
+  }
+}
+
+const QUESTIONNAIRE_TONNAGE_CHOICES = [
+  { value: "25", label: "25 ton" },
+  { value: "30", label: "30 ton" },
+] as const;
 
 const COMMODITY_OPTIONS = [
   ["Tender Coconut", "🥥"],
@@ -216,10 +258,17 @@ export default function CustomerCreateInsurancePage() {
   >([]);
   const [missingDetailIndex, setMissingDetailIndex] = useState(0);
   const [voicePhase, setVoicePhase] = useState<VoicePhase>("idle");
+  const [listeningDotCount, setListeningDotCount] = useState(0);
   const [pendingVoiceAnswers, setPendingVoiceAnswers] = useState(0);
   const questionAudioRef = useRef<HTMLAudioElement | null>(null);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const questionnaireVoiceSessionRef =
+    useRef<CustomerQuestionnaireVoiceSession | null>(null);
+  const liveTranscriptionTokenRef =
+    useRef<CachedLiveTranscriptionToken | null>(null);
+  const liveTranscriptionTokenPromiseRef =
+    useRef<Promise<CachedLiveTranscriptionToken | null> | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   const recordingStartedAtRef = useRef(0);
   const discardRecordingRef = useRef(false);
@@ -661,6 +710,67 @@ export default function CustomerCreateInsurancePage() {
     !activeMissingDetailKey &&
     (pendingVoiceAnswers > 0 || (isTenderCoconut && pricingLoading));
 
+  const requestLiveTranscriptionToken = useCallback(() => {
+    const cached = liveTranscriptionTokenRef.current;
+    if (
+      cached &&
+      cached.expiresAt - Date.now() > LIVE_TRANSCRIPTION_TOKEN_MIN_TTL_MS
+    ) {
+      return Promise.resolve(cached);
+    }
+    if (liveTranscriptionTokenPromiseRef.current) {
+      return liveTranscriptionTokenPromiseRef.current;
+    }
+
+    const request = getCustomerLiveTranscriptionToken(
+      questionnaireSpeechLocale(user?.preferredLanguage),
+    )
+      .then((credential) => {
+        if (!credential?.token || !credential.websocketUrl) return null;
+        const prepared: CachedLiveTranscriptionToken = {
+          ...credential,
+          expiresAt:
+            Date.now() +
+            Math.max(1, credential.expiresInSeconds || 60) * 1000,
+        };
+        liveTranscriptionTokenRef.current = prepared;
+        return prepared;
+      })
+      .catch(() => null)
+      .finally(() => {
+        liveTranscriptionTokenPromiseRef.current = null;
+      });
+    liveTranscriptionTokenPromiseRef.current = request;
+    return request;
+  }, [user?.preferredLanguage]);
+
+  const consumeLiveTranscriptionToken = useCallback(async () => {
+    const credential = await requestLiveTranscriptionToken();
+    if (credential && liveTranscriptionTokenRef.current === credential) {
+      liveTranscriptionTokenRef.current = null;
+    }
+    return credential;
+  }, [requestLiveTranscriptionToken]);
+
+  const stopQuestionnaireVoiceSession = useCallback(() => {
+    const session = questionnaireVoiceSessionRef.current;
+    questionnaireVoiceSessionRef.current = null;
+    if (session) void session.stop();
+  }, []);
+
+  useEffect(() => {
+    if (voicePhase !== "recording") return;
+    const interval = window.setInterval(() => {
+      setListeningDotCount((current) => (current + 1) % 4);
+    }, 420);
+    return () => window.clearInterval(interval);
+  }, [voicePhase]);
+
+  useEffect(() => {
+    if (!activeMissingQuestion?.targetField) return;
+    void requestLiveTranscriptionToken();
+  }, [activeMissingQuestion?.targetField, requestLiveTranscriptionToken]);
+
   const stopQuestionAudio = () => {
     const audio = questionAudioRef.current;
     if (!audio) return;
@@ -683,9 +793,10 @@ export default function CustomerCreateInsurancePage() {
   }
 
   const releaseMicrophone = useCallback(() => {
+    stopQuestionnaireVoiceSession();
     microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
     microphoneStreamRef.current = null;
-  }, []);
+  }, [stopQuestionnaireVoiceSession]);
 
   const closeMissingDetails = useCallback(() => {
     questionGenerationRef.current += 1;
@@ -810,10 +921,12 @@ export default function CustomerCreateInsurancePage() {
         if (event.data.size > 0) recordingChunksRef.current.push(event.data);
       };
       recorder.onerror = () => {
+        stopQuestionnaireVoiceSession();
         setVoicePhase("failed");
         setNotice("Mic se recording nahi ho paayi. Dobara tap karein.");
       };
       recorder.onstop = () => {
+        stopQuestionnaireVoiceSession();
         mediaRecorderRef.current = null;
         if (discardRecordingRef.current) {
           recordingChunksRef.current = [];
@@ -840,10 +953,25 @@ export default function CustomerCreateInsurancePage() {
         advanceMissingDetail(key);
         void processVoiceAnswer(key, audioFile, durationMillis);
       };
+      stopQuestionnaireVoiceSession();
+      const voiceSession = new CustomerQuestionnaireVoiceSession({
+        silenceMillis: missingVoiceEndSilenceMillis(key),
+        getCredential: consumeLiveTranscriptionToken,
+        onTurnEnd: () => {
+          const activeRecorder = mediaRecorderRef.current;
+          if (activeRecorder && activeRecorder.state !== "inactive") {
+            activeRecorder.stop();
+          }
+        },
+      });
+      questionnaireVoiceSessionRef.current = voiceSession;
       recordingStartedAtRef.current = performance.now();
-      recorder.start(180);
+      setListeningDotCount(0);
+      recorder.start(100);
       setVoicePhase("recording");
+      void voiceSession.start(stream);
     } catch (error) {
+      stopQuestionnaireVoiceSession();
       setVoicePhase("failed");
       setNotice(
         error instanceof DOMException && error.name === "NotAllowedError"
@@ -855,18 +983,20 @@ export default function CustomerCreateInsurancePage() {
     activeMissingDetailKey,
     activeMissingQuestion,
     advanceMissingDetail,
+    consumeLiveTranscriptionToken,
     processVoiceAnswer,
+    stopQuestionnaireVoiceSession,
     voicePhase,
   ]);
   startQuestionRecordingRef.current = () => {
     void startQuestionRecording();
   };
 
-  const stopQuestionRecording = () => {
+  const stopQuestionRecording = useCallback(() => {
     const recorder = mediaRecorderRef.current;
     if (!recorder || recorder.state === "inactive") return;
     recorder.stop();
-  };
+  }, []);
 
   const handleVoiceControl = () => {
     if (voicePhase === "recording") {
@@ -888,10 +1018,17 @@ export default function CustomerCreateInsurancePage() {
     audio.preload = "auto";
     audio.muted = false;
     audio.volume = 1;
+    let automaticStartTimeout: number | null = null;
+    const scheduleAutomaticVoiceStart = () => {
+      automaticStartTimeout = window.setTimeout(() => {
+        if (questionGenerationRef.current !== generation) return;
+        startQuestionRecordingRef.current();
+      }, 120);
+    };
     audio.onended = () => {
       if (questionGenerationRef.current !== generation) return;
       if (activeMissingQuestion.targetField) {
-        startQuestionRecordingRef.current();
+        scheduleAutomaticVoiceStart();
       } else {
         setVoicePhase("idle");
       }
@@ -899,7 +1036,7 @@ export default function CustomerCreateInsurancePage() {
     audio.onerror = () => {
       if (questionGenerationRef.current !== generation) return;
       if (activeMissingQuestion.targetField) {
-        startQuestionRecordingRef.current();
+        scheduleAutomaticVoiceStart();
       } else {
         setVoicePhase("idle");
       }
@@ -913,10 +1050,16 @@ export default function CustomerCreateInsurancePage() {
         ) {
           return;
         }
-        setNotice("Question audio play nahi hua. Mic tap karke jawab boliye.");
-        setVoicePhase("failed");
+        if (activeMissingQuestion.targetField) {
+          scheduleAutomaticVoiceStart();
+        } else {
+          setVoicePhase("idle");
+        }
       });
     return () => {
+      if (automaticStartTimeout !== null) {
+        window.clearTimeout(automaticStartTimeout);
+      }
       audio.pause();
       audio.onended = null;
       audio.onerror = null;
@@ -1452,25 +1595,6 @@ export default function CustomerCreateInsurancePage() {
             aria-modal="true"
             aria-labelledby="missing-detail-question"
           >
-            <header className={styles.missingDetailsHeader}>
-              <div>
-                <h2>Details bataiye</h2>
-                <p>
-                  {missingDetailIndex + 1} of {missingDetailKeys.length}
-                  {pendingVoiceAnswers > 0
-                    ? ` · ${pendingVoiceAnswers} save ho raha hai`
-                    : ""}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={closeMissingDetails}
-                aria-label="Close"
-              >
-                <X size={22} />
-              </button>
-            </header>
-
             <h3
               id="missing-detail-question"
               className={styles.missingDetailsQuestion}
@@ -1480,7 +1604,7 @@ export default function CustomerCreateInsurancePage() {
 
             {activeMissingDetailKey === "vehicleTonnage" ? (
               <div className={styles.missingTonnageChoices}>
-                {TENDER_LOGISTICS_CHOICES.map((choice) => (
+                {QUESTIONNAIRE_TONNAGE_CHOICES.map((choice) => (
                   <button
                     key={choice.value}
                     type="button"
@@ -1501,48 +1625,52 @@ export default function CustomerCreateInsurancePage() {
               </div>
             ) : (
               <div className={styles.missingVoiceArea}>
-                <div className={styles.missingVoiceControl}>
-                  {voicePhase === "recording" ? (
-                    <>
-                      <span className={styles.voiceRadar} />
-                      <span
-                        className={`${styles.voiceRadar} ${styles.voiceRadarDelayed}`}
-                      />
-                    </>
-                  ) : null}
+                <div
+                  className={`${styles.missingVoiceControl} ${
+                    voicePhase === "recording"
+                      ? ""
+                      : styles.missingVoiceControlPrompt
+                  }`}
+                >
                   <button
                     type="button"
                     className={`${styles.missingVoiceButton} ${
                       voicePhase === "recording"
                         ? styles.missingVoiceButtonRecording
-                        : ""
+                        : styles.missingVoiceButtonPrompt
                     }`}
                     onClick={handleVoiceControl}
-                    disabled={voicePhase === "requesting"}
+                    disabled={
+                      voicePhase === "requesting" || voicePhase === "prompt"
+                    }
                     aria-label={
                       voicePhase === "recording"
-                        ? "Answer complete"
-                        : "Start voice answer"
+                        ? "Voice answer done"
+                        : "Speak answer"
                     }
                   >
                     {voicePhase === "recording" ? (
-                      <Check size={34} strokeWidth={3} />
+                      <Lottie
+                        animationData={listeningFaceAnimation}
+                        autoplay
+                        loop
+                        className={styles.missingListeningAnimation}
+                        rendererSettings={{
+                          preserveAspectRatio: "xMidYMid meet",
+                        }}
+                      />
                     ) : (
-                      <Mic size={33} strokeWidth={2.6} />
+                      <span className={styles.missingMutedMic}>
+                        <MicOff size={42} strokeWidth={2.35} />
+                      </span>
                     )}
                   </button>
                 </div>
-                <p className={styles.missingVoiceLabel}>
-                  {voicePhase === "recording"
-                    ? "Ho gaya toh mic dabaiye"
-                    : voicePhase === "requesting"
-                      ? "Mic shuru ho raha hai..."
-                      : voicePhase === "prompt"
-                        ? "Suniye..."
-                        : voicePhase === "failed"
-                          ? "Mic dobara dabaiye"
-                          : "Mic tayyar hai"}
-                </p>
+                {voicePhase === "recording" ? (
+                  <p className={styles.missingVoiceLabel}>
+                    {`listening${".".repeat(listeningDotCount)}`}
+                  </p>
+                ) : null}
               </div>
             )}
           </section>
@@ -1815,18 +1943,31 @@ async function playQuestionAudioWithRetry(
   generationRef: { current: number },
 ) {
   const retryDelays = [0, 160, 320];
+  const playTimeoutMillis = 900;
   for (const delay of retryDelays) {
     if (delay) {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
     if (generationRef.current !== generation) return true;
+    let playTimeout: ReturnType<typeof setTimeout> | null = null;
     try {
       audio.currentTime = 0;
-      await audio.play();
+      await Promise.race([
+        audio.play(),
+        new Promise<never>((_, reject) => {
+          playTimeout = setTimeout(
+            () => reject(new Error("QUESTION_AUDIO_PLAY_TIMEOUT")),
+            playTimeoutMillis,
+          );
+        }),
+      ]);
       await new Promise((resolve) => setTimeout(resolve, 180));
       if (generationRef.current !== generation || !audio.paused) return true;
     } catch {
+      audio.pause();
       // Retry after the browser settles its media activation state.
+    } finally {
+      if (playTimeout) clearTimeout(playTimeout);
     }
   }
   return false;
