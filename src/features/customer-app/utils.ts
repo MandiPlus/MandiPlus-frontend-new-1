@@ -4,6 +4,8 @@ export type CustomerInvoice = InsuranceForm & {
   premium?: number | string | null;
   premiumAmount?: number | string | null;
   paymentAmount?: number | string | null;
+  pendingAmount?: number | string | null;
+  pendingPaymentAmount?: number | string | null;
   paymentStatus?: string | null;
   paymentCompletedAt?: string | null;
   isPaymentRequired?: boolean | null;
@@ -19,13 +21,49 @@ export function asNumber(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function positiveNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 export function invoicePremium(invoice: CustomerInvoice): number {
-  return asNumber(
-    invoice.paymentAmount ??
-      invoice.premiumAmount ??
-      invoice.premium ??
-      (invoice.amount ? asNumber(invoice.amount) * 0.002 : 0),
+  return (
+    positiveNumber(invoice.premiumAmount) ??
+    positiveNumber(invoice.premium) ??
+    (positiveNumber(invoice.amount)
+      ? Number((asNumber(invoice.amount) * 0.002).toFixed(2))
+      : null) ??
+    positiveNumber(invoice.paymentAmount) ??
+    0
   );
+}
+
+export function invoicePayableAmount(invoice: CustomerInvoice): number {
+  const state = String(invoice.paymentStatus || "").toUpperCase();
+  if (
+    invoice.isRejected ||
+    ["PAID", "NOT_REQUIRED", "REFUNDED"].includes(state)
+  ) {
+    return 0;
+  }
+
+  const explicitPending =
+    positiveNumber(invoice.pendingPaymentAmount) ??
+    positiveNumber(invoice.pendingAmount);
+  if (explicitPending !== null) return explicitPending;
+
+  const premium = invoicePremium(invoice);
+  if (state === "PARTIAL") {
+    return Number(
+      Math.max(premium - Math.max(asNumber(invoice.paymentAmount), 0), 0).toFixed(
+        2,
+      ),
+    );
+  }
+
+  // paymentAmount can be zero while the full premium is still unpaid.
+  return premium;
 }
 
 export function isPaidInvoice(invoice: CustomerInvoice): boolean {
@@ -38,7 +76,7 @@ export function isPayableInvoice(invoice: CustomerInvoice): boolean {
   if (isPaidInvoice(invoice) || invoice.isRejected) return false;
   const state = String(invoice.paymentStatus || "").toUpperCase();
   return (
-    invoicePremium(invoice) > 0 &&
+    invoicePayableAmount(invoice) > 0 &&
     (invoice.isPaymentRequired === true ||
       ["PENDING", "PARTIAL", "FAILED", ""].includes(state))
   );
