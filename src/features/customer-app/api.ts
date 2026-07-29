@@ -129,6 +129,49 @@ export async function getCustomerInvoiceProfile() {
   });
 }
 
+export type CustomerChannelPartnerRequestStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED";
+
+export type CustomerChannelPartnerRequest = {
+  id: string;
+  userId: string;
+  name: string;
+  mobileNumber: string;
+  state: string;
+  status: CustomerChannelPartnerRequestStatus;
+  reviewedAt?: string | null;
+  adminNote?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CustomerChannelPartnerRequestResponse = {
+  success: boolean;
+  data: CustomerChannelPartnerRequest | null;
+  message?: string;
+};
+
+export async function getCustomerChannelPartnerRequest() {
+  const response = await customerRequest<CustomerChannelPartnerRequestResponse>({
+    method: "GET",
+    url: "/channel-partners/me/request",
+  });
+  return response.data || null;
+}
+
+export async function createCustomerChannelPartnerRequest(payload: {
+  name: string;
+  state: string;
+}) {
+  return customerRequest<CustomerChannelPartnerRequestResponse>({
+    method: "POST",
+    url: "/channel-partners/me/request",
+    data: payload,
+  });
+}
+
 export async function askCustomerAssistant(payload: {
   message: string;
   history?: Array<{ role: "user" | "assistant"; text: string }>;

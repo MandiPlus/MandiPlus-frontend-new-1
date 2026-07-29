@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useState } from "react";
 import {
   FilePlus2,
   HelpCircle,
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { CustomerAppShell, useCustomerAppShell } from "./CustomerAppShell";
+import { ChannelPartnerRequestModal } from "./ChannelPartnerRequestModal";
 import { useCustomerAppData } from "./useCustomerAppData";
 import {
   getInsuranceUrl,
@@ -37,6 +39,7 @@ export default function CustomerHomePage() {
 
 function HomeContent({ data }: { data: ReturnType<typeof useCustomerAppData> }) {
   const { openMenu } = useCustomerAppShell();
+  const [partnerRequestOpen, setPartnerRequestOpen] = useState(false);
   const pending = data.invoices.filter(
     (invoice) => isPayableInvoice(invoice) && isCheckoutReady(invoice),
   );
@@ -143,23 +146,43 @@ function HomeContent({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
               sizes="(max-width: 1023px) 100vw, 444px"
             />
           </Link>
-          <Link
-            href={data.partnerActive ? "/partner" : "/support?topic=partner"}
-            className={styles.promoCard}
-            aria-label={
-              data.partnerActive ? "Open partner portal" : "Become a Mandi Plus partner"
-            }
-          >
-            <Image
-              src="/customer-app/channel-partner-ad.webp"
-              alt="Mandi Plus partner"
-              width={1578}
-              height={996}
-              sizes="(max-width: 1023px) 100vw, 444px"
-            />
-          </Link>
+          {data.partnerActive ? (
+            <Link
+              href="/partner"
+              className={styles.promoCard}
+              aria-label="Open partner portal"
+            >
+              <Image
+                src="/customer-app/channel-partner-ad.webp"
+                alt="Mandi Plus partner"
+                width={1578}
+                height={996}
+                sizes="(max-width: 1023px) 100vw, 444px"
+              />
+            </Link>
+          ) : (
+            <button
+              type="button"
+              className={styles.promoCard}
+              aria-label="Become a Mandi Plus partner"
+              onClick={() => setPartnerRequestOpen(true)}
+            >
+              <Image
+                src="/customer-app/channel-partner-ad.webp"
+                alt="Mandi Plus partner"
+                width={1578}
+                height={996}
+                sizes="(max-width: 1023px) 100vw, 444px"
+              />
+            </button>
+          )}
         </div>
       </section>
+      <ChannelPartnerRequestModal
+        open={partnerRequestOpen}
+        onClose={() => setPartnerRequestOpen(false)}
+        onSubmitted={() => data.refresh(true)}
+      />
     </>
   );
 }
