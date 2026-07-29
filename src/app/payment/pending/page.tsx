@@ -137,10 +137,10 @@ function PendingContent() {
           <p className="text-xs text-gray-400 mb-6">Payment Ref: {merchantOrderId}</p>
         )}
         <a
-          href="/home"
+          href="/insurance?paymentReturn=1"
           className="block w-full bg-[#075E54] text-white py-3 rounded-xl font-semibold hover:bg-[#128C7E] transition-colors"
         >
-          {isFailed ? 'Return to Dues' : 'Go to Home'}
+          Back to Insurance
         </a>
       </div>
     </div>
