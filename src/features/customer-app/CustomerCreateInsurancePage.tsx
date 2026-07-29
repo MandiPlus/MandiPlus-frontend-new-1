@@ -1900,13 +1900,7 @@ function extractionDraft(response: Record<string, unknown>) {
 }
 
 function getMissingDetailKeys(draft: CustomerInvoiceDraft) {
-  if (!isTenderCoconutProduct(draft.product)) return [];
-  const transactionFields = new Set<MissingDetailKey>([
-    "supplierName",
-    "quantity",
-    "totalAmount",
-    "vehicleTonnage",
-  ]);
+  const isTenderCoconut = isTenderCoconutProduct(draft.product);
   const ordered: MissingDetailKey[] = [
     "supplierName",
     "buyerName",
@@ -1914,12 +1908,10 @@ function getMissingDetailKeys(draft: CustomerInvoiceDraft) {
     "quantity",
     "totalAmount",
     "insuredPartyPhone",
-    "vehicleTonnage",
+    ...(isTenderCoconut ? (["vehicleTonnage"] as const) : []),
   ];
   return ordered.filter(
-    (key) =>
-      transactionFields.has(key) ||
-      !isMissingDetailAnswered(key, String(draft[key] || "")),
+    (key) => !isMissingDetailAnswered(key, String(draft[key] || "")),
   );
 }
 
