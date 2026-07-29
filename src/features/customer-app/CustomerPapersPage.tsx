@@ -21,7 +21,7 @@ import {
   getInsuranceUrl,
   getInvoicePdfUrl,
   invoiceDate,
-  invoicePremium,
+  invoicePayableAmount,
   invoiceProduct,
   invoiceVehicle,
   isCheckoutReady,
@@ -69,7 +69,7 @@ export default function CustomerPapersPage({
     [data.invoices],
   );
   const dueTotal = checkoutReady.reduce(
-    (total, invoice) => total + invoicePremium(invoice),
+    (total, invoice) => total + invoicePayableAmount(invoice),
     0,
   );
 
@@ -123,6 +123,10 @@ export default function CustomerPapersPage({
   };
 
   const pay = async () => {
+    if (!data.invoicesLoaded || data.invoiceError) {
+      setNotice("Latest payment details could not be verified. Please retry.");
+      return;
+    }
     const invoices = selectedReady.length ? selectedReady : checkoutReady;
     if (!invoices.length || paying) {
       setNotice(
@@ -137,6 +141,10 @@ export default function CustomerPapersPage({
     try {
       const checkout = await createCustomerWebPaymentCheckout(
         invoices.map((invoice) => invoice.id),
+        invoices.reduce(
+          (total, invoice) => total + invoicePayableAmount(invoice),
+          0,
+        ),
       );
       if (!checkout.redirectUrl) throw new Error("PhonePe checkout URL was not returned.");
       window.location.assign(checkout.redirectUrl);
@@ -232,13 +240,17 @@ export default function CustomerPapersPage({
             <div>
               <div className={styles.dueLabel}>Due amount</div>
               <div className={styles.dueAmount}>
-                {data.loading ? "—" : money(dueTotal)}
+                {!data.invoicesLoaded ? "—" : money(dueTotal)}
               </div>
             </div>
             <button
               type="button"
               className={styles.primaryButton}
-              disabled={paying || data.loading}
+              disabled={
+                paying ||
+                !data.invoicesLoaded ||
+                Boolean(data.invoiceError)
+              }
               onClick={() => void pay()}
             >
               {paying ? <RefreshCw size={18} className="animate-spin" /> : null}
@@ -247,13 +259,21 @@ export default function CustomerPapersPage({
           </div>
         </section>
 
-        {notice ? <div className={styles.notice}>{notice}</div> : null}
+        {data.invoiceError ? (
+          <div className={styles.notice}>{data.invoiceError}</div>
+        ) : notice ? (
+          <div className={styles.notice}>{notice}</div>
+        ) : null}
 
-        {data.loading ? (
+        {!data.invoicesLoaded && data.loading ? (
           <div className={styles.emptyState}>
             {tab === "policy"
               ? "Insurance load ho rahe hain…"
               : "Payments load ho rahe hain…"}
+          </div>
+        ) : !data.invoicesLoaded ? (
+          <div className={styles.emptyState}>
+            Payment details load nahi ho paaye. Please retry.
           </div>
         ) : groups.length ? (
           groups.map(([date, invoices]) => (
@@ -353,7 +373,7 @@ export default function CustomerPapersPage({
                       </span>
                       {locked ? (
                         <span className={styles.documentDue}>
-                          <strong>{money(invoicePremium(invoice))}</strong>
+                          <strong>{money(invoicePayableAmount(invoice))}</strong>
                           <small>Due amount</small>
                         </span>
                       ) : policyPending ? (
