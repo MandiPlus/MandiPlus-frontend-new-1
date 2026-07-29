@@ -107,8 +107,6 @@ export function isClosedClaim(claim: ClaimRequest): boolean {
 }
 
 export function readableError(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === "string") return error;
   if (error && typeof error === "object") {
     const candidate = error as {
       message?: string | string[];
@@ -118,6 +116,8 @@ export function readableError(error: unknown, fallback: string): string {
     if (Array.isArray(message)) return message.join(", ");
     if (message) return message;
   }
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string") return error;
   return fallback;
 }
 

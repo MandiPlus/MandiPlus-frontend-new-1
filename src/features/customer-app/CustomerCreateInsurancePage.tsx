@@ -11,9 +11,11 @@ import {
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  CalendarDays,
   Camera,
   Check,
   ChevronDown,
+  FileText,
   FolderOpen,
   ImagePlus,
   LoaderCircle,
@@ -23,6 +25,7 @@ import {
   Truck,
   Users,
   X,
+  ZoomIn,
 } from "lucide-react";
 
 import { useAuth } from "@/features/auth/context/AuthContext";
@@ -114,6 +117,28 @@ const MISSING_QUESTIONS: Record<
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+const COMMODITY_OPTIONS = [
+  ["Tender Coconut", "🥥"],
+  ["Kiwi", "🥝"],
+  ["Mango", "🥭"],
+  ["Banana", "🍌"],
+  ["Papaya (Papita)", "🧡"],
+  ["Pomegranate (Anar)", "🍎"],
+  ["Oranges", "🍊"],
+  ["Kinnow", "🍊"],
+  ["Guava (Amrood)", "🍐"],
+  ["Muskmelon (Kastoori Tarbooj)", "🍈"],
+  ["Watermelon (Tarbooj)", "🍉"],
+  ["Pista", "🌰"],
+  ["Tomato", "🍅"],
+  ["Onion", "🧅"],
+  ["Potato", "🥔"],
+  ["Ginger (Fresh)", "🫚"],
+  ["Sweet Potato", "🍠"],
+  ["Mosambi (Sweet Lime)", "🍋"],
+  ["Grapes", "🍇"],
+] as const;
+
 function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft {
   const userName = String(user?.name || user?.fullName || "");
   const userPhone = String(
@@ -188,7 +213,8 @@ export default function CustomerCreateInsurancePage() {
     emptyDraft(user),
   );
   const [sourceOpen, setSourceOpen] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState("");
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [zoomedFileIndex, setZoomedFileIndex] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
   const [pricing, setPricing] =
     useState<CustomerAppPricing["tenderCoconut"]>(
@@ -261,13 +287,11 @@ export default function CustomerCreateInsurancePage() {
   }, []);
 
   useEffect(() => {
-    if (!files[0] || !files[0].type.startsWith("image/")) {
-      setPreviewUrl("");
-      return;
-    }
-    const next = URL.createObjectURL(files[0]);
-    setPreviewUrl(next);
-    return () => URL.revokeObjectURL(next);
+    const next = files.map((file) =>
+      file.type.startsWith("image/") ? URL.createObjectURL(file) : "",
+    );
+    setPreviewUrls(next);
+    return () => next.forEach((url) => url && URL.revokeObjectURL(url));
   }, [files]);
   useEffect(
     () => () => {
@@ -666,10 +690,10 @@ export default function CustomerCreateInsurancePage() {
           <div className={styles.captureStage}>
             {files.length ? (
               <div className={styles.capturePreview}>
-                {previewUrl ? (
+                {previewUrls[0] ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={previewUrl}
+                    src={previewUrls[0]}
                     alt=""
                     decoding="async"
                     className={styles.capturePreviewImage}
@@ -685,23 +709,38 @@ export default function CustomerCreateInsurancePage() {
                     1/{files.length}
                   </span>
                 ) : null}
+                {extractionState === "optimizing" ||
+                extractionState === "reading" ? (
+                  <div className={styles.captureReadingOverlay} role="status">
+                    <LoaderCircle className="animate-spin" size={28} />
+                    <strong>Parchi padh rahe hain</strong>
+                    <span>Details apne aap bhar jayengi</span>
+                  </div>
+                ) : null}
                 <div className={styles.capturePreviewActions}>
-                  <button type="button" onClick={() => setSourceOpen(true)}>
+                  <button
+                    type="button"
+                    onClick={() => setSourceOpen(true)}
+                    disabled={
+                      extractionState === "optimizing" ||
+                      extractionState === "reading"
+                    }
+                  >
                     <ImagePlus size={17} />
                     Photo badlein
                   </button>
-                  <button type="button" onClick={removeFirstFile}>
+                  <button
+                    type="button"
+                    onClick={removeFirstFile}
+                    disabled={
+                      extractionState === "optimizing" ||
+                      extractionState === "reading"
+                    }
+                  >
                     <Trash2 size={17} />
                     Delete
                   </button>
                 </div>
-                {extractionState === "optimizing" ||
-                extractionState === "reading" ? (
-                  <div className={styles.eagerReadingBadge}>
-                    <LoaderCircle className="animate-spin" size={15} />
-                    Parchi padh rahe hain
-                  </div>
-                ) : null}
               </div>
             ) : (
               <button
@@ -804,21 +843,86 @@ export default function CustomerCreateInsurancePage() {
           </div>
         ) : null}
 
+        {files.length > 1 ? (
+          <div className={styles.reviewFileStrip} aria-label="Uploaded invoices">
+            {files.map((file, index) => (
+              <div
+                className={styles.reviewFileThumb}
+                key={`${file.name}-${index}`}
+              >
+                {previewUrls[index] ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={previewUrls[index]}
+                      alt={`Invoice ${index + 1}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setZoomedFileIndex(index)}
+                      aria-label={`Zoom invoice ${index + 1}`}
+                    >
+                      <ZoomIn size={14} />
+                    </button>
+                  </>
+                ) : (
+                  <span>
+                    <FileText size={25} />
+                  </span>
+                )}
+                <small>{index + 1}</small>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
         <section className={styles.reviewTopCard}>
           <div className={styles.reviewProductRow}>
             <div className={styles.reviewProduct}>
-              <span aria-hidden="true">{isTenderCoconut ? "🥥" : "🍅"}</span>
-              <input
-                aria-label="Commodity"
-                value={draft.product}
-                onChange={(event) => update("product", event.target.value)}
-              />
-              <ChevronDown size={18} />
+              <span aria-hidden="true">{commodityEmoji(draft.product)}</span>
+              <label className={styles.reviewCommoditySelect}>
+                <select
+                  aria-label="Commodity"
+                  value={draft.product}
+                  onChange={(event) => update("product", event.target.value)}
+                >
+                  {!draft.product ? (
+                    <option value="">Commodity chunein</option>
+                  ) : null}
+                  {draft.product &&
+                  !COMMODITY_OPTIONS.some(([name]) => name === draft.product) ? (
+                    <option value={draft.product}>{draft.product}</option>
+                  ) : null}
+                  {COMMODITY_OPTIONS.map(([name]) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={18} aria-hidden="true" />
+              </label>
             </div>
-            <div>
-              <div className={styles.reviewTotalLabel}>Total</div>
-              <div className={styles.reviewTotal}>{money(total)}</div>
-            </div>
+            {files.length === 1 ? (
+              <div className={styles.singleReviewFile}>
+                {previewUrls[0] ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={previewUrls[0]} alt="Uploaded invoice" />
+                    <button
+                      type="button"
+                      onClick={() => setZoomedFileIndex(0)}
+                      aria-label="Zoom uploaded invoice"
+                    >
+                      <ZoomIn size={14} />
+                    </button>
+                  </>
+                ) : (
+                  <span>
+                    <FileText size={27} />
+                  </span>
+                )}
+              </div>
+            ) : null}
           </div>
           <div className={styles.reviewModeRow}>
             {(["Cash", "Commission"] as const).map((mode) => (
@@ -834,6 +938,8 @@ export default function CustomerCreateInsurancePage() {
               </button>
             ))}
             <label className={styles.reviewDate}>
+              <span>{shortDate(draft.invoiceDate)}</span>
+              <CalendarDays size={16} aria-hidden="true" />
               <input
                 type="date"
                 aria-label="Invoice date"
@@ -1020,6 +1126,35 @@ export default function CustomerCreateInsurancePage() {
                 : `Pay ${payableMoney(premium)}`}
         </button>
       </div>
+
+      {zoomedFileIndex !== null && previewUrls[zoomedFileIndex] ? (
+        <div
+          className={styles.invoicePreviewModal}
+          role="dialog"
+          aria-modal="true"
+        >
+          <button
+            type="button"
+            className={styles.invoicePreviewBackdrop}
+            onClick={() => setZoomedFileIndex(null)}
+            aria-label="Close invoice preview"
+          />
+          <button
+            type="button"
+            className={styles.invoicePreviewClose}
+            onClick={() => setZoomedFileIndex(null)}
+            aria-label="Close invoice preview"
+          >
+            <X size={28} />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={previewUrls[zoomedFileIndex]}
+            alt={`Invoice ${zoomedFileIndex + 1}`}
+            className={styles.invoicePreviewFullImage}
+          />
+        </div>
+      ) : null}
 
       {isFinalizingReview ? (
         <div
@@ -1518,6 +1653,26 @@ function normalizeDate(value: unknown) {
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
   const date = new Date(raw);
   return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
+function shortDate(value: string) {
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "long",
+  });
+}
+
+function commodityEmoji(value: string) {
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  if (!normalized) return "🌾";
+  return (
+    COMMODITY_OPTIONS.find(([name]) => {
+      const candidate = name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      return candidate === normalized || candidate.includes(normalized);
+    })?.[1] || "🌾"
+  );
 }
 
 function round(value: number) {
