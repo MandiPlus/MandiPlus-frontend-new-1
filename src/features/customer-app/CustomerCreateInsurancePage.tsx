@@ -965,17 +965,22 @@ export default function CustomerCreateInsurancePage() {
             <CompactInput
               label={isTenderCoconut ? "Vyapari address" : "Supplier address"}
               value={draft.supplierAddress}
+              full
+              multiline
               onChange={(value) => update("supplierAddress", value)}
             />
             <CompactInput
               label="Buyer address"
               value={draft.buyerAddress}
+              full
+              multiline
               onChange={(value) => update("buyerAddress", value)}
             />
             <CompactInput
               label="Place of supply"
               value={draft.placeOfSupply}
               full
+              multiline
               onChange={(value) => update("placeOfSupply", value)}
             />
           </DetailSection>
@@ -1284,26 +1289,47 @@ function CompactInput({
   value,
   onChange,
   full = false,
+  multiline = false,
   inputMode,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   full?: boolean;
+  multiline?: boolean;
   inputMode?: "text" | "decimal" | "numeric" | "tel";
 }) {
+  const multilineRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const input = multilineRef.current;
+    if (!input) return;
+    input.style.height = "0px";
+    input.style.height = `${input.scrollHeight}px`;
+  }, [multiline, value]);
+
   return (
     <label
       className={`${styles.compactField} ${
         full ? styles.detailGridFull : ""
-      }`}
+      } ${multiline ? styles.compactFieldMultiline : ""}`}
     >
       <span>{label}</span>
-      <input
-        value={value}
-        inputMode={inputMode}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      {multiline ? (
+        <textarea
+          ref={multilineRef}
+          rows={1}
+          value={value}
+          inputMode={inputMode}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ) : (
+        <input
+          value={value}
+          inputMode={inputMode}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
     </label>
   );
 }
