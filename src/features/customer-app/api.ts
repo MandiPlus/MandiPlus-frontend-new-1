@@ -169,6 +169,33 @@ export type CustomerAppPricing = {
   };
 };
 
+export function roundCustomerInvoiceMoney(value: number) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+export function matchingCustomerInvoiceRate(
+  total: number,
+  quantity: number,
+) {
+  const safeTotal = roundCustomerInvoiceMoney(total);
+  if (
+    !Number.isFinite(safeTotal) ||
+    safeTotal <= 0 ||
+    !Number.isFinite(quantity) ||
+    quantity <= 0
+  ) {
+    return "";
+  }
+  const exactRate = safeTotal / quantity;
+  for (let precision = 2; precision <= 12; precision += 1) {
+    const candidate = Number(exactRate.toFixed(precision));
+    if (roundCustomerInvoiceMoney(quantity * candidate) === safeTotal) {
+      return candidate.toFixed(precision).replace(/\.?0+$/, "");
+    }
+  }
+  return exactRate.toFixed(12).replace(/\.?0+$/, "");
+}
+
 export async function getCustomerAppPricing() {
   return customerRequest<CustomerAppPricing>({
     method: "GET",
@@ -185,12 +212,12 @@ export async function createCustomerInvoice(
   const form = new FormData();
   const vehicle = draft.vehicleNumber.toUpperCase().replace(/[^A-Z0-9]/g, "");
   const quantity = Number(draft.quantity || 0);
-  const rate = Number(draft.rate || 0);
+  const enteredRate = Number(draft.rate || 0);
   const extractedTotal = Number(draft.totalAmount || 0);
   const goodsAmount =
     Number.isFinite(extractedTotal) && extractedTotal > 0
       ? extractedTotal
-      : quantity * rate;
+      : quantity * enteredRate;
   const logisticsAmount = isTenderCoconutProduct(draft.product)
     ? draft.vehicleTonnage === "30"
       ? Number(pricing?.amount30Ton || 0)
@@ -199,6 +226,8 @@ export async function createCustomerInvoice(
         : 0
     : 0;
   const amount = Number((goodsAmount + logisticsAmount).toFixed(2));
+  const rate =
+    Number(matchingCustomerInvoiceRate(amount, quantity)) || enteredRate;
   const cash = draft.mode === "Cash";
 
   form.append("userId", userId);
