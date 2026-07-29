@@ -1193,7 +1193,6 @@ export default function CustomerCreateInsurancePage() {
             />
             <CompactInput
               label="Vehicle number"
-              full
               value={draft.vehicleNumber}
               onChange={(value) =>
                 update(
@@ -1203,29 +1202,32 @@ export default function CustomerCreateInsurancePage() {
               }
             />
             {isTenderCoconut ? (
-              <div className={styles.inlineTonnage}>
-                {TENDER_LOGISTICS_CHOICES.map((choice) => (
-                  <button
-                    key={choice.value}
-                    type="button"
-                    className={
-                      draft.vehicleTonnage === choice.value
-                        ? styles.tonnageButtonActive
-                        : ""
-                    }
-                    onClick={() =>
-                      update(
-                        "vehicleTonnage",
-                        draft.vehicleTonnage === choice.value &&
-                          choice.value !== "NONE"
-                          ? "NONE"
-                          : choice.value,
-                      )
-                    }
-                  >
-                    {choice.compactLabel}
-                  </button>
-                ))}
+              <div className={styles.inlineTonnageField}>
+                <span>Tonnage</span>
+                <div className={styles.inlineTonnage}>
+                  {TENDER_LOGISTICS_CHOICES.map((choice) => (
+                    <button
+                      key={choice.value}
+                      type="button"
+                      className={
+                        draft.vehicleTonnage === choice.value
+                          ? styles.tonnageButtonActive
+                          : ""
+                      }
+                      onClick={() =>
+                        update(
+                          "vehicleTonnage",
+                          draft.vehicleTonnage === choice.value &&
+                            choice.value !== "NONE"
+                            ? "NONE"
+                            : choice.value,
+                        )
+                      }
+                    >
+                      {choice.compactLabel}
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : null}
           </DetailSection>

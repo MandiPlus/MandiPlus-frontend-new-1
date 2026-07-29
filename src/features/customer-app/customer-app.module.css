@@ -1935,11 +1935,24 @@
   font-weight: 950;
 }
 
+.inlineTonnageField {
+  display: grid;
+  min-width: 0;
+  min-height: 34px;
+  gap: 2px;
+  padding: 3px 5px 2px;
+}
+
+.inlineTonnageField > span {
+  color: var(--mp-muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
 .inlineTonnage {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
-  align-self: end;
   padding: 3px;
   border-radius: 10px;
   background: var(--mp-soft);
