@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
@@ -76,7 +76,7 @@ export default function CustomerProfilePage() {
   const params = useSearchParams();
   const { user, setUser, logout } = useAuth();
   const requested = params.get("section");
-  const initialSection = isProfileSection(requested) ? requested : "main";
+  const initialSection = isProfileSection(requested) ? requested : "details";
   const [section, setSection] = useState<ProfileSection>(initialSection);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
@@ -108,11 +108,15 @@ export default function CustomerProfilePage() {
     [user],
   );
 
+  useEffect(() => {
+    setSection(isProfileSection(requested) ? requested : "details");
+  }, [requested]);
+
   const goBack = () => {
     if (section === "main") router.push("/home");
     else {
       setSection("main");
-      router.replace("/profile");
+      router.replace("/profile?section=main");
       setNotice("");
     }
   };
@@ -152,7 +156,7 @@ export default function CustomerProfilePage() {
       }));
       setNotice("Profile save ho gaya.");
       setSection("main");
-      router.replace("/profile");
+      router.replace("/profile?section=main");
     } catch (error) {
       setNotice(readableError(error, "Profile save nahi ho saka."));
     } finally {
@@ -198,7 +202,7 @@ export default function CustomerProfilePage() {
     setProfile(profileFromUser(user));
     setNotice("");
     setSection("main");
-    router.replace("/profile");
+    router.replace("/profile?section=main");
   };
 
   return (
