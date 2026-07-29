@@ -297,7 +297,10 @@ export async function getCustomerPaymentCheckoutStatus(
     const response = await withAuthRetry(() =>
       axios.get(
         `${API_BASE_URL}/payment/customer/checkout/${encodeURIComponent(merchantOrderId)}/status`,
-        { headers: getAuthHeader() },
+        {
+          headers: getAuthHeader(),
+          timeout: 12000,
+        },
       ),
     );
     return response.data;

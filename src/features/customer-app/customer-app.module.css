@@ -2241,6 +2241,67 @@
   padding: 18px;
 }
 
+.paymentRetryModal {
+  position: fixed;
+  z-index: 190;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.paymentRetryBackdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(31, 39, 57, 0.52);
+  backdrop-filter: blur(2px);
+}
+
+.paymentRetryCard {
+  position: relative;
+  display: grid;
+  width: min(100%, 360px);
+  justify-items: center;
+  gap: 18px;
+  border: 1px solid rgba(218, 222, 233, 0.9);
+  border-radius: 26px;
+  padding: 28px 24px 24px;
+  color: var(--mp-ink);
+  background: var(--mp-surface);
+  box-shadow: 0 24px 70px rgba(32, 48, 68, 0.22);
+  text-align: center;
+  animation: sheetIn 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.paymentRetryIcon {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  border-radius: 18px;
+  color: var(--mp-green, #075e54);
+  background: #edf7f3;
+}
+
+.paymentRetryCard h2 {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.paymentRetryButton {
+  width: 100%;
+  min-height: 54px;
+  border: 0;
+  border-radius: 17px;
+  color: white;
+  background: var(--mp-navy);
+  font-size: 16px;
+  font-weight: 900;
+}
+
 .missingDetailsBackdrop {
   position: absolute;
   inset: 0;
@@ -2828,6 +2889,10 @@
     left: max(278px, calc(264px + (100vw - 264px - 480px) / 2 + 14px));
   }
 
+  .paymentRetryModal {
+    left: 264px;
+  }
+
   .finalizingReviewOverlay {
     top: 16px;
     right: auto;
@@ -2888,6 +2953,7 @@
   .drawer,
   .drawerBackdrop,
   .skeleton,
+  .paymentRetryCard,
   .voiceRadar,
   .finalizingReviewStatus svg {
     animation: none;

@@ -1,11 +1,18 @@
 'use client';
 import { getCustomerPaymentCheckoutStatus } from '@/features/customer/api';
-import { useSearchParams } from 'next/navigation';
+import {
+  clearCustomerInvoicePaymentAttempt,
+  readCustomerInvoicePaymentAttempt,
+  writeCustomerInvoicePaymentAttempt,
+} from '@/features/customer-app/payment-attempt';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
 function PendingContent() {
+  const router = useRouter();
   const params = useSearchParams();
   const invoiceId = params.get('invoiceId');
+  const isCustomerInvoiceReturn = params.get('customerInvoice') === '1';
   const merchantOrderId = params.get('merchantOrderId') || params.get('merchantTransactionId');
   const [checking, setChecking] = useState(Boolean(merchantOrderId));
   const [status, setStatus] = useState<'pending' | 'success' | 'failed'>('pending');
@@ -18,6 +25,19 @@ function PendingContent() {
     const checkStatus = async () => {
       if (!merchantOrderId) return;
       setChecking(true);
+      const invoicePaymentAttempt = readCustomerInvoicePaymentAttempt();
+      const shouldReturnToInvoice =
+        isCustomerInvoiceReturn ||
+        invoicePaymentAttempt?.merchantOrderId === merchantOrderId;
+      const returnToInvoiceRetry = () => {
+        if (invoicePaymentAttempt?.merchantOrderId === merchantOrderId) {
+          writeCustomerInvoicePaymentAttempt({
+            ...invoicePaymentAttempt,
+            phase: 'retry',
+          });
+        }
+        router.replace('/insurance?paymentReturn=1');
+      };
       try {
         for (let attempt = 0; attempt < 3; attempt += 1) {
           const result = await getCustomerPaymentCheckoutStatus(merchantOrderId);
@@ -26,8 +46,26 @@ function PendingContent() {
           const failed = ['FAILED', 'CANCELLED', 'EXPIRED', 'DECLINED'].includes(state);
 
           if (result.paid) {
+            if (shouldReturnToInvoice) {
+              if (invoicePaymentAttempt) {
+                clearCustomerInvoicePaymentAttempt();
+              }
+              const paidInvoiceId =
+                invoicePaymentAttempt?.invoiceId || invoiceId;
+              router.replace(
+                paidInvoiceId
+                  ? `/payment/success?invoiceId=${encodeURIComponent(paidInvoiceId)}`
+                  : '/payment/success',
+              );
+              return;
+            }
             setStatus('success');
             setMessage('Your payment has been confirmed. Receipts and policy updates will be shared on WhatsApp.');
+            return;
+          }
+
+          if (shouldReturnToInvoice) {
+            returnToInvoiceRetry();
             return;
           }
 
@@ -47,6 +85,10 @@ function PendingContent() {
         }
       } catch (error: unknown) {
         if (cancelled) return;
+        if (shouldReturnToInvoice) {
+          returnToInvoiceRetry();
+          return;
+        }
         const text = error instanceof Error ? error.message : '';
         setStatus('pending');
         setMessage(text || 'We could not confirm the payment. Your dues remain unchanged until confirmation.');
@@ -61,7 +103,7 @@ function PendingContent() {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [merchantOrderId]);
+  }, [invoiceId, isCustomerInvoiceReturn, merchantOrderId, router]);
 
   const isSuccess = status === 'success';
   const isFailed = status === 'failed';

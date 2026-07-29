@@ -21,6 +21,7 @@ import {
   LoaderCircle,
   Mic,
   Phone,
+  RefreshCw,
   Trash2,
   Truck,
   Users,
@@ -29,7 +30,10 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/features/auth/context/AuthContext";
-import { createCustomerWebPaymentCheckout } from "@/features/customer/api";
+import {
+  createCustomerWebPaymentCheckout,
+  getCustomerPaymentCheckoutStatus,
+} from "@/features/customer/api";
 import {
   createCustomerInvoice,
   extractCustomerInvoice,
@@ -42,6 +46,13 @@ import {
   type InvoiceVoiceTargetField,
 } from "./api";
 import { CustomerAppShell } from "./CustomerAppShell";
+import {
+  clearCustomerInvoicePaymentAttempt,
+  customerInvoicePaymentFingerprint,
+  readCustomerInvoicePaymentAttempt,
+  writeCustomerInvoicePaymentAttempt,
+  type CustomerInvoicePaymentAttempt,
+} from "./payment-attempt";
 import { money, readableError } from "./utils";
 import styles from "./customer-app.module.css";
 
@@ -61,11 +72,6 @@ type VoiceAnswerState = "processing" | "saved" | "failed";
 type EagerExtraction = {
   key: string;
   promise: Promise<Record<string, unknown>>;
-};
-
-type PendingPaymentDraft = {
-  invoiceId: string;
-  fingerprint: string;
 };
 
 const DEFAULT_TENDER_COCONUT_PRICING: CustomerAppPricing["tenderCoconut"] = {
@@ -172,23 +178,6 @@ function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft 
   };
 }
 
-function paymentDraftFingerprint(
-  draft: CustomerInvoiceDraft,
-  files: File[],
-  expectedTotalPaymentAmount: number,
-) {
-  return JSON.stringify({
-    draft,
-    expectedTotalPaymentAmount,
-    files: files.map((file) => ({
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      lastModified: file.lastModified,
-    })),
-  });
-}
-
 export default function CustomerCreateInsurancePage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -203,7 +192,9 @@ export default function CustomerCreateInsurancePage() {
   const questionGenerationRef = useRef<
     Partial<Record<MissingDetailKey, number>>
   >({});
-  const pendingPaymentDraftRef = useRef<PendingPaymentDraft | null>(null);
+  const paymentAttemptRef = useRef<CustomerInvoicePaymentAttempt | null>(null);
+  const paymentStatusCheckingRef = useRef(false);
+  const paymentStatusGenerationRef = useRef(0);
 
   const [stage, setStage] = useState<Stage>("capture");
   const [extractionState, setExtractionState] =
@@ -216,6 +207,8 @@ export default function CustomerCreateInsurancePage() {
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [zoomedFileIndex, setZoomedFileIndex] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
+  const [paymentRetryPromptOpen, setPaymentRetryPromptOpen] = useState(false);
+  const [paymentStatusChecking, setPaymentStatusChecking] = useState(false);
   const [pricing, setPricing] =
     useState<CustomerAppPricing["tenderCoconut"]>(
       DEFAULT_TENDER_COCONUT_PRICING,
@@ -248,6 +241,105 @@ export default function CustomerCreateInsurancePage() {
   const isFinalizingReview =
     stage === "review" && !missingOpen && pendingVoiceAnswers > 0;
 
+  const checkReturningPayment = useCallback(async () => {
+    const userId = String(user?.id || "");
+    const attempt =
+      readCustomerInvoicePaymentAttempt() || paymentAttemptRef.current;
+    if (!attempt || !userId) return;
+    if (attempt.userId !== userId) {
+      clearCustomerInvoicePaymentAttempt();
+      paymentAttemptRef.current = null;
+      return;
+    }
+
+    paymentAttemptRef.current = attempt;
+    setStage("review");
+    if (attempt.phase === "retry") {
+      paymentStatusCheckingRef.current = false;
+      setPaymentStatusChecking(false);
+      setPaymentRetryPromptOpen(true);
+      return;
+    }
+    if (attempt.phase !== "redirecting" || !attempt.merchantOrderId) {
+      paymentStatusCheckingRef.current = false;
+      setPaymentStatusChecking(false);
+      return;
+    }
+    if (paymentStatusCheckingRef.current) return;
+
+    const generation = paymentStatusGenerationRef.current + 1;
+    paymentStatusGenerationRef.current = generation;
+    paymentStatusCheckingRef.current = true;
+    setPaymentStatusChecking(true);
+    try {
+      const status = await getCustomerPaymentCheckoutStatus(
+        attempt.merchantOrderId,
+      );
+      if (paymentStatusGenerationRef.current !== generation) return;
+      if (status.paid) {
+        clearCustomerInvoicePaymentAttempt();
+        paymentAttemptRef.current = null;
+        setPaymentRetryPromptOpen(false);
+        router.replace(
+          `/payment/success?invoiceId=${encodeURIComponent(attempt.invoiceId)}`,
+        );
+        return;
+      }
+
+      const retryAttempt: CustomerInvoicePaymentAttempt = {
+        ...attempt,
+        phase: "retry",
+      };
+      writeCustomerInvoicePaymentAttempt(retryAttempt);
+      paymentAttemptRef.current = retryAttempt;
+      setNotice("");
+      setPaymentRetryPromptOpen(true);
+    } catch {
+      if (paymentStatusGenerationRef.current !== generation) return;
+      const retryAttempt: CustomerInvoicePaymentAttempt = {
+        ...attempt,
+        phase: "retry",
+      };
+      writeCustomerInvoicePaymentAttempt(retryAttempt);
+      paymentAttemptRef.current = retryAttempt;
+      setNotice("");
+      setPaymentRetryPromptOpen(true);
+    } finally {
+      if (paymentStatusGenerationRef.current === generation) {
+        paymentStatusCheckingRef.current = false;
+        setPaymentStatusChecking(false);
+      }
+    }
+  }, [router, user?.id]);
+
+  const closePaymentRetryPrompt = useCallback(() => {
+    paymentStatusGenerationRef.current += 1;
+    paymentStatusCheckingRef.current = false;
+    setPaymentStatusChecking(false);
+    setPaymentRetryPromptOpen(false);
+    setStage("review");
+  }, []);
+
+  const restartInsuranceCapture = useCallback(() => {
+    paymentStatusGenerationRef.current += 1;
+    paymentStatusCheckingRef.current = false;
+    paymentAttemptRef.current = null;
+    clearCustomerInvoicePaymentAttempt();
+    eagerExtractionRef.current = null;
+    setPaymentStatusChecking(false);
+    setPaymentRetryPromptOpen(false);
+    setFiles([]);
+    setDraft(emptyDraft(user));
+    setExtractionState("idle");
+    setNotice("");
+    setSourceOpen(false);
+    setMissingKeys([]);
+    setMissingIndex(0);
+    setMissingOpen(false);
+    setVoiceAnswers({});
+    setStage("capture");
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
     const defaults = emptyDraft(user);
@@ -260,6 +352,41 @@ export default function CustomerCreateInsurancePage() {
       product: current.product || defaults.product,
     }));
   }, [user]);
+
+  useEffect(() => {
+    const userId = String(user?.id || "");
+    if (!userId) return;
+
+    const attempt = readCustomerInvoicePaymentAttempt();
+    if (!attempt) return;
+    if (attempt.userId !== userId) {
+      clearCustomerInvoicePaymentAttempt();
+      return;
+    }
+
+    paymentAttemptRef.current = attempt;
+    setDraft(attempt.draft);
+    setStage("review");
+    void checkReturningPayment();
+  }, [checkReturningPayment, user?.id]);
+
+  useEffect(() => {
+    const checkWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void checkReturningPayment();
+      }
+    };
+    const checkOnPageShow = () => {
+      void checkReturningPayment();
+    };
+
+    window.addEventListener("pageshow", checkOnPageShow);
+    document.addEventListener("visibilitychange", checkWhenVisible);
+    return () => {
+      window.removeEventListener("pageshow", checkOnPageShow);
+      document.removeEventListener("visibilitychange", checkWhenVisible);
+    };
+  }, [checkReturningPayment]);
 
   useEffect(() => {
     let active = true;
@@ -624,22 +751,28 @@ export default function CustomerCreateInsurancePage() {
       setNotice("Details save ho rahi hain.");
       return;
     }
+    const userId = String(user.id);
+    paymentStatusGenerationRef.current += 1;
+    paymentStatusCheckingRef.current = false;
+    setPaymentStatusChecking(false);
     setStage("creating");
     setNotice("");
+    setPaymentRetryPromptOpen(false);
     try {
-      const fingerprint = paymentDraftFingerprint(
-        draft,
-        files,
-        premium,
-      );
-      let invoiceId =
-        pendingPaymentDraftRef.current?.fingerprint === fingerprint
-          ? pendingPaymentDraftRef.current.invoiceId
-          : "";
+      const fingerprint = customerInvoicePaymentFingerprint(draft, pricing);
+      const previousAttempt =
+        paymentAttemptRef.current || readCustomerInvoicePaymentAttempt();
+      const canReuseCreatedInvoice =
+        previousAttempt !== null &&
+        previousAttempt.userId === userId &&
+        previousAttempt.fingerprint === fingerprint;
+      let invoiceId = canReuseCreatedInvoice
+        ? previousAttempt.invoiceId
+        : "";
 
       if (!invoiceId) {
         const invoice = await createCustomerInvoice(
-          user.id,
+          userId,
           draft,
           files,
           pricing,
@@ -648,8 +781,20 @@ export default function CustomerCreateInsurancePage() {
           throw new Error("Invoice was created without an ID.");
         }
         invoiceId = invoice.id;
-        pendingPaymentDraftRef.current = { invoiceId, fingerprint };
       }
+
+      const createdInvoiceAttempt: CustomerInvoicePaymentAttempt = {
+        version: 2,
+        userId,
+        invoiceId,
+        merchantOrderId: null,
+        phase: "draft",
+        fingerprint,
+        draft,
+        createdAt: Date.now(),
+      };
+      writeCustomerInvoicePaymentAttempt(createdInvoiceAttempt);
+      paymentAttemptRef.current = createdInvoiceAttempt;
 
       const checkout = await createCustomerWebPaymentCheckout(
         [invoiceId],
@@ -658,6 +803,16 @@ export default function CustomerCreateInsurancePage() {
       if (!checkout.redirectUrl) {
         throw new Error("PhonePe checkout URL was not returned.");
       }
+      const merchantOrderId =
+        checkout.merchantOrderId || checkout.merchantTransactionId;
+      const attempt: CustomerInvoicePaymentAttempt = {
+        ...createdInvoiceAttempt,
+        merchantOrderId,
+        phase: "redirecting",
+        createdAt: Date.now(),
+      };
+      writeCustomerInvoicePaymentAttempt(attempt);
+      paymentAttemptRef.current = attempt;
       window.location.assign(checkout.redirectUrl);
     } catch (error) {
       setNotice(
@@ -825,7 +980,7 @@ export default function CustomerCreateInsurancePage() {
         <button
           type="button"
           className={styles.secondaryBack}
-          onClick={() => setStage("capture")}
+          onClick={restartInsuranceCapture}
           aria-label="Back to upload"
           disabled={stage === "creating"}
         >
@@ -1113,22 +1268,26 @@ export default function CustomerCreateInsurancePage() {
           onClick={() => void submitAndPay()}
           disabled={
             stage === "creating" ||
+            paymentStatusChecking ||
             extractionState === "reading" ||
             pendingVoiceAnswers > 0
           }
         >
           {stage === "creating" ||
+          paymentStatusChecking ||
           extractionState === "reading" ||
           pendingVoiceAnswers > 0 ? (
             <LoaderCircle className="animate-spin" size={19} />
           ) : null}
-          {extractionState === "reading"
-            ? "Parchi padh rahe hain"
-            : pendingVoiceAnswers > 0
-              ? "Details save ho rahi hain"
-              : validationIssue
-                ? "Details poori karein"
-                : `Pay ${payableMoney(premium)}`}
+          {paymentStatusChecking
+            ? "Payment check ho raha hai"
+            : extractionState === "reading"
+              ? "Parchi padh rahe hain"
+              : pendingVoiceAnswers > 0
+                ? "Details save ho rahi hain"
+                : validationIssue
+                  ? "Details poori karein"
+                  : `Pay ${payableMoney(premium)}`}
         </button>
       </div>
 
@@ -1158,6 +1317,35 @@ export default function CustomerCreateInsurancePage() {
             alt={`Invoice ${zoomedFileIndex + 1}`}
             className={styles.invoicePreviewFullImage}
           />
+        </div>
+      ) : null}
+
+      {paymentRetryPromptOpen ? (
+        <div className={styles.paymentRetryModal}>
+          <button
+            type="button"
+            className={styles.paymentRetryBackdrop}
+            onClick={closePaymentRetryPrompt}
+            aria-label="Close payment message"
+          />
+          <section
+            className={styles.paymentRetryCard}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="payment-retry-title"
+          >
+            <span className={styles.paymentRetryIcon} aria-hidden="true">
+              <RefreshCw size={26} />
+            </span>
+            <h2 id="payment-retry-title">Dobara try karein</h2>
+            <button
+              type="button"
+              className={styles.paymentRetryButton}
+              onClick={closePaymentRetryPrompt}
+            >
+              Theek hai
+            </button>
+          </section>
         </div>
       ) : null}
 
