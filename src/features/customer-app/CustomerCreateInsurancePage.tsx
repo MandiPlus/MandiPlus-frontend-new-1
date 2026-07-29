@@ -1065,7 +1065,6 @@ export default function CustomerCreateInsurancePage() {
         <section className={styles.reviewTopCard}>
           <div className={styles.reviewProductRow}>
             <div className={styles.reviewProduct}>
-              <span aria-hidden="true">{commodityEmoji(draft.product)}</span>
               <label className={styles.reviewCommoditySelect}>
                 <select
                   aria-label="Commodity"
@@ -1930,17 +1929,6 @@ function shortDate(value: string) {
     day: "numeric",
     month: "long",
   });
-}
-
-function commodityEmoji(value: string) {
-  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  if (!normalized) return "🌾";
-  return (
-    COMMODITY_OPTIONS.find(([name]) => {
-      const candidate = name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-      return candidate === normalized || candidate.includes(normalized);
-    })?.[1] || "🌾"
-  );
 }
 
 function round(value: number) {
