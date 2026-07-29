@@ -837,9 +837,17 @@ export default function CustomerCreateInsurancePage() {
       if (String(invoice?.paymentStatus || "").toUpperCase() === "PAID") {
         clearCustomerInvoicePaymentAttempt();
         paymentAttemptRef.current = null;
-        router.push(
-          `/payment/success?invoiceId=${encodeURIComponent(invoiceId)}&source=wallet`,
-        );
+        const successParams = new URLSearchParams({
+          invoiceId,
+          source: "wallet",
+        });
+        if (invoice?.invoiceNumber) {
+          successParams.set("invoiceNumber", invoice.invoiceNumber);
+        }
+        const vehicleNumber =
+          invoice?.vehicleNumber || invoice?.truckNumber || "";
+        if (vehicleNumber) successParams.set("vehicle", vehicleNumber);
+        router.replace(`/payment/success?${successParams.toString()}`);
         return;
       }
 
@@ -862,9 +870,26 @@ export default function CustomerCreateInsurancePage() {
       paymentAttemptRef.current = attempt;
       window.location.assign(checkout.redirectUrl);
     } catch (error) {
+      const paymentError = readableError(error, "");
+      const attemptedInvoiceId =
+        paymentAttemptRef.current?.invoiceId ||
+        readCustomerInvoicePaymentAttempt()?.invoiceId;
+      if (
+        attemptedInvoiceId &&
+        /all selected invoices are already paid/i.test(paymentError)
+      ) {
+        clearCustomerInvoicePaymentAttempt();
+        paymentAttemptRef.current = null;
+        router.replace(
+          `/payment/success?invoiceId=${encodeURIComponent(
+            attemptedInvoiceId,
+          )}&source=wallet`,
+        );
+        return;
+      }
       setNotice(
         readableError(
-          error,
+          paymentError,
           "Insurance create ya payment start nahi ho saka. Dobara try karein.",
         ),
       );
