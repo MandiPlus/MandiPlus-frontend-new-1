@@ -351,6 +351,26 @@ export async function getCustomerDashboardInvoices(): Promise<InsuranceForm[]> {
   }
 }
 
+export async function getCustomerInvoiceById(invoiceId: string): Promise<
+  InsuranceForm & {
+    paymentStatus?: string | null;
+    paymentMethod?: string | null;
+  }
+> {
+  try {
+    const response = await withAuthRetry(() =>
+      axios.get(`${API_BASE_URL}/invoices/${encodeURIComponent(invoiceId)}`, {
+        headers: getAuthHeader(),
+      }),
+    );
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError;
+    handleUnauthorized(err);
+    throw error;
+  }
+}
+
 export async function getTransporterDashboardInvoices(): Promise<
   InsuranceForm[]
 > {

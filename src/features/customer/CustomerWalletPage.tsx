@@ -18,6 +18,7 @@ import { CustomerAppShell } from "@/features/customer-app/CustomerAppShell";
 import styles from "@/features/customer-app/customer-app.module.css";
 import {
   createCustomerWalletTopupWebCheckout,
+  getCustomerDashboardInvoices,
   getCustomerWalletPacks,
   getMyWalletStatement,
   getMyWalletSummary,
@@ -88,15 +89,22 @@ const errorText = (error: unknown, fallback: string) => {
   return payload || (error as Error)?.message || fallback;
 };
 
-const transactionTitle = (item: WalletStatementItem) => {
-  if (
-    item.invoiceVehicleNumber &&
-    /invoice|payment|refund/i.test(`${item.type} ${item.narration}`)
-  ) {
-    return item.invoiceVehicleNumber;
+const transactionTitle = (
+  item: WalletStatementItem,
+  invoiceVehicles: Record<string, string>,
+) => {
+  const type = String(item.type || "").toUpperCase();
+  if (type === "INVOICE_DEBIT" || type === "INVOICE_REFUND") {
+    const vehicleNumber =
+      item.invoiceVehicleNumber ||
+      invoiceVehicles[String(item.referenceId || "")];
+    if (vehicleNumber) return compactVehicleNumber(vehicleNumber);
   }
   return item.narration || item.remark || item.type.replaceAll("_", " ");
 };
+
+const compactVehicleNumber = (value: string) =>
+  value.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
 export default function CustomerWalletPage() {
   const router = useRouter();
@@ -105,6 +113,9 @@ export default function CustomerWalletPage() {
   const [walletOwnership, setWalletOwnership] =
     useState<WalletOwnership>("loading");
   const [statement, setStatement] = useState<WalletStatementItem[]>([]);
+  const [invoiceVehicles, setInvoiceVehicles] = useState<
+    Record<string, string>
+  >({});
   const [packs, setPacks] = useState<WalletCreditPack[]>(() => [
     ...fallbackWalletPacks,
   ]);
@@ -121,11 +132,12 @@ export default function CustomerWalletPage() {
     setLoading(true);
     setWalletOwnership("loading");
     setNotice("");
-    const [walletResult, statementResult, packsResult] =
+    const [walletResult, statementResult, packsResult, invoicesResult] =
       await Promise.allSettled([
         getMyWalletSummary(),
         getMyWalletStatement(),
         getCustomerWalletPacks(),
+        getCustomerDashboardInvoices(),
       ]);
 
     if (walletResult.status === "fulfilled") {
@@ -152,6 +164,18 @@ export default function CustomerWalletPage() {
             activePacks[0]?.id ||
             "",
       );
+    }
+    if (invoicesResult.status === "fulfilled") {
+      const vehicles: Record<string, string> = {};
+      invoicesResult.value.forEach((invoice) => {
+        const vehicle = String(
+          invoice.vehicleNumber || invoice.truckNumber || "",
+        ).trim();
+        if (!vehicle) return;
+        vehicles[invoice.id] = vehicle;
+        if (invoice.invoiceNumber) vehicles[invoice.invoiceNumber] = vehicle;
+      });
+      setInvoiceVehicles(vehicles);
     }
     if (
       walletResult.status === "rejected" &&
@@ -217,11 +241,11 @@ export default function CustomerWalletPage() {
     const term = search.trim().toLowerCase();
     if (!term) return statement;
     return statement.filter((item) =>
-      `${transactionTitle(item)} ${item.type} ${item.amount} ${item.remark || ""}`
+      `${transactionTitle(item, invoiceVehicles)} ${item.type} ${item.amount} ${item.remark || ""}`
         .toLowerCase()
         .includes(term),
     );
-  }, [search, statement]);
+  }, [invoiceVehicles, search, statement]);
 
   const goBack = () => {
     if (view === "home") {
@@ -443,7 +467,7 @@ export default function CustomerWalletPage() {
                     )}
                   </span>
                   <div>
-                    <strong>{transactionTitle(item)}</strong>
+                    <strong>{transactionTitle(item, invoiceVehicles)}</strong>
                     <small>{shortDate(item.createdAt)}</small>
                   </div>
                   <b className={isCredit ? "" : styles.walletDebitAmount}>

@@ -32,6 +32,7 @@ import {
 import { useAuth } from "@/features/auth/context/AuthContext";
 import {
   createCustomerWebPaymentCheckout,
+  getCustomerInvoiceById,
   getCustomerPaymentCheckoutStatus,
 } from "@/features/customer/api";
 import {
@@ -800,9 +801,13 @@ export default function CustomerCreateInsurancePage() {
       let invoiceId = canReuseCreatedInvoice
         ? previousAttempt.invoiceId
         : "";
+      let invoice:
+        | Awaited<ReturnType<typeof createCustomerInvoice>>
+        | Awaited<ReturnType<typeof getCustomerInvoiceById>>
+        | null = null;
 
       if (!invoiceId) {
-        const invoice = await createCustomerInvoice(
+        invoice = await createCustomerInvoice(
           userId,
           draft,
           files,
@@ -812,6 +817,8 @@ export default function CustomerCreateInsurancePage() {
           throw new Error("Invoice was created without an ID.");
         }
         invoiceId = invoice.id;
+      } else {
+        invoice = await getCustomerInvoiceById(invoiceId);
       }
 
       const createdInvoiceAttempt: CustomerInvoicePaymentAttempt = {
@@ -826,6 +833,15 @@ export default function CustomerCreateInsurancePage() {
       };
       writeCustomerInvoicePaymentAttempt(createdInvoiceAttempt);
       paymentAttemptRef.current = createdInvoiceAttempt;
+
+      if (String(invoice?.paymentStatus || "").toUpperCase() === "PAID") {
+        clearCustomerInvoicePaymentAttempt();
+        paymentAttemptRef.current = null;
+        router.push(
+          `/payment/success?invoiceId=${encodeURIComponent(invoiceId)}&source=wallet`,
+        );
+        return;
+      }
 
       const checkout = await createCustomerWebPaymentCheckout(
         [invoiceId],
