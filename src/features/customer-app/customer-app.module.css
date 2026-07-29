@@ -1717,7 +1717,8 @@
   font-weight: 800;
 }
 
-.compactField input {
+.compactField input,
+.compactField textarea {
   min-width: 0;
   width: 100%;
   min-height: 22px;
@@ -1733,7 +1734,22 @@
   line-height: 18px;
 }
 
-.compactField input:focus {
+.compactField textarea {
+  height: auto;
+  overflow: hidden;
+  resize: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.compactFieldMultiline {
+  align-content: start;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.compactField input:focus,
+.compactField textarea:focus {
   border-bottom-color: var(--mp-accent);
 }
 
