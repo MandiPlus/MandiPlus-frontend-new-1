@@ -7,10 +7,13 @@ import {
   CalendarDays,
   Check,
   ChevronRight,
+  Download,
   LockKeyhole,
   RefreshCw,
   Search,
+  Share2,
   ShieldCheck,
+  WalletCards,
 } from "lucide-react";
 
 import { createCustomerWebPaymentCheckout } from "@/features/customer/api";
@@ -20,7 +23,7 @@ import {
   getInsuranceUrl,
   getInvoicePdfUrl,
   invoiceDate,
-  invoicePremium,
+  invoicePayableAmount,
   invoiceProduct,
   invoiceVehicle,
   isCheckoutReady,
@@ -33,6 +36,7 @@ import {
 import styles from "./customer-app.module.css";
 
 type PaperTab = "pending" | "policy" | "paid" | "all";
+type DocumentKind = "insurance" | "invoice";
 
 export default function CustomerPapersPage({
   defaultTab = "pending",
@@ -50,10 +54,18 @@ export default function CustomerPapersPage({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState("");
   const [paying, setPaying] = useState(false);
+  const [documentView, setDocumentView] = useState<{
+    invoice: CustomerInvoice;
+    kind: DocumentKind;
+  } | null>(null);
 
   useEffect(() => {
     if (queryTab) setTab(queryTab);
   }, [queryTab]);
+
+  const walletBalance = data.wallet?.walletId
+    ? Number(data.wallet.availableBalance || 0)
+    : 0;
 
   const pending = useMemo(
     () => data.invoices.filter(isPayableInvoice),
@@ -68,7 +80,7 @@ export default function CustomerPapersPage({
     [data.invoices],
   );
   const dueTotal = checkoutReady.reduce(
-    (total, invoice) => total + invoicePremium(invoice),
+    (total, invoice) => total + invoicePayableAmount(invoice),
     0,
   );
 
@@ -84,11 +96,16 @@ export default function CustomerPapersPage({
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const start = from ? new Date(`${from}T00:00:00`).getTime() : 0;
-    const end = to ? new Date(`${to}T23:59:59`).getTime() : Number.MAX_SAFE_INTEGER;
+    const end = to
+      ? new Date(`${to}T23:59:59`).getTime()
+      : Number.MAX_SAFE_INTEGER;
     return source.filter((invoice) => {
       const rawDate = invoice.invoiceDate || invoice.createdAt;
       const timestamp = rawDate ? new Date(rawDate).getTime() : end;
-      if (Number.isFinite(timestamp) && (timestamp < start || timestamp > end)) {
+      if (
+        Number.isFinite(timestamp) &&
+        (timestamp < start || timestamp > end)
+      ) {
         return false;
       }
       if (!needle) return true;
@@ -106,12 +123,15 @@ export default function CustomerPapersPage({
   }, [from, search, source, to]);
 
   const groups = useMemo(() => groupByDisplayDate(rows), [rows]);
-  const selectedReady = checkoutReady.filter((invoice) => selected.has(invoice.id));
+  const selectedReady = checkoutReady.filter((invoice) =>
+    selected.has(invoice.id),
+  );
 
   const toggleAll = (scope: CustomerInvoice[]) => {
     const visibleReady = scope.filter(isCheckoutReady);
     const allSelected =
-      visibleReady.length > 0 && visibleReady.every((invoice) => selected.has(invoice.id));
+      visibleReady.length > 0 &&
+      visibleReady.every((invoice) => selected.has(invoice.id));
     setSelected((current) => {
       const next = new Set(current);
       visibleReady.forEach((invoice) =>
@@ -122,6 +142,10 @@ export default function CustomerPapersPage({
   };
 
   const pay = async () => {
+    if (!data.invoicesLoaded || data.invoiceError) {
+      setNotice("Latest payment details could not be verified. Please retry.");
+      return;
+    }
     const invoices = selectedReady.length ? selectedReady : checkoutReady;
     if (!invoices.length || paying) {
       setNotice(
@@ -136,8 +160,13 @@ export default function CustomerPapersPage({
     try {
       const checkout = await createCustomerWebPaymentCheckout(
         invoices.map((invoice) => invoice.id),
+        invoices.reduce(
+          (total, invoice) => total + invoicePayableAmount(invoice),
+          0,
+        ),
       );
-      if (!checkout.redirectUrl) throw new Error("PhonePe checkout URL was not returned.");
+      if (!checkout.redirectUrl)
+        throw new Error("PhonePe checkout URL was not returned.");
       window.location.assign(checkout.redirectUrl);
     } catch (error) {
       setNotice(readableError(error, "Could not start PhonePe. Please retry."));
@@ -155,13 +184,29 @@ export default function CustomerPapersPage({
       setNotice("Premium pay karne ke baad insurance policy unlock hogi.");
       return;
     }
-    const url = tab === "policy" ? policyUrl : invoiceUrl || policyUrl;
+    const kind: DocumentKind =
+      tab === "policy" || !invoiceUrl ? "insurance" : "invoice";
+    const url = kind === "insurance" ? policyUrl : invoiceUrl;
     if (!url) {
       setNotice("This document is still being prepared.");
       return;
     }
-    window.open(url, "_blank", "noopener,noreferrer");
+    setDocumentView({ invoice, kind });
   };
+
+  if (documentView) {
+    return (
+      <CustomerDocumentPage
+        invoice={documentView.invoice}
+        kind={documentView.kind}
+        partnerActive={data.partnerActive}
+        onBack={() => setDocumentView(null)}
+        onKindChange={(kind) =>
+          setDocumentView((current) => (current ? { ...current, kind } : null))
+        }
+      />
+    );
+  }
 
   return (
     <CustomerAppShell
@@ -169,7 +214,11 @@ export default function CustomerPapersPage({
       partnerActive={data.partnerActive}
       showBottomNav={false}
     >
-      <header className={styles.secondaryHeader}>
+      <header
+        className={`${styles.secondaryHeader} ${
+          tab !== "policy" ? styles.paymentPageHeader : ""
+        }`}
+      >
         <button
           type="button"
           className={styles.secondaryBack}
@@ -181,7 +230,19 @@ export default function CustomerPapersPage({
         <h1 className={styles.secondaryHeading}>
           {tab === "policy" ? "Insurance dekho!" : "Payments"}
         </h1>
-        <span />
+        {tab !== "policy" ? (
+          <button
+            type="button"
+            className={styles.paymentWalletButton}
+            onClick={() => router.push("/customer/wallet")}
+            aria-label={`Open wallet. Balance ${walletBalance} rupees`}
+          >
+            <WalletCards size={19} strokeWidth={2.2} />
+            <span>{money(walletBalance)}</span>
+          </button>
+        ) : (
+          <span />
+        )}
       </header>
 
       <main className={styles.pageBody}>
@@ -228,13 +289,15 @@ export default function CustomerPapersPage({
             <div>
               <div className={styles.dueLabel}>Due amount</div>
               <div className={styles.dueAmount}>
-                {data.loading ? "—" : money(dueTotal)}
+                {!data.invoicesLoaded ? "—" : money(dueTotal)}
               </div>
             </div>
             <button
               type="button"
               className={styles.primaryButton}
-              disabled={paying || data.loading}
+              disabled={
+                paying || !data.invoicesLoaded || Boolean(data.invoiceError)
+              }
               onClick={() => void pay()}
             >
               {paying ? <RefreshCw size={18} className="animate-spin" /> : null}
@@ -243,13 +306,21 @@ export default function CustomerPapersPage({
           </div>
         </section>
 
-        {notice ? <div className={styles.notice}>{notice}</div> : null}
+        {data.invoiceError ? (
+          <div className={styles.notice}>{data.invoiceError}</div>
+        ) : notice ? (
+          <div className={styles.notice}>{notice}</div>
+        ) : null}
 
-        {data.loading ? (
+        {!data.invoicesLoaded && data.loading ? (
           <div className={styles.emptyState}>
             {tab === "policy"
               ? "Insurance load ho rahe hain…"
               : "Payments load ho rahe hain…"}
+          </div>
+        ) : !data.invoicesLoaded ? (
+          <div className={styles.emptyState}>
+            Payment details load nahi ho paaye. Please retry.
           </div>
         ) : groups.length ? (
           groups.map(([date, invoices]) => (
@@ -298,9 +369,11 @@ export default function CustomerPapersPage({
                         if (selectable) {
                           setSelected((current) => {
                             const next = new Set(current);
-                            next.has(invoice.id)
-                              ? next.delete(invoice.id)
-                              : next.add(invoice.id);
+                            if (next.has(invoice.id)) {
+                              next.delete(invoice.id);
+                            } else {
+                              next.add(invoice.id);
+                            }
                             return next;
                           });
                         } else {
@@ -332,13 +405,17 @@ export default function CustomerPapersPage({
                       </span>
                       {locked ? (
                         <span className={styles.documentDue}>
-                          <strong>{money(invoicePremium(invoice))}</strong>
+                          <strong>
+                            {money(invoicePayableAmount(invoice))}
+                          </strong>
                           <small>Due amount</small>
                         </span>
                       ) : selectable ? (
                         <span
                           className={`${styles.checkbox} ${
-                            selected.has(invoice.id) ? styles.checkboxChecked : ""
+                            selected.has(invoice.id)
+                              ? styles.checkboxChecked
+                              : ""
                           }`}
                         >
                           <Check size={14} />
@@ -366,7 +443,10 @@ export default function CustomerPapersPage({
 }
 
 function normalizeTab(value: string | null): PaperTab | null {
-  return value === "pending" || value === "policy" || value === "paid" || value === "all"
+  return value === "pending" ||
+    value === "policy" ||
+    value === "paid" ||
+    value === "all"
     ? value
     : null;
 }
@@ -386,19 +466,7 @@ function readableFilterDate(value: string, todayLabel = false): string {
     parsed.getMonth() === now.getMonth() &&
     parsed.getDate() === now.getDate();
   if (todayLabel && isToday) return "Today";
-  const day = parsed.getDate();
-  const mod100 = day % 100;
-  const suffix =
-    mod100 >= 11 && mod100 <= 13
-      ? "th"
-      : day % 10 === 1
-        ? "st"
-        : day % 10 === 2
-          ? "nd"
-          : day % 10 === 3
-            ? "rd"
-            : "th";
-  return `${day}${suffix} ${parsed.toLocaleDateString("en-IN", {
+  return `${parsed.getDate()} ${parsed.toLocaleDateString("en-IN", {
     month: "long",
   })}`;
 }
@@ -414,4 +482,123 @@ function groupByDisplayDate(
     groups.set(key, current);
   });
   return [...groups.entries()];
+}
+
+function CustomerDocumentPage({
+  invoice,
+  kind,
+  partnerActive,
+  onBack,
+  onKindChange,
+}: {
+  invoice: CustomerInvoice;
+  kind: DocumentKind;
+  partnerActive: boolean;
+  onBack: () => void;
+  onKindChange: (kind: DocumentKind) => void;
+}) {
+  const insuranceUrl = getInsuranceUrl(invoice);
+  const invoiceUrl = getInvoicePdfUrl(invoice);
+  const documentUrl = kind === "insurance" ? insuranceUrl : invoiceUrl;
+  const canSwitch =
+    kind === "insurance" ? Boolean(invoiceUrl) : Boolean(insuranceUrl);
+  const relatedLabel =
+    kind === "insurance" ? "Bill dekhein" : "Insurance dekhein";
+  const title = kind === "insurance" ? "Insurance document" : "Document";
+  const documentName =
+    kind === "insurance"
+      ? invoiceVehicle(invoice)
+      : invoice.invoiceNumber || invoiceVehicle(invoice);
+
+  const share = async () => {
+    const shareData = {
+      title,
+      text: `${documentName} — MandiPlus`,
+      url: documentUrl,
+    };
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError")
+          return;
+      }
+    }
+    window.open(
+      `https://wa.me/?text=${encodeURIComponent(
+        `${shareData.text}\n${shareData.url}`,
+      )}`,
+      "_blank",
+      "noopener,noreferrer",
+    );
+  };
+
+  return (
+    <CustomerAppShell
+      activeTab="pay"
+      partnerActive={partnerActive}
+      showBottomNav={false}
+    >
+      <header className={styles.secondaryHeader}>
+        <button
+          type="button"
+          className={styles.secondaryBack}
+          onClick={onBack}
+          aria-label="Back to insurance list"
+        >
+          <ArrowLeft size={24} strokeWidth={2.4} />
+        </button>
+        <h1 className={styles.secondaryHeading}>{title}</h1>
+        <span />
+      </header>
+
+      <main className={styles.documentViewerBody}>
+        <section className={styles.documentViewerInfo}>
+          <strong>{documentName}</strong>
+          {canSwitch ? (
+            <button
+              type="button"
+              onClick={() =>
+                onKindChange(kind === "insurance" ? "invoice" : "insurance")
+              }
+            >
+              {relatedLabel}
+            </button>
+          ) : null}
+        </section>
+
+        <section className={styles.documentViewerFrame}>
+          {documentUrl ? (
+            <iframe
+              key={documentUrl}
+              src={`${documentUrl}#toolbar=0&navpanes=0&view=FitH`}
+              title={`${title} ${documentName}`}
+              loading="lazy"
+            />
+          ) : (
+            <div className={styles.emptyState}>
+              Document taiyar ho raha hai.
+            </div>
+          )}
+        </section>
+      </main>
+
+      <div className={styles.documentActionBar}>
+        <button type="button" onClick={() => void share()}>
+          <Share2 size={19} />
+          PDF bhejein
+        </button>
+        <a
+          href={documentUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          download
+        >
+          <Download size={19} />
+          Download karein
+        </a>
+      </div>
+    </CustomerAppShell>
+  );
 }

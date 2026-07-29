@@ -11,22 +11,29 @@ import {
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  CalendarDays,
   Camera,
   Check,
   ChevronDown,
+  FileText,
   FolderOpen,
   ImagePlus,
   LoaderCircle,
   Mic,
   Phone,
+  RefreshCw,
   Trash2,
   Truck,
   Users,
   X,
+  ZoomIn,
 } from "lucide-react";
 
 import { useAuth } from "@/features/auth/context/AuthContext";
-import { createCustomerWebPaymentCheckout } from "@/features/customer/api";
+import {
+  createCustomerWebPaymentCheckout,
+  getCustomerPaymentCheckoutStatus,
+} from "@/features/customer/api";
 import {
   createCustomerInvoice,
   extractCustomerInvoice,
@@ -34,11 +41,20 @@ import {
   getCustomerAppPricing,
   getCustomerTenderCoconutPrefill,
   isTenderCoconutProduct,
+  matchingCustomerInvoiceRate,
+  roundCustomerInvoiceMoney,
   type CustomerAppPricing,
   type CustomerInvoiceDraft,
   type TenderCoconutPrefill,
 } from "./api";
 import { CustomerAppShell } from "./CustomerAppShell";
+import {
+  clearCustomerInvoicePaymentAttempt,
+  customerInvoicePaymentFingerprint,
+  readCustomerInvoicePaymentAttempt,
+  writeCustomerInvoicePaymentAttempt,
+  type CustomerInvoicePaymentAttempt,
+} from "./payment-attempt";
 import { money, readableError } from "./utils";
 import styles from "./customer-app.module.css";
 
@@ -100,7 +116,35 @@ const TENDER_MISSING_QUESTIONS: Record<MissingDetailKey, MissingQuestion> = {
   },
 };
 
+const TENDER_LOGISTICS_CHOICES = [
+  { value: "25", label: "25 ton", compactLabel: "25t" },
+  { value: "30", label: "30 ton", compactLabel: "30t" },
+  { value: "NONE", label: "No logistics", compactLabel: "Remove" },
+] as const;
+
 const today = () => new Date().toISOString().slice(0, 10);
+
+const COMMODITY_OPTIONS = [
+  ["Tender Coconut", "🥥"],
+  ["Kiwi", "🥝"],
+  ["Mango", "🥭"],
+  ["Banana", "🍌"],
+  ["Papaya (Papita)", "🧡"],
+  ["Pomegranate (Anar)", "🍎"],
+  ["Oranges", "🍊"],
+  ["Kinnow", "🍊"],
+  ["Guava (Amrood)", "🍐"],
+  ["Muskmelon (Kastoori Tarbooj)", "🍈"],
+  ["Watermelon (Tarbooj)", "🍉"],
+  ["Pista", "🌰"],
+  ["Tomato", "🍅"],
+  ["Onion", "🧅"],
+  ["Potato", "🥔"],
+  ["Ginger (Fresh)", "🫚"],
+  ["Sweet Potato", "🍠"],
+  ["Mosambi (Sweet Lime)", "🍋"],
+  ["Grapes", "🍇"],
+] as const;
 
 function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft {
   const userName = String(user?.name || user?.fullName || "");
@@ -153,8 +197,14 @@ export default function CustomerCreateInsurancePage() {
   );
   const draftRef = useRef(draft);
   const [sourceOpen, setSourceOpen] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState("");
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [zoomedFileIndex, setZoomedFileIndex] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
+  const [paymentRetryPromptOpen, setPaymentRetryPromptOpen] = useState(false);
+  const [paymentStatusChecking, setPaymentStatusChecking] = useState(false);
+  const paymentAttemptRef = useRef<CustomerInvoicePaymentAttempt | null>(null);
+  const paymentStatusCheckingRef = useRef(false);
+  const paymentStatusGenerationRef = useRef(0);
   const [pricing, setPricing] = useState<
     CustomerAppPricing["tenderCoconut"] | null
   >(null);
@@ -199,6 +249,10 @@ export default function CustomerCreateInsurancePage() {
       invoiceAmount: Number(invoiceAmount.toFixed(2)),
       logisticsAmount: Number(logisticsAmount.toFixed(2)),
       totalAmount: Number((invoiceAmount + logisticsAmount).toFixed(2)),
+      rate: matchingCustomerInvoiceRate(
+        Number((invoiceAmount + logisticsAmount).toFixed(2)),
+        Number(draft.quantity || 0),
+      ),
     };
   }, [
     draft.quantity,
@@ -210,6 +264,88 @@ export default function CustomerCreateInsurancePage() {
   ]);
   const total = amountBreakdown.totalAmount;
   const premium = Number((total * 0.002).toFixed(2));
+
+  const checkReturningPayment = useCallback(async () => {
+    const userId = String(user?.id || "");
+    const attempt =
+      readCustomerInvoicePaymentAttempt() || paymentAttemptRef.current;
+    if (!attempt || !userId) return;
+    if (Number(attempt.version) !== 2) {
+      clearCustomerInvoicePaymentAttempt();
+      paymentAttemptRef.current = null;
+      return;
+    }
+    if (attempt.userId !== userId) {
+      clearCustomerInvoicePaymentAttempt();
+      paymentAttemptRef.current = null;
+      return;
+    }
+    paymentAttemptRef.current = attempt;
+    setStage("review");
+    if (attempt.phase === "retry") {
+      paymentStatusCheckingRef.current = false;
+      setPaymentStatusChecking(false);
+      setPaymentRetryPromptOpen(true);
+      return;
+    }
+    if (attempt.phase !== "redirecting" || !attempt.merchantOrderId) {
+      paymentStatusCheckingRef.current = false;
+      setPaymentStatusChecking(false);
+      return;
+    }
+    if (paymentStatusCheckingRef.current) return;
+
+    const generation = paymentStatusGenerationRef.current + 1;
+    paymentStatusGenerationRef.current = generation;
+    paymentStatusCheckingRef.current = true;
+    setPaymentStatusChecking(true);
+    try {
+      const status = await getCustomerPaymentCheckoutStatus(
+        attempt.merchantOrderId,
+      );
+      if (paymentStatusGenerationRef.current !== generation) return;
+      if (status.paid) {
+        clearCustomerInvoicePaymentAttempt();
+        paymentAttemptRef.current = null;
+        setPaymentRetryPromptOpen(false);
+        router.replace(
+          `/payment/success?invoiceId=${encodeURIComponent(attempt.invoiceId)}`,
+        );
+        return;
+      }
+      const retryAttempt: CustomerInvoicePaymentAttempt = {
+        ...attempt,
+        phase: "retry",
+      };
+      writeCustomerInvoicePaymentAttempt(retryAttempt);
+      paymentAttemptRef.current = retryAttempt;
+      setNotice("");
+      setPaymentRetryPromptOpen(true);
+    } catch {
+      if (paymentStatusGenerationRef.current !== generation) return;
+      const retryAttempt: CustomerInvoicePaymentAttempt = {
+        ...attempt,
+        phase: "retry",
+      };
+      writeCustomerInvoicePaymentAttempt(retryAttempt);
+      paymentAttemptRef.current = retryAttempt;
+      setNotice("");
+      setPaymentRetryPromptOpen(true);
+    } finally {
+      if (paymentStatusGenerationRef.current === generation) {
+        paymentStatusCheckingRef.current = false;
+        setPaymentStatusChecking(false);
+      }
+    }
+  }, [router, user?.id]);
+
+  const closePaymentRetryPrompt = useCallback(() => {
+    paymentStatusGenerationRef.current += 1;
+    paymentStatusCheckingRef.current = false;
+    setPaymentStatusChecking(false);
+    setPaymentRetryPromptOpen(false);
+    setStage("review");
+  }, []);
 
   const loadTenderCoconutPrefill = useCallback(() => {
     const userId = String(user?.id || "");
@@ -235,6 +371,41 @@ export default function CustomerCreateInsurancePage() {
       product: current.product || defaults.product,
     }));
   }, [user]);
+
+  useEffect(() => {
+    const userId = String(user?.id || "");
+    if (!userId) return;
+
+    const attempt = readCustomerInvoicePaymentAttempt();
+    if (!attempt) return;
+    if (attempt.userId !== userId) {
+      clearCustomerInvoicePaymentAttempt();
+      return;
+    }
+
+    paymentAttemptRef.current = attempt;
+    setDraft(attempt.draft);
+    setStage("review");
+    void checkReturningPayment();
+  }, [checkReturningPayment, user?.id]);
+
+  useEffect(() => {
+    const checkWhenVisible = () => {
+      if (document.visibilityState === "visible") {
+        void checkReturningPayment();
+      }
+    };
+    const checkOnPageShow = () => {
+      void checkReturningPayment();
+    };
+
+    window.addEventListener("pageshow", checkOnPageShow);
+    document.addEventListener("visibilitychange", checkWhenVisible);
+    return () => {
+      window.removeEventListener("pageshow", checkOnPageShow);
+      document.removeEventListener("visibilitychange", checkWhenVisible);
+    };
+  }, [checkReturningPayment]);
 
   useEffect(() => {
     if (!user || !isTenderCoconut) return;
@@ -279,30 +450,52 @@ export default function CustomerCreateInsurancePage() {
   }, [isTenderCoconut]);
 
   useEffect(() => {
-    if (!files[0] || !files[0].type.startsWith("image/")) {
-      setPreviewUrl("");
-      return;
-    }
-    const next = URL.createObjectURL(files[0]);
-    setPreviewUrl(next);
-    return () => URL.revokeObjectURL(next);
+    const next = files.map((file) =>
+      file.type.startsWith("image/") ? URL.createObjectURL(file) : "",
+    );
+    setPreviewUrls(next);
+    return () => next.forEach((url) => url && URL.revokeObjectURL(url));
   }, [files]);
 
   const update = (field: keyof CustomerInvoiceDraft, value: string) => {
     setDraft((current) => {
       const next = { ...current, [field]: value };
+      const quantity = Number(next.quantity);
+      const logisticsAmount =
+        isTenderCoconutProduct(next.product) && pricing
+          ? next.vehicleTonnage === "25"
+            ? Number(pricing.amount25Ton || 0)
+            : next.vehicleTonnage === "30"
+              ? Number(pricing.amount30Ton || 0)
+              : 0
+          : 0;
       if (field === "rate") {
-        const quantity = Number(next.quantity);
         const rate = Number(value);
         if (quantity > 0 && rate > 0) {
-          next.totalAmount = String(round(quantity * rate));
+          const finalAmount = roundCustomerInvoiceMoney(quantity * rate);
+          next.totalAmount = String(
+            Math.max(
+              0,
+              roundCustomerInvoiceMoney(finalAmount - logisticsAmount),
+            ),
+          );
         }
       }
-      if (field === "quantity" || field === "totalAmount") {
-        const quantity = Number(next.quantity);
-        const totalAmount = Number(next.totalAmount);
-        if (quantity > 0 && totalAmount > 0) {
-          next.rate = String(round(totalAmount / quantity));
+      if (
+        field === "quantity" ||
+        field === "totalAmount" ||
+        field === "vehicleTonnage" ||
+        field === "product"
+      ) {
+        const finalAmount = roundCustomerInvoiceMoney(
+          Number(next.totalAmount || 0) + logisticsAmount,
+        );
+        const matchingRate = matchingCustomerInvoiceRate(
+          finalAmount,
+          quantity,
+        );
+        if (matchingRate) {
+          next.rate = matchingRate;
         }
       }
       return next;
@@ -381,24 +574,71 @@ export default function CustomerCreateInsurancePage() {
       setNotice("Your session is missing. Please sign in again.");
       return;
     }
+    const userId = String(user.id);
+    paymentStatusGenerationRef.current += 1;
+    paymentStatusCheckingRef.current = false;
+    setPaymentStatusChecking(false);
     setStage("creating");
     setNotice("");
+    setPaymentRetryPromptOpen(false);
     try {
       if (isTenderCoconut && !pricing) {
         throw new Error("Amount load nahi hua. Dobara try karein.");
       }
-      const invoice = await createCustomerInvoice(
-        user.id,
+      const fingerprint = customerInvoicePaymentFingerprint(draft, pricing);
+      const previousAttempt =
+        paymentAttemptRef.current || readCustomerInvoicePaymentAttempt();
+      const canReuseCreatedInvoice =
+        previousAttempt !== null &&
+        Number(previousAttempt.version) === 2 &&
+        previousAttempt.userId === userId &&
+        previousAttempt.fingerprint === fingerprint;
+      let invoiceId = canReuseCreatedInvoice
+        ? previousAttempt.invoiceId
+        : "";
+
+      if (!invoiceId) {
+        const invoice = await createCustomerInvoice(
+          userId,
+          draft,
+          files,
+          pricing || undefined,
+        );
+        if (!invoice?.id) throw new Error("Invoice was created without an ID.");
+        invoiceId = invoice.id;
+      }
+
+      const createdInvoiceAttempt: CustomerInvoicePaymentAttempt = {
+        version: 2,
+        userId,
+        invoiceId,
+        merchantOrderId: null,
+        phase: "draft",
+        fingerprint,
         draft,
-        files,
-        pricing || undefined,
+        createdAt: Date.now(),
+      };
+      writeCustomerInvoicePaymentAttempt(createdInvoiceAttempt);
+      paymentAttemptRef.current = createdInvoiceAttempt;
+
+      const checkout = await createCustomerWebPaymentCheckout(
+        [invoiceId],
+        premium,
       );
-      if (!invoice?.id) throw new Error("Invoice was created without an ID.");
-      const checkout = await createCustomerWebPaymentCheckout([invoice.id]);
       if (!checkout.redirectUrl) {
         router.replace("/pay");
         return;
       }
+      const merchantOrderId =
+        checkout.merchantOrderId || checkout.merchantTransactionId;
+      const attempt: CustomerInvoicePaymentAttempt = {
+        ...createdInvoiceAttempt,
+        merchantOrderId,
+        phase: "redirecting",
+        createdAt: Date.now(),
+      };
+      writeCustomerInvoicePaymentAttempt(attempt);
+      paymentAttemptRef.current = attempt;
       window.location.assign(checkout.redirectUrl);
     } catch (error) {
       setNotice(
@@ -463,6 +703,23 @@ export default function CustomerCreateInsurancePage() {
     setMissingDetailIndex(0);
     setVoicePhase("idle");
   }, [releaseMicrophone]);
+
+  const restartInsuranceCapture = useCallback(() => {
+    paymentStatusGenerationRef.current += 1;
+    paymentStatusCheckingRef.current = false;
+    paymentAttemptRef.current = null;
+    clearCustomerInvoicePaymentAttempt();
+    closeMissingDetails();
+    setPaymentStatusChecking(false);
+    setPaymentRetryPromptOpen(false);
+    setFiles([]);
+    setDraft(emptyDraft(user));
+    setNotice("");
+    setSourceOpen(false);
+    setAmountBreakdownOpen(false);
+    setPendingVoiceAnswers(0);
+    setStage("capture");
+  }, [closeMissingDetails, user]);
 
   const advanceMissingDetail = useCallback(
     (completedKey: MissingDetailKey) => {
@@ -700,9 +957,9 @@ export default function CustomerCreateInsurancePage() {
           <div className={styles.captureStage}>
             {files.length ? (
               <div className={styles.capturePreview}>
-                {previewUrl ? (
+                {previewUrls[0] ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={previewUrl} alt="" className={styles.capturePreviewImage} />
+                  <img src={previewUrls[0]} alt="" className={styles.capturePreviewImage} />
                 ) : (
                   <div className={styles.captureFilePreview}>
                     <FolderOpen size={34} />
@@ -822,7 +1079,7 @@ export default function CustomerCreateInsurancePage() {
         <button
           type="button"
           className={styles.secondaryBack}
-          onClick={() => setStage("capture")}
+          onClick={restartInsuranceCapture}
           aria-label="Back to upload"
         >
           <ArrowLeft size={24} strokeWidth={2.4} />
@@ -832,21 +1089,78 @@ export default function CustomerCreateInsurancePage() {
       </header>
 
       <main className={`${styles.pageBody} ${styles.reviewBody}`}>
+        {files.length > 1 ? (
+          <div className={styles.reviewFileStrip} aria-label="Uploaded invoices">
+            {files.map((file, index) => (
+              <div className={styles.reviewFileThumb} key={`${file.name}-${index}`}>
+                {previewUrls[index] ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={previewUrls[index]} alt={`Invoice ${index + 1}`} />
+                    <button
+                      type="button"
+                      onClick={() => setZoomedFileIndex(index)}
+                      aria-label={`Zoom invoice ${index + 1}`}
+                    >
+                      <ZoomIn size={14} />
+                    </button>
+                  </>
+                ) : (
+                  <span><FileText size={25} /></span>
+                )}
+                <small>{index + 1}</small>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
         <section className={styles.reviewTopCard}>
           <div className={styles.reviewProductRow}>
             <div className={styles.reviewProduct}>
-              <span aria-hidden="true">{isTenderCoconut ? "🥥" : "🍅"}</span>
-              <input
-                aria-label="Commodity"
-                value={draft.product}
-                onChange={(event) => update("product", event.target.value)}
-              />
-              <ChevronDown size={18} />
+              <label className={styles.reviewCommoditySelect}>
+                <span className={styles.reviewCommodityValue}>
+                  {draft.product || "Commodity chunein"}
+                </span>
+                <ChevronDown size={18} aria-hidden="true" />
+                <select
+                  aria-label="Commodity"
+                  value={draft.product}
+                  onChange={(event) => update("product", event.target.value)}
+                >
+                  {!draft.product ? (
+                    <option value="">Commodity chunein</option>
+                  ) : null}
+                  {draft.product &&
+                  !COMMODITY_OPTIONS.some(([name]) => name === draft.product) ? (
+                    <option value={draft.product}>{draft.product}</option>
+                  ) : null}
+                  {COMMODITY_OPTIONS.map(([name]) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
-            <div>
-              <div className={styles.reviewTotalLabel}>Total</div>
-              <div className={styles.reviewTotal}>{money(total)}</div>
-            </div>
+            {files.length === 1 ? (
+              <div className={styles.singleReviewFile}>
+                {previewUrls[0] ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={previewUrls[0]} alt="Uploaded invoice" />
+                    <button
+                      type="button"
+                      onClick={() => setZoomedFileIndex(0)}
+                      aria-label="Zoom uploaded invoice"
+                    >
+                      <ZoomIn size={14} />
+                    </button>
+                  </>
+                ) : (
+                  <span><FileText size={27} /></span>
+                )}
+              </div>
+            ) : null}
           </div>
           <div className={styles.reviewModeRow}>
             {(["Cash", "Commission"] as const).map((mode) => (
@@ -862,6 +1176,8 @@ export default function CustomerCreateInsurancePage() {
               </button>
             ))}
             <label className={styles.reviewDate}>
+              <span>{shortDate(draft.invoiceDate)}</span>
+              <CalendarDays size={16} aria-hidden="true" />
               <input
                 type="date"
                 aria-label="Invoice date"
@@ -912,7 +1228,7 @@ export default function CustomerCreateInsurancePage() {
             <CompactInput
               label="Rate"
               inputMode="decimal"
-              value={draft.rate}
+              value={amountBreakdown.rate || draft.rate}
               onChange={(value) => update("rate", value)}
             />
             <CompactInput
@@ -925,25 +1241,32 @@ export default function CustomerCreateInsurancePage() {
             <CompactInput
               label="Vehicle number"
               value={draft.vehicleNumber}
-              full
               onChange={(value) => update("vehicleNumber", value.toUpperCase())}
             />
             {isTenderCoconut ? (
-              <div className={`${styles.tonnageField} ${styles.detailGridFull}`}>
-                <span>Vehicle tonnage</span>
+              <div className={styles.tonnageField}>
+                <span>Tonnage</span>
                 <div>
-                  {(["25", "30"] as const).map((tonnage) => (
+                  {TENDER_LOGISTICS_CHOICES.map((choice) => (
                     <button
-                      key={tonnage}
+                      key={choice.value}
                       type="button"
                       className={
-                        draft.vehicleTonnage === tonnage
+                        draft.vehicleTonnage === choice.value
                           ? styles.tonnageButtonActive
                           : ""
                       }
-                      onClick={() => update("vehicleTonnage", tonnage)}
+                      onClick={() =>
+                        update(
+                          "vehicleTonnage",
+                          draft.vehicleTonnage === choice.value &&
+                            choice.value !== "NONE"
+                            ? "NONE"
+                            : choice.value,
+                        )
+                      }
                     >
-                      {tonnage} ton
+                      {choice.compactLabel}
                     </button>
                   ))}
                 </div>
@@ -999,7 +1322,8 @@ export default function CustomerCreateInsurancePage() {
                 <div className={styles.amountBreakdownRow}>
                   <span>
                     Logistics cost
-                    {draft.vehicleTonnage
+                    {draft.vehicleTonnage === "25" ||
+                    draft.vehicleTonnage === "30"
                       ? ` (${draft.vehicleTonnage} ton)`
                       : ""}
                   </span>
@@ -1028,20 +1352,77 @@ export default function CustomerCreateInsurancePage() {
           onClick={() => void submitAndPay()}
           disabled={
             stage === "creating" ||
+            paymentStatusChecking ||
             pendingVoiceAnswers > 0 ||
             (isTenderCoconut && (pricingLoading || !pricing))
           }
         >
-          {stage === "creating" ? (
+          {stage === "creating" || paymentStatusChecking ? (
             <LoaderCircle className="animate-spin" size={19} />
           ) : null}
-          {pendingVoiceAnswers > 0
+          {paymentStatusChecking
+            ? "Payment check ho raha hai"
+            : pendingVoiceAnswers > 0
             ? "Details save ho rahi hain"
             : isTenderCoconut && pricingLoading
               ? "Amount load ho raha hai"
               : `Pay ${payableMoney(premium)}`}
         </button>
       </div>
+
+      {zoomedFileIndex !== null && previewUrls[zoomedFileIndex] ? (
+        <div className={styles.invoicePreviewModal} role="dialog" aria-modal="true">
+          <button
+            type="button"
+            className={styles.invoicePreviewBackdrop}
+            onClick={() => setZoomedFileIndex(null)}
+            aria-label="Close invoice preview"
+          />
+          <button
+            type="button"
+            className={styles.invoicePreviewClose}
+            onClick={() => setZoomedFileIndex(null)}
+            aria-label="Close invoice preview"
+          >
+            <X size={28} />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={previewUrls[zoomedFileIndex]}
+            alt={`Invoice ${zoomedFileIndex + 1}`}
+            className={styles.invoicePreviewFullImage}
+          />
+        </div>
+      ) : null}
+
+      {paymentRetryPromptOpen ? (
+        <div className={styles.paymentRetryModal}>
+          <button
+            type="button"
+            className={styles.paymentRetryBackdrop}
+            onClick={closePaymentRetryPrompt}
+            aria-label="Close payment message"
+          />
+          <section
+            className={styles.paymentRetryCard}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="payment-retry-title"
+          >
+            <span className={styles.paymentRetryIcon} aria-hidden="true">
+              <RefreshCw size={26} />
+            </span>
+            <h2 id="payment-retry-title">Dobara try karein</h2>
+            <button
+              type="button"
+              className={styles.paymentRetryButton}
+              onClick={closePaymentRetryPrompt}
+            >
+              Theek hai
+            </button>
+          </section>
+        </div>
+      ) : null}
 
       {isFinalizingReview ? (
         <div
@@ -1099,17 +1480,22 @@ export default function CustomerCreateInsurancePage() {
 
             {activeMissingDetailKey === "vehicleTonnage" ? (
               <div className={styles.missingTonnageChoices}>
-                {(["25", "30"] as const).map((tonnage) => (
+                {TENDER_LOGISTICS_CHOICES.map((choice) => (
                   <button
-                    key={tonnage}
+                    key={choice.value}
                     type="button"
+                    className={
+                      choice.value === "NONE"
+                        ? styles.missingTonnageRemove
+                        : ""
+                    }
                     onClick={() => {
                       stopQuestionAudio();
-                      update("vehicleTonnage", tonnage);
+                      update("vehicleTonnage", choice.value);
                       advanceMissingDetail("vehicleTonnage");
                     }}
                   >
-                    {tonnage} ton
+                    {choice.label}
                   </button>
                 ))}
               </div>
@@ -1330,8 +1716,8 @@ function getTenderMissingDetailKeys(
     "buyerAddress",
     "quantity",
     "totalAmount",
-    "vehicleTonnage",
     "insuredPartyPhone",
+    "vehicleTonnage",
   ];
   return ordered.filter(
     (key) =>
@@ -1348,7 +1734,9 @@ function isMissingDetailAnswered(key: MissingDetailKey, value: string) {
   if (key === "quantity" || key === "totalAmount") {
     return Number(clean) > 0;
   }
-  if (key === "vehicleTonnage") return clean === "25" || clean === "30";
+  if (key === "vehicleTonnage") {
+    return clean === "25" || clean === "30" || clean === "NONE";
+  }
   return Boolean(clean);
 }
 
@@ -1459,7 +1847,8 @@ function validateDraft(draft: CustomerInvoiceDraft) {
   if (
     isTenderCoconutProduct(draft.product) &&
     draft.vehicleTonnage !== "25" &&
-    draft.vehicleTonnage !== "30"
+    draft.vehicleTonnage !== "30" &&
+    draft.vehicleTonnage !== "NONE"
   ) {
     return "Vehicle tonnage chunein.";
   }
@@ -1490,6 +1879,15 @@ function normalizeDate(value: unknown) {
   if (!raw) return "";
   const date = new Date(raw);
   return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
+function shortDate(value: string) {
+  const parsed = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "long",
+  });
 }
 
 function round(value: number) {

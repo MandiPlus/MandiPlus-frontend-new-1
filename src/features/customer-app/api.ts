@@ -114,6 +114,49 @@ export async function extractCustomerInvoiceVoice(
   });
 }
 
+export type CustomerChannelPartnerRequestStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED";
+
+export type CustomerChannelPartnerRequest = {
+  id: string;
+  userId: string;
+  name: string;
+  mobileNumber: string;
+  state: string;
+  status: CustomerChannelPartnerRequestStatus;
+  reviewedAt?: string | null;
+  adminNote?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CustomerChannelPartnerRequestResponse = {
+  success: boolean;
+  data: CustomerChannelPartnerRequest | null;
+  message?: string;
+};
+
+export async function getCustomerChannelPartnerRequest() {
+  const response = await customerRequest<CustomerChannelPartnerRequestResponse>({
+    method: "GET",
+    url: "/channel-partners/me/request",
+  });
+  return response.data || null;
+}
+
+export async function createCustomerChannelPartnerRequest(payload: {
+  name: string;
+  state: string;
+}) {
+  return customerRequest<CustomerChannelPartnerRequestResponse>({
+    method: "POST",
+    url: "/channel-partners/me/request",
+    data: payload,
+  });
+}
+
 export async function askCustomerAssistant(payload: {
   message: string;
   history?: Array<{ role: "user" | "assistant"; text: string }>;
@@ -187,6 +230,33 @@ export type TenderCoconutPrefill = {
   provenance?: Record<string, string>;
 };
 
+export function roundCustomerInvoiceMoney(value: number) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+export function matchingCustomerInvoiceRate(
+  total: number,
+  quantity: number,
+) {
+  const safeTotal = roundCustomerInvoiceMoney(total);
+  if (
+    !Number.isFinite(safeTotal) ||
+    safeTotal <= 0 ||
+    !Number.isFinite(quantity) ||
+    quantity <= 0
+  ) {
+    return "";
+  }
+  const exactRate = safeTotal / quantity;
+  for (let precision = 2; precision <= 12; precision += 1) {
+    const candidate = Number(exactRate.toFixed(precision));
+    if (roundCustomerInvoiceMoney(quantity * candidate) === safeTotal) {
+      return candidate.toFixed(precision).replace(/\.?0+$/, "");
+    }
+  }
+  return exactRate.toFixed(12).replace(/\.?0+$/, "");
+}
+
 export async function getCustomerAppPricing() {
   return customerRequest<CustomerAppPricing>({
     method: "GET",
@@ -213,10 +283,18 @@ export async function createCustomerInvoice(
   const goodsAmount =
     Number(draft.totalAmount || 0) ||
     quantity * Number(draft.rate || 0);
+  const isTenderCoconut = isTenderCoconutProduct(draft.product);
+  const logisticsAmount = isTenderCoconut
+    ? draft.vehicleTonnage === "25"
+      ? Number(pricing?.amount25Ton || 0)
+      : draft.vehicleTonnage === "30"
+        ? Number(pricing?.amount30Ton || 0)
+        : 0
+    : 0;
+  const amount = Number((goodsAmount + logisticsAmount).toFixed(2));
   const rate =
-    Number(draft.rate || 0) ||
-    (quantity > 0 && goodsAmount > 0 ? goodsAmount / quantity : 0);
-  const amount = goodsAmount;
+    Number(matchingCustomerInvoiceRate(amount, quantity)) ||
+    Number(draft.rate || 0);
   const cash = draft.mode === "Cash";
 
   form.append("userId", userId);
@@ -238,9 +316,11 @@ export async function createCustomerInvoice(
   form.append("autoVerifyOnCreate", "true");
   form.append("vehicleNumber", vehicle);
   form.append("truckNumber", vehicle);
-  if (isTenderCoconutProduct(draft.product)) {
-    form.append("vehicleTonnage", draft.vehicleTonnage);
-    form.append("pricingVersion", String(pricing?.pricingVersion || 1));
+  if (isTenderCoconut) {
+    if (draft.vehicleTonnage === "25" || draft.vehicleTonnage === "30") {
+      form.append("vehicleTonnage", draft.vehicleTonnage);
+      form.append("pricingVersion", String(pricing?.pricingVersion || 1));
+    }
     form.append("invoiceAdditionsAmount", "0");
   }
   if (draft.ownerName.trim()) form.append("ownerName", draft.ownerName.trim());

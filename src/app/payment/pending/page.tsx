@@ -1,11 +1,22 @@
 'use client';
-import { getCustomerPaymentCheckoutStatus } from '@/features/customer/api';
-import { useSearchParams } from 'next/navigation';
+import {
+  getCustomerPaymentCheckoutStatus,
+  getCustomerWalletTopupStatus,
+} from '@/features/customer/api';
+import {
+  clearCustomerInvoicePaymentAttempt,
+  readCustomerInvoicePaymentAttempt,
+  writeCustomerInvoicePaymentAttempt,
+} from '@/features/customer-app/payment-attempt';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
 function PendingContent() {
+  const router = useRouter();
   const params = useSearchParams();
   const invoiceId = params.get('invoiceId');
+  const isWalletTopup = params.get('walletTopup') === '1';
+  const isCustomerInvoiceReturn = params.get('customerInvoice') === '1';
   const merchantOrderId = params.get('merchantOrderId') || params.get('merchantTransactionId');
   const [checking, setChecking] = useState(Boolean(merchantOrderId));
   const [status, setStatus] = useState<'pending' | 'success' | 'failed'>('pending');
@@ -18,27 +29,76 @@ function PendingContent() {
     const checkStatus = async () => {
       if (!merchantOrderId) return;
       setChecking(true);
+      const invoicePaymentAttempt = isWalletTopup
+        ? null
+        : readCustomerInvoicePaymentAttempt();
+      const shouldReturnToInvoice =
+        isCustomerInvoiceReturn ||
+        invoicePaymentAttempt?.merchantOrderId === merchantOrderId;
+      const returnToInvoiceRetry = () => {
+        if (
+          invoicePaymentAttempt?.merchantOrderId === merchantOrderId
+        ) {
+          writeCustomerInvoicePaymentAttempt({
+            ...invoicePaymentAttempt,
+            phase: 'retry',
+          });
+        }
+        router.replace('/insurance?paymentReturn=1');
+      };
       try {
         for (let attempt = 0; attempt < 3; attempt += 1) {
-          const result = await getCustomerPaymentCheckoutStatus(merchantOrderId);
+          const result = isWalletTopup
+            ? await getCustomerWalletTopupStatus(merchantOrderId)
+            : await getCustomerPaymentCheckoutStatus(merchantOrderId);
           if (cancelled) return;
           const state = String(result.state || '').toUpperCase();
           const failed = ['FAILED', 'CANCELLED', 'EXPIRED', 'DECLINED'].includes(state);
 
           if (result.paid) {
+            if (shouldReturnToInvoice) {
+              if (invoicePaymentAttempt) {
+                clearCustomerInvoicePaymentAttempt();
+              }
+              const paidInvoiceId =
+                invoicePaymentAttempt?.invoiceId || invoiceId;
+              router.replace(
+                paidInvoiceId
+                  ? `/payment/success?invoiceId=${encodeURIComponent(paidInvoiceId)}`
+                  : '/payment/success',
+              );
+              return;
+            }
             setStatus('success');
-            setMessage('Your payment has been confirmed. Receipts and policy updates will be shared on WhatsApp.');
+            setMessage(
+              isWalletTopup
+                ? 'Payment confirmed. Credit has been added to your MandiPlus Wallet.'
+                : 'Your payment has been confirmed. Receipts and policy updates will be shared on WhatsApp.',
+            );
+            return;
+          }
+
+          if (shouldReturnToInvoice) {
+            returnToInvoiceRetry();
             return;
           }
 
           if (failed) {
             setStatus('failed');
-            setMessage('Payment was not completed. Your invoices and full pending dues remain unchanged.');
+            setMessage(
+              isWalletTopup
+                ? 'Payment was not completed. Your wallet balance remains unchanged.'
+                : 'Payment was not completed. Your invoices and full pending dues remain unchanged.',
+            );
             return;
           }
 
           setStatus('pending');
-          setMessage('Payment is not confirmed yet. Your dues will remain visible until PhonePe confirms it.');
+          setMessage(
+            isWalletTopup
+              ? 'Payment is not confirmed yet. Credit will be added only after PhonePe confirms it.'
+              : 'Payment is not confirmed yet. Your dues will remain visible until PhonePe confirms it.',
+          );
           if (attempt < 2) {
             await new Promise<void>((resolve) => {
               retryTimer = setTimeout(resolve, 2000);
@@ -47,6 +107,10 @@ function PendingContent() {
         }
       } catch (error: unknown) {
         if (cancelled) return;
+        if (shouldReturnToInvoice) {
+          returnToInvoiceRetry();
+          return;
+        }
         const text = error instanceof Error ? error.message : '';
         setStatus('pending');
         setMessage(text || 'We could not confirm the payment. Your dues remain unchanged until confirmation.');
@@ -61,7 +125,13 @@ function PendingContent() {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [merchantOrderId]);
+  }, [
+    invoiceId,
+    isCustomerInvoiceReturn,
+    isWalletTopup,
+    merchantOrderId,
+    router,
+  ]);
 
   const isSuccess = status === 'success';
   const isFailed = status === 'failed';
@@ -83,7 +153,15 @@ function PendingContent() {
           </svg>
         </div>
         <h1 className="text-2xl font-bold text-gray-800 mb-2">
-          {checking ? 'Checking Payment' : isSuccess ? 'Payment Successful!' : isFailed ? 'Payment Failed' : 'Payment Pending'}
+          {checking
+            ? 'Checking Payment'
+            : isSuccess
+              ? isWalletTopup
+                ? 'Money added'
+                : 'Payment Successful!'
+              : isFailed
+                ? 'Payment Failed'
+                : 'Payment Pending'}
         </h1>
         <p className="text-gray-500 mb-6">
           {message || 'Your payment is being processed. This may take a few minutes. You will be notified on WhatsApp once confirmed.'}
@@ -95,10 +173,10 @@ function PendingContent() {
           <p className="text-xs text-gray-400 mb-6">Payment Ref: {merchantOrderId}</p>
         )}
         <a
-          href="/home"
+          href={isWalletTopup ? '/customer/wallet' : '/insurance?paymentReturn=1'}
           className="block w-full bg-[#075E54] text-white py-3 rounded-xl font-semibold hover:bg-[#128C7E] transition-colors"
         >
-          {isFailed ? 'Return to Dues' : 'Go to Home'}
+          {isWalletTopup ? 'Back to Wallet' : 'Back to Insurance'}
         </a>
       </div>
     </div>

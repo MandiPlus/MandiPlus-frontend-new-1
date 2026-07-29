@@ -5,6 +5,7 @@ import { Suspense } from 'react';
 function SuccessContent() {
   const params = useSearchParams();
   const invoiceId = params.get('invoiceId');
+  const paidFromWallet = params.get('source') === 'wallet';
 
   return (
     <div className="min-h-screen bg-[#efeae2] flex items-center justify-center p-4">
@@ -14,9 +15,13 @@ function SuccessContent() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
         </div>
-        <h1 className="text-2xl font-bold text-gray-800 mb-2">Payment Successful!</h1>
+        <h1 className="text-2xl font-bold text-gray-800 mb-2">
+          {paidFromWallet ? 'Invoice generated' : 'Payment Successful!'}
+        </h1>
         <p className="text-gray-500 mb-6">
-          Your insurance premium has been paid successfully. You will receive a confirmation on WhatsApp shortly.
+          {paidFromWallet
+            ? 'Amount was deducted from your MandiPlus Wallet. Your documents will be shared on WhatsApp shortly.'
+            : 'Your insurance premium has been paid successfully. You will receive a confirmation on WhatsApp shortly.'}
         </p>
         {invoiceId && (
           <p className="text-xs text-gray-400 mb-6">Invoice ID: {invoiceId}</p>
