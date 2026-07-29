@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  WalletCards,
 } from "lucide-react";
 
 import { createCustomerWebPaymentCheckout } from "@/features/customer/api";
@@ -56,6 +57,10 @@ export default function CustomerPapersPage({
     if (queryTab) setTab(queryTab);
   }, [queryTab]);
 
+  const walletBalance = data.wallet?.walletId
+    ? Number(data.wallet.availableBalance || 0)
+    : 0;
+
   const pending = useMemo(
     () => data.invoices.filter(isPayableInvoice),
     [data.invoices],
@@ -85,11 +90,16 @@ export default function CustomerPapersPage({
   const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const start = from ? new Date(`${from}T00:00:00`).getTime() : 0;
-    const end = to ? new Date(`${to}T23:59:59`).getTime() : Number.MAX_SAFE_INTEGER;
+    const end = to
+      ? new Date(`${to}T23:59:59`).getTime()
+      : Number.MAX_SAFE_INTEGER;
     return source.filter((invoice) => {
       const rawDate = invoice.invoiceDate || invoice.createdAt;
       const timestamp = rawDate ? new Date(rawDate).getTime() : end;
-      if (Number.isFinite(timestamp) && (timestamp < start || timestamp > end)) {
+      if (
+        Number.isFinite(timestamp) &&
+        (timestamp < start || timestamp > end)
+      ) {
         return false;
       }
       if (!needle) return true;
@@ -107,12 +117,15 @@ export default function CustomerPapersPage({
   }, [from, search, source, to]);
 
   const groups = useMemo(() => groupByDisplayDate(rows), [rows]);
-  const selectedReady = checkoutReady.filter((invoice) => selected.has(invoice.id));
+  const selectedReady = checkoutReady.filter((invoice) =>
+    selected.has(invoice.id),
+  );
 
   const toggleAll = (scope: CustomerInvoice[]) => {
     const visibleReady = scope.filter(isCheckoutReady);
     const allSelected =
-      visibleReady.length > 0 && visibleReady.every((invoice) => selected.has(invoice.id));
+      visibleReady.length > 0 &&
+      visibleReady.every((invoice) => selected.has(invoice.id));
     setSelected((current) => {
       const next = new Set(current);
       visibleReady.forEach((invoice) =>
@@ -138,7 +151,8 @@ export default function CustomerPapersPage({
       const checkout = await createCustomerWebPaymentCheckout(
         invoices.map((invoice) => invoice.id),
       );
-      if (!checkout.redirectUrl) throw new Error("PhonePe checkout URL was not returned.");
+      if (!checkout.redirectUrl)
+        throw new Error("PhonePe checkout URL was not returned.");
       window.location.assign(checkout.redirectUrl);
     } catch (error) {
       setNotice(readableError(error, "Could not start PhonePe. Please retry."));
@@ -173,7 +187,11 @@ export default function CustomerPapersPage({
       partnerActive={data.partnerActive}
       showBottomNav={false}
     >
-      <header className={styles.secondaryHeader}>
+      <header
+        className={`${styles.secondaryHeader} ${
+          tab !== "policy" ? styles.paymentPageHeader : ""
+        }`}
+      >
         <button
           type="button"
           className={styles.secondaryBack}
@@ -185,7 +203,19 @@ export default function CustomerPapersPage({
         <h1 className={styles.secondaryHeading}>
           {tab === "policy" ? "Insurance dekho!" : "Payments"}
         </h1>
-        <span />
+        {tab !== "policy" ? (
+          <button
+            type="button"
+            className={styles.paymentWalletButton}
+            onClick={() => router.push("/customer/wallet")}
+            aria-label={`Open wallet. Balance ${walletBalance} rupees`}
+          >
+            <WalletCards size={19} strokeWidth={2.2} />
+            <span>{money(walletBalance)}</span>
+          </button>
+        ) : (
+          <span />
+        )}
       </header>
 
       <main className={styles.pageBody}>
@@ -295,9 +325,7 @@ export default function CustomerPapersPage({
                     String(invoice.paymentStatus || "").toUpperCase() ===
                     "PAID";
                   const policyPending =
-                    tab === "policy" &&
-                    paymentConfirmed &&
-                    !policyUrl;
+                    tab === "policy" && paymentConfirmed && !policyUrl;
                   return (
                     <button
                       key={invoice.id}
@@ -366,7 +394,9 @@ export default function CustomerPapersPage({
                       ) : selectable ? (
                         <span
                           className={`${styles.checkbox} ${
-                            selected.has(invoice.id) ? styles.checkboxChecked : ""
+                            selected.has(invoice.id)
+                              ? styles.checkboxChecked
+                              : ""
                           }`}
                         >
                           <Check size={14} />
@@ -394,7 +424,10 @@ export default function CustomerPapersPage({
 }
 
 function normalizeTab(value: string | null): PaperTab | null {
-  return value === "pending" || value === "policy" || value === "paid" || value === "all"
+  return value === "pending" ||
+    value === "policy" ||
+    value === "paid" ||
+    value === "all"
     ? value
     : null;
 }

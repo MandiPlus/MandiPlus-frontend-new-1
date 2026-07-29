@@ -20,7 +20,8 @@ import { INDIA_STATES } from "./indiaStates";
 import { initials, readableError } from "./utils";
 import styles from "./customer-app.module.css";
 
-type ProfileSection = "main" | "details" | "language" | "notifications" | "security";
+type ProfileSection =
+  "main" | "details" | "language" | "notifications" | "security";
 type NotificationPreferences = {
   incompleteDetails: boolean;
   tripUpdates: boolean;
@@ -36,6 +37,40 @@ const languageOptions = [
   ["mr", "मराठी"],
 ] as const;
 
+const profileRoles = [
+  ["BUYER", "Buyer"],
+  ["SUPPLIER", "Supplier"],
+  ["TRANSPORTER", "Transporter"],
+] as const;
+
+const profileCommodities = [
+  ["TENDER_COCONUT", "Tender Coconut", "🥥"],
+  ["TOMATO", "Tomato", "🍅"],
+  ["MANGO", "Mango", "🥭"],
+  ["BANANA", "Banana", "🍌"],
+  ["ONION", "Onion", "🧅"],
+  ["POTATO", "Potato", "🥔"],
+  ["POMEGRANATE", "Pomegranate", "🍎"],
+  ["OTHER", "Other", "🌾"],
+] as const;
+
+const businessSizeOptions = [
+  ["2-10", "2 - 10 vehicles"],
+  ["10-20", "10 - 20 vehicles"],
+  ["20-50", "20 - 50 vehicles"],
+  ["50+", "50+ vehicles"],
+] as const;
+
+type ProfileFormState = {
+  name: string;
+  state: string;
+  mandiName: string;
+  secondaryMobileNumber: string;
+  identity: string;
+  primaryCommodityCode: string;
+  businessSize: string;
+};
+
 export default function CustomerProfilePage() {
   const router = useRouter();
   const params = useSearchParams();
@@ -48,37 +83,28 @@ export default function CustomerProfilePage() {
   const [language, setLanguage] = useState(
     String(user?.preferredLanguage || "hi"),
   );
-  const [profile, setProfile] = useState({
-    name: String(user?.name || ""),
-    state: String(user?.state || ""),
-    mandiName: String(user?.mandiName || ""),
-    secondaryMobileNumber: String(user?.secondaryMobileNumber || ""),
-    identity: String(user?.identity || "CUSTOMER"),
-    primaryCommodityCode: String(user?.primaryCommodityCode || ""),
-    product: Array.isArray(user?.products)
-      ? String(user.products[0] || "")
-      : String(user?.commodity || ""),
-    officeAddress: Array.isArray(user?.officeAddress)
-      ? user.officeAddress.join(", ")
-      : String(user?.officeAddress || ""),
-  });
-  const [notifications, setNotifications] = useState<NotificationPreferences>(() => {
-    if (typeof window === "undefined") return defaultNotifications;
-    try {
-      return {
-        ...defaultNotifications,
-        ...JSON.parse(localStorage.getItem("mandiplus-notification-prefs") || "{}"),
-      };
-    } catch {
-      return defaultNotifications;
-    }
-  });
+  const [profile, setProfile] = useState(() => profileFromUser(user));
+  const [notifications, setNotifications] = useState<NotificationPreferences>(
+    () => {
+      if (typeof window === "undefined") return defaultNotifications;
+      try {
+        return {
+          ...defaultNotifications,
+          ...JSON.parse(
+            localStorage.getItem("mandiplus-notification-prefs") || "{}",
+          ),
+        };
+      } catch {
+        return defaultNotifications;
+      }
+    },
+  );
 
   const phone = useMemo(
     () =>
-      String(user?.mobileNumber || user?.phone || user?.phoneNumber || "").slice(
-        -10,
-      ),
+      String(
+        user?.mobileNumber || user?.phone || user?.phoneNumber || "",
+      ).slice(-10),
     [user],
   );
 
@@ -99,20 +125,24 @@ export default function CustomerProfilePage() {
       const payload: Record<string, unknown> = {
         name: profile.name.trim(),
         state: profile.state.trim(),
-        identity: profile.identity,
       };
-      if (profile.mandiName.trim()) payload.mandiName = profile.mandiName.trim();
+      if (profile.mandiName.trim())
+        payload.mandiName = profile.mandiName.trim();
       if (profile.secondaryMobileNumber.trim()) {
         payload.secondaryMobileNumber = profile.secondaryMobileNumber
           .replace(/\D/g, "")
           .slice(-10);
       }
-      if (profile.product.trim()) payload.products = [profile.product.trim()];
+      if (profile.identity) payload.identity = profile.identity;
       if (profile.primaryCommodityCode) {
+        const selectedCommodity = profileCommodities.find(
+          ([code]) => code === profile.primaryCommodityCode,
+        );
         payload.primaryCommodityCode = profile.primaryCommodityCode;
+        if (selectedCommodity) payload.products = [selectedCommodity[1]];
       }
-      if (profile.officeAddress.trim()) {
-        payload.officeAddress = [profile.officeAddress.trim()];
+      if (profile.businessSize) {
+        payload.unionMember = `Vehicles: ${profile.businessSize}`;
       }
       const updated = await updateCustomerUser(user.id, payload);
       setUser((current: Record<string, unknown>) => ({
@@ -156,9 +186,19 @@ export default function CustomerProfilePage() {
   const toggleNotification = (key: keyof typeof notifications) => {
     setNotifications((current) => {
       const next = { ...current, [key]: !current[key] };
-      localStorage.setItem("mandiplus-notification-prefs", JSON.stringify(next));
+      localStorage.setItem(
+        "mandiplus-notification-prefs",
+        JSON.stringify(next),
+      );
       return next;
     });
+  };
+
+  const discardProfile = () => {
+    setProfile(profileFromUser(user));
+    setNotice("");
+    setSection("main");
+    router.replace("/profile");
   };
 
   return (
@@ -226,14 +266,15 @@ export default function CustomerProfilePage() {
         ) : null}
 
         {section === "details" ? (
-          <section className={styles.formCard}>
+          <section className={styles.profileDetailsPanel}>
             <ProfileField
               label="Name"
               value={profile.name}
+              placeholder="Enter your full name"
               onChange={(value) => setProfile({ ...profile, name: value })}
             />
             <ProfileSelect
-              label="Location"
+              label="State"
               value={profile.state}
               options={INDIA_STATES}
               onChange={(value) => setProfile({ ...profile, state: value })}
@@ -241,32 +282,88 @@ export default function CustomerProfilePage() {
             <ProfileField
               label="Mandi name"
               value={profile.mandiName}
+              placeholder="Enter mandi name"
               onChange={(value) => setProfile({ ...profile, mandiName: value })}
             />
             <ProfileField
-              label="Alternate mobile"
+              label="Secondary mobile"
               inputMode="tel"
+              maxLength={10}
+              placeholder="10-digit alternate number"
               value={profile.secondaryMobileNumber}
               onChange={(value) =>
-                setProfile({ ...profile, secondaryMobileNumber: value })
+                setProfile({
+                  ...profile,
+                  secondaryMobileNumber: value.replace(/\D/g, "").slice(0, 10),
+                })
               }
             />
-            <ProfileField
+            <div className={styles.profileField}>
+              <span>I am a</span>
+              <div className={styles.profileRoleSelector}>
+                {profileRoles.map(([value, label]) => {
+                  const active = profile.identity === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      className={active ? styles.profileRoleActive : ""}
+                      aria-pressed={active}
+                      onClick={() =>
+                        setProfile({ ...profile, identity: value })
+                      }
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <ProfileSelect
               label="Primary commodity"
-              value={profile.product}
-              onChange={(value) => setProfile({ ...profile, product: value })}
+              value={profile.primaryCommodityCode}
+              options={profileCommodities.map(([value, label, emoji]) => ({
+                value,
+                label: `${emoji}  ${label}`,
+              }))}
+              placeholder="Select commodity"
+              onChange={(value) =>
+                setProfile({ ...profile, primaryCommodityCode: value })
+              }
             />
-            <button
-              type="button"
-              className={styles.wideButton}
-              onClick={() => void saveProfile()}
-              disabled={saving}
-            >
-              {saving ? (
-                <LoaderCircle className="animate-spin" size={18} />
-              ) : null}
-              Save changes
-            </button>
+            <ProfileSelect
+              label="Business size"
+              value={profile.businessSize}
+              options={businessSizeOptions.map(([value, label]) => ({
+                value,
+                label,
+              }))}
+              placeholder="Select business size"
+              onChange={(value) =>
+                setProfile({ ...profile, businessSize: value })
+              }
+            />
+            <div className={styles.profileFormActions}>
+              <button
+                type="button"
+                className={styles.profileDiscardButton}
+                onClick={discardProfile}
+                disabled={saving}
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                className={styles.profileSaveButton}
+                onClick={() => void saveProfile()}
+                disabled={saving}
+              >
+                {saving ? (
+                  <LoaderCircle className="animate-spin" size={18} />
+                ) : null}
+                Save changes
+              </button>
+            </div>
           </section>
         ) : null}
 
@@ -292,10 +389,26 @@ export default function CustomerProfilePage() {
           <section className={styles.settingsCard}>
             {(
               [
-                ["incompleteDetails", "Incomplete details", "Invoice and claim reminders"],
-                ["tripUpdates", "Trip updates", "Vehicle and delivery progress"],
-                ["claimUpdates", "Claim updates", "Status and document reminders"],
-                ["walletUpdates", "Wallet updates", "Balance and payment activity"],
+                [
+                  "incompleteDetails",
+                  "Incomplete details",
+                  "Invoice and claim reminders",
+                ],
+                [
+                  "tripUpdates",
+                  "Trip updates",
+                  "Vehicle and delivery progress",
+                ],
+                [
+                  "claimUpdates",
+                  "Claim updates",
+                  "Status and document reminders",
+                ],
+                [
+                  "walletUpdates",
+                  "Wallet updates",
+                  "Balance and payment activity",
+                ],
               ] as const
             ).map(([key, title, sub], index) => (
               <SettingsRow
@@ -363,9 +476,7 @@ function SettingsRow({
   return (
     <button
       type="button"
-      className={`${styles.settingsRow} ${
-        last ? styles.settingsRowLast : ""
-      }`}
+      className={`${styles.settingsRow} ${last ? styles.settingsRowLast : ""}`}
       onClick={onClick}
       disabled={!onClick}
     >
@@ -384,11 +495,15 @@ function ProfileField({
   value,
   onChange,
   inputMode,
+  placeholder,
+  maxLength,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   inputMode?: "text" | "tel";
+  placeholder?: string;
+  maxLength?: number;
 }) {
   return (
     <label className={styles.field}>
@@ -396,6 +511,8 @@ function ProfileField({
       <input
         value={value}
         inputMode={inputMode}
+        maxLength={maxLength}
+        placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
       />
     </label>
@@ -407,17 +524,19 @@ function ProfileSelect({
   value,
   options,
   onChange,
+  placeholder = "Select State",
 }: {
   label: string;
   value: string;
   options: ReadonlyArray<{ value: string; label: string }>;
   onChange: (value: string) => void;
+  placeholder?: string;
 }) {
   return (
     <label className={styles.field}>
       <span>{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">Select State</option>
+        <option value="">{placeholder}</option>
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
@@ -441,8 +560,91 @@ function isProfileSection(value: string | null): value is ProfileSection {
   );
 }
 
+function normalizeState(value: unknown) {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_");
+  return INDIA_STATES.some((option) => option.value === normalized)
+    ? normalized
+    : "";
+}
+
+function profileFromUser(
+  user: Record<string, unknown> | null | undefined,
+): ProfileFormState {
+  return {
+    name: String(user?.name || ""),
+    state: normalizeState(user?.state),
+    mandiName: String(user?.mandiName || ""),
+    secondaryMobileNumber: String(user?.secondaryMobileNumber || "")
+      .replace(/\D/g, "")
+      .slice(-10),
+    identity: normalizeProfileRole(user?.identity),
+    primaryCommodityCode: primaryCommodityCodeFromUser(user),
+    businessSize: businessSizeFromUser(user?.unionMember),
+  };
+}
+
+function normalizeProfileRole(value: unknown) {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase();
+  return profileRoles.some(([role]) => role === normalized) ? normalized : "";
+}
+
+function primaryCommodityCodeFromUser(
+  user: Record<string, unknown> | null | undefined,
+) {
+  const explicit = normalizeCommodityCode(user?.primaryCommodityCode);
+  if (explicit) return explicit;
+  const products = Array.isArray(user?.products) ? user.products : [];
+  return products.length === 1 ? commodityCodeFromLabel(products[0]) : "";
+}
+
+function normalizeCommodityCode(value: unknown) {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_");
+  return profileCommodities.some(([code]) => code === normalized)
+    ? normalized
+    : "";
+}
+
+function commodityCodeFromLabel(value: unknown) {
+  const normalized = String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  if (!normalized) return "";
+  if (
+    normalized.includes("tender coconut") ||
+    normalized === "coconut" ||
+    normalized === "green coconut"
+  ) {
+    return "TENDER_COCONUT";
+  }
+  if (normalized.includes("tomato")) return "TOMATO";
+  if (normalized.includes("mango")) return "MANGO";
+  if (normalized.includes("banana")) return "BANANA";
+  if (normalized.includes("onion")) return "ONION";
+  if (normalized.includes("potato")) return "POTATO";
+  if (normalized.includes("pomegranate") || normalized.includes("anar")) {
+    return "POMEGRANATE";
+  }
+  return "OTHER";
+}
+
+function businessSizeFromUser(value: unknown) {
+  const storedValue = String(value || "");
+  return (
+    businessSizeOptions.find(([size]) => storedValue.includes(size))?.[0] || ""
+  );
+}
+
 function sectionLabel(section: ProfileSection) {
-  if (section === "details") return "Personal details";
+  if (section === "details") return "Aapki details";
   if (section === "language") return "Language";
   if (section === "notifications") return "Notifications";
   if (section === "security") return "Security";
