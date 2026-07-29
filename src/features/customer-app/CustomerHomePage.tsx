@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useState } from "react";
 import {
   FilePlus2,
-  HelpCircle,
   Menu,
   ShieldCheck,
   Truck,
@@ -67,13 +66,7 @@ function HomeContent({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
             <Menu size={23} strokeWidth={2.4} />
           </button>
           <h1 className={styles.heroTitle}>Mandi Plus</h1>
-          <Link
-            href="/support"
-            className={styles.heroButton}
-            aria-label="Open help"
-          >
-            <HelpCircle size={24} strokeWidth={2.2} />
-          </Link>
+          <span aria-hidden="true" />
         </div>
       </section>
 
