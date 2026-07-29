@@ -83,6 +83,12 @@ const DEFAULT_TENDER_COCONUT_PRICING: CustomerAppPricing["tenderCoconut"] = {
   updatedAt: null,
 };
 
+const TENDER_LOGISTICS_CHOICES = [
+  { value: "25", label: "25 ton", compactLabel: "25t" },
+  { value: "30", label: "30 ton", compactLabel: "30t" },
+  { value: "NONE", label: "No logistics", compactLabel: "Remove" },
+] as const;
+
 const MISSING_QUESTIONS: Record<
   MissingDetailKey,
   { label: string; audio: string; target?: InvoiceVoiceTargetField }
@@ -1198,18 +1204,26 @@ export default function CustomerCreateInsurancePage() {
             />
             {isTenderCoconut ? (
               <div className={styles.inlineTonnage}>
-                {(["25", "30"] as const).map((tonnage) => (
+                {TENDER_LOGISTICS_CHOICES.map((choice) => (
                   <button
-                    key={tonnage}
+                    key={choice.value}
                     type="button"
                     className={
-                      draft.vehicleTonnage === tonnage
+                      draft.vehicleTonnage === choice.value
                         ? styles.tonnageButtonActive
                         : ""
                     }
-                    onClick={() => update("vehicleTonnage", tonnage)}
+                    onClick={() =>
+                      update(
+                        "vehicleTonnage",
+                        draft.vehicleTonnage === choice.value &&
+                          choice.value !== "NONE"
+                          ? "NONE"
+                          : choice.value,
+                      )
+                    }
                   >
-                    {tonnage}t
+                    {choice.compactLabel}
                   </button>
                 ))}
               </div>
@@ -1266,7 +1280,8 @@ export default function CustomerCreateInsurancePage() {
                 <div className={styles.amountBreakdownRow}>
                   <span>
                     Logistics cost
-                    {draft.vehicleTonnage
+                    {draft.vehicleTonnage === "25" ||
+                    draft.vehicleTonnage === "30"
                       ? ` (${draft.vehicleTonnage} ton)`
                       : ""}
                   </span>
@@ -1422,17 +1437,22 @@ export default function CustomerCreateInsurancePage() {
 
             {activeMissingKey === "vehicleTonnage" ? (
               <div className={styles.missingTonnageChoices}>
-                {(["25", "30"] as const).map((tonnage) => (
+                {TENDER_LOGISTICS_CHOICES.map((choice) => (
                   <button
-                    key={tonnage}
+                    key={choice.value}
                     type="button"
+                    className={
+                      choice.value === "NONE"
+                        ? styles.missingTonnageRemove
+                        : ""
+                    }
                     onClick={() => {
                       questionAudioRef.current?.pause();
-                      update("vehicleTonnage", tonnage);
+                      update("vehicleTonnage", choice.value);
                       advanceMissingDetails();
                     }}
                   >
-                    {tonnage} ton
+                    {choice.label}
                   </button>
                 ))}
               </div>
@@ -1713,8 +1733,8 @@ function getMissingDetailKeys(draft: CustomerInvoiceDraft) {
     "buyerAddress",
     "quantity",
     "totalAmount",
-    "vehicleTonnage",
     "insuredPartyPhone",
+    "vehicleTonnage",
   ];
   return ordered.filter(
     (key) =>
@@ -1729,7 +1749,9 @@ function isMissingDetailAnswered(key: MissingDetailKey, value: string) {
   if (key === "quantity" || key === "totalAmount") {
     return Number(clean) > 0;
   }
-  if (key === "vehicleTonnage") return clean === "25" || clean === "30";
+  if (key === "vehicleTonnage") {
+    return clean === "25" || clean === "30" || clean === "NONE";
+  }
   return Boolean(clean);
 }
 
@@ -1749,7 +1771,8 @@ function validateDraft(draft: CustomerInvoiceDraft) {
   if (
     isTenderCoconutProduct(draft.product) &&
     draft.vehicleTonnage !== "25" &&
-    draft.vehicleTonnage !== "30"
+    draft.vehicleTonnage !== "30" &&
+    draft.vehicleTonnage !== "NONE"
   ) {
     return "Vehicle tonnage chunein.";
   }

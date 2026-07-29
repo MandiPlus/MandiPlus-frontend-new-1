@@ -1937,7 +1937,7 @@
 
 .inlineTonnage {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   align-self: end;
   padding: 3px;
@@ -2490,6 +2490,10 @@
 .missingTonnageChoices button:active {
   color: #fff;
   background: var(--mp-navy);
+}
+
+.missingTonnageChoices .missingTonnageRemove {
+  grid-column: 1 / -1;
 }
 
 .missingActions {

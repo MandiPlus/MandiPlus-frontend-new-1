@@ -250,8 +250,10 @@ export async function createCustomerInvoice(
   form.append("vehicleNumber", vehicle);
   form.append("truckNumber", vehicle);
   if (isTenderCoconutProduct(draft.product)) {
-    form.append("vehicleTonnage", draft.vehicleTonnage);
-    form.append("pricingVersion", String(pricing?.pricingVersion || 1));
+    if (draft.vehicleTonnage === "25" || draft.vehicleTonnage === "30") {
+      form.append("vehicleTonnage", draft.vehicleTonnage);
+      form.append("pricingVersion", String(pricing?.pricingVersion || 1));
+    }
     form.append("invoiceAdditionsAmount", "0");
   }
   if (draft.ownerName.trim()) form.append("ownerName", draft.ownerName.trim());
