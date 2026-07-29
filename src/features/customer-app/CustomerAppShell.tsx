@@ -257,7 +257,7 @@ export function CustomerAppShell({
                   <nav className={styles.drawerNav}>
                     <DrawerLink href="/insurance-dekho" icon={FileText} label="Insurance dekho!" />
                     <DrawerLink href="/customer/wallet" icon={WalletCards} label="Wallet" />
-                    <DrawerLink href="/profile" icon={UserRound} label="Personal details" />
+                    <DrawerLink href="/profile?section=details" icon={UserRound} label="Personal details" />
                     <DrawerLink href="/profile?section=language" icon={Languages} label="Language" />
                     <DrawerLink href="/profile?section=notifications" icon={Bell} label="Notifications" />
                     <DrawerLink href="/profile?section=security" icon={ShieldCheck} label="Security" />
