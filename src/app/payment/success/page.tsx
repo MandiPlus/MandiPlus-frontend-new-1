@@ -1,40 +1,182 @@
-'use client';
-import { useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
+"use client";
+
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Download,
+  ExternalLink,
+  FileText,
+  Home,
+  LoaderCircle,
+} from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+
+import { CustomerAppShell } from "@/features/customer-app/CustomerAppShell";
+import styles from "@/features/customer-app/customer-app.module.css";
+import {
+  getInvoicePdfUrl,
+  invoiceProduct,
+  invoiceVehicle,
+  type CustomerInvoice,
+} from "@/features/customer-app/utils";
+import { getCustomerInvoiceById } from "@/features/customer/api";
+
+const MAX_INVOICE_REFRESHES = 8;
 
 function SuccessContent() {
+  const router = useRouter();
   const params = useSearchParams();
-  const invoiceId = params.get('invoiceId');
+  const invoiceId = params.get("invoiceId") || "";
+  const paidFromWallet = params.get("source") === "wallet";
+  const [invoice, setInvoice] = useState<CustomerInvoice | null>(null);
+  const [loading, setLoading] = useState(Boolean(invoiceId));
+  const [notice, setNotice] = useState(
+    invoiceId ? "" : "Invoice reference nahi mila.",
+  );
+
+  useEffect(() => {
+    if (!invoiceId) return;
+
+    let active = true;
+    let timer: number | undefined;
+
+    const loadInvoice = async (attempt: number) => {
+      try {
+        const nextInvoice = (await getCustomerInvoiceById(
+          invoiceId,
+        )) as CustomerInvoice;
+        if (!active) return;
+        setInvoice(nextInvoice);
+        setNotice("");
+        const hasPdf = Boolean(getInvoicePdfUrl(nextInvoice));
+        setLoading(!hasPdf && attempt < MAX_INVOICE_REFRESHES);
+
+        if (!hasPdf && attempt < MAX_INVOICE_REFRESHES) {
+          timer = window.setTimeout(() => void loadInvoice(attempt + 1), 1500);
+        }
+      } catch {
+        if (!active) return;
+        if (attempt < MAX_INVOICE_REFRESHES) {
+          timer = window.setTimeout(() => void loadInvoice(attempt + 1), 1500);
+          return;
+        }
+        setLoading(false);
+        setNotice(
+          "Payment ho gaya, lekin invoice abhi load nahi hua. Payments mein dobara dekhein.",
+        );
+      }
+    };
+
+    void loadInvoice(0);
+    return () => {
+      active = false;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [invoiceId]);
+
+  const pdfUrl = invoice ? getInvoicePdfUrl(invoice) : "";
 
   return (
-    <div className="min-h-screen bg-[#efeae2] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
-        <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-          <svg className="w-10 h-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-        </div>
-        <h1 className="text-2xl font-bold text-gray-800 mb-2">Payment Successful!</h1>
-        <p className="text-gray-500 mb-6">
-          Your insurance premium has been paid successfully. You will receive a confirmation on WhatsApp shortly.
-        </p>
-        {invoiceId && (
-          <p className="text-xs text-gray-400 mb-6">Invoice ID: {invoiceId}</p>
-        )}
-        <a
-          href="/home"
-          className="block w-full bg-[#075E54] text-white py-3 rounded-xl font-semibold hover:bg-[#128C7E] transition-colors"
+    <CustomerAppShell activeTab="create" showBottomNav={false}>
+      <header className={styles.secondaryHeader}>
+        <button
+          type="button"
+          className={styles.secondaryBack}
+          onClick={() => router.replace("/home")}
+          aria-label="Back to home"
         >
+          <ArrowLeft size={24} strokeWidth={2.4} />
+        </button>
+        <h1 className={styles.secondaryHeading}>Invoice generated</h1>
+        <span />
+      </header>
+
+      <main className={styles.paymentSuccessBody}>
+        <section className={styles.paymentSuccessStatus}>
+          <CheckCircle2 size={27} strokeWidth={2.4} />
+          <div>
+            <strong>
+              {paidFromWallet
+                ? "Wallet se payment ho gaya"
+                : "Payment successful"}
+            </strong>
+            <span>Insurance ban raha hai</span>
+          </div>
+        </section>
+
+        <section className={styles.paymentInvoicePanel}>
+          <div className={styles.paymentInvoiceHeading}>
+            <FileText size={22} />
+            <div>
+              <strong>
+                {invoice ? invoiceVehicle(invoice) : "Invoice load ho raha hai"}
+              </strong>
+              <span>
+                {invoice
+                  ? `${invoiceProduct(invoice)} · ${invoice.invoiceNumber}`
+                  : "Please wait"}
+              </span>
+            </div>
+          </div>
+
+          <div className={styles.paymentInvoiceFrame}>
+            {pdfUrl ? (
+              <iframe src={pdfUrl} title="Generated invoice" />
+            ) : loading ? (
+              <div className={styles.paymentInvoiceLoading}>
+                <LoaderCircle
+                  className={styles.paymentInvoiceLoadingSpinner}
+                  size={28}
+                />
+                <strong>Invoice taiyar ho raha hai</strong>
+                <span>Yeh screen automatically update hogi.</span>
+              </div>
+            ) : (
+              <div className={styles.paymentInvoiceLoading}>
+                <FileText size={30} />
+                <strong>Invoice PDF taiyar ho raha hai</strong>
+                <span>{notice || "Payments mein thodi der mein milega."}</span>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {notice && invoice ? (
+          <p className={styles.paymentSuccessNotice}>{notice}</p>
+        ) : null}
+      </main>
+
+      <div className={styles.paymentSuccessActions}>
+        {pdfUrl ? (
+          <>
+            <a href={pdfUrl} target="_blank" rel="noreferrer">
+              <ExternalLink size={18} />
+              Invoice dekhein
+            </a>
+            <a href={pdfUrl} download>
+              <Download size={18} />
+              Download
+            </a>
+          </>
+        ) : (
+          <a href="/pay?tab=paid">
+            <FileText size={18} />
+            Invoices dekhein
+          </a>
+        )}
+        <a href="/home" className={styles.paymentSuccessHome}>
+          <Home size={19} />
           Go to Home
         </a>
       </div>
-    </div>
+    </CustomerAppShell>
   );
 }
 
 export default function PaymentSuccessPage() {
   return (
-    <Suspense>
+    <Suspense fallback={null}>
       <SuccessContent />
     </Suspense>
   );
