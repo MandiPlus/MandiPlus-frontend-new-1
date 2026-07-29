@@ -41,6 +41,8 @@ import {
   getCustomerAppPricing,
   getCustomerInvoiceProfile,
   isTenderCoconutProduct,
+  matchingCustomerInvoiceRate,
+  roundCustomerInvoiceMoney,
   type CustomerAppPricing,
   type CustomerInvoiceDraft,
   type InvoiceVoiceTargetField,
@@ -460,18 +462,41 @@ export default function CustomerCreateInsurancePage() {
   const update = (field: keyof CustomerInvoiceDraft, value: string) => {
     setDraft((current) => {
       const next = { ...current, [field]: value };
+      const quantity = Number(next.quantity);
+      const logisticsAmount = isTenderCoconutProduct(next.product)
+        ? next.vehicleTonnage === "25"
+          ? Number(pricing.amount25Ton || 0)
+          : next.vehicleTonnage === "30"
+            ? Number(pricing.amount30Ton || 0)
+            : 0
+        : 0;
       if (field === "rate") {
-        const quantity = Number(next.quantity);
         const rate = Number(value);
         if (quantity > 0 && rate > 0) {
-          next.totalAmount = String(round(quantity * rate));
+          const finalAmount = roundCustomerInvoiceMoney(quantity * rate);
+          next.totalAmount = String(
+            Math.max(
+              0,
+              roundCustomerInvoiceMoney(finalAmount - logisticsAmount),
+            ),
+          );
         }
       }
-      if (field === "quantity" || field === "totalAmount") {
-        const quantity = Number(next.quantity);
-        const totalAmount = Number(next.totalAmount);
-        if (quantity > 0 && totalAmount > 0) {
-          next.rate = String(round(totalAmount / quantity));
+      if (
+        field === "quantity" ||
+        field === "totalAmount" ||
+        field === "vehicleTonnage" ||
+        field === "product"
+      ) {
+        const finalAmount = roundCustomerInvoiceMoney(
+          Number(next.totalAmount || 0) + logisticsAmount,
+        );
+        const matchingRate = matchingCustomerInvoiceRate(
+          finalAmount,
+          quantity,
+        );
+        if (matchingRate) {
+          next.rate = matchingRate;
         }
       }
       return next;
@@ -1150,7 +1175,7 @@ export default function CustomerCreateInsurancePage() {
             <CompactInput
               label="Rate"
               inputMode="decimal"
-              value={draft.rate}
+              value={amountBreakdown.rate || draft.rate}
               onChange={(value) => update("rate", value)}
             />
             <CompactInput
@@ -1763,6 +1788,10 @@ function resolveInvoiceAmountBreakdown(
     invoiceAmount: Number(goodsAmount.toFixed(2)),
     logisticsAmount: Number(logistics.toFixed(2)),
     totalAmount: Number((goodsAmount + logistics).toFixed(2)),
+    rate: matchingCustomerInvoiceRate(
+      Number((goodsAmount + logistics).toFixed(2)),
+      Number(draft.quantity || 0),
+    ),
   };
 }
 
