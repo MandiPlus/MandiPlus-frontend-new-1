@@ -58,6 +58,118 @@
   letter-spacing: -0.02em;
 }
 
+.invoicePicker {
+  margin-top: 18px;
+}
+
+.pickerSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px 10px;
+}
+
+.pickerSummary strong {
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.pickerSummary span {
+  color: #747a72;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.invoiceTabs {
+  display: flex;
+  overflow-x: auto;
+  gap: 10px;
+  padding: 2px 2px 8px;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+
+.invoiceTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.invoiceTab {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 164px;
+  max-width: 220px;
+  min-height: 70px;
+  align-items: center;
+  gap: 9px;
+  scroll-snap-align: start;
+  border: 1px solid #dfe3ea;
+  border-radius: 20px;
+  padding: 11px 14px;
+  color: #50564e;
+  background: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.invoiceTab > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.invoiceTab strong,
+.invoiceTab small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invoiceTab strong {
+  color: #171a16;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.invoiceTab small {
+  color: #7b8179;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.invoiceTabActive {
+  border-color: #20344b;
+  color: #fff;
+  background: #20344b;
+  box-shadow: 0 8px 20px rgba(32, 52, 75, 0.14);
+}
+
+.invoiceTabActive strong,
+.invoiceTabActive small {
+  color: #fff;
+}
+
+.invoiceTabStatus {
+  display: grid;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  color: #66706a;
+  background: #eef1ec;
+}
+
+.invoiceTabActive .invoiceTabStatus {
+  color: #20344b;
+  background: #fff;
+}
+
+.invoiceTabStatus svg[class*="lucide-loader"] {
+  animation: spin 900ms linear infinite;
+}
+
 .invoiceCard {
   margin-top: 24px;
   border: 1px solid #e2e5ec;
@@ -71,6 +183,8 @@
   display: flex;
   min-height: 68px;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 0 8px 12px;
 }
 
@@ -82,6 +196,13 @@
   letter-spacing: -0.025em;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.invoiceHeading span {
+  flex: 0 0 auto;
+  color: #777d75;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .pdfFrame {
@@ -180,7 +301,12 @@
   opacity: 0.38;
 }
 
+.actionSpinner {
+  animation: spin 900ms linear infinite;
+}
+
 .backButton:focus-visible,
+.invoiceTab:focus-visible,
 .action:focus-visible {
   outline: 3px solid rgba(103, 82, 204, 0.35);
   outline-offset: 3px;
@@ -218,6 +344,17 @@
     min-height: 92px;
     border-radius: 24px;
     padding: 18px 20px;
+  }
+
+  .invoicePicker {
+    margin-top: 14px;
+  }
+
+  .invoiceTab {
+    min-width: 154px;
+    min-height: 66px;
+    border-radius: 18px;
+    padding: 10px 12px;
   }
 
   .invoiceCard {

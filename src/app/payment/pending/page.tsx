@@ -16,20 +16,19 @@ const CUSTOMER_PAYMENT_STATUS_ATTEMPTS = 6;
 const CUSTOMER_PAYMENT_STATUS_INTERVAL_MS = 1_500;
 
 function customerInvoiceSuccessUrl({
-  invoiceId,
-  invoiceNumber,
-  vehicle,
+  invoices,
   merchantOrderId,
 }: {
-  invoiceId?: string | null;
-  invoiceNumber?: string | null;
-  vehicle?: string | null;
+  invoices: CustomerPaymentStatusInvoice[];
   merchantOrderId?: string | null;
 }) {
   const query = new URLSearchParams();
-  if (invoiceId) query.set('invoiceId', invoiceId);
-  if (invoiceNumber) query.set('invoiceNumber', invoiceNumber);
-  if (vehicle) query.set('vehicle', vehicle);
+  invoices.forEach((invoice) => {
+    if (!invoice.id) return;
+    query.append('invoiceId', invoice.id);
+    query.append('invoiceNumber', invoice.invoiceNumber || '');
+    query.append('vehicle', invoice.vehicleNumber || '');
+  });
   if (merchantOrderId) query.set('merchantOrderId', merchantOrderId);
   return `/payment/success?${query.toString()}`;
 }
@@ -101,22 +100,35 @@ function PendingContent() {
               if (matchingInvoicePaymentAttempt) {
                 clearCustomerInvoicePaymentAttempt();
               }
-              const paidInvoice =
+              const paidInvoices =
                 !isWalletTopup && 'invoices' in result
-                  ? matchingPaidInvoice(result.invoices, [
-                      invoiceId,
-                      matchingInvoicePaymentAttempt?.invoiceId,
-                    ])
-                  : null;
-              const paidInvoiceId =
-                invoiceId ||
-                matchingInvoicePaymentAttempt?.invoiceId ||
-                paidInvoice?.id;
+                  ? result.invoices || []
+                  : [];
+              const paidInvoice = matchingPaidInvoice(paidInvoices, [
+                invoiceId,
+                matchingInvoicePaymentAttempt?.invoiceId,
+              ]);
+              const orderedPaidInvoices = paidInvoice
+                ? [
+                    paidInvoice,
+                    ...paidInvoices.filter(
+                      (invoice) => invoice.id !== paidInvoice.id,
+                    ),
+                  ]
+                : paidInvoices;
+              const successInvoices = orderedPaidInvoices.length
+                ? orderedPaidInvoices
+                : [
+                    {
+                      id:
+                        invoiceId ||
+                        matchingInvoicePaymentAttempt?.invoiceId ||
+                        '',
+                    },
+                  ];
               router.replace(
                 customerInvoiceSuccessUrl({
-                  invoiceId: paidInvoiceId,
-                  invoiceNumber: paidInvoice?.invoiceNumber,
-                  vehicle: paidInvoice?.vehicleNumber,
+                  invoices: successInvoices,
                   merchantOrderId,
                 }),
               );
