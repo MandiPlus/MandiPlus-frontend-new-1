@@ -5,6 +5,7 @@ import {
   refreshAccessToken,
 } from "@/features/auth/api";
 import type { InsuranceForm } from "@/features/insurance/api";
+import { canonicalizeCommodityLabel } from "./commodity-normalization";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
@@ -357,10 +358,5 @@ function digits(value: string) {
 }
 
 export function isTenderCoconutProduct(value: string) {
-  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
-  return (
-    normalized === "coconut" ||
-    normalized === "green coconut" ||
-    /tender\s+coconuts?/.test(normalized)
-  );
+  return canonicalizeCommodityLabel(value) === "Tender Coconut";
 }
