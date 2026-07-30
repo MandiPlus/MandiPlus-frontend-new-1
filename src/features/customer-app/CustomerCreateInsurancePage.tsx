@@ -242,9 +242,11 @@ export default function CustomerCreateInsurancePage() {
     useRef<Promise<CachedLiveTranscriptionToken | null> | null>(null);
   const recordingStartedAtRef = useRef(0);
   const recordingPurposeRef = useRef<RecordingPurpose | null>(null);
-  const questionGenerationRef = useRef<
-    Partial<Record<MissingDetailKey, number>>
-  >({});
+  const recordingInvoiceIndexRef = useRef(0);
+  const recordingProductRef = useRef("");
+  const activeFileIndexRef = useRef(0);
+  const questionnaireCaptureGenerationRef = useRef(0);
+  const questionGenerationRef = useRef<Record<string, number>>({});
   const paymentAttemptRef = useRef<CustomerInvoicePaymentAttempt | null>(null);
   const paymentStatusCheckingRef = useRef(false);
   const paymentStatusGenerationRef = useRef(0);
@@ -277,13 +279,15 @@ export default function CustomerCreateInsurancePage() {
   const [missingKeys, setMissingKeys] = useState<MissingDetailKey[]>([]);
   const [missingIndex, setMissingIndex] = useState(0);
   const [missingOpen, setMissingOpen] = useState(false);
+  const [questionnaireSession, setQuestionnaireSession] = useState(0);
   const [voiceAnswers, setVoiceAnswers] = useState<
-    Partial<Record<MissingDetailKey, VoiceAnswerState>>
+    Record<string, VoiceAnswerState>
   >({});
   const [amountBreakdownOpen, setAmountBreakdownOpen] = useState(false);
 
   draftRef.current = draft;
   batchDraftsRef.current = batchDrafts;
+  activeFileIndexRef.current = activeFileIndex;
 
   const isTenderCoconut = isTenderCoconutProduct(draft.product);
   const amountBreakdown = useMemo(
@@ -313,8 +317,13 @@ export default function CustomerCreateInsurancePage() {
   const pendingVoiceAnswers = Object.values(voiceAnswers).filter(
     (state) => state === "processing",
   ).length;
+  const firstIncompleteInvoiceIndex = paymentDrafts.findIndex((item) =>
+    Boolean(validateDraft(item)),
+  );
   const validationIssue =
-    paymentDrafts.map(validateDraft).find(Boolean) || "";
+    firstIncompleteInvoiceIndex >= 0
+      ? validateDraft(paymentDrafts[firstIncompleteInvoiceIndex])
+      : "";
   const activeMissingKey = missingOpen ? missingKeys[missingIndex] : undefined;
   const activeQuestion = activeMissingKey
     ? MISSING_QUESTIONS[activeMissingKey]
@@ -465,6 +474,7 @@ export default function CustomerCreateInsurancePage() {
   }, []);
 
   const restartInsuranceCapture = useCallback(() => {
+    questionnaireCaptureGenerationRef.current += 1;
     paymentStatusGenerationRef.current += 1;
     paymentStatusCheckingRef.current = false;
     paymentAttemptRef.current = null;
@@ -736,9 +746,16 @@ export default function CustomerCreateInsurancePage() {
 
   const openMissingDetails = (nextDraft: CustomerInvoiceDraft) => {
     const nextKeys = getMissingDetailKeys(nextDraft);
+    questionAudioRef.current?.pause();
+    stopQuestionnaireVoiceSession();
+    setVoicePhase("idle");
+    setListeningDotCount(0);
     setMissingKeys(nextKeys);
     setMissingIndex(0);
     setMissingOpen(nextKeys.length > 0);
+    if (nextKeys.length) {
+      setQuestionnaireSession((current) => current + 1);
+    }
   };
 
   const applyExtractionResults = (
@@ -792,29 +809,85 @@ export default function CustomerCreateInsurancePage() {
   const processQuestionVoice = (
     key: MissingDetailKey,
     audio: File,
+    invoiceIndex: number,
+    product: string,
   ) => {
     const target = MISSING_QUESTIONS[key].target;
     if (!target) return;
-    const generation = (questionGenerationRef.current[key] || 0) + 1;
-    questionGenerationRef.current[key] = generation;
-    setVoiceAnswers((current) => ({ ...current, [key]: "processing" }));
-    void extractCustomerInvoiceVoice(audio, draft.product || "Tender Coconut", target)
+    const answerKey = questionnaireAnswerKey(invoiceIndex, key);
+    const captureGeneration = questionnaireCaptureGenerationRef.current;
+    const generation =
+      (questionGenerationRef.current[answerKey] || 0) + 1;
+    questionGenerationRef.current[answerKey] = generation;
+    setVoiceAnswers((current) => ({
+      ...current,
+      [answerKey]: "processing",
+    }));
+    void extractCustomerInvoiceVoice(
+      audio,
+      product || "Tender Coconut",
+      target,
+    )
       .then((response) => {
-        if (questionGenerationRef.current[key] !== generation) return;
+        if (
+          questionnaireCaptureGenerationRef.current !== captureGeneration ||
+          questionGenerationRef.current[answerKey] !== generation
+        ) {
+          return;
+        }
         const value = missingVoiceValue(response, key);
         if (!isMissingDetailAnswered(key, value)) {
           throw new Error("Voice answer was empty or invalid.");
         }
-        setDraft((current) => applyMissingVoiceValue(current, key, value));
-        setVoiceAnswers((current) => ({ ...current, [key]: "saved" }));
+        applyQuestionnaireAnswerToInvoice(invoiceIndex, key, value);
+        setVoiceAnswers((current) => ({
+          ...current,
+          [answerKey]: "saved",
+        }));
       })
       .catch(() => {
-        if (questionGenerationRef.current[key] !== generation) return;
-        setVoiceAnswers((current) => ({ ...current, [key]: "failed" }));
-        setNotice(
-          `${MISSING_QUESTIONS[key].label} samajh nahi aaya. Dobara boliye.`,
-        );
+        if (
+          questionnaireCaptureGenerationRef.current !== captureGeneration ||
+          questionGenerationRef.current[answerKey] !== generation
+        ) {
+          return;
+        }
+        setVoiceAnswers((current) => ({
+          ...current,
+          [answerKey]: "failed",
+        }));
+        if (activeFileIndexRef.current === invoiceIndex) {
+          setNotice(
+            `${MISSING_QUESTIONS[key].label} samajh nahi aaya. Dobara boliye.`,
+          );
+        }
       });
+  };
+
+  const applyQuestionnaireAnswerToInvoice = (
+    invoiceIndex: number,
+    key: MissingDetailKey,
+    value: string,
+  ) => {
+    if (!batchDraftsRef.current.length) {
+      if (invoiceIndex !== 0) return;
+      setDraft((current) => applyMissingVoiceValue(current, key, value));
+      return;
+    }
+    const currentDraft =
+      activeFileIndexRef.current === invoiceIndex
+        ? draftRef.current
+        : batchDraftsRef.current[invoiceIndex];
+    if (!currentDraft) return;
+    const nextDraft = applyMissingVoiceValue(currentDraft, key, value);
+    const nextDrafts = [...batchDraftsRef.current];
+    nextDrafts[invoiceIndex] = nextDraft;
+    batchDraftsRef.current = nextDrafts;
+    setBatchDrafts(nextDrafts);
+    if (activeFileIndexRef.current === invoiceIndex) {
+      draftRef.current = nextDraft;
+      setDraft(nextDraft);
+    }
   };
 
   const startRecording = async (purpose: RecordingPurpose) => {
@@ -827,6 +900,8 @@ export default function CustomerCreateInsurancePage() {
       return;
     }
     if (recorderRef.current?.state === "recording") return;
+    recordingInvoiceIndexRef.current = activeFileIndexRef.current;
+    recordingProductRef.current = draftRef.current.product;
     setNotice("");
     setVoicePhase("requesting");
     try {
@@ -860,6 +935,8 @@ export default function CustomerCreateInsurancePage() {
       recorder.onstop = () => {
         stopQuestionnaireVoiceSession();
         const stoppedPurpose = recordingPurposeRef.current;
+        const stoppedInvoiceIndex = recordingInvoiceIndexRef.current;
+        const stoppedProduct = recordingProductRef.current;
         const duration = Date.now() - recordingStartedAtRef.current;
         const finalType = recorder.mimeType || mimeType || "audio/webm";
         const blob = new Blob(chunks, { type: finalType });
@@ -873,6 +950,7 @@ export default function CustomerCreateInsurancePage() {
         recorderRef.current = null;
         recordingPurposeRef.current = null;
         setRecordingPurpose(null);
+        recordingProductRef.current = "";
 
         if (!stoppedPurpose || blob.size === 0 || duration < 250) {
           setVoicePhase("failed");
@@ -880,7 +958,12 @@ export default function CustomerCreateInsurancePage() {
           return;
         }
         advanceMissingDetails();
-        processQuestionVoice(stoppedPurpose, audio);
+        processQuestionVoice(
+          stoppedPurpose,
+          audio,
+          stoppedInvoiceIndex,
+          stoppedProduct,
+        );
       };
       stopQuestionnaireVoiceSession();
       const voiceSession = new CustomerQuestionnaireVoiceSession({
@@ -907,6 +990,7 @@ export default function CustomerCreateInsurancePage() {
       recordingPurposeRef.current = null;
       setRecordingPurpose(null);
       setVoicePhase("failed");
+      recordingProductRef.current = "";
       setNotice("Microphone permission allow karke dobara try karein.");
     }
   };
@@ -974,7 +1058,7 @@ export default function CustomerCreateInsurancePage() {
     };
     // Each question should play exactly once when its index becomes active.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeMissingKey, missingOpen]);
+  }, [activeMissingKey, missingOpen, questionnaireSession]);
 
   const submitAndPay = async () => {
     const invalidDraftIndex = paymentDrafts.findIndex((item) =>
@@ -1231,6 +1315,25 @@ export default function CustomerCreateInsurancePage() {
     setDraft(nextDraft);
     setNotice("");
     openMissingDetails(nextDraft);
+  };
+
+  const retryIncompleteInvoice = () => {
+    if (firstIncompleteInvoiceIndex < 0) {
+      void submitAndPay();
+      return;
+    }
+    const incompleteDraft = paymentDrafts[firstIncompleteInvoiceIndex];
+    if (!incompleteDraft) return;
+    if (firstIncompleteInvoiceIndex !== activeFileIndex) {
+      setActiveFileIndex(firstIncompleteInvoiceIndex);
+      setDraft(incompleteDraft);
+    }
+    setNotice(
+      paymentDrafts.length > 1
+        ? `Invoice ${firstIncompleteInvoiceIndex + 1}: ${validateDraft(incompleteDraft)}`
+        : validateDraft(incompleteDraft),
+    );
+    openMissingDetails(incompleteDraft);
   };
 
   if (stage === "capture") {
@@ -1701,7 +1804,7 @@ export default function CustomerCreateInsurancePage() {
         <button
           type="button"
           className={styles.wideButton}
-          onClick={() => void submitAndPay()}
+          onClick={retryIncompleteInvoice}
           disabled={
             stage === "creating" ||
             paymentStatusChecking ||
@@ -1722,7 +1825,7 @@ export default function CustomerCreateInsurancePage() {
               : pendingVoiceAnswers > 0
                 ? "Details save ho rahi hain"
                 : validationIssue
-                  ? "Details poori karein"
+                  ? "Dobara try karein"
                   : `Pay ${payableMoney(payablePremium)}`}
         </button>
       </div>
@@ -2194,6 +2297,13 @@ function freshBatchDraft(template: CustomerInvoiceDraft) {
     note: "",
     invoiceDate: today(),
   };
+}
+
+function questionnaireAnswerKey(
+  invoiceIndex: number,
+  key: MissingDetailKey,
+) {
+  return `${invoiceIndex}:${key}`;
 }
 
 function customerInvoiceSuccessUrl({
