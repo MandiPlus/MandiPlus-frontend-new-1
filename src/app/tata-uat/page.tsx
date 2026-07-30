@@ -45,7 +45,7 @@ function JsonBlock({ data, title }: { data: unknown; title: string }) {
     const [open, setOpen] = useState(false);
     if (data === null || data === undefined) return null;
     return (
-        <div className="mt-2">
+        <div className="mt-2 w-full min-w-0 max-w-full overflow-hidden">
             <button
                 type="button"
                 onClick={() => setOpen(o => !o)}
@@ -55,7 +55,14 @@ function JsonBlock({ data, title }: { data: unknown; title: string }) {
                 {title}
             </button>
             {open && (
-                <pre className="mt-1 bg-gray-900 text-green-300 text-[11px] rounded-md p-2 overflow-auto max-h-80 leading-relaxed font-mono">
+                <pre
+                    className="mt-1 max-h-80 w-full min-w-0 max-w-full overflow-auto rounded-md bg-gray-900 p-3 font-mono text-[11px] leading-relaxed text-green-300"
+                    style={{
+                        whiteSpace: 'pre-wrap',
+                        overflowWrap: 'anywhere',
+                        wordBreak: 'break-word',
+                    }}
+                >
                     {JSON.stringify(data, null, 2)}
                 </pre>
             )}
@@ -101,11 +108,15 @@ export default function TataUatTestPage() {
         productName: 'Mango',
         quantity: 100,
         rate: 50,
+        invoiceType: 'CASH',
+        mode_of_shipment: 'Road',
+        from_city: 'Mumbai',
+        to_city: 'Delhi',
         vehicleNumber: 'MH04AB1234',
         shipmentDate: getTodayInputDate()
     });
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({
             ...prev,
@@ -165,6 +176,11 @@ export default function TataUatTestPage() {
                     productName: formData.productName,
                     quantity: formData.quantity,
                     rate: formData.rate,
+                    invoiceType: formData.invoiceType,
+                    mode_of_shipment: formData.mode_of_shipment,
+                    from_city: formData.from_city,
+                    to_city: formData.to_city,
+                    city_name: formData.to_city,
                     vehicleNumber: formData.vehicleNumber,
                     shipmentDate: formData.shipmentDate
                 })
@@ -329,9 +345,9 @@ export default function TataUatTestPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#e0d7fc] p-4">
-            <div className="mx-auto grid max-w-2xl gap-4">
-                <div className="rounded-lg border border-white/70 bg-white shadow-xl shadow-[#b8a6ea]/30">
+        <div className="min-h-screen overflow-x-hidden bg-[#e0d7fc] p-4">
+            <div className="mx-auto grid w-full max-w-5xl gap-4">
+                <div className="min-w-0 rounded-lg border border-white/70 bg-white shadow-xl shadow-[#b8a6ea]/30">
                     <div className="border-b border-slate-100 px-5 py-4">
                         <div className="flex items-center">
                             <button onClick={() => router.push('/home')} className="mr-3 text-[#4309ac] hover:text-[#340b85]">
@@ -373,6 +389,51 @@ export default function TataUatTestPage() {
                         </div>
 
                         <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+                            <div>
+                                <label className="mb-1 block text-xs font-semibold text-slate-700">Invoice Type</label>
+                                <select
+                                    name="invoiceType"
+                                    value={formData.invoiceType}
+                                    onChange={handleChange}
+                                    className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#4309ac] focus:ring-2 focus:ring-[#4309ac]/15"
+                                >
+                                    <option value="CASH">CASH - Domestic Purchase</option>
+                                    <option value="COMMISSION">COMMISSION - Domestic Sales</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-xs font-semibold text-slate-700">Mode of Shipment</label>
+                                <select
+                                    name="mode_of_shipment"
+                                    value={formData.mode_of_shipment}
+                                    onChange={handleChange}
+                                    className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#4309ac] focus:ring-2 focus:ring-[#4309ac]/15"
+                                >
+                                    <option value="Road">Road</option>
+                                    <option value="Rail">Rail</option>
+                                    <option value="Air">Air</option>
+                                    <option value="Sea">Sea</option>
+                                    <option value="Post">Post</option>
+                                    <option value="Courier">Courier</option>
+                                    <option value="Registered Post Parcel">Registered Post Parcel</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-xs font-semibold text-slate-700">From City</label>
+                                <input
+                                    type="text" name="from_city" value={formData.from_city}
+                                    onChange={handleChange}
+                                    className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#4309ac] focus:ring-2 focus:ring-[#4309ac]/15" required
+                                />
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-xs font-semibold text-slate-700">To City</label>
+                                <input
+                                    type="text" name="to_city" value={formData.to_city}
+                                    onChange={handleChange}
+                                    className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-[#4309ac] focus:ring-2 focus:ring-[#4309ac]/15" required
+                                />
+                            </div>
                             {([
                                 { label: 'Supplier Name',    name: 'supplierName',    type: 'text' },
                                 { label: 'Supplier Address', name: 'supplierAddress', type: 'text' },
@@ -418,7 +479,7 @@ export default function TataUatTestPage() {
                     </div>
                 </div>
 
-                <div className="rounded-lg border border-white/70 bg-white shadow-xl shadow-[#b8a6ea]/30">
+                <div className="min-w-0 rounded-lg border border-white/70 bg-white shadow-xl shadow-[#b8a6ea]/30">
                     <div className="border-b border-slate-100 bg-white px-5 py-4">
                         <div className="flex items-start justify-between gap-3">
                             <div>
@@ -444,9 +505,9 @@ export default function TataUatTestPage() {
                     )}
 
                     {result && (
-                        <div className="space-y-3">
-                            <div className={`flex items-center justify-between rounded-lg border p-4 ${result.ok ? 'bg-green-50 border-green-200' : hasSteps ? 'bg-yellow-50 border-yellow-200' : 'bg-slate-50 border-slate-200'}`}>
-                                <div>
+                        <div className="min-w-0 space-y-3">
+                            <div className={`flex min-w-0 items-center justify-between gap-4 rounded-lg border p-4 ${result.ok ? 'bg-green-50 border-green-200' : hasSteps ? 'bg-yellow-50 border-yellow-200' : 'bg-slate-50 border-slate-200'}`}>
+                                <div className="min-w-0">
                                     <p className={`text-base font-bold ${result.ok ? 'text-green-800' : hasSteps ? 'text-yellow-800' : 'text-slate-700'}`}>
                                         {loading ? 'Running UAT Flow' : result.ok ? 'All Tests Passed' : 'Some Tests Failed'}
                                     </p>
@@ -457,7 +518,7 @@ export default function TataUatTestPage() {
                                         </p>
                                     )}
                                 </div>
-                                <div className={`text-4xl font-black tabular-nums ${result.ok ? 'text-green-600' : hasSteps ? 'text-yellow-600' : 'text-slate-400'}`}>
+                                <div className={`shrink-0 text-4xl font-black tabular-nums ${result.ok ? 'text-green-600' : hasSteps ? 'text-yellow-600' : 'text-slate-400'}`}>
                                     {passedCount}/{Math.max(totalCount, 5)}
                                 </div>
                             </div>
@@ -489,18 +550,18 @@ export default function TataUatTestPage() {
                             {result.steps.map(step => (
                                 <div
                                     key={step.step}
-                                    className={`overflow-hidden rounded-lg border transition-all ${step.passed ? 'border-green-200' : 'border-red-200'}`}
+                                    className={`min-w-0 overflow-hidden rounded-lg border transition-all ${step.passed ? 'border-green-200' : 'border-red-200'}`}
                                 >
                                     <button
                                         type="button"
-                                        className={`w-full flex items-center gap-3 p-3 text-left transition-colors ${step.passed ? 'bg-green-50 hover:bg-green-100' : 'bg-red-50 hover:bg-red-100'}`}
+                                        className={`flex w-full min-w-0 items-center gap-3 p-3 text-left transition-colors ${step.passed ? 'bg-green-50 hover:bg-green-100' : 'bg-red-50 hover:bg-red-100'}`}
                                         onClick={() => setExpandedStep(isExpanded(step.step) && expandedStep !== -1 ? null : step.step)}
                                     >
                                         {step.passed
                                             ? <CheckCircleIcon className="h-5 w-5 text-green-600 flex-shrink-0" />
                                             : <XCircleIcon className="h-5 w-5 text-red-500 flex-shrink-0" />
                                         }
-                                        <div className="flex-1 min-w-0">
+                                        <div className="min-w-0 flex-1">
                                             <div className="flex items-center gap-2 flex-wrap">
                                                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${step.passed ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
                                                     STEP {step.step}
@@ -529,7 +590,7 @@ export default function TataUatTestPage() {
                                     </button>
 
                                     {isExpanded(step.step) && (
-                                        <div className="space-y-1 border-t border-slate-100 bg-white px-4 py-3">
+                                        <div className="min-w-0 space-y-1 border-t border-slate-100 bg-white px-4 py-3">
                                             <div className="mb-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-600">
                                                 <span><strong>Status:</strong> {step.passed ? 'PASS' : 'FAIL'}</span>
                                                 <span><strong>HTTP:</strong> {step.http_status}</span>
