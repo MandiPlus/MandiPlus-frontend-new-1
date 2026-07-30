@@ -12,6 +12,16 @@ const api = readFileSync(
   new URL("../src/features/customer-app/api.ts", import.meta.url),
   "utf8",
 );
+const voiceSessionSource = readFileSync(
+  new URL(
+    "../src/features/customer-app/customer-live-transcription.ts",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const { CustomerQuestionnaireVoiceSession } = await import(
+  "../src/features/customer-app/customer-live-transcription.ts"
+);
 
 const tonnageChoices =
   page.match(
@@ -31,5 +41,71 @@ assert.match(
 );
 assert.match(api, /includeLogistics:\s*boolean/);
 assert.match(api, /form\.append\(\s*"includeLogistics"/);
+
+function createVoiceSession(onTurnEnd) {
+  return new CustomerQuestionnaireVoiceSession({
+    silenceMillis: 15,
+    getCredential: async () => null,
+    onTurnEnd,
+  });
+}
+
+const wait = (milliseconds) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+const quietChunk = () => ({ pcm: new ArrayBuffer(2), rms: 0 });
+const audibleChunk = () => ({ pcm: new ArrayBuffer(2), rms: 0.04 });
+
+let silentTurnEnds = 0;
+const silentSession = createVoiceSession(() => {
+  silentTurnEnds += 1;
+});
+for (let index = 0; index < 8; index += 1) {
+  silentSession.handleAudioChunk(quietChunk());
+}
+await wait(30);
+assert.equal(
+  silentTurnEnds,
+  0,
+  "Thinking silence must never skip to the next question.",
+);
+await silentSession.stop();
+
+let noiseTurnEnds = 0;
+const noiseSession = createVoiceSession(() => {
+  noiseTurnEnds += 1;
+});
+for (let index = 0; index < 3; index += 1) {
+  noiseSession.handleAudioChunk(audibleChunk());
+}
+noiseSession.handleAudioChunk(quietChunk());
+await wait(30);
+assert.equal(
+  noiseTurnEnds,
+  0,
+  "A short prompt echo or ambient spike must not count as an answer.",
+);
+await noiseSession.stop();
+
+let answeredTurnEnds = 0;
+const answeredSession = createVoiceSession(() => {
+  answeredTurnEnds += 1;
+});
+for (let index = 0; index < 4; index += 1) {
+  answeredSession.handleAudioChunk(audibleChunk());
+}
+answeredSession.handleAudioChunk(quietChunk());
+await wait(100);
+assert.equal(
+  answeredTurnEnds,
+  1,
+  "Confirmed speech followed by silence should complete the answer.",
+);
+await answeredSession.stop();
+
+assert.doesNotMatch(
+  voiceSessionSource,
+  /finishTurn\(true\)/,
+  "The safety timeout must not force-complete a question before speech.",
+);
 
 console.log("Customer insurance contract checks passed.");

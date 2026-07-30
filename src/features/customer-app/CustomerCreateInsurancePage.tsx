@@ -109,16 +109,16 @@ function missingVoiceEndSilenceMillis(key: MissingDetailKey) {
   switch (key) {
     case "quantity":
     case "totalAmount":
-      return 350;
+      return 800;
     case "supplierName":
     case "buyerName":
-      return 450;
+      return 1000;
     case "buyerAddress":
-      return 700;
+      return 1400;
     case "insuredPartyPhone":
-      return 850;
+      return 1100;
     default:
-      return 450;
+      return 1000;
   }
 }
 
