@@ -100,9 +100,16 @@ export function readCustomerInvoicePaymentAttempt() {
     return {
       ...(attempt as CustomerInvoicePaymentAttempt),
       phase,
+      draft: {
+        ...(attempt.draft as CustomerInvoiceDraft),
+        includeLogistics:
+          (attempt.draft as CustomerInvoiceDraft).includeLogistics !== false,
+      },
       drafts: Array.isArray(attempt.drafts)
         ? attempt.drafts.map((draft) => ({
             ...(draft as CustomerInvoiceDraft),
+            includeLogistics:
+              (draft as CustomerInvoiceDraft).includeLogistics !== false,
           }))
         : undefined,
       invoiceReferences: Array.isArray(attempt.invoiceReferences)

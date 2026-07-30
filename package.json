@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:customer-insurance-contract": "node scripts/test-customer-insurance-contract.mjs",
     "test:insurance-slip": "node --no-warnings scripts/test-insurance-slip-submit.mjs"
   },
   "dependencies": {
