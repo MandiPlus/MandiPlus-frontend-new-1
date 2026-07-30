@@ -15,7 +15,9 @@ type QuestionnaireVoiceSessionOptions = {
 
 const TARGET_SAMPLE_RATE = 16_000;
 const AUDIBLE_RMS = 0.018;
-const AUDIBLE_FRAMES_TO_START = 2;
+// Four consecutive 50 ms frames reject prompt echo, chair movement, and short
+// ambient spikes without delaying a real spoken answer.
+const AUDIBLE_FRAMES_TO_START = 4;
 const MIN_SPEECH_MILLIS = 220;
 const MAX_TURN_MILLIS = 20_000;
 const PRE_SPEECH_CHUNKS = 4;
@@ -79,11 +81,6 @@ export class CustomerQuestionnaireVoiceSession {
       this.sourceNode.connect(this.processorNode);
       this.processorNode.connect(this.silentGainNode);
       this.silentGainNode.connect(context.destination);
-      this.maximumTurnTimeout = setTimeout(
-        () => this.finishTurn(true),
-        MAX_TURN_MILLIS,
-      );
-
       void credentialPromise.then((credential) => {
         if (!this.stopped && credential?.provider === "assemblyai") {
           this.connectAssemblyAi(credential);
@@ -143,9 +140,10 @@ export class CustomerQuestionnaireVoiceSession {
         !this.speechStartedAt &&
         this.audibleFrameCount >= AUDIBLE_FRAMES_TO_START
       ) {
-        this.speechStartedAt =
+        this.markSpeechStarted(
           performance.now() -
-          (AUDIBLE_FRAMES_TO_START - 1) * 50;
+            (AUDIBLE_FRAMES_TO_START - 1) * 50,
+        );
       }
       if (this.silenceTimeout) {
         clearTimeout(this.silenceTimeout);
@@ -191,6 +189,17 @@ export class CustomerQuestionnaireVoiceSession {
       this.silenceTimeout = null;
       this.finishTurn();
     }, delay);
+  }
+
+  private markSpeechStarted(startedAt: number) {
+    if (this.speechStartedAt || this.stopped || this.turnEnded) return;
+    this.speechStartedAt = startedAt;
+    // Thinking time before the answer is unlimited. The safety timeout starts
+    // only after genuine speech has been confirmed.
+    this.maximumTurnTimeout = setTimeout(
+      () => this.finishTurn(),
+      MAX_TURN_MILLIS,
+    );
   }
 
   private connectAssemblyAi(
@@ -241,10 +250,12 @@ export class CustomerQuestionnaireVoiceSession {
           String(message.transcript || "").trim() &&
           !this.speechStartedAt
         ) {
-          this.speechStartedAt = performance.now();
+          this.markSpeechStarted(performance.now());
         }
+        // Provider endpointing is supporting evidence, not permission to skip
+        // a question. Local post-speech silence keeps pauses conversational.
         if (message.type === "Turn" && message.end_of_turn) {
-          this.finishTurn();
+          this.armSilenceEndpoint();
         }
       } catch {
         // Ignore provider messages that are not JSON turn events.
@@ -258,11 +269,11 @@ export class CustomerQuestionnaireVoiceSession {
     };
   }
 
-  private finishTurn(force = false) {
+  private finishTurn() {
     if (
       this.stopped ||
       this.turnEnded ||
-      (!this.speechStartedAt && !force)
+      !this.speechStartedAt
     ) {
       return;
     }
