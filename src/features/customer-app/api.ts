@@ -226,6 +226,7 @@ export type CustomerInvoiceDraft = {
   totalAmount: string;
   vehicleNumber: string;
   vehicleTonnage: string;
+  includeLogistics: boolean;
   driverPhone: string;
   insuredPartyPhone: string;
   ownerName: string;
@@ -290,12 +291,16 @@ export async function createCustomerInvoice(
     Number.isFinite(extractedTotal) && extractedTotal > 0
       ? extractedTotal
       : quantity * enteredRate;
-  const logisticsAmount = isTenderCoconutProduct(draft.product)
+  const isTenderCoconut = isTenderCoconutProduct(draft.product);
+  const configuredLogisticsAmount = isTenderCoconut
     ? draft.vehicleTonnage === "30"
       ? Number(pricing?.amount30Ton || 0)
       : draft.vehicleTonnage === "25"
         ? Number(pricing?.amount25Ton || 0)
         : 0
+    : 0;
+  const logisticsAmount = draft.includeLogistics !== false
+    ? configuredLogisticsAmount
     : 0;
   const amount = Number((goodsAmount + logisticsAmount).toFixed(2));
   const rate =
@@ -321,10 +326,14 @@ export async function createCustomerInvoice(
   form.append("autoVerifyOnCreate", "true");
   form.append("vehicleNumber", vehicle);
   form.append("truckNumber", vehicle);
-  if (isTenderCoconutProduct(draft.product)) {
+  if (isTenderCoconut) {
     if (draft.vehicleTonnage === "25" || draft.vehicleTonnage === "30") {
       form.append("vehicleTonnage", draft.vehicleTonnage);
       form.append("pricingVersion", String(pricing?.pricingVersion || 1));
+      form.append(
+        "includeLogistics",
+        String(draft.includeLogistics !== false),
+      );
     }
     form.append("invoiceAdditionsAmount", "0");
   }

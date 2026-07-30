@@ -2131,6 +2131,68 @@
   font-weight: 900;
 }
 
+.amountBreakdownLogisticsLabel {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+}
+
+.amountBreakdownLogisticsToggle {
+  display: grid;
+  min-width: 32px;
+  min-height: 28px;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.amountBreakdownLogisticsToggle:focus-visible {
+  outline: 2px solid var(--mp-accent);
+  outline-offset: 2px;
+}
+
+.amountBreakdownSwitch {
+  position: relative;
+  display: inline-block;
+  width: 28px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: 1px solid #c8cfdb;
+  border-radius: 999px;
+  background: #dfe4ed;
+}
+
+.amountBreakdownSwitch::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(32, 48, 68, 0.2);
+  content: "";
+  transform: translateX(0);
+}
+
+.amountBreakdownSwitch[data-checked="true"] {
+  border-color: var(--mp-accent);
+  background: var(--mp-accent);
+}
+
+.amountBreakdownSwitch[data-checked="true"]::after {
+  transform: translateX(12px);
+}
+
+.amountBreakdownRow .amountBreakdownRemovedValue {
+  color: var(--mp-muted);
+  text-decoration: line-through;
+}
+
 .amountBreakdownFinal strong {
   color: var(--mp-navy);
   font-size: 13px;

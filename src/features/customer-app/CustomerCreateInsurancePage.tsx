@@ -39,7 +39,6 @@ import {
   extractCustomerInvoice,
   extractCustomerInvoiceVoice,
   getCustomerAppPricing,
-  getCustomerInvoiceProfile,
   getCustomerLiveTranscriptionToken,
   isTenderCoconutProduct,
   matchingCustomerInvoiceRate,
@@ -122,10 +121,9 @@ function missingVoiceEndSilenceMillis(key: MissingDetailKey) {
   }
 }
 
-const TENDER_LOGISTICS_CHOICES = [
+const TENDER_TONNAGE_CHOICES = [
   { value: "25", label: "25 ton", compactLabel: "25t" },
   { value: "30", label: "30 ton", compactLabel: "30t" },
-  { value: "NONE", label: "No logistics", compactLabel: "Remove" },
 ] as const;
 
 const MISSING_QUESTIONS: Record<
@@ -218,6 +216,7 @@ function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft 
     totalAmount: "",
     vehicleNumber: "",
     vehicleTonnage: "",
+    includeLogistics: true,
     driverPhone: "",
     insuredPartyPhone: userPhone,
     ownerName: "",
@@ -566,24 +565,17 @@ export default function CustomerCreateInsurancePage() {
 
   useEffect(() => {
     let active = true;
-    void Promise.allSettled([
-      getCustomerAppPricing(),
-      getCustomerInvoiceProfile(),
-    ]).then(([pricingResult, profileResult]) => {
-      if (!active) return;
-      if (
-        pricingResult.status === "fulfilled" &&
-        pricingResult.value?.tenderCoconut
-      ) {
-        setPricing(pricingResult.value.tenderCoconut);
-      }
-      if (profileResult.status === "fulfilled" && profileResult.value) {
-        const profile = profileResult.value;
-        setDraft((current) =>
-          applyProfileDefaults(current, profile),
-        );
-      }
-    });
+    void Promise.allSettled([getCustomerAppPricing()]).then(
+      ([pricingResult]) => {
+        if (!active) return;
+        if (
+          pricingResult.status === "fulfilled" &&
+          pricingResult.value?.tenderCoconut
+        ) {
+          setPricing(pricingResult.value.tenderCoconut);
+        }
+      },
+    );
     return () => {
       active = false;
     };
@@ -650,12 +642,15 @@ export default function CustomerCreateInsurancePage() {
     setDraft((current) => {
       const next = { ...current, [field]: value };
       const quantity = Number(next.quantity);
-      const logisticsAmount = isTenderCoconutProduct(next.product)
+      const configuredLogisticsAmount = isTenderCoconutProduct(next.product)
         ? next.vehicleTonnage === "25"
           ? Number(pricing.amount25Ton || 0)
           : next.vehicleTonnage === "30"
             ? Number(pricing.amount30Ton || 0)
             : 0
+        : 0;
+      const logisticsAmount = next.includeLogistics !== false
+        ? configuredLogisticsAmount
         : 0;
       if (field === "rate") {
         const rate = Number(value);
@@ -686,6 +681,29 @@ export default function CustomerCreateInsurancePage() {
           next.rate = matchingRate;
         }
       }
+      return next;
+    });
+  };
+
+  const setLogisticsIncluded = (includeLogistics: boolean) => {
+    setDraft((current) => {
+      const next = { ...current, includeLogistics };
+      const invoiceAmount =
+        Number(next.totalAmount || 0) ||
+        Number(next.quantity || 0) * Number(next.rate || 0);
+      const logisticsAmount =
+        includeLogistics && isTenderCoconutProduct(next.product)
+          ? next.vehicleTonnage === "25"
+            ? Number(pricing.amount25Ton || 0)
+            : next.vehicleTonnage === "30"
+              ? Number(pricing.amount30Ton || 0)
+              : 0
+          : 0;
+      const matchingRate = matchingCustomerInvoiceRate(
+        roundCustomerInvoiceMoney(invoiceAmount + logisticsAmount),
+        Number(next.quantity || 0),
+      );
+      if (matchingRate) next.rate = matchingRate;
       return next;
     });
   };
@@ -1702,7 +1720,7 @@ export default function CustomerCreateInsurancePage() {
               <div className={styles.inlineTonnageField}>
                 <span>Tonnage</span>
                 <div className={styles.inlineTonnage}>
-                  {TENDER_LOGISTICS_CHOICES.map((choice) => (
+                  {TENDER_TONNAGE_CHOICES.map((choice) => (
                     <button
                       key={choice.value}
                       type="button"
@@ -1711,15 +1729,7 @@ export default function CustomerCreateInsurancePage() {
                           ? styles.tonnageButtonActive
                           : ""
                       }
-                      onClick={() =>
-                        update(
-                          "vehicleTonnage",
-                          draft.vehicleTonnage === choice.value &&
-                            choice.value !== "NONE"
-                            ? "NONE"
-                            : choice.value,
-                        )
-                      }
+                      onClick={() => update("vehicleTonnage", choice.value)}
                     >
                       {choice.compactLabel}
                     </button>
@@ -1775,16 +1785,42 @@ export default function CustomerCreateInsurancePage() {
                 <span>Invoice amount</span>
                 <strong>{money(amountBreakdown.invoiceAmount)}</strong>
               </div>
-              {amountBreakdown.logisticsAmount > 0 ? (
+              {amountBreakdown.configuredLogisticsAmount > 0 ? (
                 <div className={styles.amountBreakdownRow}>
-                  <span>
-                    Logistics cost
-                    {draft.vehicleTonnage === "25" ||
-                    draft.vehicleTonnage === "30"
-                      ? ` (${draft.vehicleTonnage} ton)`
-                      : ""}
+                  <span className={styles.amountBreakdownLogisticsLabel}>
+                    <span>
+                      Logistics cost
+                      {draft.vehicleTonnage === "25" ||
+                      draft.vehicleTonnage === "30"
+                        ? ` (${draft.vehicleTonnage} ton)`
+                        : ""}
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={draft.includeLogistics !== false}
+                      aria-label="Include logistics cost in total"
+                      className={styles.amountBreakdownLogisticsToggle}
+                      onClick={() =>
+                        setLogisticsIncluded(draft.includeLogistics === false)
+                      }
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={styles.amountBreakdownSwitch}
+                        data-checked={draft.includeLogistics !== false}
+                      />
+                    </button>
                   </span>
-                  <strong>{money(amountBreakdown.logisticsAmount)}</strong>
+                  <strong
+                    className={
+                      draft.includeLogistics !== false
+                        ? ""
+                        : styles.amountBreakdownRemovedValue
+                    }
+                  >
+                    {money(amountBreakdown.configuredLogisticsAmount)}
+                  </strong>
                 </div>
               ) : null}
               <div
@@ -1923,15 +1959,10 @@ export default function CustomerCreateInsurancePage() {
 
             {activeMissingKey === "vehicleTonnage" ? (
               <div className={styles.missingTonnageChoices}>
-                {TENDER_LOGISTICS_CHOICES.map((choice) => (
+                {TENDER_TONNAGE_CHOICES.map((choice) => (
                   <button
                     key={choice.value}
                     type="button"
-                    className={
-                      choice.value === "NONE"
-                        ? styles.missingTonnageRemove
-                        : ""
-                    }
                     onClick={() => {
                       questionAudioRef.current?.pause();
                       update("vehicleTonnage", choice.value);
@@ -2069,54 +2100,14 @@ function CompactInput({
   );
 }
 
-function applyProfileDefaults(
-  current: CustomerInvoiceDraft,
-  profile: Record<string, unknown>,
-): CustomerInvoiceDraft {
-  return {
-    ...current,
-    supplierName:
-      current.supplierName ||
-      text(profile.supplierName || profile.supplier_name),
-    supplierAddress:
-      current.supplierAddress ||
-      text(profile.supplierAddress || profile.supplier_address),
-    buyerName:
-      current.buyerName || text(profile.buyerName || profile.buyer_name),
-    buyerAddress:
-      current.buyerAddress ||
-      text(
-        profile.buyerAddress ||
-          profile.shipToAddress ||
-          profile.buyer_address,
-      ),
-    placeOfSupply:
-      current.placeOfSupply ||
-      text(profile.placeOfSupply || profile.place_of_supply),
-    product:
-      current.product ||
-      text(profile.lastProductName || profile.productName || profile.commodity),
-    vehicleNumber:
-      current.vehicleNumber ||
-      text(profile.vehicleNumber || profile.vehicle_number)
-        .toUpperCase()
-        .replace(/[^A-Z0-9]/g, ""),
-    vehicleTonnage:
-      current.vehicleTonnage ||
-      tonnage(profile.vehicleTonnage || profile.vehicle_tonnage),
-    driverPhone:
-      current.driverPhone || phone(profile.driverPhone || profile.driver_phone),
-    insuredPartyPhone:
-      current.insuredPartyPhone ||
-      phone(profile.insuredPartyPhone || profile.insured_party_phone),
-  };
-}
-
 function applyExtraction(
   current: CustomerInvoiceDraft,
   response: Record<string, unknown>,
 ): CustomerInvoiceDraft {
   const raw = extractionDraft(response);
+  const extractedSupplierName = plausiblePartyName(
+    raw.seller_name || raw.supplier_name,
+  );
   const quantity = numberText(raw.quantity);
   const extractedTotal = numberText(raw.total_amount || raw.amount);
   const rate =
@@ -2127,8 +2118,7 @@ function applyExtraction(
 
   return {
     ...current,
-    supplierName:
-      text(raw.seller_name || raw.supplier_name) || current.supplierName,
+    supplierName: extractedSupplierName || current.supplierName,
     supplierAddress:
       text(raw.supplier_address) || current.supplierAddress,
     buyerName:
@@ -2151,8 +2141,9 @@ function applyExtraction(
       text(raw.vehicle_number || raw.truck_number)
         .toUpperCase()
         .replace(/[^A-Z0-9]/g, "") || current.vehicleNumber,
-    vehicleTonnage:
-      tonnage(raw.vehicle_tonnage) || current.vehicleTonnage,
+    // The 25/30 ton choice is a logistics tier, not the weighbridge weight.
+    // A vision model must not infer it from gross/net kilograms on the slip.
+    vehicleTonnage: current.vehicleTonnage,
     driverPhone: phone(raw.driver_phone) || current.driverPhone,
     insuredPartyPhone:
       phone(raw.insured_party_phone || raw.buyer_phone) ||
@@ -2239,12 +2230,15 @@ function getMissingDetailKeys(draft: CustomerInvoiceDraft) {
 
 function isMissingDetailAnswered(key: MissingDetailKey, value: string) {
   const clean = value.trim();
+  if (key === "supplierName" || key === "buyerName") {
+    return plausiblePartyName(clean).length > 0;
+  }
   if (key === "insuredPartyPhone") return /^[6-9]\d{9}$/.test(phone(clean));
   if (key === "quantity" || key === "totalAmount") {
     return Number(clean) > 0;
   }
   if (key === "vehicleTonnage") {
-    return clean === "25" || clean === "30" || clean === "NONE";
+    return clean === "25" || clean === "30";
   }
   return Boolean(clean);
 }
@@ -2265,8 +2259,7 @@ function validateDraft(draft: CustomerInvoiceDraft) {
   if (
     isTenderCoconutProduct(draft.product) &&
     draft.vehicleTonnage !== "25" &&
-    draft.vehicleTonnage !== "30" &&
-    draft.vehicleTonnage !== "NONE"
+    draft.vehicleTonnage !== "30"
   ) {
     return "Vehicle tonnage chunein.";
   }
@@ -2356,15 +2349,18 @@ function resolveInvoiceAmountBreakdown(
       : Number.isFinite(calculated)
         ? calculated
         : 0;
-  const logistics = isTenderCoconutProduct(draft.product)
+  const configuredLogistics = isTenderCoconutProduct(draft.product)
     ? draft.vehicleTonnage === "25"
       ? Number(pricing.amount25Ton || 0)
       : draft.vehicleTonnage === "30"
         ? Number(pricing.amount30Ton || 0)
         : 0
     : 0;
+  const logistics =
+    draft.includeLogistics !== false ? configuredLogistics : 0;
   return {
     invoiceAmount: Number(goodsAmount.toFixed(2)),
+    configuredLogisticsAmount: Number(configuredLogistics.toFixed(2)),
     logisticsAmount: Number(logistics.toFixed(2)),
     totalAmount: Number((goodsAmount + logistics).toFixed(2)),
     rate: matchingCustomerInvoiceRate(
@@ -2449,6 +2445,12 @@ function text(value: unknown) {
     return text(record.address || record.line1 || record.name);
   }
   return String(value || "").trim();
+}
+
+function plausiblePartyName(value: unknown) {
+  const clean = text(value);
+  const letterCount = (clean.match(/\p{L}/gu) || []).length;
+  return letterCount >= 2 ? clean : "";
 }
 
 function numberText(value: unknown) {
