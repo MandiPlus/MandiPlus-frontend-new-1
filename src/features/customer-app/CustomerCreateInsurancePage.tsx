@@ -49,6 +49,7 @@ import {
   type InvoiceVoiceTargetField,
 } from "./api";
 import { CustomerAppShell } from "./CustomerAppShell";
+import { canonicalizeCommodityLabel } from "./commodity-normalization";
 import { CustomerQuestionnaireVoiceSession } from "./customer-live-transcription";
 import listeningFaceAnimation from "./listening-face.json";
 import {
@@ -167,6 +168,12 @@ const MISSING_QUESTIONS: Record<
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+const QUESTIONNAIRE_AUDIO_CONSTRAINTS = {
+  channelCount: 1,
+  echoCancellation: true,
+  noiseSuppression: true,
+} satisfies MediaTrackConstraints;
 
 const COMMODITY_OPTIONS = [
   ["Tender Coconut", "🥥"],
@@ -908,7 +915,10 @@ export default function CustomerCreateInsurancePage() {
     }
   };
 
-  const startRecording = async (purpose: RecordingPurpose) => {
+  const startRecording = async (
+    purpose: RecordingPurpose,
+    preparedStream?: Promise<MediaStream>,
+  ) => {
     if (
       typeof window === "undefined" ||
       !navigator.mediaDevices?.getUserMedia ||
@@ -917,19 +927,22 @@ export default function CustomerCreateInsurancePage() {
       setNotice("Voice input is browser mein available nahi hai.");
       return;
     }
-    if (recorderRef.current?.state === "recording") return;
+    if (recorderRef.current?.state === "recording") {
+      void preparedStream?.then((stream) =>
+        stream.getTracks().forEach((track) => track.stop()),
+      );
+      return;
+    }
     recordingInvoiceIndexRef.current = activeFileIndexRef.current;
     recordingProductRef.current = draftRef.current.product;
     setNotice("");
     setVoicePhase("requesting");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-        },
-      });
+      const stream =
+        (await preparedStream) ||
+        (await navigator.mediaDevices.getUserMedia({
+          audio: QUESTIONNAIRE_AUDIO_CONSTRAINTS,
+        }));
       const mimeType = preferredAudioMimeType();
       const recorder = new MediaRecorder(
         stream,
@@ -1033,16 +1046,38 @@ export default function CustomerCreateInsurancePage() {
   useEffect(() => {
     if (!missingOpen || !activeMissingKey || !activeQuestion) return;
     let active = true;
+    let preparedStreamConsumed = false;
     setVoicePhase("prompt");
     const audio = questionAudioRef.current || new Audio();
     questionAudioRef.current = audio;
     audio.src = activeQuestion.audio;
     audio.preload = "auto";
     audio.currentTime = 0;
+    let preparedStreamPromise: Promise<MediaStream> | null = null;
+    if (activeQuestion.target && typeof MediaRecorder !== "undefined") {
+      try {
+        preparedStreamPromise = navigator.mediaDevices.getUserMedia({
+          audio: QUESTIONNAIRE_AUDIO_CONSTRAINTS,
+        });
+      } catch {
+        // startRecording will surface the browser/permission error at handoff.
+      }
+    }
+    void preparedStreamPromise
+      ?.then((stream) => {
+        if (!active && !preparedStreamConsumed) {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+      })
+      .catch(() => undefined);
 
     const startAnswer = () => {
       if (active && activeQuestion.target) {
-        void startRecording(activeMissingKey);
+        preparedStreamConsumed = true;
+        void startRecording(
+          activeMissingKey,
+          preparedStreamPromise || undefined,
+        );
       } else if (active) {
         setVoicePhase("idle");
       }
@@ -1073,6 +1108,13 @@ export default function CustomerCreateInsurancePage() {
       audio.pause();
       audio.onended = null;
       audio.onerror = null;
+      if (!preparedStreamConsumed) {
+        void preparedStreamPromise
+          ?.then((stream) =>
+            stream.getTracks().forEach((track) => track.stop()),
+          )
+          .catch(() => undefined);
+      }
     };
     // Each question should play exactly once when its index becomes active.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2133,7 +2175,9 @@ function applyExtraction(
       ) || current.buyerAddress,
     placeOfSupply: text(raw.place_of_supply) || current.placeOfSupply,
     product:
-      text(raw.commodity || raw.product_name || raw.product) || current.product,
+      canonicalizeCommodityLabel(
+        text(raw.commodity || raw.product_name || raw.product),
+      ) || current.product,
     quantity: quantity || current.quantity,
     rate: rate || current.rate,
     totalAmount: extractedTotal || current.totalAmount,
