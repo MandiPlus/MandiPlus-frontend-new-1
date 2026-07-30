@@ -10,6 +10,7 @@ export type CustomerLiveTranscriptionCredential = {
 type QuestionnaireVoiceSessionOptions = {
   silenceMillis: number;
   getCredential: () => Promise<CustomerLiveTranscriptionCredential | null>;
+  onSpeechStart?: () => void;
   onTurnEnd: () => void;
 };
 
@@ -194,6 +195,7 @@ export class CustomerQuestionnaireVoiceSession {
   private markSpeechStarted(startedAt: number) {
     if (this.speechStartedAt || this.stopped || this.turnEnded) return;
     this.speechStartedAt = startedAt;
+    this.options.onSpeechStart?.();
     // Thinking time before the answer is unlimited. The safety timeout starts
     // only after genuine speech has been confirmed.
     this.maximumTurnTimeout = setTimeout(

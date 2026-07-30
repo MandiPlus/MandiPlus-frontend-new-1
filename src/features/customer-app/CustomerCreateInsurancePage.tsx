@@ -92,6 +92,7 @@ const DEFAULT_TENDER_COCONUT_PRICING: CustomerAppPricing["tenderCoconut"] = {
   updatedAt: null,
 };
 const LIVE_TRANSCRIPTION_TOKEN_MIN_TTL_MS = 5000;
+const QUESTIONNAIRE_PRE_SPEECH_CHUNK_COUNT = 15;
 
 function questionnaireSpeechLocale(language: unknown) {
   const locales: Record<string, string> = {
@@ -289,7 +290,7 @@ export default function CustomerCreateInsurancePage() {
   const [voiceAnswers, setVoiceAnswers] = useState<
     Record<string, VoiceAnswerState>
   >({});
-  const [amountBreakdownOpen, setAmountBreakdownOpen] = useState(false);
+  const [amountBreakdownOpen, setAmountBreakdownOpen] = useState(true);
 
   draftRef.current = draft;
   batchDraftsRef.current = batchDrafts;
@@ -918,20 +919,21 @@ export default function CustomerCreateInsurancePage() {
   const startRecording = async (
     purpose: RecordingPurpose,
     preparedStream?: Promise<MediaStream>,
-  ) => {
+    onSpeechStart?: () => void,
+  ): Promise<boolean> => {
     if (
       typeof window === "undefined" ||
       !navigator.mediaDevices?.getUserMedia ||
       typeof MediaRecorder === "undefined"
     ) {
       setNotice("Voice input is browser mein available nahi hai.");
-      return;
+      return false;
     }
     if (recorderRef.current?.state === "recording") {
       void preparedStream?.then((stream) =>
         stream.getTracks().forEach((track) => track.stop()),
       );
-      return;
+      return false;
     }
     recordingInvoiceIndexRef.current = activeFileIndexRef.current;
     recordingProductRef.current = draftRef.current.product;
@@ -951,12 +953,19 @@ export default function CustomerCreateInsurancePage() {
           : { audioBitsPerSecond: 64000 },
       );
       const chunks: Blob[] = [];
+      let speechConfirmed = false;
       recorderStreamRef.current = stream;
       recorderRef.current = recorder;
       recordingPurposeRef.current = purpose;
       recordingStartedAtRef.current = Date.now();
       recorder.ondataavailable = (event) => {
-        if (event.data.size) chunks.push(event.data);
+        if (!event.data.size) return;
+        chunks.push(event.data);
+        if (!speechConfirmed) {
+          while (chunks.length > QUESTIONNAIRE_PRE_SPEECH_CHUNK_COUNT) {
+            chunks.shift();
+          }
+        }
       };
       recorder.onerror = () => {
         stopQuestionnaireVoiceSession();
@@ -1000,6 +1009,10 @@ export default function CustomerCreateInsurancePage() {
       const voiceSession = new CustomerQuestionnaireVoiceSession({
         silenceMillis: missingVoiceEndSilenceMillis(purpose),
         getCredential: consumeLiveTranscriptionToken,
+        onSpeechStart: () => {
+          speechConfirmed = true;
+          onSpeechStart?.();
+        },
         onTurnEnd: () => {
           const activeRecorder = recorderRef.current;
           if (activeRecorder && activeRecorder.state !== "inactive") {
@@ -1012,7 +1025,8 @@ export default function CustomerCreateInsurancePage() {
       recorder.start(100);
       setRecordingPurpose(purpose);
       setVoicePhase("recording");
-      void voiceSession.start(stream);
+      await voiceSession.start(stream);
+      return true;
     } catch {
       stopQuestionnaireVoiceSession();
       recorderStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -1023,6 +1037,7 @@ export default function CustomerCreateInsurancePage() {
       setVoicePhase("failed");
       recordingProductRef.current = "";
       setNotice("Microphone permission allow karke dobara try karein.");
+      return false;
     }
   };
 
@@ -1071,20 +1086,31 @@ export default function CustomerCreateInsurancePage() {
       })
       .catch(() => undefined);
 
-    const startAnswer = () => {
-      if (active && activeQuestion.target) {
-        preparedStreamConsumed = true;
-        void startRecording(
-          activeMissingKey,
-          preparedStreamPromise || undefined,
-        );
-      } else if (active) {
-        setVoicePhase("idle");
-      }
+    const finishPrompt = () => {
+      if (active && !activeQuestion.target) setVoicePhase("idle");
     };
-    audio.onended = startAnswer;
-    audio.onerror = startAnswer;
+    audio.onended = finishPrompt;
+    audio.onerror = finishPrompt;
+
+    let listeningStartPromise = Promise.resolve(false);
+    if (activeQuestion.target) {
+      preparedStreamConsumed = true;
+      listeningStartPromise = startRecording(
+        activeMissingKey,
+        preparedStreamPromise || undefined,
+        () => {
+          if (!active) return;
+          // Browser echo cancellation keeps the prompt out of the microphone.
+          // Confirmed user speech barges in and stops the remaining question.
+          audio.pause();
+        },
+      );
+    }
     void (async () => {
+      if (activeQuestion.target) {
+        await listeningStartPromise;
+        if (!active) return;
+      }
       for (const delay of [0, 120, 320]) {
         if (!active) return;
         if (delay) {
@@ -1098,8 +1124,12 @@ export default function CustomerCreateInsurancePage() {
         }
       }
       if (active) {
-        setVoicePhase("idle");
-        setNotice("Question audio play nahi hua. Mic tap karke jawab boliye.");
+        if (activeQuestion.target) {
+          setNotice("Question audio play nahi hua. Apna jawab boliye.");
+        } else {
+          setVoicePhase("idle");
+          setNotice("Question audio play nahi hua.");
+        }
       }
     })();
 
@@ -1740,13 +1770,6 @@ export default function CustomerCreateInsurancePage() {
               inputMode="decimal"
               value={amountBreakdown.rate || draft.rate}
               onChange={(value) => update("rate", value)}
-            />
-            <CompactInput
-              label="Goods value"
-              inputMode="decimal"
-              value={draft.totalAmount}
-              full
-              onChange={(value) => update("totalAmount", value)}
             />
             <CompactInput
               label="Vehicle number"

@@ -42,10 +42,11 @@ assert.match(
 assert.match(api, /includeLogistics:\s*boolean/);
 assert.match(api, /form\.append\(\s*"includeLogistics"/);
 
-function createVoiceSession(onTurnEnd) {
+function createVoiceSession(onTurnEnd, onSpeechStart) {
   return new CustomerQuestionnaireVoiceSession({
     silenceMillis: 15,
     getCredential: async () => null,
+    onSpeechStart,
     onTurnEnd,
   });
 }
@@ -87,14 +88,23 @@ assert.equal(
 await noiseSession.stop();
 
 let answeredTurnEnds = 0;
+let answeredSpeechStarts = 0;
 const answeredSession = createVoiceSession(() => {
   answeredTurnEnds += 1;
+}, () => {
+  answeredSpeechStarts += 1;
 });
 for (let index = 0; index < 4; index += 1) {
   answeredSession.handleAudioChunk(audibleChunk());
 }
+answeredSession.handleAudioChunk(audibleChunk());
 answeredSession.handleAudioChunk(quietChunk());
 await wait(100);
+assert.equal(
+  answeredSpeechStarts,
+  1,
+  "Barge-in must fire once when sustained user speech begins.",
+);
 assert.equal(
   answeredTurnEnds,
   1,
