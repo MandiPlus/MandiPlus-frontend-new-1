@@ -21,6 +21,34 @@ export interface AddDriverPayload {
   operator?: string;
 }
 
+export interface RegisterDriverForVehiclePayload {
+  phone_number: string;
+  vehicle_number: string;
+  name?: string;
+  operator?: string;
+}
+
+export type DriverConsentState = "PENDING" | "ALLOWED" | "DENIED";
+
+export interface DriverConsentRegistrationRow {
+  id: string;
+  phoneNumber: string;
+  vehicleNumber: string;
+  driverName: string | null;
+  operator: string | null;
+  consentState: DriverConsentState;
+  lastConsentStatusRaw: string | null;
+  lastPolledAt: string | null;
+  consentAllowedAt: string | null;
+  autoTripCreatedAt: string | null;
+  autoTripError: string | null;
+  giveUpNotifiedAt: string | null;
+  invoice: { id: string; invoiceNumber?: string } | null;
+  autoTrip: { id: string; traqoTripId: string | null; status: string } | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface CheckConsentPayload {
   tel: string;
 }
@@ -178,6 +206,41 @@ export async function addDriverNumber(
     return {
       success: false,
       message: getErrorMessage(error, "Failed to register driver number"),
+    };
+  }
+}
+
+export async function registerDriverForVehicle(
+  payload: RegisterDriverForVehiclePayload,
+): Promise<AdminTrackingApiResponse<GenericPayload>> {
+  try {
+    const res = await axios.post(
+      `${API_BASE_URL}/traqo/register-for-vehicle`,
+      payload,
+      { headers: getAuthHeaders() },
+    );
+    return { success: true, data: res.data };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to register driver for vehicle"),
+    };
+  }
+}
+
+export async function listDriverRegistrations(): Promise<
+  AdminTrackingApiResponse<DriverConsentRegistrationRow[]>
+> {
+  try {
+    const res = await axios.get<DriverConsentRegistrationRow[]>(
+      `${API_BASE_URL}/traqo/driver-registrations`,
+      { headers: getAuthHeaders() },
+    );
+    return { success: true, data: Array.isArray(res.data) ? res.data : [] };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to fetch driver registrations"),
     };
   }
 }
