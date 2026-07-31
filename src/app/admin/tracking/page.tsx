@@ -7,20 +7,22 @@ import { Trash2 } from "lucide-react";
 import { useAdmin } from "@/features/admin/context/AdminContext";
 import { adminApi, InsuranceForm } from "@/features/admin/api/admin.api";
 import {
-  AddDriverPayload,
   CheckConsentPayload,
   CreateTripPayload,
+  DriverConsentRegistrationRow,
+  RegisterDriverForVehiclePayload,
   TrackingInvoiceDraft,
   TraqoConsentRow,
   TruckTrackingResponse,
-  addDriverNumber,
   checkDriverConsent,
   clearInvoiceDriverDraft,
   createTrackingTrip,
   getTruckTracking,
+  listDriverRegistrations,
   listInvoiceDriverDrafts,
   listTrips,
   listCreatedConsents,
+  registerDriverForVehicle,
   resendDriverConsentSms,
 } from "@/features/admin/api/tracking.api";
 
@@ -129,11 +131,17 @@ export default function AdminTrackingPage() {
   const router = useRouter();
   const { isAuthenticated, loading } = useAdmin();
 
-  const [registerForm, setRegisterForm] = useState<AddDriverPayload>({
-    phone_number: "",
-    name: "",
-    operator: "",
-  });
+  const [registerForm, setRegisterForm] =
+    useState<RegisterDriverForVehiclePayload>({
+      phone_number: "",
+      vehicle_number: "",
+      name: "",
+      operator: "",
+    });
+  const [registrations, setRegistrations] = useState<
+    DriverConsentRegistrationRow[]
+  >([]);
+  const [registrationsLoading, setRegistrationsLoading] = useState(false);
   const [consentForm, setConsentForm] = useState<CheckConsentPayload>({
     tel: "",
   });
@@ -199,7 +207,8 @@ export default function AdminTrackingPage() {
     setSelectedInvoiceDraftId(draft.id);
     setRegisterForm({
       phone_number: phone,
-      name: draft.vehicleNumber?.trim() || undefined,
+      vehicle_number: draft.vehicleNumber?.trim() || "",
+      name: undefined,
       operator: draft.driverOperator || "",
     });
     setConsentForm({ tel: phone });
@@ -294,7 +303,12 @@ export default function AdminTrackingPage() {
       setInvoiceDrafts((prev) => prev.filter((item) => item.id !== draft.id));
       if (selectedInvoiceDraftId === draft.id) {
         setSelectedInvoiceDraftId("");
-        setRegisterForm({ phone_number: "", name: "", operator: "" });
+        setRegisterForm({
+          phone_number: "",
+          vehicle_number: "",
+          name: "",
+          operator: "",
+        });
         setConsentForm({ tel: "" });
         setConsentState(null);
         setTripForm((prev) => ({
@@ -338,6 +352,24 @@ export default function AdminTrackingPage() {
     return () => clearInterval(timer);
   }, [autoRefresh, trackVehicle, refreshTracking]);
 
+  const refreshRegistrations = useCallback(async () => {
+    setRegistrationsLoading(true);
+    const response = await listDriverRegistrations();
+    if (response.success) {
+      setRegistrations(response.data || []);
+    }
+    setRegistrationsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (loading || !isAuthenticated) return;
+    void refreshRegistrations();
+    const timer = setInterval(() => {
+      void refreshRegistrations();
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [loading, isAuthenticated, refreshRegistrations]);
+
   const handleRegisterDriver = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusyFlag("register", true);
@@ -349,17 +381,57 @@ export default function AdminTrackingPage() {
       return;
     }
 
-    const response = await addDriverNumber({
+    const vehicleNumber = registerForm.vehicle_number?.trim().toUpperCase();
+    if (!vehicleNumber) {
+      toast.error("Vehicle number (or last 4 digits) is required.");
+      setBusyFlag("register", false);
+      return;
+    }
+
+    const response = await registerDriverForVehicle({
       phone_number: phone,
+      vehicle_number: vehicleNumber,
       name: registerForm.name?.trim() || undefined,
       operator: registerForm.operator?.trim() || undefined,
     });
     if (!response.success) {
       toast.error(response.message || "Failed to register driver number.");
     } else {
-      toast.success("Driver number registered. Consent SMS sent by Traqo.");
+      const resolution = (
+        response.data as
+          | {
+              vehicleResolution?: {
+                resolvedVehicleNumber?: string;
+                matchedBy?: string;
+                invoiceNumber?: string | null;
+              };
+              message?: string;
+            }
+          | undefined
+      )?.vehicleResolution;
+      const resolvedVehicle =
+        resolution?.resolvedVehicleNumber || vehicleNumber;
+      const matchNote =
+        resolution?.matchedBy === "last4"
+          ? ` Matched ${resolvedVehicle}${
+              resolution.invoiceNumber ? ` → ${resolution.invoiceNumber}` : ""
+            }.`
+          : "";
+      toast.success(
+        (response.data as { message?: string } | undefined)?.message ||
+          `Driver registered. Consent SMS sent — you'll get a WhatsApp once the driver approves and the trip is auto-created.${matchNote}`,
+      );
       setConsentForm({ tel: phone });
-      setTripForm((prev) => ({ ...prev, tel: phone }));
+      setTripForm((prev) => ({
+        ...prev,
+        tel: phone,
+        truck_number: resolvedVehicle,
+      }));
+      setRegisterForm((prev) => ({
+        ...prev,
+        vehicle_number: resolvedVehicle,
+      }));
+      void refreshRegistrations();
     }
 
     setBusyFlag("register", false);
@@ -856,7 +928,10 @@ export default function AdminTrackingPage() {
             1. Driver Registration
           </h2>
           <p className="mt-1 text-xs text-gray-500">
-            Adds driver number and sends initial consent SMS.
+            Adds driver number + vehicle (full plate or last 4 digits), sends
+            consent SMS. Last 4 digits are matched to the latest untracked
+            invoice. Once the driver approves, you&apos;ll get a WhatsApp and
+            the trip auto-creates — no need to come back here.
           </p>
           <div className="mt-4 grid grid-cols-1 gap-3">
             <input
@@ -867,6 +942,17 @@ export default function AdminTrackingPage() {
                 setRegisterForm((prev) => ({
                   ...prev,
                   phone_number: e.target.value,
+                }))
+              }
+            />
+            <input
+              className={inputClass}
+              placeholder="Vehicle number or last 4 digits (e.g. 4521)"
+              value={registerForm.vehicle_number}
+              onChange={(e) =>
+                setRegisterForm((prev) => ({
+                  ...prev,
+                  vehicle_number: e.target.value,
                 }))
               }
             />
@@ -946,6 +1032,96 @@ export default function AdminTrackingPage() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Recent Consent Activity
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Live status of driver/vehicle registrations. Admin also gets a
+              WhatsApp when consent is approved and when the trip
+              auto-creates — this panel is just a backup view.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void refreshRegistrations()}
+            disabled={registrationsLoading}
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 disabled:opacity-60"
+          >
+            {registrationsLoading ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
+
+        {registrations.length === 0 ? (
+          <p className="mt-4 text-sm text-gray-400">
+            No driver registrations yet.
+          </p>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-xs uppercase text-gray-400">
+                  <th className="py-2 pr-4">Driver</th>
+                  <th className="py-2 pr-4">Vehicle</th>
+                  <th className="py-2 pr-4">Consent</th>
+                  <th className="py-2 pr-4">Invoice</th>
+                  <th className="py-2 pr-4">Trip</th>
+                  <th className="py-2 pr-4">Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {registrations.map((reg) => {
+                  const consentBadge =
+                    reg.consentState === "ALLOWED"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : reg.consentState === "DENIED"
+                        ? "bg-red-100 text-red-700"
+                        : "bg-amber-100 text-amber-700";
+                  const tripLabel = reg.autoTrip
+                    ? `Auto-created (${reg.autoTrip.status})`
+                    : reg.consentState === "ALLOWED"
+                      ? reg.giveUpNotifiedAt
+                        ? "No invoice found — create manually"
+                        : reg.autoTripError
+                          ? "Retrying (last error logged)"
+                          : "Waiting for invoice..."
+                      : "—";
+                  return (
+                    <tr key={reg.id} className="border-b border-gray-100">
+                      <td className="py-2 pr-4 text-gray-800">
+                        {reg.phoneNumber}
+                        {reg.driverName ? ` (${reg.driverName})` : ""}
+                      </td>
+                      <td className="py-2 pr-4 text-gray-800">
+                        {reg.vehicleNumber}
+                      </td>
+                      <td className="py-2 pr-4">
+                        <span
+                          className={`rounded px-2 py-0.5 text-xs font-semibold ${consentBadge}`}
+                        >
+                          {reg.consentState}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-4 text-gray-600">
+                        {reg.invoice?.invoiceNumber || "—"}
+                      </td>
+                      <td className="py-2 pr-4 text-gray-600">{tripLabel}</td>
+                      <td className="py-2 pr-4 text-gray-400">
+                        {new Date(reg.updatedAt).toLocaleString("en-IN", {
+                          timeZone: "Asia/Kolkata",
+                        })}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <form
