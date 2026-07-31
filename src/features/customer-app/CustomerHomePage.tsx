@@ -169,6 +169,7 @@ function HomeContent({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
               />
             </button>
           )}
+          {/* Walkthrough video below channel-partner ad — re-enable when final YouTube id is ready.
           <div className={styles.walkthroughEmbed}>
             <iframe
               title="How to use Mandi Plus"
@@ -177,6 +178,7 @@ function HomeContent({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
               allowFullScreen
             />
           </div>
+          */}
         </div>
       </section>
       <ChannelPartnerRequestModal
