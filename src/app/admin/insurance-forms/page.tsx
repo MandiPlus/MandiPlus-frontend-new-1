@@ -71,6 +71,10 @@ interface Invoice {
     sourceSurface?: string | null;
     insuredPersonNameSnapshot?: string;
     insuredPersonUserId?: string;
+    customerUserId?: string;
+    user?: { id?: string; name?: string } | null;
+    customerUser?: { id?: string; name?: string } | null;
+    insuredPersonUser?: { id?: string; name?: string } | null;
     insuredPersonDisplayName?: string;
     otherPartyDisplayName?: string;
     insuredPersonDisplayAddress?: string[];
@@ -437,6 +441,9 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
     const [isRegenerating, setIsRegenerating] = useState(false);
     const [formData, setFormData] = useState<Partial<RegenerateInvoicePayload>>({});
+    const [editInsuredUserId, setEditInsuredUserId] = useState('');
+    const [editOtherPartyUserId, setEditOtherPartyUserId] = useState('');
+    const [editInvoiceKind, setEditInvoiceKind] = useState<AdminInvoiceKind>('commission');
     const [verifyingInvoiceId, setVerifyingInvoiceId] = useState<string | null>(null);
     const [rejectingInvoiceId, setRejectingInvoiceId] = useState<string | null>(null);
     const [sendingPaymentInvoiceId, setSendingPaymentInvoiceId] = useState<string | null>(null);
@@ -725,7 +732,8 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     );
 
     useEffect(() => {
-        const insuredId = createInvoiceForm.insuredUserId;
+        const insuredId = isEditing ? editInsuredUserId : createInvoiceForm.insuredUserId;
+        const invoiceKind = isEditing ? editInvoiceKind : createInvoiceForm.invoiceKind;
         if (!insuredId) {
             setOtherPartyHistorical([]);
             return;
@@ -734,7 +742,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         const fetchHistorical = async () => {
             setOtherPartyHistoricalLoading(true);
             try {
-                const isCash = createInvoiceForm.invoiceKind === 'cash';
+                const isCash = invoiceKind === 'cash';
                 const parties = isCash
                     ? await getBuyerHistoricalSuppliers({ buyerId: insuredId })
                     : await getSupplierHistoricalParties({ supplierId: insuredId });
@@ -747,7 +755,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         };
         void fetchHistorical();
         return () => { cancelled = true; };
-    }, [createInvoiceForm.insuredUserId, createInvoiceForm.invoiceKind]);
+    }, [isEditing, editInsuredUserId, editInvoiceKind, createInvoiceForm.insuredUserId, createInvoiceForm.invoiceKind]);
 
     const otherPartyComboboxOptions: PartyComboboxOption[] = useMemo(() => {
         const byName = new Map<string, { totalInvoices: number; addresses: string[]; phone?: string }>();
@@ -875,6 +883,91 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
             return updated;
         });
     }, [otherPartyHistorical, verifiedUsers, selectedInsuredUser, applyCreateInvoiceParties]);
+
+    const applyEditInvoiceParties = useCallback((
+        insuredUser: AdminLedgerUser | null,
+        otherPartyUser: AdminLedgerUser | null,
+        invoiceKind: AdminInvoiceKind,
+        previous: Partial<RegenerateInvoicePayload>,
+    ): Partial<RegenerateInvoicePayload> => {
+        const insuredAddress = userAddressText(insuredUser);
+        const otherAddress = userAddressText(otherPartyUser);
+        const next: Partial<RegenerateInvoicePayload> = {
+            ...previous,
+            invoiceType: invoiceKind === 'cash' ? 'BUYER_INVOICE' : 'SUPPLIER_INVOICE',
+            insuredPartyPhone: insuredUser?.mobileNumber || previous.insuredPartyPhone,
+            weighmentSlipNote:
+                previous.weighmentSlipNote ||
+                (invoiceKind === 'cash' ? 'cash' : 'commission'),
+        };
+
+        if (invoiceKind === 'cash') {
+            next.billToName = insuredUser?.name || '';
+            next.billToAddress = insuredAddress;
+            next.shipToName = insuredUser?.name || '';
+            next.shipToAddress = insuredAddress;
+            next.supplierName = otherPartyUser?.name || previous.supplierName || '';
+            next.supplierAddress = otherAddress || previous.supplierAddress || '';
+            next.placeOfSupply =
+                previous.placeOfSupply ||
+                userPlaceOfSupply(otherPartyUser) ||
+                userPlaceOfSupply(insuredUser);
+        } else {
+            next.supplierName = insuredUser?.name || '';
+            next.supplierAddress = insuredAddress;
+            next.placeOfSupply =
+                previous.placeOfSupply || userPlaceOfSupply(insuredUser);
+            next.billToName = otherPartyUser?.name || previous.billToName || '';
+            next.billToAddress = otherAddress || previous.billToAddress || '';
+            next.shipToName = otherPartyUser?.name || previous.shipToName || '';
+            next.shipToAddress = otherAddress || previous.shipToAddress || '';
+        }
+
+        return next;
+    }, []);
+
+    const handleEditOtherPartyComboboxChange = useCallback((value: string, isCustom: boolean) => {
+        const matchedHistorical = otherPartyHistorical.find((p) => p.name === value);
+        const matchedVerified = verifiedUsers.find(
+            (u) => u.name?.trim().toLowerCase() === value.trim().toLowerCase(),
+        );
+        const otherPartyUser = matchedVerified || null;
+        const insuredUser =
+            verifiedUsers.find((user) => user.id === editInsuredUserId) || null;
+
+        setEditOtherPartyUserId(otherPartyUser?.id || '');
+        setFormData((prev) => {
+            const updated = applyEditInvoiceParties(
+                insuredUser,
+                otherPartyUser,
+                editInvoiceKind,
+                prev,
+            );
+
+            if (isCustom || (!otherPartyUser && matchedHistorical)) {
+                if (editInvoiceKind === 'cash') {
+                    updated.supplierName = value;
+                    updated.supplierAddress = matchedHistorical?.address || '';
+                } else {
+                    updated.billToName = value;
+                    updated.billToAddress = matchedHistorical?.address || '';
+                    updated.shipToName = value;
+                    updated.shipToAddress =
+                        matchedHistorical?.shipToAddress ||
+                        matchedHistorical?.address ||
+                        '';
+                }
+            }
+
+            return updated;
+        });
+    }, [
+        otherPartyHistorical,
+        verifiedUsers,
+        editInsuredUserId,
+        editInvoiceKind,
+        applyEditInvoiceParties,
+    ]);
 
     const findVerifiedUserByName = useCallback((name: string) => {
         const normalizedName = normalizePartyName(name);
@@ -1355,15 +1448,11 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         if (inv.isRejected) return;
 
         const reasonInput = window.prompt(
-            'Enter rejection reason:',
+            'Enter rejection reason (optional):',
             inv.rejectionReason || '',
         );
         if (reasonInput === null) return;
-        const rejectionReason = reasonInput.trim();
-        if (!rejectionReason) {
-            toast.error('Rejection reason is required.');
-            return;
-        }
+        const rejectionReason = reasonInput.trim() || undefined;
         void executeRejectInvoice(inv, rejectionReason);
     };
 
@@ -1450,11 +1539,42 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         const initialVehicleNumber = normalizeVehicleText(
             invoice.vehicleNumber || invoice.truckNumber || ''
         );
+        const invoiceKind: AdminInvoiceKind = isBuyerInsuredInvoice(invoice)
+            ? 'cash'
+            : 'commission';
+        const insuredName = invoiceKind === 'cash'
+            ? (invoice.billToName || '')
+            : (invoice.supplierName || '');
+        const otherName = invoiceKind === 'cash'
+            ? (invoice.supplierName || '')
+            : (invoice.billToName || '');
+
+        const linkedInsuredId =
+            invoice.insuredPersonUserId ||
+            invoice.customerUserId ||
+            invoice.insuredPersonUser?.id ||
+            invoice.customerUser?.id ||
+            invoice.user?.id ||
+            '';
+        const matchedInsured =
+            verifiedUsers.find((user) => user.id === linkedInsuredId) ||
+            verifiedUsers.find(
+                (user) => normalizePartyName(user.name || '') === normalizePartyName(insuredName),
+            ) ||
+            null;
+        const matchedOther =
+            verifiedUsers.find(
+                (user) => normalizePartyName(user.name || '') === normalizePartyName(otherName),
+            ) || null;
+
         setEditingInvoice(invoice);
+        setEditInvoiceKind(invoiceKind);
+        setEditInsuredUserId(matchedInsured?.id || '');
+        setEditOtherPartyUserId(matchedOther?.id || '');
         setWeightmentSlip(null);
         setFormData({
             invoiceId: invoice.id,
-            invoiceType: invoice.invoiceType || 'SUPPLIER_INVOICE',
+            invoiceType: invoice.invoiceType || (invoiceKind === 'cash' ? 'BUYER_INVOICE' : 'SUPPLIER_INVOICE'),
             supplierName: invoice.supplierName,
             supplierAddress: Array.isArray(invoice.supplierAddress)
                 ? invoice.supplierAddress.join('\n')
@@ -1481,7 +1601,8 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
             invoiceDate: invoice.createdAt
                 ? invoice.createdAt.split('T')[0]
                 : new Date().toISOString().split('T')[0],
-            terms: invoice.terms || ''
+            terms: invoice.terms || '',
+            insuredPartyPhone: invoice.insuredPartyPhone || matchedInsured?.mobileNumber || '',
         });
         setIsEditing(true);
         setInvoiceDateInputType(invoice.createdAt ? 'date' : 'text');
@@ -1551,6 +1672,12 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     const handleRegenerate = async () => {
         if (!editingInvoice) return;
 
+        const insuredUser = verifiedUsers.find((user) => user.id === editInsuredUserId) || null;
+        if (!insuredUser) {
+            toast.error('Select a registered verified user for the insured party before saving.');
+            return;
+        }
+
         setIsRegenerating(true);
 
         try {
@@ -1564,12 +1691,21 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
             const vehicleNumber = normalizeVehicleText(
                 String(formData.vehicleNumber || formData.truckNumber || '')
             );
+            const invoiceType = editInvoiceKind === 'cash' ? 'BUYER_INVOICE' : 'SUPPLIER_INVOICE';
 
             const payload: RegenerateInvoicePayload = {
                 ...formData,
                 invoiceId: editingInvoice.id,
+                invoiceType,
                 vehicleNumber,
                 truckNumber: vehicleNumber,
+                userId: insuredUser.id,
+                customerUserId: insuredUser.id,
+                buyerUserId: editInvoiceKind === 'cash' ? insuredUser.id : undefined,
+                supplierUserId: editInvoiceKind === 'commission' ? insuredUser.id : undefined,
+                weighmentSlipNote:
+                    formData.weighmentSlipNote ||
+                    (editInvoiceKind === 'cash' ? 'cash' : 'commission'),
 
                 supplierAddress: typeof formData.supplierAddress === "string"
                     ? formData.supplierAddress.split("\n").filter(Boolean)
@@ -1586,6 +1722,8 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                 quantity: qty,
                 rate,
                 amount: computedAmount,
+                insuredPartyPhone:
+                    formData.insuredPartyPhone || insuredUser.mobileNumber || undefined,
             };
 
             const regenerateResponse = await adminApi.regenerateInvoice(payload);
@@ -1608,6 +1746,9 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     const closeModal = () => {
         setIsEditing(false);
         setEditingInvoice(null);
+        setEditInsuredUserId('');
+        setEditOtherPartyUserId('');
+        setEditInvoiceKind('commission');
         setInvoiceDateInputType('text');
         setFormData({});
         setWeightmentSlip(null);
@@ -1656,6 +1797,9 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         if (s === 'PAID') {
             return { label: 'PAID', classes: 'border-emerald-200 bg-emerald-50 text-emerald-700' };
         }
+        if (s === 'PARTIAL') {
+            return { label: 'PARTIAL', classes: 'border-orange-200 bg-orange-50 text-orange-700' };
+        }
         if (s === 'FAILED') {
             return { label: 'FAILED', classes: 'border-rose-200 bg-rose-50 text-rose-700' };
         }
@@ -1666,7 +1810,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
             return { label: 'PENDING', classes: 'border-red-200 bg-red-50 text-red-700' };
         }
         if (s === 'NOT_REQUIRED' || inv.isPaymentRequired === false) {
-            return { label: 'PENDING', classes: 'border-red-200 bg-red-50 text-red-700' };
+            return { label: 'NOT_REQUIRED', classes: 'border-slate-200 bg-slate-50 text-slate-700' };
         }
 
         return { label: raw || 'PENDING', classes: 'border-red-200 bg-red-50 text-red-700' };
@@ -2389,7 +2533,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                         >
                             <option value="">{appQueueMode ? 'All app statuses' : 'Status'}</option>
                             <option value="pending">Pending review</option>
-                            <option value="verified">Verified</option>
+                            {appQueueMode ? <option value="verified">Verified</option> : null}
                             <option value="rejected">Rejected</option>
                         </select>
                     </div>
@@ -3346,15 +3490,90 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                                 <div className="sm:col-span-2">
-                                    <label className="block text-sm font-medium text-slate-800 mb-1">Invoice Type</label>
+                                    <label className="block text-sm font-medium text-slate-800 mb-1">Invoice kind</label>
                                     <select
-                                        value={formData.invoiceType}
-                                        onChange={(e) => setFormData({ ...formData, invoiceType: e.target.value as any })}
+                                        value={editInvoiceKind}
+                                        onChange={(e) => {
+                                            const invoiceKind = e.target.value as AdminInvoiceKind;
+                                            const insuredUser =
+                                                verifiedUsers.find((user) => user.id === editInsuredUserId) || null;
+                                            const otherPartyUser =
+                                                verifiedUsers.find((user) => user.id === editOtherPartyUserId) || null;
+                                            setEditInvoiceKind(invoiceKind);
+                                            setFormData((prev) =>
+                                                applyEditInvoiceParties(
+                                                    insuredUser,
+                                                    otherPartyUser,
+                                                    invoiceKind,
+                                                    prev,
+                                                ),
+                                            );
+                                        }}
                                         className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#4309ac] focus:border-[#4309ac] focus:outline-none text-slate-800 bg-white text-sm"
                                     >
-                                        <option value="BUYER_INVOICE">Buyer Invoice</option>
-                                        <option value="SUPPLIER_INVOICE">Supplier Invoice</option>
+                                        <option value="commission">Commission (supplier insured)</option>
+                                        <option value="cash">Cash (buyer insured)</option>
                                     </select>
+                                </div>
+
+                                <div className="sm:col-span-2">
+                                    <label className="block text-sm font-medium text-slate-800 mb-1">
+                                        Insured party (verified user)
+                                    </label>
+                                    <select
+                                        value={editInsuredUserId}
+                                        onChange={(e) => {
+                                            const insuredUser =
+                                                verifiedUsers.find((user) => user.id === e.target.value) || null;
+                                            const otherPartyUser =
+                                                verifiedUsers.find((user) => user.id === editOtherPartyUserId) || null;
+                                            setEditInsuredUserId(e.target.value);
+                                            setFormData((prev) =>
+                                                applyEditInvoiceParties(
+                                                    insuredUser,
+                                                    otherPartyUser,
+                                                    editInvoiceKind,
+                                                    prev,
+                                                ),
+                                            );
+                                        }}
+                                        className="w-full px-3 sm:px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-[#4309ac] focus:border-[#4309ac] focus:outline-none text-slate-800 bg-white text-sm"
+                                    >
+                                        <option value="">Select registered verified user</option>
+                                        {verifiedUsers.map((user) => (
+                                            <option key={user.id} value={user.id}>
+                                                {user.name} - {user.mobileNumber}{' '}
+                                                {user.walletType === 'UNPAID' ? '(Unpaid)' : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                        Changing this remounts the invoice to that trader for exports and wallet ownership.
+                                    </p>
+                                </div>
+
+                                <div className="sm:col-span-2">
+                                    <PartyCombobox
+                                        label="Other party"
+                                        options={otherPartyComboboxOptions}
+                                        value={
+                                            editInvoiceKind === 'cash'
+                                                ? String(formData.supplierName || '')
+                                                : String(formData.billToName || '')
+                                        }
+                                        onChange={handleEditOtherPartyComboboxChange}
+                                        loading={otherPartyHistoricalLoading}
+                                        placeholder={
+                                            editInsuredUserId
+                                                ? 'Search or type party name...'
+                                                : 'Select insured party first'
+                                        }
+                                        emptyMessage={
+                                            editInsuredUserId
+                                                ? 'No historical parties found — type a name above'
+                                                : 'Select insured party first'
+                                        }
+                                    />
                                 </div>
 
                                 <div className="sm:col-span-2">

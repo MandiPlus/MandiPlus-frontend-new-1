@@ -656,6 +656,10 @@ export interface RegenerateInvoicePayload {
   invoiceType?: string;
   invoiceDate?: string;
   terms?: string;
+  userId?: string;
+  customerUserId?: string;
+  supplierUserId?: string;
+  buyerUserId?: string;
   supplierName?: string;
   supplierAddress?: string | string[];
   placeOfSupply?: string;
@@ -671,6 +675,7 @@ export interface RegenerateInvoicePayload {
   vehicleNumber?: string;
   truckNumber?: string;
   weighmentSlipNote?: string;
+  insuredPartyPhone?: string;
 }
 
 export interface InvoiceFilterParams {
