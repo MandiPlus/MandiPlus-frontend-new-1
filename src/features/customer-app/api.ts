@@ -304,8 +304,7 @@ export async function createCustomerInvoice(
     ? configuredLogisticsAmount
     : 0;
   const amount = Number((goodsAmount + logisticsAmount).toFixed(2));
-  const rate =
-    Number(matchingCustomerInvoiceRate(amount, quantity)) || enteredRate;
+  const rate = enteredRate > 0 ? enteredRate : Number(matchingCustomerInvoiceRate(amount, quantity)) || 0;
   const cash = draft.mode === "Cash";
 
   form.append("userId", userId);
