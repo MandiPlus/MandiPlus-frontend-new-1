@@ -28,6 +28,7 @@ import {
   LinkIcon,
   PresentationChartLineIcon,
   TicketIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 
 export const ADMIN_SECTIONS = [
@@ -101,6 +102,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Payments', href: '/admin/app-payments', icon: CreditCardIcon, section: 'app-payments' },
   { name: 'Coupons', href: '/admin/app/coupons', icon: TicketIcon, section: 'app-coupons' },
   { name: 'Invoice / Insurance Forms', href: '/admin/insurance-forms', icon: FolderIcon, section: 'insurance-forms' },
+  { name: 'Bin', href: '/admin/invoices/bin', icon: TrashIcon, section: 'insurance-forms' },
   { name: 'Dashboard', href: '/admin/claims', icon: ClipboardDocumentListIcon, section: 'claims' },
   { name: 'Capture Links', href: '/admin/claims/capture-links', icon: LinkIcon, section: 'claims' },
   { name: 'Tracking', href: '/admin/tracking', icon: MapPinIcon, section: 'tracking' },
@@ -179,6 +181,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/app-payments': 'app-payments',
   '/admin/app/coupons': 'app-coupons',
   '/admin/insurance-forms': 'insurance-forms',
+  '/admin/invoices/bin': 'insurance-forms',
   '/admin/claims': 'claims',
   '/admin/claims/capture-links': 'claims',
   '/admin/tracking': 'tracking',

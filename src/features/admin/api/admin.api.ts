@@ -695,6 +695,58 @@ export interface InvoiceFilterParams {
   advancedFilters?: string;
 }
 
+export interface InvoiceBinEntry {
+  auditId: string;
+  invoiceId: string;
+  invoiceNumber: string | null;
+  invoiceDate?: string | null;
+  invoiceType?: string | null;
+  supplierName?: string | null;
+  supplierAddress?: string[];
+  billToName?: string | null;
+  billToAddress?: string[];
+  shipToName?: string | null;
+  shipToAddress?: string[];
+  placeOfSupply?: string | null;
+  productName?: string[];
+  hsnCode?: string | null;
+  quantity?: number | null;
+  rate?: number | null;
+  amount?: number | null;
+  premiumAmount?: number | null;
+  paymentAmount?: number | null;
+  paymentStatus?: string | null;
+  isPaymentRequired?: boolean | null;
+  isVerified?: boolean | null;
+  isRejected?: boolean | null;
+  vehicleNumber?: string | null;
+  pdfUrl?: string | null;
+  weighmentSlipNote?: string | null;
+  weighmentSlipUrls?: string[];
+  insuredPersonNameSnapshot?: string | null;
+  insuredPartyPhone?: string | null;
+  sourceSurface?: string | null;
+  createdAt?: string | null;
+  deletedAt: string;
+  deletedByDbUser?: string;
+  restoredAt?: string | null;
+  restoredByAdminId?: string | null;
+  restoredInvoiceNumber?: string | null;
+  isRestored?: boolean;
+  rowData?: Record<string, unknown>;
+}
+
+export interface InvoiceBinFilterParams {
+  invoiceNumber?: string;
+  vehicleNumber?: string;
+  search?: string;
+  deletedFrom?: string;
+  deletedTo?: string;
+  includeRestored?: boolean;
+  page?: number;
+  limit?: number;
+}
+
 export interface AdminAgentCommissionSummaryRow {
   agentId: string;
   agentName: string;
@@ -2016,6 +2068,76 @@ class AdminApi {
       return { success: true, ...response.data };
     } catch (error: any) {
       return { success: false };
+    }
+  };
+
+  public listInvoiceBin = async (
+    filters: InvoiceBinFilterParams = {},
+  ): Promise<{
+    success: boolean;
+    data?: InvoiceBinEntry[];
+    total?: number;
+    page?: number;
+    limit?: number;
+    totalPages?: number;
+    message?: string;
+  }> => {
+    try {
+      const response = await this.client.get("/invoices/admin/bin", {
+        params: filters,
+      });
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to load invoice bin",
+      };
+    }
+  };
+
+  public getInvoiceBinDetail = async (
+    auditId: string,
+  ): Promise<ApiResponse<InvoiceBinEntry>> => {
+    try {
+      const response = await this.client.get(`/invoices/admin/bin/${auditId}`);
+      if (response.data?.data) {
+        return { success: true, data: response.data.data };
+      }
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to load deleted invoice",
+        error: error.message,
+      };
+    }
+  };
+
+  public restoreInvoiceFromBin = async (
+    auditId: string,
+  ): Promise<{
+    success: boolean;
+    invoiceNumber?: string;
+    originalInvoiceNumber?: string;
+    numberWasSuffixed?: boolean;
+    invoice?: any;
+    binEntry?: InvoiceBinEntry;
+    message?: string;
+  }> => {
+    try {
+      const response = await this.client.post(
+        `/invoices/admin/bin/${auditId}/restore`,
+      );
+      return { success: true, ...response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to restore invoice from bin",
+      };
     }
   };
 
