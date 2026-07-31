@@ -17,6 +17,8 @@ type ApiErrorPayload = {
 
 export interface AddDriverPayload {
   phone_number: string;
+  /** Full plate or last 4 digits — required so automation can bind an invoice. */
+  vehicle_number: string;
   name?: string;
   operator?: string;
 }
@@ -194,20 +196,27 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * @deprecated Prefer registerDriverForVehicle. Kept as a compatibility wrapper
+ * so any leftover callers still enroll into the consent → auto-trip pipeline.
+ */
 export async function addDriverNumber(
   payload: AddDriverPayload,
 ): Promise<AdminTrackingApiResponse<GenericPayload>> {
-  try {
-    const res = await axios.post(`${API_BASE_URL}/traqo/add-number`, payload, {
-      headers: getAuthHeaders(),
-    });
-    return { success: true, data: res.data };
-  } catch (error) {
+  const vehicleNumber = String(payload.vehicle_number || "").trim();
+  if (!vehicleNumber) {
     return {
       success: false,
-      message: getErrorMessage(error, "Failed to register driver number"),
+      message:
+        "vehicle_number is required (full plate or last 4 digits) so the trip can be auto-created after consent.",
     };
   }
+  return registerDriverForVehicle({
+    phone_number: payload.phone_number,
+    vehicle_number: vehicleNumber,
+    name: payload.name,
+    operator: payload.operator,
+  });
 }
 
 export async function registerDriverForVehicle(
