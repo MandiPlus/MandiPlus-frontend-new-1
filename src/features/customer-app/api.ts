@@ -72,9 +72,14 @@ function isUnsupportedPropertyError(error: unknown, property: string) {
   );
 }
 
-export async function extractCustomerInvoice(files: File[]) {
+export async function extractCustomerInvoice(
+  files: File[],
+  currentProduct?: string,
+) {
   const form = new FormData();
   files.forEach((file) => form.append("documents", file));
+  form.append("fastMode", "true");
+  if (currentProduct) form.append("currentProduct", currentProduct);
   return customerRequest<Record<string, unknown>>({
     method: "POST",
     url: "/invoices/extract-invoice-fields",
@@ -206,6 +211,7 @@ export type CustomerInvoiceDraft = {
   totalAmount: string;
   vehicleNumber: string;
   vehicleTonnage: string;
+  includeLogistics: boolean;
   driverPhone: string;
   insuredPartyPhone: string;
   ownerName: string;
@@ -308,12 +314,15 @@ export async function createCustomerInvoice(
     Number(draft.totalAmount || 0) ||
     quantity * Number(draft.rate || 0);
   const isTenderCoconut = isTenderCoconutProduct(draft.product);
-  const logisticsAmount = isTenderCoconut
+  const configuredLogisticsAmount = isTenderCoconut
     ? draft.vehicleTonnage === "25"
       ? Number(pricing?.amount25Ton || 0)
       : draft.vehicleTonnage === "30"
         ? Number(pricing?.amount30Ton || 0)
         : 0
+    : 0;
+  const logisticsAmount = draft.includeLogistics
+    ? configuredLogisticsAmount
     : 0;
   const amount = Number((goodsAmount + logisticsAmount).toFixed(2));
   const rate =
@@ -344,6 +353,7 @@ export async function createCustomerInvoice(
     if (draft.vehicleTonnage === "25" || draft.vehicleTonnage === "30") {
       form.append("vehicleTonnage", draft.vehicleTonnage);
       form.append("pricingVersion", String(pricing?.pricingVersion || 1));
+      form.append("includeLogistics", String(draft.includeLogistics));
     }
     form.append("invoiceAdditionsAmount", "0");
   }

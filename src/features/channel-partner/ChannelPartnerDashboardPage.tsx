@@ -21,6 +21,7 @@ import ProtectedRoute from "@/features/auth/components/ProtectedRoute";
 import { useAuth } from "@/features/auth/context/AuthContext";
 import type { ChannelPartnerDetailPayload } from "@/features/admin/api/admin.api";
 import { getMyChannelPartnerDashboard, onboardChannelPartnerCustomer } from "./api";
+import { FALLBACK_INDIA_STATES as indianStates } from "@/features/reference";
 
 type PartnerTab = "customers" | "invoices" | "commissions" | "tracking";
 
@@ -31,37 +32,6 @@ const partnerTabs: Array<{ key: PartnerTab; label: string }> = [
   { key: "tracking", label: "Tracking & Trips" },
 ];
 
-const indianStates = [
-  { value: "ANDHRA_PRADESH", label: "Andhra Pradesh" },
-  { value: "ARUNACHAL_PRADESH", label: "Arunachal Pradesh" },
-  { value: "ASSAM", label: "Assam" },
-  { value: "BIHAR", label: "Bihar" },
-  { value: "CHHATTISGARH", label: "Chhattisgarh" },
-  { value: "GOA", label: "Goa" },
-  { value: "GUJARAT", label: "Gujarat" },
-  { value: "HARYANA", label: "Haryana" },
-  { value: "HIMACHAL_PRADESH", label: "Himachal Pradesh" },
-  { value: "JHARKHAND", label: "Jharkhand" },
-  { value: "KARNATAKA", label: "Karnataka" },
-  { value: "KERALA", label: "Kerala" },
-  { value: "MADHYA_PRADESH", label: "Madhya Pradesh" },
-  { value: "MAHARASHTRA", label: "Maharashtra" },
-  { value: "MANIPUR", label: "Manipur" },
-  { value: "MEGHALAYA", label: "Meghalaya" },
-  { value: "MIZORAM", label: "Mizoram" },
-  { value: "NAGALAND", label: "Nagaland" },
-  { value: "ODISHA", label: "Odisha" },
-  { value: "PUNJAB", label: "Punjab" },
-  { value: "RAJASTHAN", label: "Rajasthan" },
-  { value: "SIKKIM", label: "Sikkim" },
-  { value: "TAMIL_NADU", label: "Tamil Nadu" },
-  { value: "TELANGANA", label: "Telangana" },
-  { value: "TRIPURA", label: "Tripura" },
-  { value: "UTTAR_PRADESH", label: "Uttar Pradesh" },
-  { value: "UTTARAKHAND", label: "Uttarakhand" },
-  { value: "WEST_BENGAL", label: "West Bengal" },
-  { value: "DELHI", label: "Delhi" },
-];
 
 const customerIdentities = [
   { value: "CUSTOMER", label: "Customer" },
