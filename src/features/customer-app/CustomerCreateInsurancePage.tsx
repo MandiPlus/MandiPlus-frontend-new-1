@@ -41,7 +41,6 @@ import {
   getCustomerAppPricing,
   getCustomerLiveTranscriptionToken,
   isTenderCoconutProduct,
-  matchingCustomerInvoiceRate,
   roundCustomerInvoiceMoney,
   type CustomerAppPricing,
   type CustomerInvoiceDraft,
@@ -649,44 +648,16 @@ export default function CustomerCreateInsurancePage() {
   const update = (field: keyof CustomerInvoiceDraft, value: string) => {
     setDraft((current) => {
       const next = { ...current, [field]: value };
-      const quantity = Number(next.quantity);
-      const configuredLogisticsAmount = isTenderCoconutProduct(next.product)
-        ? next.vehicleTonnage === "25"
-          ? Number(pricing.amount25Ton || 0)
-          : next.vehicleTonnage === "30"
-            ? Number(pricing.amount30Ton || 0)
-            : 0
-        : 0;
-      const logisticsAmount = next.includeLogistics !== false
-        ? configuredLogisticsAmount
-        : 0;
-      if (field === "rate") {
-        const rate = Number(value);
+      // Prefill can set rate from total÷qty. Editing quantity or rate should
+      // refresh the invoice total, but never rewrite quantity/rate just to
+      // keep an old total locked.
+      if (field === "quantity" || field === "rate") {
+        const quantity = Number(next.quantity);
+        const rate = Number(next.rate);
         if (quantity > 0 && rate > 0) {
-          const finalAmount = roundCustomerInvoiceMoney(quantity * rate);
           next.totalAmount = String(
-            Math.max(
-              0,
-              roundCustomerInvoiceMoney(finalAmount - logisticsAmount),
-            ),
+            roundCustomerInvoiceMoney(quantity * rate),
           );
-        }
-      }
-      if (
-        field === "quantity" ||
-        field === "totalAmount" ||
-        field === "vehicleTonnage" ||
-        field === "product"
-      ) {
-        const finalAmount = roundCustomerInvoiceMoney(
-          Number(next.totalAmount || 0) + logisticsAmount,
-        );
-        const matchingRate = matchingCustomerInvoiceRate(
-          finalAmount,
-          quantity,
-        );
-        if (matchingRate) {
-          next.rate = matchingRate;
         }
       }
       return next;
@@ -694,26 +665,7 @@ export default function CustomerCreateInsurancePage() {
   };
 
   const setLogisticsIncluded = (includeLogistics: boolean) => {
-    setDraft((current) => {
-      const next = { ...current, includeLogistics };
-      const invoiceAmount =
-        Number(next.totalAmount || 0) ||
-        Number(next.quantity || 0) * Number(next.rate || 0);
-      const logisticsAmount =
-        includeLogistics && isTenderCoconutProduct(next.product)
-          ? next.vehicleTonnage === "25"
-            ? Number(pricing.amount25Ton || 0)
-            : next.vehicleTonnage === "30"
-              ? Number(pricing.amount30Ton || 0)
-              : 0
-          : 0;
-      const matchingRate = matchingCustomerInvoiceRate(
-        roundCustomerInvoiceMoney(invoiceAmount + logisticsAmount),
-        Number(next.quantity || 0),
-      );
-      if (matchingRate) next.rate = matchingRate;
-      return next;
-    });
+    setDraft((current) => ({ ...current, includeLogistics }));
   };
 
   const selectFiles = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1768,7 +1720,7 @@ export default function CustomerCreateInsurancePage() {
             <CompactInput
               label="Rate"
               inputMode="decimal"
-              value={amountBreakdown.rate || draft.rate}
+              value={draft.rate}
               onChange={(value) => update("rate", value)}
             />
             <CompactInput
@@ -2430,10 +2382,6 @@ function resolveInvoiceAmountBreakdown(
     configuredLogisticsAmount: Number(configuredLogistics.toFixed(2)),
     logisticsAmount: Number(logistics.toFixed(2)),
     totalAmount: Number((goodsAmount + logistics).toFixed(2)),
-    rate: matchingCustomerInvoiceRate(
-      Number((goodsAmount + logistics).toFixed(2)),
-      Number(draft.quantity || 0),
-    ),
   };
 }
 
