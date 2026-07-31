@@ -278,7 +278,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             const mobile = String(
                 normalizedUser.mobileNumber || normalizedUser.phone || "",
             ).replace(/\D/g, "").slice(-10);
-            if (mobile === "9000000000" && normalizedUser.id) {
+            if (
+                (mobile === "9000000000" || mobile === "9010101010") &&
+                normalizedUser.id
+            ) {
                 localStorage.removeItem(
                     `mandiplus:web-onboarding-step:${normalizedUser.id}`,
                 );
