@@ -14,9 +14,13 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/features/auth/context/AuthContext";
+import {
+  getCachedStates,
+  useReferenceCommodities,
+  useReferenceStates,
+} from "@/features/reference";
 import { updateCustomerUser } from "./api";
 import { CustomerAppShell } from "./CustomerAppShell";
-import { INDIA_STATES } from "./indiaStates";
 import { initials, readableError } from "./utils";
 import styles from "./customer-app.module.css";
 
@@ -43,17 +47,6 @@ const profileRoles = [
   ["TRANSPORTER", "Transporter"],
 ] as const;
 
-const profileCommodities = [
-  ["TENDER_COCONUT", "Tender Coconut", "🥥"],
-  ["TOMATO", "Tomato", "🍅"],
-  ["MANGO", "Mango", "🥭"],
-  ["BANANA", "Banana", "🍌"],
-  ["ONION", "Onion", "🧅"],
-  ["POTATO", "Potato", "🥔"],
-  ["POMEGRANATE", "Pomegranate", "🍎"],
-  ["OTHER", "Other", "🌾"],
-] as const;
-
 const businessSizeOptions = [
   ["2-10", "2 - 10 vehicles"],
   ["10-20", "10 - 20 vehicles"],
@@ -67,6 +60,7 @@ type ProfileFormState = {
   mandiName: string;
   secondaryMobileNumber: string;
   identity: string;
+  commodityCodes: string[];
   primaryCommodityCode: string;
   businessSize: string;
 };
@@ -75,6 +69,8 @@ export default function CustomerProfilePage() {
   const router = useRouter();
   const params = useSearchParams();
   const { user, setUser, logout } = useAuth();
+  const states = useReferenceStates();
+  const commodities = useReferenceCommodities();
   const requested = params.get("section");
   const initialSection = isProfileSection(requested) ? requested : "details";
   const [section, setSection] = useState<ProfileSection>(initialSection);
@@ -83,7 +79,7 @@ export default function CustomerProfilePage() {
   const [language, setLanguage] = useState(
     String(user?.preferredLanguage || "hi"),
   );
-  const [profile, setProfile] = useState(() => profileFromUser(user));
+  const [profile, setProfile] = useState(() => profileFromUser(user, commodities));
   const [notifications, setNotifications] = useState<NotificationPreferences>(
     () => {
       if (typeof window === "undefined") return defaultNotifications;
@@ -138,12 +134,19 @@ export default function CustomerProfilePage() {
           .slice(-10);
       }
       if (profile.identity) payload.identity = profile.identity;
-      if (profile.primaryCommodityCode) {
-        const selectedCommodity = profileCommodities.find(
-          ([code]) => code === profile.primaryCommodityCode,
+      if (profile.commodityCodes.length) {
+        payload.commodityCodes = profile.commodityCodes;
+        payload.primaryCommodityCode = profile.commodityCodes[0];
+        payload.products = profile.commodityCodes.map(
+          (code) =>
+            commodities.find((item) => item.code === code)?.label || code,
+        );
+      } else if (profile.primaryCommodityCode) {
+        const selectedCommodity = commodities.find(
+          (item) => item.code === profile.primaryCommodityCode,
         );
         payload.primaryCommodityCode = profile.primaryCommodityCode;
-        if (selectedCommodity) payload.products = [selectedCommodity[1]];
+        if (selectedCommodity) payload.products = [selectedCommodity.label];
       }
       if (profile.businessSize) {
         payload.unionMember = `Vehicles: ${profile.businessSize}`;
@@ -199,7 +202,7 @@ export default function CustomerProfilePage() {
   };
 
   const discardProfile = () => {
-    setProfile(profileFromUser(user));
+    setProfile(profileFromUser(user, commodities));
     setNotice("");
     setSection("main");
     router.replace("/profile?section=main");
@@ -280,7 +283,7 @@ export default function CustomerProfilePage() {
             <ProfileSelect
               label="State"
               value={profile.state}
-              options={INDIA_STATES}
+              options={states}
               onChange={(value) => setProfile({ ...profile, state: value })}
             />
             <ProfileField
@@ -323,18 +326,36 @@ export default function CustomerProfilePage() {
                 })}
               </div>
             </div>
-            <ProfileSelect
-              label="Primary commodity"
-              value={profile.primaryCommodityCode}
-              options={profileCommodities.map(([value, label, emoji]) => ({
-                value,
-                label: `${emoji}  ${label}`,
-              }))}
-              placeholder="Select commodity"
-              onChange={(value) =>
-                setProfile({ ...profile, primaryCommodityCode: value })
-              }
-            />
+            <div className={styles.profileField}>
+              <span>Commodities</span>
+              <div className={styles.profileRoleSelector}>
+                {commodities.map((item) => {
+                  const active = profile.commodityCodes.includes(item.code);
+                  return (
+                    <button
+                      key={item.code}
+                      type="button"
+                      className={active ? styles.profileRoleActive : ""}
+                      aria-pressed={active}
+                      onClick={() => {
+                        const next = active
+                          ? profile.commodityCodes.filter(
+                              (code) => code !== item.code,
+                            )
+                          : [...profile.commodityCodes, item.code];
+                        setProfile({
+                          ...profile,
+                          commodityCodes: next,
+                          primaryCommodityCode: next[0] || "",
+                        });
+                      }}
+                    >
+                      {item.emoji} {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <ProfileSelect
               label="Business size"
               value={profile.businessSize}
@@ -569,14 +590,16 @@ function normalizeState(value: unknown) {
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "_");
-  return INDIA_STATES.some((option) => option.value === normalized)
+  return getCachedStates().some((option) => option.value === normalized)
     ? normalized
     : "";
 }
 
 function profileFromUser(
   user: Record<string, unknown> | null | undefined,
+  commodities: Array<{ code: string; label: string }> = [],
 ): ProfileFormState {
+  const commodityCodes = commodityCodesFromUser(user, commodities);
   return {
     name: String(user?.name || ""),
     state: normalizeState(user?.state),
@@ -585,7 +608,8 @@ function profileFromUser(
       .replace(/\D/g, "")
       .slice(-10),
     identity: normalizeProfileRole(user?.identity),
-    primaryCommodityCode: primaryCommodityCodeFromUser(user),
+    commodityCodes,
+    primaryCommodityCode: commodityCodes[0] || "",
     businessSize: businessSizeFromUser(user?.unionMember),
   };
 }
@@ -597,23 +621,57 @@ function normalizeProfileRole(value: unknown) {
   return profileRoles.some(([role]) => role === normalized) ? normalized : "";
 }
 
-function primaryCommodityCodeFromUser(
+function commodityCodesFromUser(
   user: Record<string, unknown> | null | undefined,
+  commodities: Array<{ code: string; label: string }> = [],
 ) {
-  const explicit = normalizeCommodityCode(user?.primaryCommodityCode);
-  if (explicit) return explicit;
+  if (Array.isArray(user?.commodityCodes)) {
+    return [
+      ...new Set(
+        user.commodityCodes
+          .map((code) => normalizeCommodityCode(code, commodities))
+          .filter(Boolean),
+      ),
+    ];
+  }
+  const onboardingCodes = Array.isArray(
+    (user?.onboarding as { commodityCodes?: unknown } | undefined)
+      ?.commodityCodes,
+  )
+    ? (
+        (user?.onboarding as { commodityCodes: unknown[] }).commodityCodes || []
+      )
+        .map((code) => normalizeCommodityCode(code, commodities))
+        .filter(Boolean)
+    : [];
+  const explicit = normalizeCommodityCode(
+    user?.primaryCommodityCode,
+    commodities,
+  );
   const products = Array.isArray(user?.products) ? user.products : [];
-  return products.length === 1 ? commodityCodeFromLabel(products[0]) : "";
+  const fromProducts = products
+    .map((product) => commodityCodeFromLabel(product))
+    .filter(Boolean);
+  return [
+    ...new Set([
+      ...onboardingCodes,
+      ...(explicit ? [explicit] : []),
+      ...fromProducts,
+    ]),
+  ];
 }
 
-function normalizeCommodityCode(value: unknown) {
+function normalizeCommodityCode(
+  value: unknown,
+  commodities: Array<{ code: string }> = [],
+) {
   const normalized = String(value || "")
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "_");
-  return profileCommodities.some(([code]) => code === normalized)
-    ? normalized
-    : "";
+  if (!normalized) return "";
+  if (!commodities.length) return normalized;
+  return commodities.some((item) => item.code === normalized) ? normalized : "";
 }
 
 function commodityCodeFromLabel(value: unknown) {

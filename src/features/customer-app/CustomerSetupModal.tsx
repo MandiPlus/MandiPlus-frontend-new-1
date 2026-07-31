@@ -11,8 +11,12 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/features/auth/context/AuthContext";
+import {
+  getCachedStates,
+  useReferenceCommodities,
+  useReferenceStates,
+} from "@/features/reference";
 import { updateCustomerUser } from "./api";
-import { INDIA_STATES } from "./indiaStates";
 import { readableError } from "./utils";
 import styles from "./customer-app.module.css";
 
@@ -30,21 +34,19 @@ const roles = [
   ["TRANSPORTER", "Transporter", Truck],
 ] as const;
 
-const commodities = [
-  ["TENDER_COCONUT", "Tender Coconut", "🥥"],
-  ["MANGO", "Mango", "🥭"],
-  ["BANANA", "Banana", "🍌"],
-  ["TOMATO", "Tomato", "🍅"],
-  ["ONION", "Onion", "🧅"],
-  ["POTATO", "Potato", "🥔"],
-  ["POMEGRANATE", "Pomegranate", "🍎"],
-  ["OTHER", "Others", "➕"],
-] as const;
-
 const STEP_COUNT = 5;
+
+type OnboardingInfo = {
+  nextStep?: number | null;
+  missingFields?: string[];
+  complete?: boolean;
+  commodityCodes?: string[];
+};
 
 export function CustomerSetupModal() {
   const { user, setUser } = useAuth();
+  const states = useReferenceStates();
+  const commodities = useReferenceCommodities();
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState(0);
   const [language, setLanguage] = useState("en");
@@ -56,7 +58,7 @@ export function CustomerSetupModal() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const profile = useMemo(() => readProfile(user), [user]);
+  const profile = useMemo(() => readProfile(user, commodities), [user, commodities]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -68,7 +70,8 @@ export function CustomerSetupModal() {
     setState(profile.state);
     setMandiName(profile.mandiName);
 
-    if (profile.complete) {
+    const onboarding = (user as { onboarding?: OnboardingInfo })?.onboarding;
+    if (onboarding?.complete || profile.complete) {
       localStorage.removeItem(progressKey(user.id));
       setVisible(false);
       return;
@@ -77,10 +80,25 @@ export function CustomerSetupModal() {
     const savedStep = Number(localStorage.getItem(progressKey(user.id)));
     const resumable =
       Number.isInteger(savedStep) && savedStep >= 0 && savedStep < STEP_COUNT;
-    setStep(resumable ? savedStep : firstIncompleteStep(profile));
+    const serverStep =
+      onboarding?.nextStep === null ||
+      onboarding?.nextStep === 0 ||
+      onboarding?.nextStep === 1 ||
+      onboarding?.nextStep === 2 ||
+      onboarding?.nextStep === 3 ||
+      onboarding?.nextStep === 4
+        ? onboarding.nextStep
+        : null;
+    setStep(
+      resumable
+        ? savedStep
+        : serverStep !== null && serverStep !== undefined
+          ? serverStep
+          : firstIncompleteStep(profile),
+    );
     setVisible(true);
     setError("");
-  }, [profile, user?.id]);
+  }, [profile, user]);
 
   if (!visible || !user?.id) return null;
 
@@ -130,13 +148,14 @@ export function CustomerSetupModal() {
       setError("Choose at least one commodity");
       return;
     }
-    const selected = commodities.filter(([code]) =>
-      selectedCommodities.includes(code),
+    const selected = commodities.filter((item) =>
+      selectedCommodities.includes(item.code),
     );
-    const labels = selected.map(([, label]) => label);
-    const primary = selected[0]?.[0] || "OTHER";
+    const labels = selected.map((item) => item.label);
+    const primary = selected[0]?.code || "OTHER";
     if (
       await save({
+        commodityCodes: selectedCommodities,
         primaryCommodityCode: primary,
         products: labels,
       })
@@ -255,27 +274,27 @@ export function CustomerSetupModal() {
         {step === 3 ? (
           <div className={styles.setupForm}>
             <div className={styles.setupCommodityGrid}>
-              {commodities.map(([code, label, emoji]) => {
-                const active = selectedCommodities.includes(code);
+              {commodities.map((item) => {
+                const active = selectedCommodities.includes(item.code);
                 return (
                   <button
-                    key={code}
+                    key={item.code}
                     type="button"
                     disabled={saving}
                     onClick={() => {
                       setError("");
                       setSelectedCommodities((current) =>
-                        current.includes(code)
-                          ? current.filter((item) => item !== code)
-                          : [...current, code],
+                        current.includes(item.code)
+                          ? current.filter((code) => code !== item.code)
+                          : [...current, item.code],
                       );
                     }}
                     className={`${styles.setupCommodityCard} ${
                       active ? styles.setupChoiceActive : ""
                     }`}
                   >
-                    <span>{emoji}</span>
-                    <strong>{label}</strong>
+                    <span>{item.emoji}</span>
+                    <strong>{item.label}</strong>
                     {active ? <Check size={16} /> : null}
                   </button>
                 );
@@ -294,7 +313,7 @@ export function CustomerSetupModal() {
                 onChange={(event) => setState(event.target.value)}
               >
                 <option value="">Select State</option>
-                {INDIA_STATES.map((item) => (
+                {states.map((item) => (
                   <option key={item.value} value={item.value}>
                     {item.label}
                   </option>
@@ -355,7 +374,10 @@ function progressKey(userId: string) {
   return `mandiplus:web-onboarding-step:${userId}`;
 }
 
-function readProfile(user: Record<string, unknown> | null | undefined) {
+function readProfile(
+  user: Record<string, unknown> | null | undefined,
+  commodities: Array<{ code: string; label: string }>,
+) {
   const rawName = String(user?.name || "").trim();
   const name = isTemporaryName(rawName) ? "" : rawName;
   const rawRole = String(user?.identity || "").toUpperCase();
@@ -369,20 +391,34 @@ function readProfile(user: Record<string, unknown> | null | undefined) {
     .map((product) => {
       const normalized = normalize(product);
       return commodities.find(
-        ([, label]) => normalize(label) === normalized,
-      )?.[0];
+        (item) => normalize(item.label) === normalized,
+      )?.code;
     })
     .filter(Boolean) as string[];
+  const fromUserCodes = Array.isArray(user?.commodityCodes)
+    ? user.commodityCodes
+        .map((code) => String(code || "").toUpperCase())
+        .filter(Boolean)
+    : [];
+  const fromOnboarding = Array.isArray(
+    (user?.onboarding as OnboardingInfo | undefined)?.commodityCodes,
+  )
+    ? ((user?.onboarding as OnboardingInfo).commodityCodes || []).map((code) =>
+        String(code || "").toUpperCase(),
+      )
+    : [];
   const rawPrimaryCommodityCode = String(
     user?.primaryCommodityCode || "",
   ).toUpperCase();
   const primaryCommodityCode = commodities.some(
-    ([code]) => code === rawPrimaryCommodityCode,
+    (item) => item.code === rawPrimaryCommodityCode,
   )
     ? rawPrimaryCommodityCode
     : "";
   const commodityCodes = [
     ...new Set([
+      ...fromUserCodes,
+      ...fromOnboarding,
       ...(primaryCommodityCode ? [primaryCommodityCode] : []),
       ...productCommodityCodes,
       ...(products.length && !productCommodityCodes.length ? ["OTHER"] : []),
@@ -433,7 +469,7 @@ function normalizeState(value: unknown) {
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "_");
-  return INDIA_STATES.some((option) => option.value === normalized)
+  return getCachedStates().some((option) => option.value === normalized)
     ? normalized
     : "";
 }
