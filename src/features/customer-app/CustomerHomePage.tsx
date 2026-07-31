@@ -169,6 +169,14 @@ function HomeContent({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
               />
             </button>
           )}
+          <div className={styles.walkthroughEmbed}>
+            <iframe
+              title="How to use Mandi Plus"
+              src="https://www.youtube.com/embed/jNQXAC9IVRw?rel=0&modestbranding=1"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          </div>
         </div>
       </section>
       <ChannelPartnerRequestModal
