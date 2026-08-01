@@ -441,7 +441,7 @@ export default function AdminTrackingPage() {
       phone_number: phone,
       vehicle_number: vehicleNumber,
       name: registerForm.name?.trim() || undefined,
-      operator: registerForm.operator?.trim() || undefined,
+      // Operator is display-only for admin; Traqo detects it itself.
     });
     if (!response.success) {
       toast.error(response.message || "Failed to register driver number.");
@@ -1015,7 +1015,7 @@ export default function AdminTrackingPage() {
             />
             <input
               className={inputClass}
-              placeholder="Operator (auto-filled from Traqo when known)"
+              placeholder="Operator (auto from Traqo — display only, optional)"
               value={registerForm.operator || ""}
               onChange={(e) =>
                 setRegisterForm((prev) => ({
@@ -1028,7 +1028,11 @@ export default function AdminTrackingPage() {
               <p className="text-xs text-gray-500">Looking up operator…</p>
             ) : operatorLookupHint ? (
               <p className="text-xs text-gray-500">{operatorLookupHint}</p>
-            ) : null}
+            ) : (
+              <p className="text-xs text-gray-400">
+                For admin awareness only — not sent to Traqo.
+              </p>
+            )}
           </div>
           <button
             type="submit"
