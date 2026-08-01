@@ -237,6 +237,31 @@ export async function registerDriverForVehicle(
   }
 }
 
+export async function lookupDriverOperator(
+  phoneNumber: string,
+): Promise<
+  AdminTrackingApiResponse<{
+    phone_number: string;
+    operator: string | null;
+    consentStatus: string | null;
+    found: boolean;
+    message?: string;
+  }>
+> {
+  try {
+    const res = await axios.get(`${API_BASE_URL}/traqo/lookup-operator`, {
+      params: { phone_number: phoneNumber },
+      headers: getAuthHeaders(),
+    });
+    return { success: true, data: res.data };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to lookup driver operator"),
+    };
+  }
+}
+
 export async function listDriverRegistrations(): Promise<
   AdminTrackingApiResponse<DriverConsentRegistrationRow[]>
 > {

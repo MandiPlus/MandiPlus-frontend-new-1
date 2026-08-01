@@ -22,6 +22,7 @@ import {
   listInvoiceDriverDrafts,
   listTrips,
   listCreatedConsents,
+  lookupDriverOperator,
   registerDriverForVehicle,
   resendDriverConsentSms,
 } from "@/features/admin/api/tracking.api";
@@ -138,6 +139,8 @@ export default function AdminTrackingPage() {
       name: "",
       operator: "",
     });
+  const [operatorLookupHint, setOperatorLookupHint] = useState("");
+  const [operatorLookupLoading, setOperatorLookupLoading] = useState(false);
   const [registrations, setRegistrations] = useState<
     DriverConsentRegistrationRow[]
   >([]);
@@ -369,6 +372,52 @@ export default function AdminTrackingPage() {
     }, 15000);
     return () => clearInterval(timer);
   }, [loading, isAuthenticated, refreshRegistrations]);
+
+  useEffect(() => {
+    const phone = toTenDigitPhone(registerForm.phone_number || "");
+    if (phone.length !== 10) {
+      setOperatorLookupHint("");
+      setOperatorLookupLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setOperatorLookupLoading(true);
+    const timer = setTimeout(() => {
+      void (async () => {
+        const response = await lookupDriverOperator(phone);
+        if (cancelled) return;
+        setOperatorLookupLoading(false);
+        if (!response.success || !response.data) {
+          setOperatorLookupHint("");
+          return;
+        }
+        if (response.data.operator) {
+          setRegisterForm((prev) => ({
+            ...prev,
+            operator: response.data!.operator || prev.operator,
+          }));
+          setOperatorLookupHint(
+            `Detected from Traqo: ${response.data.operator}${
+              response.data.consentStatus
+                ? ` · consent ${response.data.consentStatus}`
+                : ""
+            }`,
+          );
+        } else {
+          setOperatorLookupHint(
+            response.data.message ||
+              "Operator will be detected after registration.",
+          );
+        }
+      })();
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [registerForm.phone_number]);
 
   const handleRegisterDriver = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -966,7 +1015,7 @@ export default function AdminTrackingPage() {
             />
             <input
               className={inputClass}
-              placeholder="Operator (airtel/jio/etc, optional)"
+              placeholder="Operator (auto-filled from Traqo when known)"
               value={registerForm.operator || ""}
               onChange={(e) =>
                 setRegisterForm((prev) => ({
@@ -975,6 +1024,11 @@ export default function AdminTrackingPage() {
                 }))
               }
             />
+            {operatorLookupLoading ? (
+              <p className="text-xs text-gray-500">Looking up operator…</p>
+            ) : operatorLookupHint ? (
+              <p className="text-xs text-gray-500">{operatorLookupHint}</p>
+            ) : null}
           </div>
           <button
             type="submit"
