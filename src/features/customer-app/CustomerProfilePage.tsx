@@ -39,6 +39,7 @@ const languageOptions = [
   ["te", "తెలుగు"],
   ["kn", "ಕನ್ನಡ"],
   ["mr", "मराठी"],
+  ["ta", "தமிழ்"],
 ] as const;
 
 const profileRoles = [

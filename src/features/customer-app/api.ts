@@ -109,6 +109,7 @@ export type InvoiceVoiceTargetField =
   | "quantity"
   | "rate"
   | "total_amount"
+  | "vehicle_number"
   | "vehicle_tonnage"
   | "insured_party_phone";
 
@@ -358,4 +359,8 @@ function digits(value: string) {
 
 export function isTenderCoconutProduct(value: string) {
   return canonicalizeCommodityLabel(value) === "Tender Coconut";
+}
+
+export function isPomegranateProduct(value: string) {
+  return canonicalizeCommodityLabel(value) === "Pomegranate (Anar)";
 }

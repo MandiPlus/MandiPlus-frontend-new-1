@@ -41,6 +41,7 @@ import {
   getCustomerAppPricing,
   getCustomerLiveTranscriptionToken,
   isTenderCoconutProduct,
+  isPomegranateProduct,
   roundCustomerInvoiceMoney,
   type CustomerAppPricing,
   type CustomerInvoiceDraft,
@@ -69,7 +70,9 @@ type MissingDetailKey =
   | "buyerName"
   | "buyerAddress"
   | "quantity"
+  | "rate"
   | "totalAmount"
+  | "vehicleNumber"
   | "vehicleTonnage"
   | "insuredPartyPhone";
 type RecordingPurpose = MissingDetailKey;
@@ -78,6 +81,9 @@ type VoicePhase = "idle" | "prompt" | "requesting" | "recording" | "failed";
 type CachedLiveTranscriptionToken = CustomerLiveTranscriptionToken & {
   expiresAt: number;
 };
+type QuestionLabelMap = Partial<
+  Record<"en" | "hi" | "kn" | "mr" | "ta" | "te", string>
+> & { en: string };
 
 type EagerExtraction = {
   key: string;
@@ -108,10 +114,12 @@ function questionnaireSpeechLocale(language: unknown) {
 function missingVoiceEndSilenceMillis(key: MissingDetailKey) {
   switch (key) {
     case "quantity":
+    case "rate":
     case "totalAmount":
       return 800;
     case "supplierName":
     case "buyerName":
+    case "vehicleNumber":
       return 1000;
     case "buyerAddress":
       return 1400;
@@ -126,6 +134,51 @@ const TENDER_TONNAGE_CHOICES = [
   { value: "25", label: "25 ton", compactLabel: "25t" },
   { value: "30", label: "30 ton", compactLabel: "30t" },
 ] as const;
+
+const POMEGRANATE_QUESTION_LABELS: Partial<
+  Record<MissingDetailKey, QuestionLabelMap>
+> = {
+  buyerAddress: {
+    en: "Mal kidhar ja raha hai?",
+    hi: "माल किधर जा रहा है?",
+    mr: "माल कुठे जात आहे?",
+    kn: "ಮಾಲ್ ಎಲ್ಲಿಗೆ ಹೋಗುತ್ತಿದೆ?",
+    ta: "சரக்கு எங்கே போகிறது?",
+    te: "సరుకు ఎక్కడికి వెళ్తోంది?",
+  },
+  buyerName: {
+    en: "Kiske paas ja raha hai?",
+    hi: "किसके पास जा रहा है?",
+    mr: "कोणाकडे जात आहे?",
+    kn: "ಯಾರ ಬಳಿಗೆ ಹೋಗುತ್ತಿದೆ?",
+    ta: "யாரிடம் போகிறது?",
+    te: "ఎవరి దగ్గరికి వెళ్తోంది?",
+  },
+  quantity: {
+    en: "Anar ke kitne dabbe hain?",
+    hi: "अनार के कितने डब्बे हैं?",
+    mr: "डाळिंबाचे किती डबे आहेत?",
+    kn: "ಅನಾರ್‌ನ ಎಷ್ಟು ಡಬ್ಬಗಳಿವೆ?",
+    ta: "மாதுளை எத்தனை பெட்டிகள்?",
+    te: "దానిమ్మ ఎన్ని పెట్టెలు?",
+  },
+  rate: {
+    en: "Ek dabbe ka kitna rate hai?",
+    hi: "एक डब्बे का कितना रेट है?",
+    mr: "एका डब्याचा किती रेट आहे?",
+    kn: "ಒಂದು ಡಬ್ಬದ ರೇಟ್ ಎಷ್ಟು?",
+    ta: "ஒரு பெட்டியின் விலை என்ன?",
+    te: "ఒక పెట్టె రేటు ఎంత?",
+  },
+  vehicleNumber: {
+    en: "Gaadi number kya hai?",
+    hi: "गाड़ी नंबर क्या है?",
+    mr: "गाडी नंबर काय आहे?",
+    kn: "ವಾಹನ ನಂಬರ್ ಏನು?",
+    ta: "வாகன எண் என்ன?",
+    te: "వాహన నంబర్ ఏమిటి?",
+  },
+};
 
 const MISSING_QUESTIONS: Record<
   MissingDetailKey,
@@ -151,10 +204,20 @@ const MISSING_QUESTIONS: Record<
     audio: "/customer-app/voices/tender-coconut-quantity.mp3",
     target: "quantity",
   },
+  rate: {
+    label: "Rate kya hai?",
+    audio: "/customer-app/voices/pomegranate-rate.mp3",
+    target: "rate",
+  },
   totalAmount: {
     label: "Kitne lakh ka maal hai?",
     audio: "/customer-app/voices/tender-coconut-total-amount.mp3",
     target: "total_amount",
+  },
+  vehicleNumber: {
+    label: "Gaadi number kya hai?",
+    audio: "/customer-app/voices/pomegranate-vehicle-number.mp3",
+    target: "vehicle_number",
   },
   vehicleTonnage: {
     label: "Gaadi kitne ton ki hai?",
@@ -166,6 +229,40 @@ const MISSING_QUESTIONS: Record<
     target: "insured_party_phone",
   },
 };
+
+const POMEGRANATE_QUESTION_AUDIO: Partial<
+  Record<MissingDetailKey, string>
+> = {
+  buyerAddress: "/customer-app/voices/pomegranate-destination.mp3",
+  buyerName: "/customer-app/voices/pomegranate-consignee.mp3",
+  quantity: "/customer-app/voices/pomegranate-quantity.mp3",
+  rate: "/customer-app/voices/pomegranate-rate.mp3",
+  vehicleNumber: "/customer-app/voices/pomegranate-vehicle-number.mp3",
+};
+
+function resolveLocalizedMissingLabel(
+  labels: QuestionLabelMap,
+  language: unknown,
+) {
+  const code = String(language || "en").toLowerCase() as keyof QuestionLabelMap;
+  return labels[code] || labels.en;
+}
+
+function resolveMissingQuestion(
+  key: MissingDetailKey,
+  product: string,
+  language: unknown,
+) {
+  const base = MISSING_QUESTIONS[key];
+  if (!isPomegranateProduct(product)) return base;
+  const labels = POMEGRANATE_QUESTION_LABELS[key];
+  const audio = POMEGRANATE_QUESTION_AUDIO[key];
+  return {
+    ...base,
+    label: labels ? resolveLocalizedMissingLabel(labels, language) : base.label,
+    audio: audio || base.audio,
+  };
+}
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -332,7 +429,11 @@ export default function CustomerCreateInsurancePage() {
       : "";
   const activeMissingKey = missingOpen ? missingKeys[missingIndex] : undefined;
   const activeQuestion = activeMissingKey
-    ? MISSING_QUESTIONS[activeMissingKey]
+    ? resolveMissingQuestion(
+        activeMissingKey,
+        draft.product || batchDrafts[activeFileIndex]?.product || "",
+        user?.preferredLanguage,
+      )
     : null;
   const isFinalizingReview =
     stage === "review" && !missingOpen && pendingVoiceAnswers > 0;
@@ -723,7 +824,18 @@ export default function CustomerCreateInsurancePage() {
   };
 
   const openMissingDetails = (nextDraft: CustomerInvoiceDraft) => {
-    const nextKeys = getMissingDetailKeys(nextDraft);
+    const preparedDraft = withPomegranateProfileDefaults(nextDraft, user);
+    if (preparedDraft !== nextDraft) {
+      setDraft(preparedDraft);
+      setBatchDrafts((current) => {
+        if (!current.length) return current;
+        const next = [...current];
+        next[activeFileIndex] = preparedDraft;
+        batchDraftsRef.current = next;
+        return next;
+      });
+    }
+    const nextKeys = getMissingDetailKeys(preparedDraft);
     questionAudioRef.current?.pause();
     stopQuestionnaireVoiceSession();
     setVoicePhase("idle");
@@ -790,7 +902,11 @@ export default function CustomerCreateInsurancePage() {
     invoiceIndex: number,
     product: string,
   ) => {
-    const target = MISSING_QUESTIONS[key].target;
+    const target = resolveMissingQuestion(
+      key,
+      product,
+      user?.preferredLanguage,
+    ).target;
     if (!target) return;
     const answerKey = questionnaireAnswerKey(invoiceIndex, key);
     const captureGeneration = questionnaireCaptureGenerationRef.current;
@@ -836,7 +952,7 @@ export default function CustomerCreateInsurancePage() {
         }));
         if (activeFileIndexRef.current === invoiceIndex) {
           setNotice(
-            `${MISSING_QUESTIONS[key].label} samajh nahi aaya. Dobara boliye.`,
+            `${resolveMissingQuestion(key, product, user?.preferredLanguage).label} samajh nahi aaya. Dobara boliye.`,
           );
         }
       });
@@ -2187,6 +2303,13 @@ function applyMissingVoiceValue(
       next.rate = String(round(total / quantity));
     }
   }
+  if (key === "quantity" || key === "rate") {
+    const quantity = Number(next.quantity);
+    const rate = Number(next.rate);
+    if (quantity > 0 && rate > 0) {
+      next.totalAmount = String(roundCustomerInvoiceMoney(quantity * rate));
+    }
+  }
   return next;
 }
 
@@ -2204,6 +2327,8 @@ function missingVoiceValue(
       return text(raw.buyer_address);
     case "quantity":
       return numberText(raw.quantity);
+    case "rate":
+      return numberText(raw.rate);
     case "totalAmount": {
       const spokenAmount = Number(raw.total_amount || raw.amount || 0);
       return numberText(
@@ -2212,6 +2337,8 @@ function missingVoiceValue(
           : spokenAmount,
       );
     }
+    case "vehicleNumber":
+      return text(raw.vehicle_number).replace(/\s+/g, "").toUpperCase();
     case "vehicleTonnage":
       return tonnage(raw.vehicle_tonnage);
     case "insuredPartyPhone":
@@ -2231,17 +2358,51 @@ function extractionDraft(response: Record<string, unknown>) {
   return payload;
 }
 
+function withPomegranateProfileDefaults(
+  draft: CustomerInvoiceDraft,
+  user: Record<string, unknown> | null | undefined,
+) {
+  if (!isPomegranateProduct(draft.product)) return draft;
+  const userName = String(user?.name || user?.fullName || "").trim();
+  const userPhone = phone(
+    String(
+      user?.phone ||
+        user?.mobile ||
+        user?.mobileNumber ||
+        user?.phoneNumber ||
+        "",
+    ),
+  );
+  const userAddress = String(
+    user?.address || user?.mandiName || user?.state || "",
+  ).trim();
+  const placeOfSupply = String(user?.state || draft.placeOfSupply || "India").trim();
+  const next = { ...draft };
+  if (!next.supplierName.trim() && userName) next.supplierName = userName;
+  if (!next.supplierAddress.trim() && userAddress) {
+    next.supplierAddress = userAddress;
+  }
+  if (!next.placeOfSupply.trim()) next.placeOfSupply = placeOfSupply;
+  if (!phone(next.insuredPartyPhone) && userPhone) {
+    next.insuredPartyPhone = userPhone;
+  }
+  return next;
+}
+
 function getMissingDetailKeys(draft: CustomerInvoiceDraft) {
   const isTenderCoconut = isTenderCoconutProduct(draft.product);
-  const ordered: MissingDetailKey[] = [
-    "supplierName",
-    "buyerName",
-    "buyerAddress",
-    "quantity",
-    "totalAmount",
-    "insuredPartyPhone",
-    ...(isTenderCoconut ? (["vehicleTonnage"] as const) : []),
-  ];
+  const isPomegranate = isPomegranateProduct(draft.product);
+  const ordered: MissingDetailKey[] = isPomegranate
+    ? ["buyerAddress", "buyerName", "quantity", "rate", "vehicleNumber"]
+    : [
+        "supplierName",
+        "buyerName",
+        "buyerAddress",
+        "quantity",
+        "totalAmount",
+        "insuredPartyPhone",
+        ...(isTenderCoconut ? (["vehicleTonnage"] as const) : []),
+      ];
   return ordered.filter(
     (key) => !isMissingDetailAnswered(key, String(draft[key] || "")),
   );
@@ -2253,7 +2414,7 @@ function isMissingDetailAnswered(key: MissingDetailKey, value: string) {
     return plausiblePartyName(clean).length > 0;
   }
   if (key === "insuredPartyPhone") return /^[6-9]\d{9}$/.test(phone(clean));
-  if (key === "quantity" || key === "totalAmount") {
+  if (key === "quantity" || key === "rate" || key === "totalAmount") {
     return Number(clean) > 0;
   }
   if (key === "vehicleTonnage") {

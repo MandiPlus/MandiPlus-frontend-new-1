@@ -9,7 +9,7 @@ const COMMODITIES: readonly CommodityDefinition[] = [
   { name: "Mango", aliases: ["aam"] },
   { name: "Banana", aliases: ["kela"] },
   { name: "Papaya (Papita)", aliases: ["papaya", "papita"] },
-  { name: "Pomegranate (Anar)", aliases: ["pomegranate", "anar"] },
+  { name: "Pomegranate (Anar)", aliases: ["pomegranate", "anar", "dalimb", "dalimba", "daalimb"] },
   { name: "Oranges", aliases: ["orange"] },
   { name: "Kinnow", aliases: ["kinno", "kinnu"] },
   { name: "Guava (Amrood)", aliases: ["guava", "amrood"] },
