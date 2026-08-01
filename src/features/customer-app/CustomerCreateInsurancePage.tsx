@@ -77,7 +77,13 @@ type MissingDetailKey =
   | "insuredPartyPhone";
 type RecordingPurpose = MissingDetailKey;
 type VoiceAnswerState = "processing" | "saved" | "failed";
-type VoicePhase = "idle" | "prompt" | "requesting" | "recording" | "failed";
+type VoicePhase =
+  | "idle"
+  | "prompt"
+  | "requesting"
+  | "recording"
+  | "processing"
+  | "failed";
 type CachedLiveTranscriptionToken = CustomerLiveTranscriptionToken & {
   expiresAt: number;
 };
@@ -303,15 +309,25 @@ function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft 
       user?.phoneNumber ||
       "",
   );
+  const identity = String(
+    user?.identity || user?.role || user?.userType || "",
+  )
+    .trim()
+    .toUpperCase();
   const product = Array.isArray(user?.products)
     ? String(user.products[0] || "")
     : String(user?.commodity || user?.product || "");
+  // Only a buyer profile should default the invoice buyer to the signed-in
+  // person. Suppliers/transporters must be asked for the consignee — otherwise
+  // pomegranate skips "Kiske paas" because emptyDraft already filled their name.
+  const buyerName = identity === "BUYER" ? userName : "";
+  const insuredPartyPhone = identity === "BUYER" ? userPhone : "";
   return {
     invoiceDate: today(),
     mode: "Cash",
     supplierName: "",
     supplierAddress: "",
-    buyerName: userName,
+    buyerName,
     buyerAddress: "",
     placeOfSupply: String(user?.state || ""),
     product,
@@ -322,7 +338,7 @@ function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft 
     vehicleTonnage: "",
     includeLogistics: true,
     driverPhone: "",
-    insuredPartyPhone: userPhone,
+    insuredPartyPhone,
     ownerName: "",
     note: "",
   };
@@ -487,7 +503,13 @@ export default function CustomerCreateInsurancePage() {
   }, []);
 
   useEffect(() => {
-    if (voicePhase !== "recording") return;
+    if (
+      voicePhase !== "recording" &&
+      voicePhase !== "prompt" &&
+      voicePhase !== "processing"
+    ) {
+      return;
+    }
     const interval = window.setInterval(() => {
       setListeningDotCount((current) => (current + 1) % 4);
     }, 420);
@@ -901,13 +923,13 @@ export default function CustomerCreateInsurancePage() {
     audio: File,
     invoiceIndex: number,
     product: string,
-  ) => {
+  ): Promise<boolean> => {
     const target = resolveMissingQuestion(
       key,
       product,
       user?.preferredLanguage,
     ).target;
-    if (!target) return;
+    if (!target) return Promise.resolve(false);
     const answerKey = questionnaireAnswerKey(invoiceIndex, key);
     const captureGeneration = questionnaireCaptureGenerationRef.current;
     const generation =
@@ -917,7 +939,7 @@ export default function CustomerCreateInsurancePage() {
       ...current,
       [answerKey]: "processing",
     }));
-    void extractCustomerInvoiceVoice(
+    return extractCustomerInvoiceVoice(
       audio,
       product || "Tender Coconut",
       target,
@@ -927,7 +949,7 @@ export default function CustomerCreateInsurancePage() {
           questionnaireCaptureGenerationRef.current !== captureGeneration ||
           questionGenerationRef.current[answerKey] !== generation
         ) {
-          return;
+          return false;
         }
         const value = missingVoiceValue(response, key);
         if (!isMissingDetailAnswered(key, value)) {
@@ -938,13 +960,14 @@ export default function CustomerCreateInsurancePage() {
           ...current,
           [answerKey]: "saved",
         }));
+        return true;
       })
       .catch(() => {
         if (
           questionnaireCaptureGenerationRef.current !== captureGeneration ||
           questionGenerationRef.current[answerKey] !== generation
         ) {
-          return;
+          return false;
         }
         setVoiceAnswers((current) => ({
           ...current,
@@ -955,6 +978,7 @@ export default function CustomerCreateInsurancePage() {
             `${resolveMissingQuestion(key, product, user?.preferredLanguage).label} samajh nahi aaya. Dobara boliye.`,
           );
         }
+        return false;
       });
   };
 
@@ -1065,8 +1089,11 @@ export default function CustomerCreateInsurancePage() {
           setNotice("Voice save nahi hui. Ek baar phir boliye.");
           return;
         }
+        // Optimistic handoff: advance (or close) as soon as speech is captured.
+        // Gemini extraction runs in parallel so the trader is never parked on
+        // "saving…" between questions — same pattern as the mobile questionnaire.
         advanceMissingDetails();
-        processQuestionVoice(
+        void processQuestionVoice(
           stoppedPurpose,
           audio,
           stoppedInvoiceIndex,
@@ -1130,6 +1157,7 @@ export default function CustomerCreateInsurancePage() {
     if (!missingOpen || !activeMissingKey || !activeQuestion) return;
     let active = true;
     let preparedStreamConsumed = false;
+    let listeningStarted = false;
     setVoicePhase("prompt");
     const audio = questionAudioRef.current || new Audio();
     questionAudioRef.current = audio;
@@ -1154,31 +1182,28 @@ export default function CustomerCreateInsurancePage() {
       })
       .catch(() => undefined);
 
+    const startListeningAfterPrompt = () => {
+      if (!active || !activeQuestion.target || listeningStarted) return;
+      listeningStarted = true;
+      preparedStreamConsumed = true;
+      void startRecording(
+        activeMissingKey,
+        preparedStreamPromise || undefined,
+      );
+    };
+
     const finishPrompt = () => {
-      if (active && !activeQuestion.target) setVoicePhase("idle");
+      if (!active) return;
+      if (activeQuestion.target) {
+        startListeningAfterPrompt();
+        return;
+      }
+      setVoicePhase("idle");
     };
     audio.onended = finishPrompt;
     audio.onerror = finishPrompt;
 
-    let listeningStartPromise = Promise.resolve(false);
-    if (activeQuestion.target) {
-      preparedStreamConsumed = true;
-      listeningStartPromise = startRecording(
-        activeMissingKey,
-        preparedStreamPromise || undefined,
-        () => {
-          if (!active) return;
-          // Browser echo cancellation keeps the prompt out of the microphone.
-          // Confirmed user speech barges in and stops the remaining question.
-          audio.pause();
-        },
-      );
-    }
     void (async () => {
-      if (activeQuestion.target) {
-        await listeningStartPromise;
-        if (!active) return;
-      }
       for (const delay of [0, 120, 320]) {
         if (!active) return;
         if (delay) {
@@ -1191,14 +1216,15 @@ export default function CustomerCreateInsurancePage() {
           audio.currentTime = 0;
         }
       }
-      if (active) {
-        if (activeQuestion.target) {
-          setNotice("Question audio play nahi hua. Apna jawab boliye.");
-        } else {
-          setVoicePhase("idle");
-          setNotice("Question audio play nahi hua.");
-        }
+      if (!active) return;
+      // Prompt couldn't play — still open the mic so the trader can answer.
+      if (activeQuestion.target) {
+        setNotice("Question audio play nahi hua. Apna jawab boliye.");
+        startListeningAfterPrompt();
+        return;
       }
+      setVoicePhase("idle");
+      setNotice("Question audio play nahi hua.");
     })();
 
     return () => {
@@ -2124,12 +2150,16 @@ export default function CustomerCreateInsurancePage() {
                     }`}
                     onClick={() => handleVoicePress(activeMissingKey)}
                     disabled={
-                      voicePhase === "requesting" || voicePhase === "prompt"
+                      voicePhase === "requesting" ||
+                      voicePhase === "prompt" ||
+                      voicePhase === "processing"
                     }
                     aria-label={
                       voicePhase === "recording"
                         ? "Answer complete"
-                        : "Speak answer"
+                        : voicePhase === "processing"
+                          ? "Saving answer"
+                          : "Speak answer"
                     }
                   >
                     {voicePhase === "recording" ? (
@@ -2152,6 +2182,14 @@ export default function CustomerCreateInsurancePage() {
                 {voicePhase === "recording" ? (
                   <p className={styles.missingVoiceLabel}>
                     {`listening${".".repeat(listeningDotCount)}`}
+                  </p>
+                ) : voicePhase === "processing" ? (
+                  <p className={styles.missingVoiceLabel}>
+                    {`saving${".".repeat(listeningDotCount)}`}
+                  </p>
+                ) : voicePhase === "prompt" ? (
+                  <p className={styles.missingVoiceLabel}>
+                    {`playing${".".repeat(listeningDotCount)}`}
                   </p>
                 ) : null}
               </div>
@@ -2383,6 +2421,14 @@ function withPomegranateProfileDefaults(
     next.supplierAddress = userAddress;
   }
   if (!next.placeOfSupply.trim()) next.placeOfSupply = placeOfSupply;
+  // Consignee is never the supplier themselves. Clear a stale self-name so the
+  // "Kiske paas ja raha hai?" question still fires.
+  if (
+    userName &&
+    next.buyerName.trim().toLowerCase() === userName.toLowerCase()
+  ) {
+    next.buyerName = "";
+  }
   if (!phone(next.insuredPartyPhone) && userPhone) {
     next.insuredPartyPhone = userPhone;
   }

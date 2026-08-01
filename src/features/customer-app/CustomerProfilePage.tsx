@@ -329,14 +329,16 @@ export default function CustomerProfilePage() {
             </div>
             <div className={styles.profileField}>
               <span>Commodities</span>
-              <div className={styles.profileRoleSelector}>
+              <div className={styles.profileCommodityGrid}>
                 {commodities.map((item) => {
                   const active = profile.commodityCodes.includes(item.code);
                   return (
                     <button
                       key={item.code}
                       type="button"
-                      className={active ? styles.profileRoleActive : ""}
+                      className={`${styles.profileCommodityCard} ${
+                        active ? styles.profileCommodityCardActive : ""
+                      }`}
                       aria-pressed={active}
                       onClick={() => {
                         const next = active
@@ -351,7 +353,11 @@ export default function CustomerProfilePage() {
                         });
                       }}
                     >
-                      {item.emoji} {item.label}
+                      <span className={styles.profileCommodityEmoji}>
+                        {item.emoji}
+                      </span>
+                      <strong>{item.label}</strong>
+                      {active ? <Check size={16} strokeWidth={2.6} /> : null}
                     </button>
                   );
                 })}

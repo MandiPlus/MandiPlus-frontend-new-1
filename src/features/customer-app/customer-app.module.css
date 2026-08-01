@@ -3268,6 +3268,49 @@
   background: var(--mp-navy);
 }
 
+.profileCommodityGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.profileCommodityCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 54px;
+  border: 1px solid var(--mp-line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: var(--mp-ink);
+  background: var(--mp-surface);
+  font: inherit;
+  text-align: left;
+}
+
+.profileCommodityCard strong {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 16px;
+}
+
+.profileCommodityEmoji {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.profileCommodityCardActive {
+  color: #fff;
+  border-color: var(--mp-navy);
+  background: var(--mp-navy);
+}
+
+.profileCommodityCardActive strong {
+  color: #fff;
+}
+
 .profileFormActions {
   display: grid;
   grid-template-columns: minmax(112px, auto) minmax(0, 1fr);
