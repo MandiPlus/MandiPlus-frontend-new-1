@@ -7,15 +7,16 @@ import toast from "react-hot-toast";
 import {
   ArrowLeft,
   BadgeIndianRupee,
+  CheckCircle,
+  ChevronLeft,
+  ChevronRight,
   FileText,
   MapPin,
+  Pencil,
   RefreshCw,
   Search,
   UserPlus,
   Users,
-  CheckCircle,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import {
   AdminLedgerUser,
@@ -118,6 +119,9 @@ export default function PartnerDetailPage() {
   const [userSearch, setUserSearch] = useState("");
   const [userResults, setUserResults] = useState<AdminLedgerUser[]>([]);
   const [assigningUserId, setAssigningUserId] = useState("");
+  const [editingCommission, setEditingCommission] = useState(false);
+  const [commissionDraft, setCommissionDraft] = useState("");
+  const [savingCommission, setSavingCommission] = useState(false);
 
   // Filters — per-tab (invoices, commissions, tracking). Summary uses summaryFilters.
   const [invoiceCustomerId, setInvoiceCustomerId] = useState("ALL");
@@ -488,6 +492,47 @@ export default function PartnerDetailPage() {
     await loadProfile();
   };
 
+  const startEditCommission = () => {
+    const percent = Number(selectedPartner?.commissionRate || 0) * 100;
+    setCommissionDraft(String(Number(percent.toFixed(2))));
+    setEditingCommission(true);
+  };
+
+  const saveCommission = async () => {
+    if (!selectedPartner?.id) return;
+    const percent = Number(commissionDraft);
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+      toast.error("Commission rate must be between 0 and 100");
+      return;
+    }
+    const rate = Number((percent / 100).toFixed(4));
+    setSavingCommission(true);
+    try {
+      const response = await adminApi.updateChannelPartner(selectedPartner.id, {
+        commissionRate: rate,
+      });
+      if (!response.success) {
+        toast.error(
+          (Array.isArray(response.message)
+            ? response.message.join(", ")
+            : response.message) || "Failed to update commission rate",
+        );
+        return;
+      }
+      const nextRate = Number(response.data?.commissionRate ?? rate);
+      setProfile((prev) => (prev ? { ...prev, commissionRate: nextRate } : prev));
+      toast.success("Commission updated. Unpaid commissions recalculated; paid unchanged.");
+      setEditingCommission(false);
+      await loadProfile();
+      void loadSummary();
+      if (activeTab === "commissions") {
+        void loadCommissionsTabData(1);
+      }
+    } finally {
+      setSavingCommission(false);
+    }
+  };
+
   const searchUsers = async () => {
     if (!userSearch.trim()) return;
     const response = await adminApi.searchUsers(userSearch, 10);
@@ -571,9 +616,65 @@ export default function PartnerDetailPage() {
               <h1 className="text-2xl font-bold tracking-tight text-slate-950">
                 {selectedPartner?.partnerUser?.name || "Channel Partner"}
               </h1>
-              <p className="mt-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Code: <span className="text-slate-700">{selectedPartner?.code || "-"}</span>
-              </p>
+              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <span>
+                  Code: <span className="text-slate-700">{selectedPartner?.code || "-"}</span>
+                </span>
+                <span aria-hidden>·</span>
+                {editingCommission ? (
+                  <span className="inline-flex items-center gap-1.5 normal-case tracking-normal">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.01}
+                      value={commissionDraft}
+                      onChange={(event) => setCommissionDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void saveCommission();
+                        if (event.key === "Escape") setEditingCommission(false);
+                      }}
+                      className="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm font-semibold text-slate-900 outline-none focus:border-blue-400"
+                      autoFocus
+                    />
+                    <span className="font-bold text-slate-700">%</span>
+                    <button
+                      type="button"
+                      onClick={() => void saveCommission()}
+                      disabled={savingCommission}
+                      className="rounded-md bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingCommission(false)}
+                      disabled={savingCommission}
+                      className="rounded-md border border-slate-200 px-2 py-1 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 normal-case tracking-normal">
+                    <span className="font-bold text-slate-700">
+                      {(Number(selectedPartner?.commissionRate || 0) * 100).toFixed(
+                        Number(selectedPartner?.commissionRate || 0) * 100 % 1 === 0 ? 0 : 2,
+                      )}
+                      % commission
+                    </span>
+                    <button
+                      type="button"
+                      onClick={startEditCommission}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-1.5 py-0.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                      title="Edit commission rate"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      Edit
+                    </button>
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-3">

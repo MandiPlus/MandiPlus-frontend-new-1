@@ -2781,26 +2781,49 @@ class AdminApi {
     }
   };
 
-  public updateChannelPartnerStatus = async (
+  public updateChannelPartner = async (
     partnerId: string,
-    status: ChannelPartnerStatus,
+    payload: { status?: ChannelPartnerStatus; commissionRate?: number },
   ): Promise<ApiResponse<ChannelPartnerProfilePayload>> => {
     try {
       const response = await this.client.patch(
         `/channel-partners/admin/${partnerId}`,
-        {
-          status,
-        },
+        payload,
       );
-      return { success: true, data: response.data };
+      const body = response.data;
+      // Backend may return serialized profile directly, or { success, data }
+      if (body && typeof body === "object" && "success" in body) {
+        const wrapped = body as ApiResponse<ChannelPartnerProfilePayload>;
+        if (!wrapped.success) {
+          const msg = wrapped.message;
+          return {
+            success: false,
+            message: Array.isArray(msg) ? msg.join(", ") : msg || "Failed to update channel partner",
+          };
+        }
+        return {
+          success: true,
+          data: (wrapped.data as ChannelPartnerProfilePayload) || (body as ChannelPartnerProfilePayload),
+        };
+      }
+      return { success: true, data: body as ChannelPartnerProfilePayload };
     } catch (error: any) {
+      const raw = error.response?.data?.message;
       return {
         success: false,
         message:
-          error.response?.data?.message || "Failed to update channel partner",
+          (Array.isArray(raw) ? raw.join(", ") : raw) ||
+          "Failed to update channel partner",
         error: error.message,
       };
     }
+  };
+
+  public updateChannelPartnerStatus = async (
+    partnerId: string,
+    status: ChannelPartnerStatus,
+  ): Promise<ApiResponse<ChannelPartnerProfilePayload>> => {
+    return this.updateChannelPartner(partnerId, { status });
   };
 
   public addChannelPartnerCustomer = async (

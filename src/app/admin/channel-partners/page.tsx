@@ -1,18 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
-import toast from "react-hot-toast";
 import {
   BadgeIndianRupee,
+  ExternalLink,
   FileText,
   MapPin,
+  Pencil,
   RefreshCw,
   Search,
   UserPlus,
   Users,
 } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import {
   AdminChannelPartnerListRow,
   AdminLedgerUser,
@@ -88,6 +90,21 @@ export default function AdminChannelPartnersPage() {
   const [userSearch, setUserSearch] = useState("");
   const [userResults, setUserResults] = useState<AdminLedgerUser[]>([]);
   const [assigningUserId, setAssigningUserId] = useState("");
+  const [editingCommission, setEditingCommission] = useState(false);
+  const [commissionDraft, setCommissionDraft] = useState("");
+  const [savingCommission, setSavingCommission] = useState(false);
+  const detailSectionRef = useRef<HTMLElement | null>(null);
+
+  const selectPartner = useCallback((partnerId: string) => {
+    setSelectedPartnerId(partnerId);
+    setEditingCommission(false);
+    setActiveTab("customers");
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 1279px)").matches) {
+      requestAnimationFrame(() => {
+        detailSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  }, []);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) router.push("/admin/login");
@@ -130,6 +147,7 @@ export default function AdminChannelPartnersPage() {
   useEffect(() => {
     if (!selectedPartnerId) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEditingCommission(false);
     setTableSearch("");
     setInvoiceStatusFilter("ALL");
     setCommissionStatusFilter("ALL");
@@ -257,6 +275,53 @@ export default function AdminChannelPartnersPage() {
     await loadDetail(selectedPartner.id);
   };
 
+  const startEditCommission = () => {
+    const percent = Number(selectedPartner?.commissionRate || 0) * 100;
+    setCommissionDraft(String(Number(percent.toFixed(2))));
+    setEditingCommission(true);
+  };
+
+  const saveCommission = async () => {
+    if (!selectedPartner?.id) return;
+    const percent = Number(commissionDraft);
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+      toast.error("Commission rate must be between 0 and 100");
+      return;
+    }
+    const rate = Number((percent / 100).toFixed(4));
+    setSavingCommission(true);
+    try {
+      const response = await adminApi.updateChannelPartner(selectedPartner.id, {
+        commissionRate: rate,
+      });
+      if (!response.success) {
+        toast.error(
+          (Array.isArray(response.message)
+            ? response.message.join(", ")
+            : response.message) || "Failed to update commission rate",
+        );
+        return;
+      }
+      const nextRate = Number(response.data?.commissionRate ?? rate);
+      setDetail((prev) =>
+        prev?.profile
+          ? { ...prev, profile: { ...prev.profile, commissionRate: nextRate } }
+          : prev,
+      );
+      setPartners((prev) =>
+        prev.map((row) =>
+          row.id === selectedPartner.id ? { ...row, commissionRate: nextRate } : row,
+        ),
+      );
+      toast.success("Commission updated. Unpaid commissions recalculated; paid unchanged.");
+      setEditingCommission(false);
+      await loadPartners();
+      await loadDetail(selectedPartner.id);
+    } finally {
+      setSavingCommission(false);
+    }
+  };
+
   const searchUsers = async () => {
     if (!userSearch.trim()) return;
     const response = await adminApi.searchUsers(userSearch, 10);
@@ -301,7 +366,7 @@ export default function AdminChannelPartnersPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-950">Channel Partners</h1>
           <p className="text-sm text-slate-500">
-            Portfolio, customer assignment, invoice health, tracking, and 15% premium commissions.
+            Portfolio, customer assignment, invoice health, tracking, and premium commissions by partner rate.
           </p>
         </div>
         <button
@@ -321,10 +386,10 @@ export default function AdminChannelPartnersPage() {
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
             {filteredPartners.map((partner) => (
-              <Link
+              <button
                 key={partner.id}
-                href={`/admin/channel-partners/partner/${partner.id}`}
-                target="_blank"
+                type="button"
+                onClick={() => selectPartner(partner.id)}
                 className={`block w-full border-b border-slate-100 p-4 text-left hover:bg-slate-50 ${
                   selectedPartnerId === partner.id ? "bg-blue-50" : "bg-white"
                 }`}
@@ -345,7 +410,7 @@ export default function AdminChannelPartnersPage() {
                   <MiniStat label="Premium" value={formatCurrency(partner.summary.premiumTotal)} />
                   <MiniStat label="Payable" value={formatCurrency(partner.summary.commissionPayable)} />
                 </div>
-              </Link>
+              </button>
             ))}
             {!filteredPartners.length ? (
               <div className="p-8 text-center text-sm text-slate-500">
@@ -355,7 +420,10 @@ export default function AdminChannelPartnersPage() {
           </div>
         </aside>
 
-        <section className="min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <section
+          ref={detailSectionRef}
+          className="min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
+        >
           {!detail ? (
             <div className="flex h-full items-center justify-center p-8 text-center text-sm text-slate-500">
               Select a channel partner to inspect portfolio details.
@@ -373,13 +441,81 @@ export default function AdminChannelPartnersPage() {
                         {selectedPartner?.partnerUser?.name || "Partner"}
                       </h2>
                       <StatusPill status={selectedPartner?.status} />
+                      {detailBusy ? (
+                        <span className="text-xs font-medium text-slate-400">Loading…</span>
+                      ) : null}
                     </div>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {selectedPartner?.partnerUser?.mobileNumber || "-"} · Code {selectedPartner?.code} ·{" "}
-                      {(Number(selectedPartner?.commissionRate || 0) * 100).toFixed(0)}% commission
-                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+                      <span>
+                        {selectedPartner?.partnerUser?.mobileNumber || "-"} · Code{" "}
+                        {selectedPartner?.code}
+                      </span>
+                      <span aria-hidden>·</span>
+                      {editingCommission ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={0.01}
+                            value={commissionDraft}
+                            onChange={(event) => setCommissionDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") void saveCommission();
+                              if (event.key === "Escape") setEditingCommission(false);
+                            }}
+                            className="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-slate-900 outline-none focus:border-blue-400"
+                            autoFocus
+                          />
+                          <span className="font-medium text-slate-700">%</span>
+                          <button
+                            type="button"
+                            onClick={() => void saveCommission()}
+                            disabled={savingCommission}
+                            className="rounded-md bg-blue-600 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingCommission(false)}
+                            disabled={savingCommission}
+                            className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                          >
+                            Cancel
+                          </button>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="font-medium text-slate-700">
+                            {(Number(selectedPartner?.commissionRate || 0) * 100).toFixed(
+                              Number(selectedPartner?.commissionRate || 0) * 100 % 1 === 0 ? 0 : 2,
+                            )}
+                            % commission
+                          </span>
+                          <button
+                            type="button"
+                            onClick={startEditCommission}
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-1.5 py-0.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                            title="Edit commission rate"
+                          >
+                            <Pencil className="h-3 w-3" />
+                            Edit
+                          </button>
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                      href={`/admin/channel-partners/partner/${selectedPartner?.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Open full page
+                    </Link>
                     <button
                       type="button"
                       onClick={() => void handleStatus("ACTIVE")}
