@@ -248,17 +248,66 @@ export async function lookupDriverOperator(
     message?: string;
   }>
 > {
+  const phone = String(phoneNumber || "").replace(/\D/g, "").slice(-10);
+
   try {
     const res = await axios.get(`${API_BASE_URL}/traqo/lookup-operator`, {
-      params: { phone_number: phoneNumber },
+      params: { phone_number: phone },
       headers: getAuthHeaders(),
     });
     return { success: true, data: res.data };
-  } catch (error) {
-    return {
-      success: false,
-      message: getErrorMessage(error, "Failed to lookup driver operator"),
-    };
+  } catch (primaryError) {
+    // Fallback for backends that haven't deployed lookup-operator yet.
+    // Traqo check_consent already returns { consent, tel, operator }.
+    try {
+      const res = await axios.post(
+        `${API_BASE_URL}/traqo/check-consent`,
+        { tel: phone },
+        { headers: getAuthHeaders() },
+      );
+      const payload = res.data || {};
+      if (payload?.error) {
+        return {
+          success: true,
+          data: {
+            phone_number: phone,
+            operator: null,
+            consentStatus: null,
+            found: false,
+            message:
+              "Number is not in Traqo yet — operator will be detected after registration.",
+          },
+        };
+      }
+      const operator =
+        typeof payload.operator === "string" ? payload.operator : null;
+      const consentStatus =
+        typeof payload.consent === "string"
+          ? payload.consent
+          : typeof payload.status === "string"
+            ? payload.status
+            : null;
+      return {
+        success: true,
+        data: {
+          phone_number: phone,
+          operator,
+          consentStatus,
+          found: Boolean(operator || consentStatus),
+          message: operator
+            ? `Operator detected: ${operator}`
+            : "Number is not in Traqo yet — operator will be detected after registration.",
+        },
+      };
+    } catch (fallbackError) {
+      return {
+        success: false,
+        message: getErrorMessage(
+          primaryError,
+          getErrorMessage(fallbackError, "Failed to lookup driver operator"),
+        ),
+      };
+    }
   }
 }
 

@@ -70,6 +70,7 @@ export default function RegisterPage() {
           response = await register({
             name: "MandiPlus User",
             mobileNumber: phone,
+            state: "MAHARASHTRA",
             identity: "BUYER",
           });
         }

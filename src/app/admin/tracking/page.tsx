@@ -389,7 +389,10 @@ export default function AdminTrackingPage() {
         if (cancelled) return;
         setOperatorLookupLoading(false);
         if (!response.success || !response.data) {
-          setOperatorLookupHint("");
+          setOperatorLookupHint(
+            response.message ||
+              "Could not look up operator (is the backend running the latest code?)",
+          );
           return;
         }
         if (response.data.operator) {
