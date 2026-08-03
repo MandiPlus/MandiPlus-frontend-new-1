@@ -145,6 +145,19 @@ function formatTableSurveyorField(
   };
 }
 
+function toDateInputValue(value?: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    const raw = String(value).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
+  }
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function isEngineSeizeClaim(claim: Pick<ClaimRequest, 'description' | 'engineSeizeEvidenceSubmissionId' | 'engineSeizeEvidenceSubmittedAt' | 'engineSeizeEvidencePhotos' | 'engineSeizeEvidenceVideos'>): boolean {
   const description = (claim.description || '').toLowerCase();
   return (
@@ -764,6 +777,15 @@ function BlacklistedVehiclesModal({
 
   const load = useCallback(async () => {
     setLoading(true);
+    const syncResponse = await adminApi.syncBlacklistedFromClaims();
+    if (!syncResponse.success) {
+      toast.error(syncResponse.message || 'Could not sync claim vehicles to blacklist');
+    } else if (syncResponse.data?.flagged) {
+      toast.success(
+        `${syncResponse.data.flagged} claim vehicle(s) blacklisted`,
+      );
+    }
+
     const response = await adminApi.listFlaggedVehicles();
     setLoading(false);
     if (response.success) {
@@ -1260,7 +1282,6 @@ function NewClaimModal({
   const [handledBy, setHandledBy] = useState('TATA');
   const [surveyorName, setSurveyorName] = useState('');
   const [surveyorNumber, setSurveyorNumber] = useState('');
-  const [quotationAmount, setQuotationAmount] = useState('');
   const [payableAmount, setPayableAmount] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -1274,12 +1295,12 @@ function NewClaimModal({
       invoiceId: invoice.id,
       tataClaimNumber: tataClaimNumber.trim() || undefined,
       description: reason.trim() || undefined,
-      quotationAmount: quotationAmount ? Number(quotationAmount) : undefined,
       approvedPayableAmount: payableAmount ? Number(payableAmount) : undefined,
       surveyorName: surveyorName.trim() || undefined,
       surveyorNumber: surveyorNumber.trim() || undefined,
       surveyorContact: surveyorNumber.trim() || undefined,
       remarks: remarks.trim() || undefined,
+      handledBy: handledBy || 'TATA',
     });
 
     if (!response.success || !response.data) {
@@ -1384,30 +1405,17 @@ function NewClaimModal({
             </label>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="text-xs font-bold text-slate-800">
-              Estimation Quotation Given (₹)
-              <input
-                value={quotationAmount}
-                onChange={(e) => setQuotationAmount(e.target.value)}
-                type="number"
-                min="0"
-                placeholder="55000"
-                className={`${fieldClass} mt-1.5`}
-              />
-            </label>
-            <label className="text-xs font-bold text-slate-800">
-              We Have To Pay (₹)
-              <input
-                value={payableAmount}
-                onChange={(e) => setPayableAmount(e.target.value)}
-                type="number"
-                min="0"
-                placeholder="55000"
-                className={`${fieldClass} mt-1.5`}
-              />
-            </label>
-          </div>
+          <label className="block text-xs font-bold text-slate-800">
+            We Have To Pay (₹)
+            <input
+              value={payableAmount}
+              onChange={(e) => setPayableAmount(e.target.value)}
+              type="number"
+              min="0"
+              placeholder="55000"
+              className={`${fieldClass} mt-1.5`}
+            />
+          </label>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="text-xs font-bold text-slate-800">
@@ -1482,10 +1490,10 @@ function FullViewClaimModal({
     handledBy: claim.handledBy || 'TATA',
     description: claim.description || 'Engine Seize',
     status: claim.status,
-    quotationAmount: claim.quotationAmount ?? null,
     approvedPayableAmount: claim.approvedPayableAmount ?? null,
     paymentStatus: claim.paymentStatus || ClaimPaymentStatus.NOT_STARTED,
     paymentReference: claim.paymentReference || '',
+    claimDate: toDateInputValue(claim.claimDate || claim.createdAt),
     remarks: claim.remarks || '',
     surveyorName: claim.surveyorName || initialSurveyors[0]?.name || '',
     surveyorNumber: claim.surveyorNumber || claim.surveyorContact || initialSurveyors[0]?.contact || '',
@@ -1653,6 +1661,8 @@ function FullViewClaimModal({
     setSaving(true);
     const response = await adminApi.updateClaim(claim.id, {
       ...form,
+      handledBy: form.handledBy || 'TATA',
+      claimDate: form.claimDate || null,
       surveyorName: cleanSurveyors[0]?.name || form.surveyorName || null,
       surveyorNumber: cleanSurveyors[0]?.contact || form.surveyorNumber || null,
       surveyorContact: cleanSurveyors[0]?.contact || form.surveyorNumber || null,
@@ -1826,28 +1836,12 @@ function FullViewClaimModal({
           {activeTab === 'overview' && (
             <div className="space-y-6">
               {/* Financial Metrics Strip */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Insured Invoice Value</p>
                   <p className="mt-1 text-xl font-black text-slate-900">
                     {formatCurrency(claim.insuredValue ?? claim.invoice?.amount)}
                   </p>
-                </div>
-                <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 transition focus-within:border-amber-400 focus-within:ring-2 focus-within:ring-amber-400/20">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-amber-800">Estimation Quotation (₹)</p>
-                    <span className="text-[10px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-md">Edit Amount</span>
-                  </div>
-                  <div className="mt-1.5 flex items-center gap-1">
-                    <span className="text-xl font-black text-amber-950">₹</span>
-                    <input
-                      type="number"
-                      value={form.quotationAmount ?? ''}
-                      onChange={(e) => setForm({ ...form, quotationAmount: e.target.value ? Number(e.target.value) : null })}
-                      placeholder="0"
-                      className="w-full bg-transparent text-xl font-black text-amber-950 outline-none placeholder:text-amber-400/60"
-                    />
-                  </div>
                 </div>
                 <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 transition focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-400/20">
                   <div className="flex items-center justify-between">
@@ -1886,6 +1880,18 @@ function FullViewClaimModal({
                     </div>
                   </div>
                   <label className="text-xs font-bold text-slate-800">
+                    Claim Date
+                    <input
+                      type="date"
+                      value={form.claimDate || ''}
+                      onChange={(e) => setForm({ ...form, claimDate: e.target.value || null })}
+                      className={`${fieldClass} mt-1.5`}
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <label className="text-xs font-bold text-slate-800">
                     Handled By
                     <select
                       value={form.handledBy || 'TATA'}
@@ -1896,9 +1902,6 @@ function FullViewClaimModal({
                       <option value="MandiPlus">MandiPlus</option>
                     </select>
                   </label>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-3">
                   <label className="text-xs font-bold text-slate-800">
                     Reason for Claim
                     <select
@@ -1927,6 +1930,9 @@ function FullViewClaimModal({
                       ))}
                     </select>
                   </label>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
                   <label className="text-xs font-bold text-slate-800">
                     Payment Status
                     <select
@@ -1941,18 +1947,6 @@ function FullViewClaimModal({
                       ))}
                     </select>
                   </label>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <label className="text-xs font-bold text-slate-800">
-                    Estimation Quotation (₹)
-                    <input
-                      type="number"
-                      value={form.quotationAmount ?? ''}
-                      onChange={(e) => setForm({ ...form, quotationAmount: e.target.value ? Number(e.target.value) : null })}
-                      className={`${fieldClass} mt-1.5`}
-                    />
-                  </label>
                   <label className="text-xs font-bold text-slate-800">
                     Settled Amount (₹)
                     <input
@@ -1962,6 +1956,9 @@ function FullViewClaimModal({
                       className={`${fieldClass} mt-1.5`}
                     />
                   </label>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-1">
                   <label className="text-xs font-bold text-slate-800">
                     Payment Reference / UTR
                     <input
@@ -2784,6 +2781,7 @@ export default function AdminClaimsPage() {
                       'TATA CLAIM NO',
                       'MANDIPLUS CLAIM NO',
                       'INVOICE NO.',
+                      'CLAIM DATE',
                       'VEHICLE NO.',
                       'INSURED PARTY',
                       'INSURED PERSON ADDRESS',
@@ -2791,7 +2789,6 @@ export default function AdminClaimsPage() {
                       'OTHER PARTY ADDRESS',
                       'REASON FOR CLAIM',
                       'INVOICE / INSURED VALUE (RS.)',
-                      'ESTIMATION QUOTATION GIVEN (RS.)',
                       'SETTLED AMOUNT (RS.)',
                       'PROOF',
                       'DOCUMENTS',
@@ -2881,7 +2878,12 @@ export default function AdminClaimsPage() {
                             {renderInvoiceNumberTwoLines(claim.invoice?.invoiceNumber)}
                           </td>
 
-                          {/* 5. Vehicle No */}
+                          {/* 5. Claim Date */}
+                          <td className="px-3.5 py-3 font-medium text-slate-700 whitespace-nowrap">
+                            {formatDate(claim.claimDate || claim.createdAt)}
+                          </td>
+
+                          {/* 6. Vehicle No */}
                           <td className="px-3.5 py-3 font-semibold text-slate-700 max-w-[130px] break-words leading-tight">
                             {getVehicleNumber(claim)}
                           </td>
@@ -2911,45 +2913,16 @@ export default function AdminClaimsPage() {
                             {claim.description || 'ENGINE SEIZE'}
                           </td>
 
-                          {/* 11. Invoice / Insured Value */}
+                          {/* 12. Invoice / Insured Value */}
                           <td className="px-3.5 py-3 text-right font-semibold text-slate-800">
                             {formatCurrency(claim.insuredValue ?? claim.invoice?.amount)}
                           </td>
 
-                          {/* 12. Estimation Quotation */}
-                          <td className="px-3 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="number"
-                              defaultValue={claim.quotationAmount ?? ''}
-                              onBlur={(e) => {
-                                const val = e.target.value.trim() ? Number(e.target.value) : null;
-                                if (val !== claim.quotationAmount) {
-                                  void adminApi.updateClaim(claim.id, { quotationAmount: val });
-                                  updateClaimRow({ ...claim, quotationAmount: val });
-                                  toast.success('Estimation Quotation updated');
-                                }
-                              }}
-                              placeholder="0"
-                              className="w-28 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-right text-xs font-semibold text-slate-800 outline-none transition focus:border-violet-500 focus:ring-1 focus:ring-violet-500/20 placeholder:text-slate-400 font-semibold"
-                            />
-                          </td>
-
-                          {/* 13. SETTLED AMOUNT */}
-                          <td className="px-3 py-2.5 text-right bg-blue-50/40 border-x border-blue-100/70" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="number"
-                              defaultValue={claim.approvedPayableAmount ?? claim.claimAmount ?? ''}
-                              onBlur={(e) => {
-                                const val = e.target.value.trim() ? Number(e.target.value) : null;
-                                if (val !== claim.approvedPayableAmount) {
-                                  void adminApi.updateClaim(claim.id, { approvedPayableAmount: val });
-                                  updateClaimRow({ ...claim, approvedPayableAmount: val });
-                                  toast.success('Settled Amount updated');
-                                }
-                              }}
-                              placeholder="0"
-                              className="w-28 rounded-md border border-blue-200 bg-white px-2.5 py-1 text-right text-xs font-bold text-blue-900 outline-none transition focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 placeholder:text-slate-400 font-bold"
-                            />
+                          {/* 13. SETTLED AMOUNT (read-only — edit via claim detail modal) */}
+                          <td className="px-3.5 py-3 text-right bg-blue-50/40 border-x border-blue-100/70 font-bold text-blue-900 whitespace-nowrap">
+                            {formatCurrency(
+                              claim.approvedPayableAmount ?? claim.claimAmount,
+                            )}
                           </td>
 
                           {/* 14. Proof (Gallery Max 10) */}
@@ -2998,21 +2971,9 @@ export default function AdminClaimsPage() {
                             </div>
                           </td>
 
-                          {/* 18. Handled By */}
-                          <td className="px-3.5 py-3" onClick={(e) => e.stopPropagation()}>
-                            <select
-                              value={claim.handledBy || 'TATA'}
-                              onChange={(e) =>
-                                handleStatusChangeRequest(claim, 'handledBy', e.target.value)
-                              }
-                              className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 outline-none cursor-pointer focus:border-violet-500"
-                            >
-                              {handledByOptions.map((opt) => (
-                                <option key={opt} value={opt}>
-                                  {opt}
-                                </option>
-                              ))}
-                            </select>
+                          {/* 18. Handled By (read-only — edit via claim detail modal) */}
+                          <td className="px-3.5 py-3 font-semibold text-slate-700 whitespace-nowrap">
+                            {claim.handledBy || 'TATA'}
                           </td>
 
                           {/* 19. Current Status Dropdown */}

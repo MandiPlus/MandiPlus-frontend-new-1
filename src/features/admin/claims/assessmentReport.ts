@@ -190,7 +190,7 @@ export function buildDefaultAssessmentReport(
     invoice?.supplierName?.trim() ||
     '';
   const invoiceValue = claim.insuredValue ?? invoice?.amount;
-  const assessed = claim.quotationAmount ?? claim.claimAmount;
+  const assessed = claim.claimAmount ?? claim.approvedPayableAmount;
   const approved = claim.approvedPayableAmount;
   const status = String(claim.status || 'pending').toUpperCase().replace(/_/g, ' ');
 

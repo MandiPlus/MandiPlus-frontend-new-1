@@ -1125,6 +1125,7 @@ export interface ClaimRequest {
   status: ClaimStatus;
   paymentStatus: ClaimPaymentStatus;
   createdAt: string;
+  claimDate?: string | null;
   updatedAt: string;
   invoice: InsuranceForm;
   description?: string | null;
@@ -1307,6 +1308,7 @@ export interface UpdateClaimDto {
   paymentStatus?: ClaimPaymentStatus;
   paymentReference?: string | null;
   settlementPaidAt?: string | null;
+  claimDate?: string | null;
   remarks?: string | null;
   assessmentReportUrl?: string | null;
   assessmentReportData?: any;
@@ -1353,6 +1355,8 @@ export interface CreateClaimByInvoiceDto {
   surveyorContact?: string;
   surveyorNumber?: string;
   remarks?: string;
+  handledBy?: 'TATA' | 'MandiPlus' | string;
+  claimDate?: string;
 }
 
 export interface UpdateClaimStatusDto {
@@ -3327,6 +3331,10 @@ class AdminApi {
       paymentStatus:
         (claim.paymentStatus as ClaimPaymentStatus) ||
         ClaimPaymentStatus.NOT_STARTED,
+      handledBy: claim.handledBy || 'TATA',
+      claimDate:
+        claim.claimDate ||
+        (claim.createdAt ? String(claim.createdAt).slice(0, 10) : null),
       surveyorNumber:
         claim.surveyorNumber || claim.surveyorContact || claim.surveyors?.[0]?.contact,
       surveyorName: claim.surveyorName || claim.surveyors?.[0]?.name,
