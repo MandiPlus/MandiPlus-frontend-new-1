@@ -117,6 +117,21 @@ function formatDate(value?: string | null) {
   return parsed.toLocaleString('en-IN');
 }
 
+function formatInvoiceDate(value?: string | null) {
+  if (!value) return '-';
+  const raw = String(value).trim();
+  const dateOnlyMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+    if (Number.isNaN(parsed.getTime())) return '-';
+    return parsed.toLocaleDateString('en-IN');
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return '-';
+  return parsed.toLocaleDateString('en-IN');
+}
+
 function getActionButtonClasses(tone: 'invoice' | 'receipt' | 'reminder' | 'edit') {
   if (tone === 'invoice') {
     return 'border-sky-200 bg-sky-50 text-sky-700 hover:-translate-y-0.5 hover:border-sky-300 hover:bg-sky-100';
@@ -1683,7 +1698,7 @@ export default function AdminInsurancePaymentsPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-900">{row.invoiceNumber}</td>
                       <td className="px-4 py-3 text-gray-700">
-                        {formatDate(row.createdAt)}
+                        {formatInvoiceDate(row.invoiceDate)}
                       </td>
                       <td className="px-4 py-3 text-gray-700">
                         {row.insuredPerson || row.buyer || '-'}

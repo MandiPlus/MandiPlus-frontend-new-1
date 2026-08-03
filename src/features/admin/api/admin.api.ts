@@ -774,6 +774,7 @@ export interface InsurancePaymentRow {
   recipientPhone?: string;
   pdfUrl?: string | null;
   paymentReceiptUrl?: string | null;
+  invoiceDate?: string | null;
   createdAt: string;
   productName?: string;
   buyer: string;
