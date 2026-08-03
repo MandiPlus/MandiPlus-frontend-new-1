@@ -45,25 +45,86 @@ export function getVehicleNumber(claim: ClaimRequest) {
   );
 }
 
-export function getInsuredParty(claim: ClaimRequest) {
-  const invoice = claim.invoice as ClaimRequest['invoice'] & {
-    insuredPersonNameSnapshot?: string | null;
+type ClaimInvoice = ClaimRequest['invoice'] & {
+  invoiceType?: string | null;
+  insuredPersonNameSnapshot?: string | null;
+  insuredPersonDisplayName?: string | null;
+  otherPartyDisplayName?: string | null;
+  weighmentSlipNote?: string | null;
+};
+
+function getClaimInvoice(claim: ClaimRequest): ClaimInvoice | undefined {
+  return claim.invoice as ClaimInvoice | undefined;
+}
+
+export function isBuyerInsuredClaim(claim: ClaimRequest): boolean {
+  const invoice = getClaimInvoice(claim);
+  if (!invoice) return false;
+
+  if (invoice.invoiceType) {
+    return String(invoice.invoiceType).toUpperCase() === 'BUYER_INVOICE';
+  }
+
+  const note = (invoice.weighmentSlipNote || '').toLowerCase().trim();
+  return note.includes('cash') || note.includes('nak') || note.includes('nag');
+}
+
+function getCanonicalPartyNames(claim: ClaimRequest): { insured: string; other: string } {
+  const invoice = getClaimInvoice(claim);
+  if (!invoice) return { insured: '—', other: '—' };
+
+  if (invoice.insuredPersonDisplayName || invoice.otherPartyDisplayName) {
+    return {
+      insured: removeDeveloperTestIdentity(invoice.insuredPersonDisplayName || '—'),
+      other: removeDeveloperTestIdentity(invoice.otherPartyDisplayName || '—'),
+    };
+  }
+
+  const isBuyerInsured = isBuyerInsuredClaim(claim);
+  const insured =
+    invoice.insuredPersonNameSnapshot ||
+    (isBuyerInsured
+      ? invoice.billToName || invoice.buyer
+      : invoice.supplierName || invoice.supplier) ||
+    '—';
+  const other = isBuyerInsured
+    ? invoice.supplierName || invoice.supplier || '—'
+    : invoice.billToName || invoice.buyer || invoice.shipToName || '—';
+
+  return {
+    insured: removeDeveloperTestIdentity(insured),
+    other: removeDeveloperTestIdentity(other),
   };
-  return removeDeveloperTestIdentity(
-    invoice?.insuredPersonNameSnapshot ||
-      invoice?.supplierName ||
-      invoice?.supplier ||
-      '—',
-  );
+}
+
+export function getInsuredParty(claim: ClaimRequest) {
+  return getCanonicalPartyNames(claim).insured;
+}
+
+export function getInsuredPersonAddress(claim: ClaimRequest) {
+  const invoice = getClaimInvoice(claim);
+  if (!invoice) return '—';
+
+  const address = isBuyerInsuredClaim(claim)
+    ? invoice.billToAddress || invoice.shipToAddress
+    : invoice.supplierAddress;
+
+  return formatAddress(address);
 }
 
 export function getOtherParty(claim: ClaimRequest) {
-  return removeDeveloperTestIdentity(
-    claim.invoice?.billToName ||
-      claim.invoice?.buyer ||
-      claim.invoice?.shipToName ||
-      '—',
-  );
+  return getCanonicalPartyNames(claim).other;
+}
+
+export function getOtherPartyAddress(claim: ClaimRequest) {
+  const invoice = getClaimInvoice(claim);
+  if (!invoice) return '—';
+
+  const address = isBuyerInsuredClaim(claim)
+    ? invoice.supplierAddress
+    : invoice.billToAddress || invoice.shipToAddress;
+
+  return formatAddress(address);
 }
 
 export function getEvidenceState(
@@ -107,25 +168,28 @@ export function getEvidenceState(
 }
 
 export const claimStatusLabels: Record<string, string> = {
-  pending: 'Pending',
-  inprogress: 'In progress',
-  surveyor_assigned: 'Surveyor assigned',
-  approved: 'Approved',
-  rejected: 'Rejected',
-  completed: 'Completed',
-  settled: 'Settled',
+  pending: 'PENDING',
+  inprogress: 'IN PROGRESS',
+  surveyor_assigned: 'SURVEYOR ASSIGNED',
+  survey_report_awaited: 'SURVEY REPORT AWAITED',
+  fir_awaited: 'FIR AWAITED',
+  approved: 'APPROVED',
+  rejected: 'REJECTED',
+  completed: 'COMPLETED',
+  settled: 'SETTLED',
 };
 
 export const paymentStatusLabels: Record<string, string> = {
-  not_started: 'Not started',
-  awaiting_approval: 'Awaiting approval',
-  approved_for_payment: 'Approved for payment',
-  processing: 'Processing',
-  partially_paid: 'Partially paid',
-  paid: 'Paid',
-  on_hold: 'On hold',
-  failed: 'Failed',
-  not_applicable: 'Not applicable',
+  not_started: 'NOT STARTED',
+  awaiting_approval: 'AWAITING APPROVAL',
+  approved_for_payment: 'APPROVED FOR PAYMENT',
+  processing: 'PROCESSING',
+  partially_paid: 'PARTIALLY PAID',
+  paid: 'PAID',
+  on_hold: 'ON HOLD',
+  failed: 'FAILED',
+  rejected: 'REJECTED',
+  not_applicable: 'N/A',
 };
 
 export function StatusBadge({
@@ -135,35 +199,45 @@ export function StatusBadge({
   status?: string | null;
   kind?: 'claim' | 'payment';
 }) {
-  const normalized = String(status || 'not_started').toLowerCase();
-  const success = ['approved', 'completed', 'settled', 'paid'].includes(
+  if (!status) return <span className="text-xs text-slate-400 font-medium">—</span>;
+  const raw = String(status).trim();
+  const normalized = raw.toLowerCase().replaceAll(' ', '_');
+
+  const isApprovedOrPaid = ['approved', 'completed', 'settled', 'paid', 'approved_for_payment'].includes(
     normalized,
-  );
-  const danger = ['rejected', 'failed'].includes(normalized);
-  const warning = [
+  ) || raw.toUpperCase() === 'APPROVED' || raw.toUpperCase() === 'PAID';
+
+  const isRejected = ['rejected', 'failed'].includes(normalized) || raw.toUpperCase() === 'REJECTED';
+
+  const isYellowOrCream = [
+    'fir_awaited',
+    'surveyor_assigned',
+    'survey_report_awaited',
     'pending',
     'inprogress',
     'awaiting_approval',
-    'processing',
-    'partially_paid',
     'on_hold',
-  ].includes(normalized);
-  const classes = success
-    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-    : danger
-      ? 'border-rose-200 bg-rose-50 text-rose-700'
-      : warning
-        ? 'border-amber-200 bg-amber-50 text-amber-700'
-        : 'border-slate-200 bg-slate-50 text-slate-600';
-  const label =
-    kind === 'payment'
+  ].includes(normalized) || raw.toUpperCase().includes('AWAITED') || raw.toUpperCase().includes('WAITING');
+
+  let classes = 'border-slate-200 bg-slate-100 text-slate-700 font-semibold';
+  if (isApprovedOrPaid) {
+    classes = 'border-emerald-300 bg-emerald-100 text-emerald-900 font-extrabold shadow-sm';
+  } else if (isRejected) {
+    classes = 'border-rose-300 bg-rose-100 text-rose-900 font-extrabold shadow-sm';
+  } else if (isYellowOrCream) {
+    classes = 'border-amber-300 bg-amber-100 text-amber-950 font-bold';
+  }
+
+  const displayLabel =
+    (kind === 'payment'
       ? paymentStatusLabels[normalized]
-      : claimStatusLabels[normalized];
+      : claimStatusLabels[normalized]) || raw.toUpperCase();
+
   return (
     <span
-      className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-semibold ${classes}`}
+      className={`inline-flex whitespace-nowrap rounded-md border px-2.5 py-1 text-[11px] uppercase tracking-wider ${classes}`}
     >
-      {label || normalized.replaceAll('_', ' ')}
+      {displayLabel}
     </span>
   );
 }

@@ -440,6 +440,7 @@ export interface InsuranceForm {
   // Added fields relevant to claims
   truckNumber?: string;
   vehicleNumber?: string;
+  placeOfSupply?: string;
 }
 
 interface LoginResponse {
@@ -1103,10 +1104,24 @@ export enum ClaimPaymentStatus {
   NOT_APPLICABLE = "not_applicable",
 }
 
+export interface FlaggedVehicle {
+  id: string;
+  truckNumber: string;
+  isFlagged: boolean;
+  flagReason: string | null;
+  flaggedAt: string | null;
+  claimCount?: number;
+  ownerName?: string;
+  createdAt?: string;
+}
+
 export interface ClaimRequest {
   id: string;
   caseNumber: string;
   officialClaimNumber?: string | null;
+  tataClaimNumber?: string | null;
+  mandiplusClaimNumber?: string | null;
+  handledBy?: 'TATA' | 'MandiPlus' | string | null;
   status: ClaimStatus;
   paymentStatus: ClaimPaymentStatus;
   createdAt: string;
@@ -1118,13 +1133,45 @@ export interface ClaimRequest {
   quotationAmount?: number | null;
   approvedPayableAmount?: number | null;
   paymentReference?: string | null;
+  paymentProofUrl?: string | null;
   settlementPaidAt?: string | null;
   remarks?: string | null;
   surveyorName?: string;
   surveyorContact?: string;
+  surveyorNumber?: string;
+  surveyors?: Array<{
+    name: string;
+    contact: string;
+  }>;
   notes?: string;
   claimFormUrl?: string;
   rawClaimFormUrl?: string | null;
+  // Proof & Documents
+  proofFiles?: Array<{
+    id?: string;
+    url: string;
+    name: string;
+    mimeType?: string;
+    size?: number;
+    type: 'photo' | 'video' | 'file';
+    uploadedAt?: string;
+  }>;
+  documentsList?: Array<{
+    id?: string;
+    name: string;
+    url: string;
+    category?: string;
+    uploadedAt?: string;
+  }>;
+  // Assessment report for Engine Seize
+  assessmentReportUrl?: string | null;
+  assessmentReportData?: any;
+  estimationBillUrl?: string | null; // Estimation Bill (provided by trader)
+  // Linked tracking / trips
+  linkedTripId?: string | null;
+  linkedTripNumber?: string | null;
+  linkedTripStatus?: string | null;
+  linkedTripUrl?: string | null;
   // New individual media fields
   fir?: string | null; // FIR document URL
   accidentPic?: string | null; // Accident picture URL
@@ -1200,23 +1247,14 @@ export interface ClaimCaptureLinkResult {
 
 export interface FilterClaimRequestsDto {
   status?: ClaimStatus;
-  invoiceId?: string;
-  truckNumber?: string;
-  search?: string;
   paymentStatus?: ClaimPaymentStatus;
-  evidenceStatus?: "not_requested" | "active" | "received" | "expired";
-  captureType?: "accident" | "engine_seize";
+  evidenceStatus?: 'not_requested' | 'active' | 'received' | 'expired';
+  captureType?: 'accident' | 'engine_seize';
+  truckNumber?: string;
+  invoiceId?: string;
+  search?: string;
   page?: number;
   limit?: number;
-  sortBy?:
-    | "createdAt"
-    | "updatedAt"
-    | "insuredValue"
-    | "quotationAmount"
-    | "approvedPayableAmount";
-  sortOrder?: "ASC" | "DESC";
-  startDate?: string;
-  endDate?: string;
 }
 
 export interface ClaimsPage {
@@ -1231,8 +1269,8 @@ export interface ClaimsSummary {
   total: number;
   open: number;
   evidenceReceived: number;
-  captureLinksActive: number;
-  paymentPending: number;
+  captureLinksActive?: number;
+  paymentPending?: number;
   outstandingAmount: number;
 }
 
@@ -1260,6 +1298,8 @@ export interface ClaimActivity {
 
 export interface UpdateClaimDto {
   officialClaimNumber?: string | null;
+  tataClaimNumber?: string | null;
+  handledBy?: 'TATA' | 'MandiPlus' | string | null;
   description?: string | null;
   status?: ClaimStatus;
   quotationAmount?: number | null;
@@ -1268,18 +1308,50 @@ export interface UpdateClaimDto {
   paymentReference?: string | null;
   settlementPaidAt?: string | null;
   remarks?: string | null;
+  assessmentReportUrl?: string | null;
+  assessmentReportData?: any;
+  estimationBillUrl?: string | null; // Estimation Bill (provided by trader)
   surveyorName?: string | null;
   surveyorContact?: string | null;
+  surveyorNumber?: string | null;
+  surveyors?: Array<{
+    name: string;
+    contact: string;
+  }>;
   notes?: string | null;
+  proofFiles?: Array<{
+    id?: string;
+    url: string;
+    name: string;
+    mimeType?: string;
+    size?: number;
+    type: 'photo' | 'video' | 'file';
+    uploadedAt?: string;
+  }>;
+  documentsList?: Array<{
+    id?: string;
+    name: string;
+    url: string;
+    category?: string;
+    uploadedAt?: string;
+  }>;
+  linkedTripId?: string | null;
+  linkedTripNumber?: string | null;
+  linkedTripStatus?: string | null;
+  linkedTripUrl?: string | null;
 }
 
 export interface CreateClaimByInvoiceDto {
   invoiceId: string;
   officialClaimNumber?: string;
+  tataClaimNumber?: string;
   description?: string;
   status?: ClaimStatus;
   quotationAmount?: number;
   approvedPayableAmount?: number;
+  surveyorName?: string;
+  surveyorContact?: string;
+  surveyorNumber?: string;
   remarks?: string;
 }
 
@@ -3224,6 +3296,24 @@ class AdminApi {
     return fallback;
   }
 
+  private normalizeClaimStatus(status?: string | null): ClaimStatus {
+    if (!status) return ClaimStatus.PENDING;
+
+    const raw = String(status).trim().toLowerCase();
+    const aliases: Record<string, ClaimStatus> = {
+      'in progress': ClaimStatus.INPROGRESS,
+      in_progress: ClaimStatus.INPROGRESS,
+      'surveyor assigned': ClaimStatus.SURVEYOR_ASSIGNED,
+    };
+
+    if (aliases[raw]) return aliases[raw];
+    if (Object.values(ClaimStatus).includes(raw as ClaimStatus)) {
+      return raw as ClaimStatus;
+    }
+
+    return ClaimStatus.PENDING;
+  }
+
   private normalizeClaim(claim: ClaimRequest): ClaimRequest {
     const claimFormUrl =
       claim?.claimFormUrl ||
@@ -3233,6 +3323,13 @@ class AdminApi {
 
     return {
       ...claim,
+      status: this.normalizeClaimStatus(claim.status),
+      paymentStatus:
+        (claim.paymentStatus as ClaimPaymentStatus) ||
+        ClaimPaymentStatus.NOT_STARTED,
+      surveyorNumber:
+        claim.surveyorNumber || claim.surveyorContact || claim.surveyors?.[0]?.contact,
+      surveyorName: claim.surveyorName || claim.surveyors?.[0]?.name,
       claimFormUrl: claimFormUrl ?? undefined,
       rawClaimFormUrl: claimFormUrl,
       damageFormUrl: claimFormUrl ?? undefined,
@@ -4124,13 +4221,7 @@ class AdminApi {
       }
 
       // Normalize status field (backend uses lowercase status values)
-      claims = claims.map((claim) =>
-        this.normalizeClaim({
-          ...claim,
-          status:
-            (claim.status?.toLowerCase() as ClaimStatus) || ClaimStatus.PENDING,
-        }),
-      );
+      claims = claims.map((claim) => this.normalizeClaim(claim));
 
       return {
         success: true,
@@ -4157,14 +4248,7 @@ class AdminApi {
         ? (response.data as any).data
         : response.data;
       const data = Array.isArray(payload?.data)
-        ? payload.data.map((claim: ClaimRequest) =>
-            this.normalizeClaim({
-              ...claim,
-              status:
-                (claim.status?.toLowerCase() as ClaimStatus) ||
-                ClaimStatus.PENDING,
-            }),
-          )
+        ? payload.data.map((claim: ClaimRequest) => this.normalizeClaim(claim))
         : [];
       return {
         success: true,
@@ -4396,6 +4480,126 @@ class AdminApi {
     }
   };
 
+  public uploadAssessmentSourceScreenshots = async (
+    claimId: string,
+    files: File[],
+  ): Promise<ApiResponse<ClaimRequest>> => {
+    try {
+      const formData = new FormData();
+      files.forEach((file) => formData.append('files', file));
+      const response = await this.client.post<ClaimRequest>(
+        `/claim-requests/${claimId}/assessment-report/source-screenshot`,
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      );
+      const claim = (response.data as any)?.data ?? response.data;
+      return {
+        success: true,
+        data: this.normalizeClaim(claim),
+        message:
+          files.length === 1
+            ? 'Assessment source screenshot uploaded'
+            : `${files.length} assessment screenshots uploaded`,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(error, 'Failed to upload screenshots'),
+        error: error.message,
+      };
+    }
+  };
+
+  public removeAssessmentSourceScreenshot = async (
+    claimId: string,
+    url: string,
+  ): Promise<ApiResponse<ClaimRequest>> => {
+    try {
+      const response = await this.client.delete<ClaimRequest>(
+        `/claim-requests/${claimId}/assessment-report/source-screenshot`,
+        { data: { url } },
+      );
+      const claim = (response.data as any)?.data ?? response.data;
+      return {
+        success: true,
+        data: this.normalizeClaim(claim),
+        message: 'Screenshot removed',
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(error, 'Failed to remove screenshot'),
+        error: error.message,
+      };
+    }
+  };
+
+  public extractAssessmentFromScreenshots = async (
+    claimId: string,
+  ): Promise<ApiResponse<ClaimRequest>> => {
+    try {
+      const response = await this.client.post<ClaimRequest>(
+        `/claim-requests/${claimId}/assessment-report/extract-from-screenshots`,
+      );
+      const claim = (response.data as any)?.data ?? response.data;
+      return {
+        success: true,
+        data: this.normalizeClaim(claim),
+        message: 'RC details auto-filled from screenshots',
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          'Failed to auto-fill from screenshots',
+        ),
+        error: error.message,
+      };
+    }
+  };
+
+  public generateAssessmentReport = async (
+    claimId: string,
+    assessmentReportData: Record<string, unknown>,
+  ): Promise<ApiResponse<ClaimRequest>> => {
+    try {
+      const response = await this.client.post<ClaimRequest>(
+        `/claim-requests/${claimId}/assessment-report/generate`,
+        { assessmentReportData },
+      );
+      const claim = (response.data as any)?.data ?? response.data;
+      return {
+        success: true,
+        data: this.normalizeClaim(claim),
+        message: 'Assessment report generated',
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(error, 'Failed to generate assessment report'),
+        error: error.message,
+      };
+    }
+  };
+
+  public deleteClaim = async (id: string): Promise<ApiResponse<boolean>> => {
+    try {
+      await this.client.delete(`/claim-requests/${id}`);
+      return {
+        success: true,
+        data: true,
+        message: "Claim deleted successfully",
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(error, "Failed to delete claim"),
+        error: error.message,
+      };
+    }
+  };
+
   public getClaimActivity = async (
     id: string,
   ): Promise<ApiResponse<ClaimActivity[]>> => {
@@ -4462,7 +4666,9 @@ class AdminApi {
       | "weighmentSlip"
       | "lorryReceipt"
       | "insurancePolicy"
-      | "damageForm",
+      | "damageForm"
+      | "estimationBill"
+      | "paymentProof",
     file: File,
   ): Promise<ApiResponse<ClaimRequest>> => {
     try {
@@ -4503,7 +4709,8 @@ class AdminApi {
       | "weighmentSlip"
       | "lorryReceipt"
       | "insurancePolicy"
-      | "damageForm",
+      | "damageForm"
+      | "paymentProof",
   ): Promise<ApiResponse<ClaimRequest>> => {
     try {
       const response = await this.client.patch<ClaimRequest>(
@@ -4732,6 +4939,109 @@ class AdminApi {
       return {
         success: false,
         message: "Failed to fetch dashboard stats",
+        error: error.message,
+      };
+    }
+  };
+
+  public listFlaggedVehicles = async (): Promise<
+    ApiResponse<FlaggedVehicle[]>
+  > => {
+    try {
+      const response = await this.client.get<FlaggedVehicle[]>(
+        "/trucks/flagged/list",
+      );
+      const data = (response.data as any)?.data ?? response.data;
+      return {
+        success: true,
+        data: Array.isArray(data) ? data : [],
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to fetch blacklisted vehicles",
+        ),
+        error: error.message,
+      };
+    }
+  };
+
+  public flagVehicle = async (
+    truckNumber: string,
+    flagReason?: string,
+  ): Promise<ApiResponse<FlaggedVehicle>> => {
+    try {
+      const response = await this.client.post<FlaggedVehicle>("/trucks/flag", {
+        truckNumber,
+        flagReason,
+      });
+      const data = (response.data as any)?.data ?? response.data;
+      return {
+        success: true,
+        data,
+        message: "Vehicle blacklisted successfully",
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to blacklist vehicle",
+        ),
+        error: error.message,
+      };
+    }
+  };
+
+  public unflagVehicle = async (
+    truckNumber: string,
+  ): Promise<ApiResponse<FlaggedVehicle>> => {
+    try {
+      const response = await this.client.patch<FlaggedVehicle>(
+        `/trucks/flag/${encodeURIComponent(truckNumber)}/remove`,
+      );
+      const data = (response.data as any)?.data ?? response.data;
+      return {
+        success: true,
+        data,
+        message: "Vehicle removed from blacklist",
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to remove vehicle from blacklist",
+        ),
+        error: error.message,
+      };
+    }
+  };
+
+  public syncBlacklistedFromClaims = async (): Promise<
+    ApiResponse<{ processed: number; flagged: number; skipped: number }>
+  > => {
+    try {
+      const response = await this.client.post<{
+        processed: number;
+        flagged: number;
+        skipped: number;
+      }>("/trucks/flagged/sync-from-claims");
+      const data = (response.data as any)?.data ?? response.data;
+      return {
+        success: true,
+        data,
+        message: "Existing claim vehicles synced to blacklist",
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to sync claim vehicles to blacklist",
+        ),
         error: error.message,
       };
     }
