@@ -37,7 +37,7 @@ export interface RegisterPayload {
     name: string;
     mobileNumber: string;
     state: string;
-    identity: "BUYER" | "AGENT" | "SUPPLIER" | "CUSTOMER" | "TRANSPORTER";
+    identity?: "BUYER" | "AGENT" | "SUPPLIER" | "CUSTOMER" | "TRANSPORTER";
     billingType?: "BULK" | "PER_POLICY";
     isChannelPartner?: boolean;
     referredByChannelPartner?: string;

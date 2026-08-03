@@ -71,7 +71,6 @@ export default function RegisterPage() {
             name: "MandiPlus User",
             mobileNumber: phone,
             state: "MAHARASHTRA",
-            identity: "BUYER",
           });
         }
 

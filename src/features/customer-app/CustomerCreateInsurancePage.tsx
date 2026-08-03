@@ -28,6 +28,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 import Lottie from "lottie-react";
+import { INDIA_STATES } from "./indiaStates";
 
 import { useAuth } from "@/features/auth/context/AuthContext";
 import {
@@ -246,6 +247,15 @@ const POMEGRANATE_QUESTION_AUDIO: Partial<
   vehicleNumber: "/customer-app/voices/pomegranate-vehicle-number.mp3",
 };
 
+/** Fixed supplier-path questions for every anar invoice — identity ignored. */
+const POMEGRANATE_MISSING_DETAIL_KEYS: MissingDetailKey[] = [
+  "buyerAddress",
+  "buyerName",
+  "quantity",
+  "rate",
+  "vehicleNumber",
+];
+
 function resolveLocalizedMissingLabel(
   labels: QuestionLabelMap,
   language: unknown,
@@ -263,10 +273,11 @@ function resolveMissingQuestion(
   if (!isPomegranateProduct(product)) return base;
   const labels = POMEGRANATE_QUESTION_LABELS[key];
   const audio = POMEGRANATE_QUESTION_AUDIO[key];
+  // Never fall back to tender-coconut prompts for anar.
   return {
     ...base,
     label: labels ? resolveLocalizedMissingLabel(labels, language) : base.label,
-    audio: audio || base.audio,
+    audio: audio || "",
   };
 }
 
@@ -284,7 +295,7 @@ const COMMODITY_OPTIONS = [
   ["Mango", "🥭"],
   ["Banana", "🍌"],
   ["Papaya (Papita)", "🧡"],
-  ["Pomegranate (Anar)", "🍎"],
+  ["Anar", "🍎"],
   ["Oranges", "🍊"],
   ["Kinnow", "🍊"],
   ["Guava (Amrood)", "🍐"],
@@ -317,11 +328,13 @@ function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft 
   const product = Array.isArray(user?.products)
     ? String(user.products[0] || "")
     : String(user?.commodity || user?.product || "");
-  // Only a buyer profile should default the invoice buyer to the signed-in
-  // person. Suppliers/transporters must be asked for the consignee — otherwise
-  // pomegranate skips "Kiske paas" because emptyDraft already filled their name.
-  const buyerName = identity === "BUYER" ? userName : "";
-  const insuredPartyPhone = identity === "BUYER" ? userPhone : "";
+  // Anar is always the supplier shipper flow — never prefill consignee as self
+  // (that would skip "Kiske paas"). Coconut buyers can still default to self.
+  const isPomegranate = isPomegranateProduct(product);
+  const buyerName =
+    !isPomegranate && identity === "BUYER" ? userName : "";
+  const insuredPartyPhone =
+    !isPomegranate && identity === "BUYER" ? userPhone : "";
   return {
     invoiceDate: today(),
     mode: "Cash",
@@ -329,7 +342,7 @@ function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft 
     supplierAddress: "",
     buyerName,
     buyerAddress: "",
-    placeOfSupply: String(user?.state || ""),
+    placeOfSupply: humanStateLabel(user?.state),
     product,
     quantity: "",
     rate: "",
@@ -857,7 +870,7 @@ export default function CustomerCreateInsurancePage() {
         return next;
       });
     }
-    const nextKeys = getMissingDetailKeys(preparedDraft);
+    const nextKeys = getMissingDetailKeys(preparedDraft, user);
     questionAudioRef.current?.pause();
     stopQuestionnaireVoiceSession();
     setVoicePhase("idle");
@@ -2286,6 +2299,11 @@ function applyExtraction(
     (quantity && extractedTotal
       ? String(round(Number(extractedTotal) / Number(quantity)))
       : "");
+  const nextProduct =
+    canonicalizeCommodityLabel(
+      text(raw.commodity || raw.product_name || raw.product),
+    ) || current.product;
+  const isPomegranate = isPomegranateProduct(nextProduct);
 
   return {
     ...current,
@@ -2295,18 +2313,20 @@ function applyExtraction(
     buyerName:
       text(raw.buyer_name || raw.billToName || raw.shipToName) ||
       current.buyerName,
-    buyerAddress:
-      text(
-        raw.buyer_address ||
-          raw.buyerAddress ||
-          raw.billToAddress ||
-          raw.shipToAddress,
-      ) || current.buyerAddress,
-    placeOfSupply: text(raw.place_of_supply) || current.placeOfSupply,
-    product:
-      canonicalizeCommodityLabel(
-        text(raw.commodity || raw.product_name || raw.product),
-      ) || current.product,
+    // Anar destination is asked by voice ("mal kidhar") — OCR addresses
+    // like "District: Mumbai" were skipping that question entirely.
+    buyerAddress: isPomegranate
+      ? ""
+      : text(
+          raw.buyer_address ||
+            raw.buyerAddress ||
+            raw.billToAddress ||
+            raw.shipToAddress,
+        ) || current.buyerAddress,
+    placeOfSupply: humanStateLabel(
+      text(raw.place_of_supply) || current.placeOfSupply,
+    ),
+    product: nextProduct,
     quantity: quantity || current.quantity,
     rate: rate || current.rate,
     totalAmount: extractedTotal || current.totalAmount,
@@ -2401,6 +2421,8 @@ function withPomegranateProfileDefaults(
   user: Record<string, unknown> | null | undefined,
 ) {
   if (!isPomegranateProduct(draft.product)) return draft;
+  // Anar users are always treated as suppliers for the voice flow —
+  // ignore profile identity (misclicks / misinterpretation).
   const userName = String(user?.name || user?.fullName || "").trim();
   const userPhone = phone(
     String(
@@ -2411,18 +2433,20 @@ function withPomegranateProfileDefaults(
         "",
     ),
   );
-  const userAddress = String(
-    user?.address || user?.mandiName || user?.state || "",
-  ).trim();
-  const placeOfSupply = String(user?.state || draft.placeOfSupply || "India").trim();
+  const userAddress = String(user?.address || user?.mandiName || "").trim();
   const next = { ...draft };
+
+  // Always ask "Mal kidhar ja raha hai?" — never trust OCR/profile destination.
+  next.buyerAddress = "";
+
+  next.placeOfSupply = humanStateLabel(
+    next.placeOfSupply || user?.state || "India",
+  );
+
   if (!next.supplierName.trim() && userName) next.supplierName = userName;
   if (!next.supplierAddress.trim() && userAddress) {
     next.supplierAddress = userAddress;
   }
-  if (!next.placeOfSupply.trim()) next.placeOfSupply = placeOfSupply;
-  // Consignee is never the supplier themselves. Clear a stale self-name so the
-  // "Kiske paas ja raha hai?" question still fires.
   if (
     userName &&
     next.buyerName.trim().toLowerCase() === userName.toLowerCase()
@@ -2435,11 +2459,29 @@ function withPomegranateProfileDefaults(
   return next;
 }
 
-function getMissingDetailKeys(draft: CustomerInvoiceDraft) {
+function humanStateLabel(value: unknown) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (raw === "India") return "India";
+  const match = INDIA_STATES.find(
+    (item) =>
+      item.value === raw ||
+      item.label.toLowerCase() === raw.toLowerCase() ||
+      item.value.replace(/_/g, " ").toLowerCase() === raw.toLowerCase(),
+  );
+  return match?.label || raw;
+}
+
+function getMissingDetailKeys(
+  draft: CustomerInvoiceDraft,
+  _user?: Record<string, unknown> | null,
+) {
+  if (!String(draft.product || "").trim()) return [];
+
   const isTenderCoconut = isTenderCoconutProduct(draft.product);
   const isPomegranate = isPomegranateProduct(draft.product);
   const ordered: MissingDetailKey[] = isPomegranate
-    ? ["buyerAddress", "buyerName", "quantity", "rate", "vehicleNumber"]
+    ? POMEGRANATE_MISSING_DETAIL_KEYS
     : [
         "supplierName",
         "buyerName",

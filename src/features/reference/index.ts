@@ -69,9 +69,18 @@ export const FALLBACK_COMMODITIES: ReferenceCommodityOption[] = [
   { code: "BANANA", label: "Banana", emoji: "🍌", sortOrder: 40 },
   { code: "ONION", label: "Onion", emoji: "🧅", sortOrder: 50 },
   { code: "POTATO", label: "Potato", emoji: "🥔", sortOrder: 60 },
-  { code: "POMEGRANATE", label: "Pomegranate", emoji: "🍎", sortOrder: 70 },
+  { code: "POMEGRANATE", label: "Anar", emoji: "🍎", sortOrder: 70 },
   { code: "OTHER", label: "Other", emoji: "🌾", sortOrder: 80 },
 ];
+
+/** Onboarding always shows the vernacular name, even in English UI. */
+function withAnarCommodityLabel(
+  commodities: ReferenceCommodityOption[],
+): ReferenceCommodityOption[] {
+  return commodities.map((item) =>
+    item.code === "POMEGRANATE" ? { ...item, label: "Anar" } : item,
+  );
+}
 
 function readCache<T>(key: string): T | null {
   if (typeof window === "undefined") return null;
@@ -100,9 +109,9 @@ export function getCachedStates(): ReferenceStateOption[] {
 }
 
 export function getCachedCommodities(): ReferenceCommodityOption[] {
-  return (
+  return withAnarCommodityLabel(
     readCache<ReferenceCommodityOption[]>(COMMODITIES_CACHE_KEY) ||
-    FALLBACK_COMMODITIES
+      FALLBACK_COMMODITIES,
   );
 }
 
@@ -125,7 +134,10 @@ export async function refreshReferenceData() {
     Array.isArray(commoditiesRes?.commodities) &&
     commoditiesRes.commodities.length
   ) {
-    writeCache(COMMODITIES_CACHE_KEY, commoditiesRes.commodities);
+    writeCache(
+      COMMODITIES_CACHE_KEY,
+      withAnarCommodityLabel(commoditiesRes.commodities),
+    );
   }
 
   return {
