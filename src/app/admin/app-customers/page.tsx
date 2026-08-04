@@ -359,6 +359,8 @@ export default function AdminAppCustomersPage() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [status, setStatus] = useState('ALL');
+  const [joinedStartDate, setJoinedStartDate] = useState('');
+  const [joinedEndDate, setJoinedEndDate] = useState('');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -390,6 +392,8 @@ export default function AdminAppCustomersPage() {
       limit: ITEMS_PER_PAGE,
       search: debouncedSearch,
       status,
+      joinedStartDate: joinedStartDate || undefined,
+      joinedEndDate: joinedEndDate || undefined,
     });
 
     if (requestId !== requestRef.current) return;
@@ -406,7 +410,15 @@ export default function AdminAppCustomersPage() {
 
     setLoading(false);
     setRefreshing(false);
-  }, [canAccessSection, debouncedSearch, isAuthenticated, page, status]);
+  }, [
+    canAccessSection,
+    debouncedSearch,
+    isAuthenticated,
+    joinedEndDate,
+    joinedStartDate,
+    page,
+    status,
+  ]);
 
   useEffect(() => {
     if (!authLoading) {
@@ -456,45 +468,84 @@ export default function AdminAppCustomersPage() {
           </button>
         </div>
 
-        <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="App customers" value={summary.totalCustomers} detail="total" tone="slate" />
           <MetricCard label="Today" value={summary.todayCustomers} detail="IST" tone="green" />
           <MetricCard label="This week" value={summary.weekCustomers} detail="7 days" tone="blue" />
           <MetricCard label="This month" value={summary.monthCustomers} detail="30 days" tone="blue" />
-          <MetricCard label="Onboarding pending" value={summary.onboardingPending} detail="needs data" tone="amber" />
-          <MetricCard label="Hidden records" value={summary.excludedNonAppRecords} detail="non-app" tone="rose" />
         </div>
 
         <div className="mt-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="relative w-full xl:max-w-md">
-              <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search name or phone"
-                className="w-full rounded-md border border-slate-300 bg-white py-2 pl-10 pr-3 text-sm font-semibold text-slate-900 outline-none ring-[#4309ac]/20 placeholder:text-slate-400 focus:border-[#4309ac] focus:ring-4"
-              />
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="relative w-full xl:max-w-md">
+                <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search name or phone"
+                  className="w-full rounded-md border border-slate-300 bg-white py-2 pl-10 pr-3 text-sm font-semibold text-slate-900 outline-none ring-[#4309ac]/20 placeholder:text-slate-400 focus:border-[#4309ac] focus:ring-4"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {statusFilters.map((filter) => (
+                  <button
+                    key={filter.value}
+                    type="button"
+                    onClick={() => {
+                      setStatus(filter.value);
+                      setPage(1);
+                    }}
+                    className={classNames(
+                      status === filter.value
+                        ? 'bg-[#4309ac] text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200',
+                      'rounded-md px-3 py-2 text-xs font-black transition-colors',
+                    )}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {statusFilters.map((filter) => (
-                <button
-                  key={filter.value}
-                  type="button"
-                  onClick={() => {
-                    setStatus(filter.value);
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+              <label className="flex min-w-[160px] flex-1 flex-col gap-1 text-xs font-black uppercase tracking-wide text-slate-500">
+                Join start
+                <input
+                  type="date"
+                  value={joinedStartDate}
+                  onChange={(event) => {
+                    setJoinedStartDate(event.target.value);
                     setPage(1);
                   }}
-                  className={classNames(
-                    status === filter.value
-                      ? 'bg-[#4309ac] text-white shadow-sm'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200',
-                    'rounded-md px-3 py-2 text-xs font-black transition-colors',
-                  )}
+                  className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold normal-case tracking-normal text-slate-900 outline-none ring-[#4309ac]/20 focus:border-[#4309ac] focus:ring-4"
+                />
+              </label>
+              <label className="flex min-w-[160px] flex-1 flex-col gap-1 text-xs font-black uppercase tracking-wide text-slate-500">
+                Join end
+                <input
+                  type="date"
+                  value={joinedEndDate}
+                  onChange={(event) => {
+                    setJoinedEndDate(event.target.value);
+                    setPage(1);
+                  }}
+                  className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold normal-case tracking-normal text-slate-900 outline-none ring-[#4309ac]/20 focus:border-[#4309ac] focus:ring-4"
+                />
+              </label>
+              {(joinedStartDate || joinedEndDate) ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setJoinedStartDate('');
+                    setJoinedEndDate('');
+                    setPage(1);
+                  }}
+                  className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-100"
                 >
-                  {filter.label}
+                  Clear dates
                 </button>
-              ))}
+              ) : null}
             </div>
           </div>
         </div>
@@ -537,7 +588,7 @@ export default function AdminAppCustomersPage() {
                     <td colSpan={10} className="px-4 py-14 text-center">
                       <DocumentTextIcon className="mx-auto h-10 w-10 text-slate-300" />
                       <p className="mt-3 text-sm font-black text-slate-900">No app customers found</p>
-                      <p className="mt-1 text-sm text-slate-500">Try changing the search or status filter.</p>
+                      <p className="mt-1 text-sm text-slate-500">Try changing the search, status, or join date filter.</p>
                     </td>
                   </tr>
                 ) : (
