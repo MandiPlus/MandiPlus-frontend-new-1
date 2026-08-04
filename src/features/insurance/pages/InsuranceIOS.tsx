@@ -828,6 +828,7 @@ const InsuranceIOS = () => {
                 );
             }
             submitData.append('userId', effectiveUserId);
+            submitData.append('sourceSurface', 'ADMIN');
 
             submitData.append('invoiceDate', resolvedFormData.invoiceDate || getTodayDateInputValue());
             submitData.append('placeOfSupply', resolvedFormData.placeOfSupply || 'State');
