@@ -17,6 +17,22 @@ export function invoiceProductNameForSubmit(product: string): string {
   return cleaned;
 }
 
+/** Catalog HSN used when customer create/update omits hsnCode. */
+export function invoiceHsnCodeForSubmit(product: string): string {
+  const canonical = canonicalizeCommodityLabel(product);
+  const byName: Record<string, string> = {
+    "Pomegranate (Anar)": "08109010",
+    "Tender Coconut": "08011910",
+    Tomato: "07020000",
+    Mango: "08045020",
+    Banana: "08039010",
+    Onion: "07031010",
+    Potato: "07019000",
+    "Mosambi (Sweet Lime)": "08059000",
+  };
+  return byName[canonical] || "";
+}
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 
@@ -339,6 +355,8 @@ export async function createCustomerInvoice(
     "productName",
     invoiceProductNameForSubmit(draft.product),
   );
+  const hsnCode = invoiceHsnCodeForSubmit(draft.product);
+  if (hsnCode) form.append("hsnCode", hsnCode);
   form.append("quantity", String(quantity));
   form.append("rate", String(rate));
   form.append("amount", String(amount));
@@ -421,6 +439,8 @@ export async function updateCustomerInvoice(
       "productName",
       invoiceProductNameForSubmit(payload.productName),
     );
+    const hsnCode = invoiceHsnCodeForSubmit(payload.productName);
+    if (hsnCode) form.append("hsnCode", hsnCode);
   }
 
   return customerRequest({
