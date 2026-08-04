@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  ArrowPathIcon,
   CheckCircleIcon,
   ClockIcon,
   DocumentTextIcon,
@@ -354,7 +353,6 @@ export default function AdminAppCustomersPage() {
   const [customers, setCustomers] = useState<AdminAppCustomer[]>([]);
   const [summary, setSummary] = useState<AdminAppCustomersSummary>(emptySummary);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -375,16 +373,12 @@ export default function AdminAppCustomersPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const fetchCustomers = useCallback(async (isRefresh = false) => {
+  const fetchCustomers = useCallback(async () => {
     if (!isAuthenticated || !canAccessSection('app-customers')) return;
 
     const requestId = requestRef.current + 1;
     requestRef.current = requestId;
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
+    setLoading(true);
     setError('');
 
     const response = await adminApi.getAdminAppCustomers({
@@ -409,7 +403,6 @@ export default function AdminAppCustomersPage() {
     }
 
     setLoading(false);
-    setRefreshing(false);
   }, [
     canAccessSection,
     debouncedSearch,
@@ -422,7 +415,7 @@ export default function AdminAppCustomersPage() {
 
   useEffect(() => {
     if (!authLoading) {
-      void Promise.resolve().then(() => fetchCustomers(false));
+      void Promise.resolve().then(() => fetchCustomers());
     }
   }, [authLoading, fetchCustomers]);
 
@@ -446,29 +439,11 @@ export default function AdminAppCustomersPage() {
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#4309ac]">App</p>
-            <h1 className="mt-1 text-3xl font-black tracking-tight text-slate-950">Customers</h1>
-            <p className="mt-2 max-w-3xl text-sm font-medium text-slate-600">
-              People who signed in through the app after 08 Jul 2026.
-            </p>
-            <div className="mt-3">
-              <RoleSplit summary={summary} />
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => fetchCustomers(true)}
-            disabled={refreshing}
-            className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 shadow-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <ArrowPathIcon className={classNames('h-4 w-4', refreshing && 'animate-spin')} />
-            Refresh
-          </button>
+        <div className="mb-5">
+          <RoleSplit summary={summary} />
         </div>
 
-        <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="App customers" value={summary.totalCustomers} detail="total" tone="slate" />
           <MetricCard label="Today" value={summary.todayCustomers} detail="IST" tone="green" />
           <MetricCard label="This week" value={summary.weekCustomers} detail="7 days" tone="blue" />
