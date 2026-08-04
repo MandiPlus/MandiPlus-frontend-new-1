@@ -205,6 +205,156 @@
   font-weight: 800;
 }
 
+.invoiceHeadingActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.editButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #dfe3dc;
+  border-radius: 999px;
+  color: #203044;
+  background: #f8f9fd;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.editBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  align-items: end;
+  background: rgba(12, 18, 14, 0.45);
+  padding: 16px;
+}
+
+.editSheet {
+  width: min(100%, 520px);
+  max-height: min(88dvh, 760px);
+  margin: 0 auto;
+  overflow: auto;
+  border-radius: 22px;
+  background: #fff;
+  padding: 16px 16px max(16px, env(safe-area-inset-bottom));
+  box-shadow: 0 18px 48px rgba(32, 48, 68, 0.18);
+}
+
+.editHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.editHeader strong {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.editClose {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  background: #f5f6fb;
+  cursor: pointer;
+}
+
+.editHint {
+  margin: 0 0 12px;
+  color: #777d75;
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 650;
+}
+
+.editFields {
+  display: grid;
+  gap: 10px;
+}
+
+.editFields label {
+  display: grid;
+  gap: 4px;
+}
+
+.editFields span {
+  color: #777d75;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.editFields input,
+.editFields textarea {
+  width: 100%;
+  border: 1px solid #e7ebf3;
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #171a16;
+  background: #f8f9fd;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.editError {
+  margin: 0;
+  color: #c84f45;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.editActions {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.editCancel,
+.editSave {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.editCancel {
+  color: #171a16;
+  background: #f5f6fb;
+}
+
+.editSave {
+  color: #fff;
+  background: #203044;
+}
+
+.editSave:disabled,
+.editCancel:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .pdfFrame {
   position: relative;
   min-height: min(70vh, 820px);

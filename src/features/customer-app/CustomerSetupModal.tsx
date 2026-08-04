@@ -141,7 +141,7 @@ export function CustomerSetupModal() {
 
   const saveRole = async (nextRole: string) => {
     setRole(nextRole);
-    if (await save({ identity: nextRole })) advance(3);
+    if (await save({ identity: nextRole })) advance(4);
   };
 
   const saveCommodities = async () => {
@@ -154,14 +154,19 @@ export function CustomerSetupModal() {
     );
     const labels = selected.map((item) => item.label);
     const primary = selected[0]?.code || "OTHER";
-    if (
-      await save({
-        commodityCodes: selectedCommodities,
-        primaryCommodityCode: primary,
-        products: labels,
-      })
-    ) {
-      advance(4);
+    const anarSelected = selectedCommodities.includes("POMEGRANATE");
+    const payload: Record<string, unknown> = {
+      commodityCodes: selectedCommodities,
+      primaryCommodityCode: primary,
+      products: labels,
+    };
+    // Anar traders are always suppliers — skip role confusion and party swaps.
+    if (anarSelected) {
+      payload.identity = "SUPPLIER";
+    }
+    if (await save(payload)) {
+      if (anarSelected) setRole("SUPPLIER");
+      advance(anarSelected ? 4 : 3);
     }
   };
 
@@ -234,12 +239,12 @@ export function CustomerSetupModal() {
         {step === 1 ? (
           <div className={styles.setupForm}>
             <label className={styles.field}>
-              <span>Full name</span>
+              <span>Apna naam</span>
               <input
                 autoFocus
                 autoComplete="name"
                 value={name}
-                placeholder="Enter your name"
+                placeholder="Apna naam likhein"
                 onChange={(event) => setName(event.target.value)}
               />
             </label>
@@ -248,31 +253,6 @@ export function CustomerSetupModal() {
         ) : null}
 
         {step === 2 ? (
-          <div className={styles.setupStack}>
-            {roles.map(([value, label, Icon]) => {
-              const active = role === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  disabled={saving}
-                  onClick={() => void saveRole(value)}
-                  className={`${styles.setupRowCard} ${
-                    active ? styles.setupRowActive : ""
-                  }`}
-                >
-                  <span className={styles.setupRowIcon}>
-                    <Icon size={22} />
-                  </span>
-                  <strong>{label}</strong>
-                  {active ? <Check size={20} /> : <ChevronRight size={18} />}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-
-        {step === 3 ? (
           <div className={styles.setupForm}>
             <div className={styles.setupCommodityGrid}>
               {commodities.map((item) => {
@@ -302,6 +282,31 @@ export function CustomerSetupModal() {
               })}
             </div>
             <SetupContinue saving={saving} onClick={saveCommodities} />
+          </div>
+        ) : null}
+
+        {step === 3 ? (
+          <div className={styles.setupStack}>
+            {roles.map(([value, label, Icon]) => {
+              const active = role === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void saveRole(value)}
+                  className={`${styles.setupRowCard} ${
+                    active ? styles.setupRowActive : ""
+                  }`}
+                >
+                  <span className={styles.setupRowIcon}>
+                    <Icon size={22} />
+                  </span>
+                  <strong>{label}</strong>
+                  {active ? <Check size={20} /> : <ChevronRight size={18} />}
+                </button>
+              );
+            })}
           </div>
         ) : null}
 
@@ -365,14 +370,15 @@ function SetupContinue({
 
 function stepTitle(step: number) {
   if (step === 0) return "Language chunein";
-  if (step === 1) return "What is your name?";
-  if (step === 2) return "I'm a ...";
-  if (step === 3) return "Which commodities do you trade?";
+  if (step === 1) return "Apna naam";
+  if (step === 2) return "Which commodities do you trade?";
+  if (step === 3) return "I'm a ...";
   return "Aapki mandi kahan hai?";
 }
 
 function progressKey(userId: string) {
-  return `mandiplus:web-onboarding-step:${userId}`;
+  // v2: commodity comes before role; anar skips role.
+  return `mandiplus:web-onboarding-step-v2:${userId}`;
 }
 
 function readProfile(
@@ -391,9 +397,18 @@ function readProfile(
   const productCommodityCodes = products
     .map((product) => {
       const normalized = normalize(product);
-      return commodities.find(
+      const fromCatalog = commodities.find(
         (item) => normalize(item.label) === normalized,
       )?.code;
+      if (fromCatalog) return fromCatalog;
+      if (
+        normalized.includes("pomegranate") ||
+        normalized.includes("anar") ||
+        normalized.includes("dalimb")
+      ) {
+        return "POMEGRANATE";
+      }
+      return "";
     })
     .filter(Boolean) as string[];
   const fromUserCodes = Array.isArray(user?.commodityCodes)
@@ -429,7 +444,12 @@ function readProfile(
   const state = normalizeState(user?.state);
   const language = String(user?.preferredLanguage || "");
   const complete = Boolean(
-    language && name && role && commodityCodes.length && state && mandiName,
+    language &&
+      name &&
+      commodityCodes.length &&
+      state &&
+      mandiName &&
+      (role || commodityCodes.includes("POMEGRANATE")),
   );
 
   return {
@@ -446,8 +466,13 @@ function readProfile(
 function firstIncompleteStep(profile: ReturnType<typeof readProfile>) {
   if (!profile.language) return 0;
   if (!profile.name) return 1;
-  if (!profile.role) return 2;
-  if (!profile.commodityCodes.length) return 3;
+  if (!profile.commodityCodes.length) return 2;
+  if (
+    !profile.role &&
+    !profile.commodityCodes.includes("POMEGRANATE")
+  ) {
+    return 3;
+  }
   if (!profile.state || !profile.mandiName) return 4;
   return 0;
 }
