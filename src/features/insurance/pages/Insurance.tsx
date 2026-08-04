@@ -814,6 +814,7 @@ const Insurance = () => {
                 );
             }
             submitData.append('userId', effectiveUserId);
+            submitData.append('sourceSurface', 'ADMIN');
 
             submitData.append('invoiceDate', resolvedFormData.invoiceDate || getTodayDateInputValue());
 

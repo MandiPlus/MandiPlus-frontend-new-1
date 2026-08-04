@@ -323,7 +323,7 @@ export async function createCustomerInvoice(
   form.append("quantity", String(quantity));
   form.append("rate", String(rate));
   form.append("amount", String(amount));
-  form.append("sourceSurface", "USER_APP_BETA");
+  form.append("sourceSurface", "CUSTOMER_WEB");
   form.append("autoVerifyOnCreate", "true");
   form.append("vehicleNumber", vehicle);
   form.append("truckNumber", vehicle);

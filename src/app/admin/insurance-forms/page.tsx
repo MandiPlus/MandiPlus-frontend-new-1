@@ -43,6 +43,31 @@ const getInvoiceId = (inv: { id?: string; _id?: string }) => inv?.id || inv?._id
 const normalizePhoneInput = (value: string) => value.replace(/[^\d+]/g, '').trim();
 const isValidIndianPhone = (value: string) => INDIAN_PHONE_REGEX.test(value.trim());
 
+/** Collapse sourceSurface into Admin / App / Web for insurance-forms clarity. */
+function insuranceOriginLabel(
+    sourceSurface?: string | null,
+): 'Admin' | 'App' | 'Web' | '—' {
+    const s = String(sourceSurface || '').trim();
+    if (!s) return '—';
+    if (s === 'CUSTOMER_WEB') return 'Web';
+    if (s === 'USER_APP' || s === 'USER_APP_BETA') return 'App';
+    if (
+        s === 'ADMIN' ||
+        s.startsWith('ADMIN_') ||
+        s === 'insurance_chat' ||
+        s === '/insurance'
+    ) {
+        return 'Admin';
+    }
+    return '—';
+}
+
+const ORIGIN_FILTER_SOURCE_SURFACES: Record<'Admin' | 'App' | 'Web', string> = {
+    Admin: 'ADMIN,ADMIN_QUICK_DETAILS,ADMIN_DEVELOPER_TOOL,insurance_chat,/insurance',
+    App: 'USER_APP,USER_APP_BETA',
+    Web: 'CUSTOMER_WEB',
+};
+
 interface Invoice {
     id: string;
     _id?: string;
@@ -557,6 +582,13 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
 
         if (appQueueMode && sourceFilters.sourceSurface === 'USER_APP') {
             activeFilters.sourceSurfaces = 'USER_APP,USER_APP_BETA,ADMIN_QUICK_DETAILS';
+        } else if (
+            sourceFilters.sourceSurface === 'Admin' ||
+            sourceFilters.sourceSurface === 'App' ||
+            sourceFilters.sourceSurface === 'Web'
+        ) {
+            activeFilters.sourceSurfaces =
+                ORIGIN_FILTER_SOURCE_SURFACES[sourceFilters.sourceSurface];
         } else if (sourceFilters.sourceSurface?.trim()) {
             activeFilters.sourceSurface = sourceFilters.sourceSurface.trim();
         }
@@ -1189,6 +1221,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                     : undefined,
                 weighmentSlipNote: createInvoiceForm.invoiceKind === 'cash' ? 'cash' : 'commission',
                 weighmentSlips: createWeighmentFiles,
+                sourceSurface: 'ADMIN',
             });
 
             if (!response.success) {
@@ -2447,7 +2480,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                 </div>
 
                 <div className="bg-white text-black p-3 sm:p-4 rounded-lg shadow mb-4 sm:mb-6">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-9">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-10">
                         <select
                             name="invoiceType"
                             value={filters.invoiceType || ''}
@@ -2536,6 +2569,20 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                             {appQueueMode ? <option value="verified">Verified</option> : null}
                             <option value="rejected">Rejected</option>
                         </select>
+
+                        {!appQueueMode ? (
+                            <select
+                                name="sourceSurface"
+                                value={filters.sourceSurface || ''}
+                                onChange={handleFilterChange}
+                                className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
+                            >
+                                <option value="">All sources</option>
+                                <option value="Admin">Admin</option>
+                                <option value="App">App</option>
+                                <option value="Web">Web</option>
+                            </select>
+                        ) : null}
                     </div>
 
                     <div className="mt-3 flex items-center justify-between gap-3 text-xs sm:text-sm text-slate-500">
@@ -2577,6 +2624,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
 
                                         <th className="w-32 bg-slate-50 px-3 py-3 xl:px-2 xl:py-2 text-left text-xs xl:text-[11px] font-semibold text-slate-600 uppercase tracking-wider pl-4">Product</th>
                                         <th className="w-28 bg-slate-50 px-3 py-3 xl:px-2 xl:py-2 text-left text-xs xl:text-[11px] font-semibold text-slate-600 uppercase tracking-wider pl-4">Vehicle</th>
+                                        <th className="w-20 bg-slate-50 px-2 py-3 xl:py-2 text-center text-xs xl:text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Source</th>
                                         <th className="bg-slate-50 px-2 py-3 xl:py-2 text-center text-xs xl:text-[11px] font-semibold text-slate-600 uppercase tracking-wider">PDF</th>
                                         <th className="bg-slate-50 px-2 py-3 xl:py-2 text-center text-xs xl:text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Verify</th>
                                         <th className="bg-slate-50 px-2 py-3 xl:py-2 text-center text-xs xl:text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Edit</th>
@@ -2590,7 +2638,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                 <tbody className="divide-y divide-gray-200">
                                     {paginatedInvoices.length === 0 ? (
                                         <tr>
-                                            <td colSpan={14} className="px-6 py-12 text-center text-sm text-gray-500">
+                                            <td colSpan={15} className="px-6 py-12 text-center text-sm text-gray-500">
                                                 {loading ? 'Loading...' : 'No invoices found matching criteria.'}
                                             </td>
                                         </tr>
@@ -2649,6 +2697,11 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                                     </td>
                                                     <td className={`w-28 px-3 py-3 xl:px-2 xl:py-2 text-sm xl:text-[13px] text-slate-700 align-top pl-4 ${expandedInvoiceId === inv.id ? 'bg-slate-50' : 'bg-white'}`}>
                                                         <div className="break-words leading-snug">{inv.vehicleNumber || '-'}</div>
+                                                    </td>
+                                                    <td className={`w-20 px-2 py-3 xl:py-2 text-center align-top ${expandedInvoiceId === inv.id ? 'bg-slate-50' : 'bg-white'}`}>
+                                                        <span className="inline-flex items-center justify-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                                                            {insuranceOriginLabel(inv.sourceSurface)}
+                                                        </span>
                                                     </td>
                                                     <td className={`px-2 py-3 xl:py-2 text-center align-top ${expandedInvoiceId === inv.id ? 'bg-slate-50' : 'bg-white'}`}>
                                                         {(inv.pdfUrl || inv.pdfURL) ? (
@@ -2949,7 +3002,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
 
                                                 {expandedInvoiceId === inv.id && (
                                                     <tr className="bg-slate-50/60">
-                                                        <td colSpan={14} className="px-4 pb-4">
+                                                        <td colSpan={15} className="px-4 pb-4">
                                                             <div className="sticky left-0 z-10 mt-3 w-full max-w-[min(100%,calc(100vw-18rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                                                                 <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                                                                     <div className="min-w-0">
@@ -3317,6 +3370,12 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                         <div>
                                             <p className="text-xs text-gray-500 mb-0.5">Vehicle</p>
                                             <p className="text-sm font-medium text-gray-900">{inv.vehicleNumber || '-'}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-gray-500 mb-0.5">Source</p>
+                                            <p className="text-sm font-medium text-gray-900">
+                                                {insuranceOriginLabel(inv.sourceSurface)}
+                                            </p>
                                         </div>
                                     </div>
 
