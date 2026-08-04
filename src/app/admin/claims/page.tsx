@@ -1071,55 +1071,33 @@ function seedProofGallery(claim: ClaimRequest): ProofGalleryItem[] {
 
 function ProofPhotoCard({
   item,
+  mode,
   onRemove,
 }: {
   item: ProofGalleryItem;
+  mode: 'raw' | 'geo';
   onRemove?: () => void;
 }) {
-  const [view, setView] = useState<'raw' | 'masked'>(
-    item.maskedUrl ? 'masked' : 'raw',
-  );
-  const showMasked = Boolean(item.maskedUrl);
   const displayUrl =
-    view === 'masked' && item.maskedUrl ? item.maskedUrl : item.url;
-
-  useEffect(() => {
-    if (item.maskedUrl) setView('masked');
-  }, [item.maskedUrl]);
+    mode === 'geo' && item.maskedUrl ? item.maskedUrl : item.url;
 
   return (
     <div className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={displayUrl}
-        alt={item.name}
-        className="aspect-[4/3] w-full object-cover"
-      />
-      <div className="absolute left-1.5 top-1.5 flex overflow-hidden rounded-md bg-slate-950/80 text-[9px] font-bold uppercase tracking-wider text-white">
-        <button
-          type="button"
-          onClick={() => setView('raw')}
-          className={`px-1.5 py-0.5 ${view === 'raw' ? 'bg-white text-slate-900' : ''}`}
-        >
-          Raw
-        </button>
-        <button
-          type="button"
-          disabled={!showMasked}
-          onClick={() => setView('masked')}
-          className={`px-1.5 py-0.5 disabled:opacity-40 ${view === 'masked' ? 'bg-white text-slate-900' : ''}`}
-          title={showMasked ? 'GPS masked' : 'Mask generating…'}
-        >
-          {showMasked ? 'Masked' : 'Mask…'}
-        </button>
-      </div>
-      <div className="absolute inset-0 flex items-center justify-center gap-2 bg-slate-950/70 opacity-0 transition group-hover:opacity-100">
+      <a href={displayUrl} target="_blank" rel="noreferrer" className="block">
+        <img
+          src={displayUrl}
+          alt={item.name}
+          className="aspect-[4/3] w-full object-cover"
+        />
+      </a>
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 bg-slate-950/70 opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100">
         <a
           href={displayUrl}
           target="_blank"
           rel="noreferrer"
           className="rounded-lg bg-white/90 p-2 text-slate-900 hover:bg-white"
-          title="View full size"
+          title={mode === 'geo' ? 'Geo image kholo' : 'Raw image kholo'}
         >
           <Eye className="h-4 w-4" />
         </a>
@@ -1136,6 +1114,57 @@ function ProofPhotoCard({
       <span className="absolute bottom-1.5 left-1.5 rounded bg-slate-950/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
         {item.name}
       </span>
+      <span className="absolute right-1.5 top-1.5 rounded bg-slate-950/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
+        {mode === 'geo' && item.maskedUrl ? 'Geo' : 'Raw'}
+      </span>
+    </div>
+  );
+}
+
+function RawGeoSwitch({
+  mode,
+  onChange,
+  geoReady,
+  loading,
+}: {
+  mode: 'raw' | 'geo';
+  onChange: (mode: 'raw' | 'geo') => void;
+  geoReady: boolean;
+  loading?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="inline-flex overflow-hidden rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs font-bold">
+        <button
+          type="button"
+          onClick={() => onChange('raw')}
+          className={`rounded-md px-3 py-1.5 transition ${
+            mode === 'raw'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          Raw
+        </button>
+        <button
+          type="button"
+          disabled={!geoReady}
+          onClick={() => onChange('geo')}
+          className={`rounded-md px-3 py-1.5 transition disabled:cursor-not-allowed disabled:opacity-40 ${
+            mode === 'geo'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-800'
+          }`}
+          title={geoReady ? 'Geo masked' : 'Geo ban raha…'}
+        >
+          {loading && !geoReady ? 'Geo…' : 'Geo'}
+        </button>
+      </div>
+      {loading && !geoReady && (
+        <span className="text-[11px] font-semibold text-amber-600">
+          Geo ban raha…
+        </span>
+      )}
     </div>
   );
 }
@@ -1152,8 +1181,33 @@ function ProofGalleryModal({
   const [proofs, setProofs] = useState<ProofGalleryItem[]>(() =>
     seedProofGallery(claim),
   );
-
+  const geoReady = proofs.some((item) => item.type === 'photo' && item.maskedUrl);
+  const [mediaMode, setMediaMode] = useState<'raw' | 'geo'>(() =>
+    seedProofGallery(claim).some((item) => item.maskedUrl) ? 'geo' : 'raw',
+  );
+  const [maskLoading, setMaskLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setMaskLoading(true);
+    void adminApi
+      .getClaimById(claim.id)
+      .then((response) => {
+        if (!active || !response.success || !response.data) return;
+        const next = seedProofGallery(response.data);
+        setProofs(next);
+        if (next.some((item) => item.maskedUrl)) setMediaMode('geo');
+        onUpdated(response.data);
+      })
+      .finally(() => {
+        if (active) setMaskLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claim.id]);
 
   const processFiles = async (files: File[]) => {
     if (!files.length) return;
@@ -1212,6 +1266,18 @@ function ProofGalleryModal({
         </div>
 
         <div className="max-h-[65vh] space-y-4 overflow-y-auto p-6">
+          <div className="flex items-center justify-between gap-3">
+            <RawGeoSwitch
+              mode={mediaMode}
+              onChange={setMediaMode}
+              geoReady={geoReady}
+              loading={maskLoading}
+            />
+            <span className="text-[11px] font-semibold text-slate-500">
+              Tap → {mediaMode === 'geo' ? 'Geo' : 'Raw'} khulega
+            </span>
+          </div>
+
           {proofs.length < 10 && (
             <DragDropUploadZone
               onFilesSelected={processFiles}
@@ -1261,6 +1327,7 @@ function ProofGalleryModal({
                   <ProofPhotoCard
                     key={index}
                     item={item}
+                    mode={mediaMode}
                     onRemove={() => removeProof(index)}
                   />
                 ),
@@ -1702,6 +1769,10 @@ function FullViewClaimModal({
   const [proofs, setProofs] = useState<ProofGalleryItem[]>(() =>
     seedProofGallery(claim),
   );
+  const geoReady = proofs.some((item) => item.type === 'photo' && item.maskedUrl);
+  const [mediaMode, setMediaMode] = useState<'raw' | 'geo'>(() =>
+    seedProofGallery(claim).some((item) => item.maskedUrl) ? 'geo' : 'raw',
+  );
   const [maskLoading, setMaskLoading] = useState(false);
 
   const docs = documentEntries(claim);
@@ -1713,7 +1784,9 @@ function FullViewClaimModal({
       .getClaimById(claim.id)
       .then((response) => {
         if (!active || !response.success || !response.data) return;
-        setProofs(seedProofGallery(response.data));
+        const next = seedProofGallery(response.data);
+        setProofs(next);
+        if (next.some((item) => item.maskedUrl)) setMediaMode('geo');
         onUpdated(response.data);
       })
       .finally(() => {
@@ -2277,18 +2350,26 @@ function FullViewClaimModal({
           {activeTab === 'proof' && (
             <div className="space-y-6">
               <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4 shadow-sm">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#4309ac]">Proof Photos & Videos</h3>
                     <p className="text-xs font-medium text-slate-500">
                       {maskLoading
-                        ? 'Preparing GPS masks…'
-                        : 'Drag and drop up to 10 photos or videos per claim'}
+                        ? 'Geo ban raha…'
+                        : 'Tap image → selected Raw/Geo khulega'}
                     </p>
                   </div>
-                  <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-extrabold text-[#4309ac]">
-                    {proofs.length}/10 Files Attached
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <RawGeoSwitch
+                      mode={mediaMode}
+                      onChange={setMediaMode}
+                      geoReady={geoReady}
+                      loading={maskLoading}
+                    />
+                    <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-extrabold text-[#4309ac]">
+                      {proofs.length}/10 Files Attached
+                    </span>
+                  </div>
                 </div>
 
                 {proofs.length < 10 && (
@@ -2345,6 +2426,7 @@ function FullViewClaimModal({
                         <ProofPhotoCard
                           key={index}
                           item={item}
+                          mode={mediaMode}
                           onRemove={() => {
                             const next = proofs.filter((_, i) => i !== index);
                             setProofs(next);

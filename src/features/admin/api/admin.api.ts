@@ -1250,6 +1250,7 @@ export interface ClaimRequest {
     slot: number;
     label?: string;
     maskedUrl?: string;
+    maskVersion?: number;
   }>;
   evidenceVideos?: Array<{
     url: string;
@@ -1277,6 +1278,7 @@ export interface ClaimRequest {
     slot: number;
     label?: string;
     maskedUrl?: string;
+    maskVersion?: number;
   }>;
   engineSeizeEvidenceVideos?: Array<{
     url: string;
