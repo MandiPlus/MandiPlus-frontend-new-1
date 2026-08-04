@@ -963,22 +963,84 @@ type ProofGalleryItem = {
 };
 
 function seedProofGallery(claim: ClaimRequest): ProofGalleryItem[] {
+  const maskedByUrl = new Map<string, string>();
+  const pushMasked = (
+    photos?: Array<{ url: string; maskedUrl?: string }>,
+  ) => {
+    (photos || []).forEach((photo) => {
+      if (photo.maskedUrl) maskedByUrl.set(photo.url, photo.maskedUrl);
+    });
+  };
+  pushMasked(claim.evidencePhotos);
+  pushMasked(claim.engineSeizeEvidencePhotos);
+
+  const withMask = (item: ProofGalleryItem): ProofGalleryItem => ({
+    ...item,
+    maskedUrl: item.maskedUrl || maskedByUrl.get(item.url),
+  });
+
   const existing = claim.proofFiles || [];
   if (existing.length > 0) {
-    return existing.map((item) => ({
-      url: item.url,
-      name: item.name,
-      type: (item.type as ProofGalleryItem['type']) || 'file',
-    }));
+    const fromProofs = existing.map((item) =>
+      withMask({
+        url: item.url,
+        name: item.name,
+        type: (item.type as ProofGalleryItem['type']) || 'file',
+      }),
+    );
+    const proofUrls = new Set(fromProofs.map((item) => item.url));
+    const fromEvidence: ProofGalleryItem[] = [];
+    (claim.evidencePhotos || []).forEach((photo, index) => {
+      if (proofUrls.has(photo.url)) return;
+      fromEvidence.push(
+        withMask({
+          url: photo.url,
+          name: photo.label || `Photo ${index + 1}`,
+          type: 'photo',
+          maskedUrl: photo.maskedUrl,
+        }),
+      );
+    });
+    (claim.engineSeizeEvidencePhotos || []).forEach((photo, index) => {
+      if (proofUrls.has(photo.url)) return;
+      fromEvidence.push(
+        withMask({
+          url: photo.url,
+          name: photo.label || `Photo ${index + 1}`,
+          type: 'photo',
+          maskedUrl: photo.maskedUrl,
+        }),
+      );
+    });
+    (claim.evidenceVideos || []).forEach((video, index) => {
+      if (proofUrls.has(video.url)) return;
+      fromEvidence.push({
+        url: video.url,
+        name: video.label || `Video ${index + 1}`,
+        type: 'video',
+      });
+    });
+    (claim.engineSeizeEvidenceVideos || []).forEach((video, index) => {
+      if (proofUrls.has(video.url)) return;
+      fromEvidence.push({
+        url: video.url,
+        name: video.label || `Video ${index + 1}`,
+        type: 'video',
+      });
+    });
+    return [...fromEvidence, ...fromProofs];
   }
+
   const items: ProofGalleryItem[] = [];
   (claim.evidencePhotos || []).forEach((photo, index) =>
-    items.push({
-      url: photo.url,
-      name: photo.label || `Photo ${index + 1}`,
-      type: 'photo',
-      maskedUrl: photo.maskedUrl,
-    }),
+    items.push(
+      withMask({
+        url: photo.url,
+        name: photo.label || `Photo ${index + 1}`,
+        type: 'photo',
+        maskedUrl: photo.maskedUrl,
+      }),
+    ),
   );
   (claim.evidenceVideos || []).forEach((video, index) =>
     items.push({
@@ -988,12 +1050,14 @@ function seedProofGallery(claim: ClaimRequest): ProofGalleryItem[] {
     }),
   );
   (claim.engineSeizeEvidencePhotos || []).forEach((photo, index) =>
-    items.push({
-      url: photo.url,
-      name: photo.label || `Photo ${index + 1}`,
-      type: 'photo',
-      maskedUrl: photo.maskedUrl,
-    }),
+    items.push(
+      withMask({
+        url: photo.url,
+        name: photo.label || `Photo ${index + 1}`,
+        type: 'photo',
+        maskedUrl: photo.maskedUrl,
+      }),
+    ),
   );
   (claim.engineSeizeEvidenceVideos || []).forEach((video, index) =>
     items.push({
@@ -1012,10 +1076,16 @@ function ProofPhotoCard({
   item: ProofGalleryItem;
   onRemove?: () => void;
 }) {
-  const [view, setView] = useState<'raw' | 'masked'>('raw');
+  const [view, setView] = useState<'raw' | 'masked'>(
+    item.maskedUrl ? 'masked' : 'raw',
+  );
   const showMasked = Boolean(item.maskedUrl);
   const displayUrl =
     view === 'masked' && item.maskedUrl ? item.maskedUrl : item.url;
+
+  useEffect(() => {
+    if (item.maskedUrl) setView('masked');
+  }, [item.maskedUrl]);
 
   return (
     <div className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm">
@@ -1025,24 +1095,24 @@ function ProofPhotoCard({
         alt={item.name}
         className="aspect-[4/3] w-full object-cover"
       />
-      {showMasked && (
-        <div className="absolute left-1.5 top-1.5 flex overflow-hidden rounded-md bg-slate-950/80 text-[9px] font-bold uppercase tracking-wider text-white">
-          <button
-            type="button"
-            onClick={() => setView('raw')}
-            className={`px-1.5 py-0.5 ${view === 'raw' ? 'bg-white text-slate-900' : ''}`}
-          >
-            Raw
-          </button>
-          <button
-            type="button"
-            onClick={() => setView('masked')}
-            className={`px-1.5 py-0.5 ${view === 'masked' ? 'bg-white text-slate-900' : ''}`}
-          >
-            Masked
-          </button>
-        </div>
-      )}
+      <div className="absolute left-1.5 top-1.5 flex overflow-hidden rounded-md bg-slate-950/80 text-[9px] font-bold uppercase tracking-wider text-white">
+        <button
+          type="button"
+          onClick={() => setView('raw')}
+          className={`px-1.5 py-0.5 ${view === 'raw' ? 'bg-white text-slate-900' : ''}`}
+        >
+          Raw
+        </button>
+        <button
+          type="button"
+          disabled={!showMasked}
+          onClick={() => setView('masked')}
+          className={`px-1.5 py-0.5 disabled:opacity-40 ${view === 'masked' ? 'bg-white text-slate-900' : ''}`}
+          title={showMasked ? 'GPS masked' : 'Mask generating…'}
+        >
+          {showMasked ? 'Masked' : 'Mask…'}
+        </button>
+      </div>
       <div className="absolute inset-0 flex items-center justify-center gap-2 bg-slate-950/70 opacity-0 transition group-hover:opacity-100">
         <a
           href={displayUrl}
@@ -1632,8 +1702,29 @@ function FullViewClaimModal({
   const [proofs, setProofs] = useState<ProofGalleryItem[]>(() =>
     seedProofGallery(claim),
   );
+  const [maskLoading, setMaskLoading] = useState(false);
 
   const docs = documentEntries(claim);
+
+  useEffect(() => {
+    let active = true;
+    setMaskLoading(true);
+    void adminApi
+      .getClaimById(claim.id)
+      .then((response) => {
+        if (!active || !response.success || !response.data) return;
+        setProofs(seedProofGallery(response.data));
+        onUpdated(response.data);
+      })
+      .finally(() => {
+        if (active) setMaskLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+    // Refresh once on open so GPS masks backfill via findOne.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claim.id]);
 
   useEffect(() => {
     setAssessmentReport(buildDefaultAssessmentReport(claim));
@@ -2189,7 +2280,11 @@ function FullViewClaimModal({
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#4309ac]">Proof Photos & Videos</h3>
-                    <p className="text-xs font-medium text-slate-500">Drag and drop up to 10 photos or videos per claim</p>
+                    <p className="text-xs font-medium text-slate-500">
+                      {maskLoading
+                        ? 'Preparing GPS masks…'
+                        : 'Drag and drop up to 10 photos or videos per claim'}
+                    </p>
                   </div>
                   <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-extrabold text-[#4309ac]">
                     {proofs.length}/10 Files Attached
