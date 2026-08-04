@@ -24,7 +24,7 @@ export default function PublicClaimCapturePage({ token }: { token: string }) {
       .catch((loadError: unknown) => {
         if (active) {
           setError(
-            loadError instanceof Error ? loadError.message : "Link not found",
+            loadError instanceof Error ? loadError.message : "Link nahi mila",
           );
         }
       })
@@ -61,15 +61,15 @@ export default function PublicClaimCapturePage({ token }: { token: string }) {
         <div className="mb-8 h-1.5 w-10 rounded-full bg-[#4309ac]" />
         <p className="text-xs font-black uppercase tracking-[0.14em] text-[#6c7482]">
           {claim?.captureType === "engine_seize"
-            ? "MandiPlus Engine Seize"
-            : "MandiPlus Accident Claim"}
+            ? "Engine Seize"
+            : "Accident Claim"}
         </p>
 
         {loading ? (
-          <p className="mt-4 text-lg font-black">Opening…</p>
+          <p className="mt-4 text-lg font-black">Khul raha…</p>
         ) : error ? (
           <>
-            <h1 className="mt-4 text-2xl font-black">Link unavailable</h1>
+            <h1 className="mt-4 text-2xl font-black">Link nahi chala</h1>
             <p className="mt-2 text-sm font-semibold text-[#b23b3b]">{error}</p>
           </>
         ) : claim?.submitted ? (
@@ -77,7 +77,7 @@ export default function PublicClaimCapturePage({ token }: { token: string }) {
             <div className="mt-5 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-2xl font-black text-emerald-700">
               ✓
             </div>
-            <h1 className="mt-4 text-2xl font-black">Claim sent</h1>
+            <h1 className="mt-4 text-2xl font-black">Ho gaya</h1>
             <p className="mt-2 text-sm font-bold text-[#6c7482]">
               {claim.vehicleNumber}
             </p>
@@ -89,15 +89,15 @@ export default function PublicClaimCapturePage({ token }: { token: string }) {
             </h1>
             <p className="mt-1 text-sm font-bold text-[#6c7482]">
               {claim.captureType === "engine_seize"
-                ? "RC · 9 photos · 2 videos · GPS"
-                : "4 photos · 2 videos · location"}
+                ? "RC · 9 photo · 2 video"
+                : "4 photo · 2 video"}
             </p>
             <button
               type="button"
               onClick={() => setCameraOpen(true)}
               className="mt-8 min-h-14 w-full rounded-2xl bg-[#172033] px-5 text-base font-black text-white active:scale-[0.99]"
             >
-              Open rear camera
+              Camera kholo
             </button>
           </>
         ) : null}

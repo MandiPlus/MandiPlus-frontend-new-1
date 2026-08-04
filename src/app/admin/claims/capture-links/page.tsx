@@ -441,10 +441,21 @@ export default function CaptureLinksPage() {
                       captureType === 'engine_seize'
                         ? claim.engineSeizeLocationLongitude
                         : claim.locationLongitude;
+                    const accuracy =
+                      captureType === 'engine_seize'
+                        ? claim.engineSeizeLocationAccuracyMeters
+                        : claim.locationAccuracyMeters;
+                    const locationCapturedAt =
+                      captureType === 'engine_seize'
+                        ? claim.engineSeizeLocationCapturedAt
+                        : claim.locationCapturedAt;
                     const submittedAt =
                       captureType === 'engine_seize'
                         ? claim.engineSeizeEvidenceSubmittedAt
                         : claim.evidenceSubmittedAt;
+                    const latNum = Number(latitude);
+                    const lngNum = Number(longitude);
+                    const accuracyNum = Number(accuracy);
                     return (
                       <tr
                         key={claim.id}
@@ -485,16 +496,29 @@ export default function CaptureLinksPage() {
                           </div>
                         </td>
                         <td className="border-b border-slate-100 px-4 py-3">
-                          {latitude && longitude ? (
-                            <a
-                              href={`https://www.google.com/maps?q=${latitude},${longitude}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#4309ac] hover:underline"
-                            >
-                              <MapPin className="h-3.5 w-3.5" />
-                              Open map
-                            </a>
+                          {Number.isFinite(latNum) && Number.isFinite(lngNum) ? (
+                            <div className="space-y-1">
+                              <p className="text-[11px] font-semibold text-slate-700">
+                                {latNum.toFixed(6)}, {lngNum.toFixed(6)}
+                                {Number.isFinite(accuracyNum)
+                                  ? ` · ±${Math.round(accuracyNum)}m`
+                                  : ''}
+                              </p>
+                              {locationCapturedAt && (
+                                <p className="text-[10px] text-slate-400">
+                                  {formatDate(locationCapturedAt, true)}
+                                </p>
+                              )}
+                              <a
+                                href={`https://www.google.com/maps?q=${latNum},${lngNum}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#4309ac] hover:underline"
+                              >
+                                <MapPin className="h-3.5 w-3.5" />
+                                Open map
+                              </a>
+                            </div>
                           ) : (
                             <span className="text-xs text-slate-400">
                               Awaiting GPS

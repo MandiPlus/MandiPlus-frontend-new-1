@@ -955,6 +955,121 @@ function DeleteClaimModal({
 // ============================================================
 // 2. Proof Gallery Modal (Max 10 files) with Drag & Drop
 // ============================================================
+type ProofGalleryItem = {
+  url: string;
+  name: string;
+  type: 'photo' | 'video' | 'file';
+  maskedUrl?: string;
+};
+
+function seedProofGallery(claim: ClaimRequest): ProofGalleryItem[] {
+  const existing = claim.proofFiles || [];
+  if (existing.length > 0) {
+    return existing.map((item) => ({
+      url: item.url,
+      name: item.name,
+      type: (item.type as ProofGalleryItem['type']) || 'file',
+    }));
+  }
+  const items: ProofGalleryItem[] = [];
+  (claim.evidencePhotos || []).forEach((photo, index) =>
+    items.push({
+      url: photo.url,
+      name: photo.label || `Photo ${index + 1}`,
+      type: 'photo',
+      maskedUrl: photo.maskedUrl,
+    }),
+  );
+  (claim.evidenceVideos || []).forEach((video, index) =>
+    items.push({
+      url: video.url,
+      name: video.label || `Video ${index + 1}`,
+      type: 'video',
+    }),
+  );
+  (claim.engineSeizeEvidencePhotos || []).forEach((photo, index) =>
+    items.push({
+      url: photo.url,
+      name: photo.label || `Photo ${index + 1}`,
+      type: 'photo',
+      maskedUrl: photo.maskedUrl,
+    }),
+  );
+  (claim.engineSeizeEvidenceVideos || []).forEach((video, index) =>
+    items.push({
+      url: video.url,
+      name: video.label || `Video ${index + 1}`,
+      type: 'video',
+    }),
+  );
+  return items;
+}
+
+function ProofPhotoCard({
+  item,
+  onRemove,
+}: {
+  item: ProofGalleryItem;
+  onRemove?: () => void;
+}) {
+  const [view, setView] = useState<'raw' | 'masked'>('raw');
+  const showMasked = Boolean(item.maskedUrl);
+  const displayUrl =
+    view === 'masked' && item.maskedUrl ? item.maskedUrl : item.url;
+
+  return (
+    <div className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={displayUrl}
+        alt={item.name}
+        className="aspect-[4/3] w-full object-cover"
+      />
+      {showMasked && (
+        <div className="absolute left-1.5 top-1.5 flex overflow-hidden rounded-md bg-slate-950/80 text-[9px] font-bold uppercase tracking-wider text-white">
+          <button
+            type="button"
+            onClick={() => setView('raw')}
+            className={`px-1.5 py-0.5 ${view === 'raw' ? 'bg-white text-slate-900' : ''}`}
+          >
+            Raw
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('masked')}
+            className={`px-1.5 py-0.5 ${view === 'masked' ? 'bg-white text-slate-900' : ''}`}
+          >
+            Masked
+          </button>
+        </div>
+      )}
+      <div className="absolute inset-0 flex items-center justify-center gap-2 bg-slate-950/70 opacity-0 transition group-hover:opacity-100">
+        <a
+          href={displayUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-lg bg-white/90 p-2 text-slate-900 hover:bg-white"
+          title="View full size"
+        >
+          <Eye className="h-4 w-4" />
+        </a>
+        {onRemove && (
+          <button
+            onClick={onRemove}
+            className="rounded-lg bg-rose-600 p-2 text-white hover:bg-rose-700"
+            title="Remove"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      <span className="absolute bottom-1.5 left-1.5 rounded bg-slate-950/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
+        {item.name}
+      </span>
+    </div>
+  );
+}
+
 function ProofGalleryModal({
   claim,
   onClose,
@@ -964,16 +1079,9 @@ function ProofGalleryModal({
   onClose: () => void;
   onUpdated: (updated: ClaimRequest) => void;
 }) {
-  const [proofs, setProofs] = useState<Array<{ url: string; name: string; type: 'photo' | 'video' | 'file' }>>(() => {
-    const existing = claim.proofFiles || [];
-    if (existing.length > 0) return existing;
-    const items: Array<{ url: string; name: string; type: 'photo' | 'video' | 'file' }> = [];
-    (claim.evidencePhotos || []).forEach((p, idx) => items.push({ url: p.url, name: p.label || `Photo ${idx + 1}`, type: 'photo' }));
-    (claim.evidenceVideos || []).forEach((v, idx) => items.push({ url: v.url, name: v.label || `Video ${idx + 1}`, type: 'video' }));
-    (claim.engineSeizeEvidencePhotos || []).forEach((p, idx) => items.push({ url: p.url, name: `Engine Photo ${idx + 1}`, type: 'photo' }));
-    (claim.engineSeizeEvidenceVideos || []).forEach((v, idx) => items.push({ url: v.url, name: `Engine Video ${idx + 1}`, type: 'video' }));
-    return items;
-  });
+  const [proofs, setProofs] = useState<ProofGalleryItem[]>(() =>
+    seedProofGallery(claim),
+  );
 
   const [uploading, setUploading] = useState(false);
 
@@ -1048,40 +1156,45 @@ function ProofGalleryModal({
             <p className="py-12 text-center text-xs font-semibold text-slate-400">No proof documentation uploaded yet.</p>
           ) : (
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              {proofs.map((item, index) => (
-                <div key={index} className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm">
-                  {item.type === 'video' ? (
+              {proofs.map((item, index) =>
+                item.type === 'video' ? (
+                  <div
+                    key={index}
+                    className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm"
+                  >
                     <div className="flex aspect-[4/3] flex-col items-center justify-center p-3 text-center text-white">
                       <Video className="h-8 w-8 text-violet-400" />
-                      <p className="mt-2 line-clamp-1 text-[11px] font-medium">{item.name}</p>
+                      <p className="mt-2 line-clamp-1 text-[11px] font-medium">
+                        {item.name}
+                      </p>
                     </div>
-                  ) : (
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    <img src={item.url} alt={item.name} className="aspect-[4/3] w-full object-cover" />
-                  )}
-                  <div className="absolute inset-0 flex items-center justify-center gap-2 bg-slate-950/70 opacity-0 transition group-hover:opacity-100">
-                    <a
-                      href={item.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-lg bg-white/90 p-2 text-slate-900 hover:bg-white"
-                      title="View full size"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </a>
-                    <button
-                      onClick={() => removeProof(index)}
-                      className="rounded-lg bg-rose-600 p-2 text-white hover:bg-rose-700"
-                      title="Remove"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
+                    <div className="absolute inset-0 flex items-center justify-center gap-2 bg-slate-950/70 opacity-0 transition group-hover:opacity-100">
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-lg bg-white/90 p-2 text-slate-900 hover:bg-white"
+                        title="View full size"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </a>
+                      <button
+                        onClick={() => removeProof(index)}
+                        className="rounded-lg bg-rose-600 p-2 text-white hover:bg-rose-700"
+                        title="Remove"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
-                  <span className="absolute bottom-1.5 left-1.5 rounded bg-slate-950/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
-                    {item.type === 'video' ? 'VIDEO' : 'PHOTO'}
-                  </span>
-                </div>
-              ))}
+                ) : (
+                  <ProofPhotoCard
+                    key={index}
+                    item={item}
+                    onRemove={() => removeProof(index)}
+                  />
+                ),
+              )}
             </div>
           )}
         </div>
@@ -1516,16 +1629,9 @@ function FullViewClaimModal({
   const [removingScreenshotUrl, setRemovingScreenshotUrl] = useState<string | null>(null);
 
   // Proof state
-  const [proofs, setProofs] = useState<Array<{ url: string; name: string; type: 'photo' | 'video' | 'file' }>>(() => {
-    const existing = claim.proofFiles || [];
-    if (existing.length > 0) return existing;
-    const items: Array<{ url: string; name: string; type: 'photo' | 'video' | 'file' }> = [];
-    (claim.evidencePhotos || []).forEach((p, idx) => items.push({ url: p.url, name: p.label || `Photo ${idx + 1}`, type: 'photo' }));
-    (claim.evidenceVideos || []).forEach((v, idx) => items.push({ url: v.url, name: v.label || `Video ${idx + 1}`, type: 'video' }));
-    (claim.engineSeizeEvidencePhotos || []).forEach((p, idx) => items.push({ url: p.url, name: `Engine Photo ${idx + 1}`, type: 'photo' }));
-    (claim.engineSeizeEvidenceVideos || []).forEach((v, idx) => items.push({ url: v.url, name: `Engine Video ${idx + 1}`, type: 'video' }));
-    return items;
-  });
+  const [proofs, setProofs] = useState<ProofGalleryItem[]>(() =>
+    seedProofGallery(claim),
+  );
 
   const docs = documentEntries(claim);
 
@@ -1861,6 +1967,39 @@ function FullViewClaimModal({
                 </div>
               </div>
 
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#4309ac]">
+                  Captured Location
+                </h3>
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Accident
+                    </p>
+                    <div className="mt-1">
+                      <LocationLink claim={claim} captureType="accident" />
+                      {!claim.locationLatitude && (
+                        <p className="text-xs text-slate-400">No GPS yet</p>
+                      )}
+                    </div>
+                  </div>
+                  {(claim.engineSeizeLocationLatitude ||
+                    claim.engineSeizeEvidenceSubmittedAt) && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Engine seize
+                      </p>
+                      <div className="mt-1">
+                        <LocationLink claim={claim} captureType="engine_seize" />
+                        {!claim.engineSeizeLocationLatitude && (
+                          <p className="text-xs text-slate-400">No GPS yet</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Form Metadata */}
               <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4 shadow-sm">
                 <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#4309ac]">Identifiers & Status Options</h3>
@@ -2070,43 +2209,54 @@ function FullViewClaimModal({
                   <p className="py-12 text-center text-xs font-semibold text-slate-400">No proof files attached yet.</p>
                 ) : (
                   <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                    {proofs.map((item, index) => (
-                      <div key={index} className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm">
-                        {item.type === 'video' ? (
+                    {proofs.map((item, index) =>
+                      item.type === 'video' ? (
+                        <div
+                          key={index}
+                          className="group relative overflow-hidden rounded-xl border border-slate-200 bg-slate-900 shadow-sm"
+                        >
                           <div className="flex aspect-[4/3] flex-col items-center justify-center p-3 text-center text-white">
                             <Video className="h-8 w-8 text-violet-400" />
-                            <p className="mt-2 line-clamp-1 text-[11px] font-medium">{item.name}</p>
+                            <p className="mt-2 line-clamp-1 text-[11px] font-medium">
+                              {item.name}
+                            </p>
                           </div>
-                        ) : (
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          <img src={item.url} alt={item.name} className="aspect-[4/3] w-full object-cover" />
-                        )}
-                        <div className="absolute inset-0 flex items-center justify-center gap-2 bg-slate-950/70 opacity-0 transition group-hover:opacity-100">
-                          <a
-                            href={item.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="rounded-lg bg-white/90 p-2 text-slate-900 hover:bg-white"
-                            title="View full size"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </a>
-                          <button
-                            onClick={() => {
-                              const next = proofs.filter((_, i) => i !== index);
-                              setProofs(next);
-                            }}
-                            className="rounded-lg bg-rose-600 p-2 text-white hover:bg-rose-700"
-                            title="Remove"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
+                          <div className="absolute inset-0 flex items-center justify-center gap-2 bg-slate-950/70 opacity-0 transition group-hover:opacity-100">
+                            <a
+                              href={item.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-lg bg-white/90 p-2 text-slate-900 hover:bg-white"
+                              title="View full size"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </a>
+                            <button
+                              onClick={() => {
+                                const next = proofs.filter((_, i) => i !== index);
+                                setProofs(next);
+                              }}
+                              className="rounded-lg bg-rose-600 p-2 text-white hover:bg-rose-700"
+                              title="Remove"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                          <span className="absolute bottom-1.5 left-1.5 rounded bg-slate-950/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
+                            {item.name}
+                          </span>
                         </div>
-                        <span className="absolute bottom-1.5 left-1.5 rounded bg-slate-950/80 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
-                          {item.type === 'video' ? 'VIDEO' : 'PHOTO'}
-                        </span>
-                      </div>
-                    ))}
+                      ) : (
+                        <ProofPhotoCard
+                          key={index}
+                          item={item}
+                          onRemove={() => {
+                            const next = proofs.filter((_, i) => i !== index);
+                            setProofs(next);
+                          }}
+                        />
+                      ),
+                    )}
                   </div>
                 )}
               </div>

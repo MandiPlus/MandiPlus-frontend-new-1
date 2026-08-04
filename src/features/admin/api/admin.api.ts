@@ -1249,6 +1249,7 @@ export interface ClaimRequest {
     capturedAt: string;
     slot: number;
     label?: string;
+    maskedUrl?: string;
   }>;
   evidenceVideos?: Array<{
     url: string;
@@ -1275,6 +1276,7 @@ export interface ClaimRequest {
     capturedAt: string;
     slot: number;
     label?: string;
+    maskedUrl?: string;
   }>;
   engineSeizeEvidenceVideos?: Array<{
     url: string;

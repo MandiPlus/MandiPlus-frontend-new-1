@@ -33,7 +33,7 @@ export type ClaimCaptureType = "accident" | "engine_seize";
 
 type CaptureStep = {
   label: string;
-  hint: string;
+  hint?: string;
   minDurationMs?: number;
   maxDurationMs?: number;
 };
@@ -42,47 +42,44 @@ const ACCIDENT_PHOTO_STEPS: CaptureStep[] = Array.from(
   { length: 4 },
   (_, index) => ({
     label: `Photo ${index + 1}`,
-    hint: "Keep the vehicle clearly visible",
   }),
 );
 const ACCIDENT_VIDEO_STEPS: CaptureStep[] = Array.from(
   { length: 2 },
   (_, index) => ({
     label: `Video ${index + 1}`,
-    hint: "Move slowly and keep the vehicle in frame",
     maxDurationMs: 60_000,
   }),
 );
 const ENGINE_SEIZE_PHOTO_STEPS: CaptureStep[] = [
-  { label: "RC", hint: "Capture the complete RC clearly" },
-  { label: "Front", hint: "Keep the full front of the vehicle visible" },
-  { label: "Rear", hint: "Keep the full rear of the vehicle visible" },
-  { label: "Left", hint: "Capture the complete left side" },
-  { label: "Right", hint: "Capture the complete right side" },
-  { label: "Engine", hint: "Open the bonnet and capture the engine clearly" },
-  { label: "Dashboard", hint: "Capture the complete dashboard" },
-  { label: "Odometer", hint: "Keep the odometer reading sharp and readable" },
-  { label: "Loading", hint: "Show the vehicle while it is loaded" },
-  { label: "Goods", hint: "Show the loaded goods clearly" },
+  { label: "RC" },
+  { label: "Front" },
+  { label: "Rear" },
+  { label: "Left" },
+  { label: "Right" },
+  { label: "Engine" },
+  { label: "Dashboard" },
+  { label: "Odometer" },
+  { label: "Loading" },
+  { label: "Goods" },
 ];
 const ENGINE_SEIZE_VIDEO_STEPS: CaptureStep[] = [
   {
     label: "Engine video",
-    hint: "Record the engine continuously with sound",
     minDurationMs: 60_000,
     maxDurationMs: 90_000,
   },
   {
-    label: "Cross-loading video",
-    hint: "Record the load being transferred to the other vehicle",
+    label: "Cross-load video",
     maxDurationMs: 60_000,
   },
 ];
-const VIDEO_WIDTH = 854;
-const VIDEO_HEIGHT = 480;
-const VIDEO_FRAME_RATE = 20;
-const VIDEO_BITS_PER_SECOND = 500_000;
-const AUDIO_BITS_PER_SECOND = 24_000;
+const VIDEO_WIDTH = 1280;
+const VIDEO_HEIGHT = 720;
+const VIDEO_FRAME_RATE = 24;
+const VIDEO_BITS_PER_SECOND = 2_000_000;
+const AUDIO_BITS_PER_SECOND = 64_000;
+const VIDEO_MAX_UPLOAD_BYTES = 28 * 1024 * 1024;
 
 type ClaimEvidenceSubmission = Parameters<typeof createClaimWithEvidence>[0] & {
   captureType?: ClaimCaptureType;
@@ -104,9 +101,9 @@ const getMessage = (error: unknown) => {
     const message = (error as { message?: unknown }).message;
     return Array.isArray(message)
       ? message[0]
-      : String(message || "Unable to continue");
+      : String(message || "Kuch gadbad ho gayi");
   }
-  return "Unable to continue";
+  return "Kuch gadbad ho gayi";
 };
 
 const getRecorderMimeType = () => {
@@ -127,50 +124,6 @@ const createSubmissionId = () => {
 const formatDuration = (seconds: number) =>
   `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
-const drawGpsOverlay = (
-  context: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  location: ClaimLocation,
-) => {
-  const padding = Math.max(14, Math.round(width * 0.018));
-  const titleSize = Math.max(15, Math.round(width * 0.025));
-  const bodySize = Math.max(13, Math.round(width * 0.021));
-  const overlayHeight = Math.max(104, Math.round(height * 0.2));
-  const capturedAt = new Date(location.capturedAt);
-
-  context.save();
-  context.fillStyle = "rgba(8, 12, 18, 0.78)";
-  context.fillRect(0, height - overlayHeight, width, overlayHeight);
-  context.fillStyle = "#ffffff";
-  context.font = `700 ${titleSize}px sans-serif`;
-  context.fillText(
-    "GPS LOCATION",
-    padding,
-    height - overlayHeight + padding + titleSize,
-  );
-  context.font = `600 ${bodySize}px sans-serif`;
-  context.fillText(
-    `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}  ·  ±${Math.round(location.accuracy)}m`,
-    padding,
-    height - overlayHeight + padding * 2 + titleSize + bodySize,
-  );
-  context.font = `500 ${bodySize}px sans-serif`;
-  context.fillText(
-    capturedAt.toLocaleString("en-IN", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }),
-    padding,
-    height - padding,
-  );
-  context.restore();
-};
-
 const loadImageFile = (file: File) =>
   new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
@@ -181,7 +134,7 @@ const loadImageFile = (file: File) =>
     };
     image.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      reject(new Error("Could not open RC image"));
+      reject(new Error("RC image nahi khuli"));
     };
     image.src = objectUrl;
   });
@@ -200,9 +153,6 @@ function CaptureGuide({ step }: { step: CaptureStep }) {
       <div className="grid h-40 w-full max-w-xs place-items-center rounded-[28px] border border-dashed border-white/55 bg-black/10">
         <Icon className="h-16 w-16 stroke-[1.35] text-white/80 drop-shadow" />
       </div>
-      <p className="mt-3 rounded-full bg-black/65 px-4 py-2 text-center text-xs font-semibold text-white backdrop-blur-sm">
-        {step.hint}
-      </p>
     </div>
   );
 }
@@ -224,7 +174,7 @@ function UploadBadge({ state }: { state: Capture["uploadState"] }) {
       {!ready && !failed && (
         <span className="h-2.5 w-2.5 animate-spin rounded-full border border-white/40 border-t-white" />
       )}
-      {ready ? "✓ Ready" : failed ? "Retrying" : "Preparing"}
+      {ready ? "✓ Ready" : failed ? "Retry" : "…"}
     </span>
   );
 }
@@ -329,6 +279,13 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
           if (generation !== uploadGenerationRef.current) {
             throw new Error("Capture reset");
           }
+          if (capture.file.type.startsWith("video/")) {
+            if (capture.file.size > VIDEO_MAX_UPLOAD_BYTES) {
+              throw new Error(
+                "Video bada ho gaya, dubara chhota record karo",
+              );
+            }
+          }
           updateCaptureUploadState(capture.id, "uploading");
           const target = await prepareUpload(submissionId);
           const proof = await uploadFile(
@@ -349,10 +306,11 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
         () => undefined,
         () => undefined,
       );
-      void task.catch(() => {
+      void task.catch((uploadError) => {
         uploadTasksRef.current.delete(capture.id);
         if (generation === uploadGenerationRef.current) {
           updateCaptureUploadState(capture.id, "failed");
+          setError(getMessage(uploadError));
         }
       });
       return task;
@@ -373,7 +331,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
 
   const startLocation = useCallback(() => {
     if (!navigator.geolocation) {
-      setError("Location is not supported on this browser");
+      setError("Location nahi chal raha");
       return;
     }
     if (locationWatchRef.current !== null) {
@@ -385,7 +343,6 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
         if (position.coords.accuracy > 1000) {
           locationRef.current = null;
           setLocation(null);
-          setError("Improving location…");
           return;
         }
         const currentLocation = {
@@ -403,8 +360,8 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
         setLocation(null);
         setError(
           geoError.code === geoError.PERMISSION_DENIED
-            ? "Location blocked in Chrome. Allow it, then retry"
-            : "Could not get location. Retry",
+            ? "Location allow karo"
+            : "Location nahi mili, dubara try karo",
         );
       },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
@@ -414,7 +371,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
   const startCamera = useCallback(async () => {
     setError(null);
     if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) {
-      setError("Open this page on HTTPS to use the camera");
+      setError("HTTPS pe kholo");
       return;
     }
     try {
@@ -455,19 +412,19 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
       const name = cameraError instanceof DOMException ? cameraError.name : "";
       setError(
         name === "NotAllowedError"
-          ? "Allow camera and microphone access"
+          ? "Camera allow karo"
           : name === "NotFoundError"
-            ? "Camera or microphone not available"
+            ? "Camera nahi mili"
             : name === "OverconstrainedError"
-              ? "Rear camera not available"
-              : "Camera could not start",
+              ? "Pichhli camera chahiye"
+              : "Camera start nahi hui",
       );
     }
   }, [stopCamera]);
 
   useEffect(() => {
     void startCamera();
-    if (engineSeize) startLocation();
+    startLocation();
     return () => {
       uploadGenerationRef.current += 1;
       stopCamera();
@@ -479,7 +436,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
         URL.revokeObjectURL(capture.preview),
       );
     };
-  }, [engineSeize, startCamera, startLocation, stopCamera]);
+  }, [startCamera, startLocation, stopCamera]);
 
   useEffect(() => {
     capturesRef.current = [...photos, ...videos];
@@ -513,7 +470,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
             },
           });
         } catch {
-          // The bitrate cap below still keeps the video compact on older phones.
+          // Bitrate cap still keeps uploads under the size gate.
         }
       }
     };
@@ -535,7 +492,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
       (blob) => {
         photoCaptureBusyRef.current = false;
         setPhotoCaptureBusy(false);
-        if (!blob) return setError("Photo failed. Try again");
+        if (!blob) return setError("Photo nahi bani, dubara lo");
         const photoNumber = photos.length + 1;
         const safeLabel = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
         const file = new File(
@@ -557,8 +514,8 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
         setPhotos((items) => [...items, capture]);
         showCaptureFeedback(
           photoNumber === photoTotal
-            ? "All photos captured"
-            : `${label} saved · ${photoTotal - photoNumber} left`,
+            ? "Photos ho gayi"
+            : `${label} · ${photoTotal - photoNumber} baki`,
         );
         void beginBackgroundUpload(capture).catch(() => undefined);
       },
@@ -569,17 +526,12 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
 
   const takePhoto = () => {
     const video = videoRef.current;
-    const currentLocation = locationRef.current;
     if (
       !video ||
       !cameraReady ||
       photoCaptureBusyRef.current ||
       photos.length >= photoTotal
     ) {
-      return;
-    }
-    if (engineSeize && !currentLocation) {
-      setError("Getting GPS location. Please wait");
       return;
     }
     photoCaptureBusyRef.current = true;
@@ -594,24 +546,13 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
     const context = canvas.getContext("2d");
     context?.drawImage(video, 0, 0, width, height);
     const capturedAt = new Date().toISOString();
-    if (context && engineSeize && currentLocation) {
-      drawGpsOverlay(context, width, height, {
-        ...currentLocation,
-        capturedAt,
-      });
-    }
     savePhotoCanvas(canvas, photoSteps[photos.length].label, capturedAt);
   };
 
   const uploadRc = async (file?: File) => {
-    const currentLocation = locationRef.current;
     if (!file || photos.length !== 0 || !engineSeize) return;
     if (!file.type.startsWith("image/")) {
-      setError("Upload the RC as an image");
-      return;
-    }
-    if (!currentLocation) {
-      setError("Getting GPS location. Please wait");
+      setError("RC image upload karo");
       return;
     }
     photoCaptureBusyRef.current = true;
@@ -629,12 +570,6 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
       const context = canvas.getContext("2d");
       context?.drawImage(image, 0, 0, width, height);
       const capturedAt = new Date().toISOString();
-      if (context) {
-        drawGpsOverlay(context, width, height, {
-          ...currentLocation,
-          capturedAt,
-        });
-      }
       savePhotoCanvas(canvas, ENGINE_SEIZE_PHOTO_STEPS[0].label, capturedAt);
     } catch (uploadError) {
       photoCaptureBusyRef.current = false;
@@ -655,7 +590,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
       elapsed < currentStep.minDurationMs
     ) {
       showCaptureFeedback(
-        `Keep recording until ${formatDuration(currentStep.minDurationMs / 1000)}`,
+        `${formatDuration(currentStep.minDurationMs / 1000)} tak chalao`,
       );
       return;
     }
@@ -669,7 +604,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
       videos.length === 1 &&
       !crossLoadingVehicleNumber.trim()
     ) {
-      setError("Enter the cross-loading vehicle number");
+      setError("Cross-load gaadi number daalo");
       return;
     }
     if (
@@ -680,7 +615,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
       typeof MediaRecorder === "undefined"
     ) {
       if (typeof MediaRecorder === "undefined")
-        setError("Video recording is not supported");
+        setError("Video support nahi hai");
       return;
     }
     const chunks: BlobPart[] = [];
@@ -698,7 +633,9 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
       const finalType = recorder.mimeType || mimeType || "video/webm";
       const blob = new Blob(chunks, { type: finalType });
       if (!blob.size) {
-        setError("Video failed. Try again");
+        setError("Video nahi bani, dubara lo");
+      } else if (blob.size > VIDEO_MAX_UPLOAD_BYTES) {
+        setError("Video bada ho gaya, dubara chhota record karo");
       } else {
         const videoNumber = videos.length + 1;
         const step = videoSteps[videos.length];
@@ -723,8 +660,8 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
         setVideos((items) => [...items, capture]);
         showCaptureFeedback(
           videoNumber === videoTotal
-            ? "All videos captured"
-            : `${step.label} saved · ${videoTotal - videoNumber} left`,
+            ? "Videos ho gayi"
+            : `${step.label} · ${videoTotal - videoNumber} baki`,
         );
         void beginBackgroundUpload(capture).catch(() => undefined);
       }
@@ -748,16 +685,8 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
   useEffect(() => {
     if (photos.length === photoTotal && videos.length === videoTotal) {
       stopCamera();
-      if (!locationRef.current) startLocation();
     }
-  }, [
-    photoTotal,
-    photos.length,
-    startLocation,
-    stopCamera,
-    videoTotal,
-    videos.length,
-  ]);
+  }, [photoTotal, photos.length, stopCamera, videoTotal, videos.length]);
 
   const reset = () => {
     capturesRef.current.forEach((capture) =>
@@ -769,6 +698,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
     setLocation(null);
     setCrossLoadingVehicleNumber("");
     setCaptureFeedback(null);
+    setError(null);
     uploadGenerationRef.current += 1;
     uploadQueueRef.current = Promise.resolve();
     uploadTasksRef.current.clear();
@@ -778,6 +708,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
       navigator.geolocation.clearWatch(locationWatchRef.current);
       locationWatchRef.current = null;
     }
+    startLocation();
     void startCamera();
   };
 
@@ -801,7 +732,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
         videos.map((capture) => beginBackgroundUpload(capture)),
       );
       const currentLocation = locationRef.current;
-      if (!currentLocation) throw new Error("Could not get location. Retry");
+      if (!currentLocation) throw new Error("Location nahi mili, dubara try karo");
       setFinalizing(true);
       const claim = await sendEvidence({
         truckNumber,
@@ -843,7 +774,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
     <div className="fixed inset-0 z-[70] flex flex-col bg-[#0d1117] text-white">
       <header className="flex min-h-14 items-center justify-between border-b border-white/10 px-4">
         <span className="text-sm font-bold">
-          {engineSeize ? "Engine seize" : "Accident claim"} ·{" "}
+          {engineSeize ? "Engine seize" : "Accident"} ·{" "}
           {truckNumber.toUpperCase()}
         </span>
         {onClose ? (
@@ -852,7 +783,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
             onClick={onClose}
             className="min-h-10 px-2 text-sm text-white/80"
           >
-            Close
+            Band
           </button>
         ) : (
           <span aria-hidden="true" className="w-10" />
@@ -874,8 +805,8 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
             <div className="flex items-center justify-between text-sm font-black">
               <span>
                 {capturingPhotos
-                  ? currentPhotoStep?.label || "Photos"
-                  : currentVideoStep?.label || "Videos"}
+                  ? currentPhotoStep?.label || "Photo"
+                  : currentVideoStep?.label || "Video"}
               </span>
               <span className="rounded-full bg-white px-2.5 py-1 text-xs text-[#111827]">
                 {capturingPhotos
@@ -905,31 +836,16 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
                 );
               })}
             </div>
-            <p
-              className={`mt-2 text-center text-sm font-bold ${
-                captureFeedback ? "text-emerald-300" : "text-white"
-              }`}
-              aria-live="polite"
-            >
-              {recording
-                ? `● Recording ${formatDuration(recordingSeconds)} / ${formatDuration(recordingLimitMs / 1000)}`
-                : captureFeedback ||
-                  (capturingPhotos
-                    ? engineSeize
-                      ? currentPhotoStep?.hint
-                      : `${photoTotal - photos.length} photos remaining`
-                    : currentVideoStep?.hint ||
-                      `${videoTotal - videos.length} videos remaining`)}
-            </p>
-            {engineSeize && (
+            {(recording || captureFeedback) && (
               <p
-                className={`mt-1 text-center text-[10px] font-semibold ${
-                  location ? "text-emerald-300" : "text-amber-300"
+                className={`mt-2 text-center text-sm font-bold ${
+                  captureFeedback ? "text-emerald-300" : "text-white"
                 }`}
+                aria-live="polite"
               >
-                {location
-                  ? `GPS ready · ±${Math.round(location.accuracy)}m`
-                  : "Getting GPS location…"}
+                {recording
+                  ? `● ${formatDuration(recordingSeconds)} / ${formatDuration(recordingLimitMs / 1000)}`
+                  : captureFeedback}
               </p>
             )}
           </div>
@@ -939,7 +855,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
             !recording && (
               <div className="absolute bottom-4 left-4 right-4 rounded-xl bg-black/75 p-3 backdrop-blur-sm">
                 <label className="text-[11px] font-bold text-white/70">
-                  Cross-loading vehicle number
+                  Cross-load gaadi number
                 </label>
                 <input
                   value={crossLoadingVehicleNumber}
@@ -949,7 +865,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
                     );
                     setError(null);
                   }}
-                  placeholder="e.g. MH12AB1234"
+                  placeholder="MH12AB1234"
                   maxLength={32}
                   className="mt-2 h-11 w-full rounded-lg border border-white/20 bg-white px-3 text-sm font-bold text-[#172033] outline-none focus:border-white"
                 />
@@ -990,7 +906,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
           </div>
           <div className="mx-auto mt-4 max-w-xl divide-y divide-slate-100 rounded-xl bg-white px-4 text-sm font-bold">
             <div className="flex items-center justify-between py-3">
-              <span>Evidence</span>
+              <span>Upload</span>
               <span
                 className={
                   readyUploads === photoTotal + videoTotal
@@ -1000,7 +916,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
               >
                 {readyUploads === photoTotal + videoTotal
                   ? "Ready"
-                  : `Preparing ${readyUploads}/${photoTotal + videoTotal}`}
+                  : `${readyUploads}/${photoTotal + videoTotal}`}
               </span>
             </div>
             <div className="flex items-center justify-between py-3">
@@ -1008,14 +924,12 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
               <span
                 className={location ? "text-emerald-700" : "text-amber-700"}
               >
-                {location
-                  ? `Ready · ±${Math.round(location.accuracy)}m`
-                  : "Getting…"}
+                {location ? "Ready" : "Aa rahi hai…"}
               </span>
             </div>
             {engineSeize && (
               <div className="flex items-center justify-between py-3">
-                <span>Cross-loading vehicle</span>
+                <span>Cross-load</span>
                 <span className="text-slate-600">
                   {crossLoadingVehicleNumber || "—"}
                 </span>
@@ -1045,7 +959,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
                   />
                   <button
                     type="button"
-                    disabled={!location || photoCaptureBusy}
+                    disabled={photoCaptureBusy}
                     onClick={() => rcUploadRef.current?.click()}
                     className="grid h-12 w-12 place-items-center rounded-full border border-white/30 text-white active:scale-95 disabled:opacity-40"
                     aria-label="Upload RC image"
@@ -1056,29 +970,24 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
               )}
               <button
                 type="button"
-                disabled={
-                  !cameraReady || photoCaptureBusy || (engineSeize && !location)
-                }
+                disabled={!cameraReady || photoCaptureBusy}
                 onClick={takePhoto}
                 className="block h-16 w-16 rounded-full border-4 border-white bg-white/20 shadow-[0_0_0_5px_rgba(255,255,255,0.12)] active:scale-95 disabled:opacity-40"
-                aria-label={`Take ${currentPhotoStep?.label || "photo"} ${photos.length + 1} of ${photoTotal}`}
+                aria-label={`Photo lo ${photos.length + 1}`}
               />
               {engineSeize && photos.length === 0 && (
                 <span aria-hidden="true" className="h-12 w-12" />
               )}
             </div>
-            <p className="mt-2 text-xs font-bold text-white/70">
-              {currentPhotoStep?.label || "Photo"} · {photos.length + 1} of{" "}
-              {photoTotal}
-            </p>
+            <p className="mt-2 text-xs font-bold text-white/70">Photo lo</p>
             {engineSeize && photos.length === 0 && (
               <button
                 type="button"
-                disabled={!location || photoCaptureBusy}
+                disabled={photoCaptureBusy}
                 onClick={() => rcUploadRef.current?.click()}
                 className="mt-1 min-h-8 text-[11px] font-semibold text-white/65 underline disabled:opacity-40"
               >
-                Or upload RC image
+                Ya RC upload karo
               </button>
             )}
           </div>
@@ -1098,7 +1007,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
                 disabled={!cameraReady || !videoProfileReady}
                 onClick={recording ? () => stopRecording() : startRecording}
                 className="grid h-[68px] w-[68px] place-items-center rounded-full border-4 border-[#0d1117] bg-white disabled:opacity-40"
-                aria-label={recording ? "Stop recording" : "Start recording"}
+                aria-label={recording ? "Band karo" : "Video chalu"}
               >
                 <span
                   className={`block bg-red-600 transition-all ${
@@ -1111,10 +1020,10 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
               className={`mt-2 text-xs font-black ${recording ? "text-red-300" : "text-white/75"}`}
             >
               {recording
-                ? "Recording · tap to finish"
+                ? "Band karo"
                 : !videoProfileReady
-                  ? "Preparing video…"
-                  : `${currentVideoStep?.label || "Start video"} · up to ${formatDuration(recordingLimitMs / 1000)}`}
+                  ? "Video ready…"
+                  : "Video chalu"}
             </p>
           </div>
         )}
@@ -1126,7 +1035,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
               onClick={reset}
               className="min-h-12 flex-1 rounded-xl border border-white/30 text-sm font-bold disabled:opacity-50"
             >
-              Retake
+              Dubara
             </button>
             <button
               type="button"
@@ -1136,11 +1045,11 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
             >
               {sending
                 ? finalizing
-                  ? "Sending claim…"
-                  : `Finishing uploads ${readyUploads}/${photoTotal + videoTotal}`
+                  ? "Bhej rahe…"
+                  : `Upload ${readyUploads}/${photoTotal + videoTotal}`
                 : location
-                  ? "Send claim"
-                  : "Getting location…"}
+                  ? "Bhej do"
+                  : "Location aa rahi hai…"}
             </button>
           </div>
         )}
@@ -1150,7 +1059,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
             onClick={() => void startCamera()}
             className="mx-auto mt-3 block min-h-10 px-5 text-sm font-bold underline"
           >
-            Retry
+            Dubara try
           </button>
         )}
         {reviewing && !location && (
@@ -1159,7 +1068,7 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
             onClick={startLocation}
             className="mx-auto mt-3 block min-h-10 px-5 text-sm font-bold underline"
           >
-            Retry location
+            Location dubara
           </button>
         )}
       </footer>

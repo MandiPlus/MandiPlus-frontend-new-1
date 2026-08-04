@@ -309,25 +309,50 @@ export function LocationLink({
   claim: ClaimRequest;
   captureType?: CaptureType;
 }) {
-  const latitude =
+  const latitude = Number(
     captureType === 'engine_seize'
       ? claim.engineSeizeLocationLatitude
-      : claim.locationLatitude;
-  const longitude =
+      : claim.locationLatitude,
+  );
+  const longitude = Number(
     captureType === 'engine_seize'
       ? claim.engineSeizeLocationLongitude
-      : claim.locationLongitude;
-  if (!latitude || !longitude) return null;
+      : claim.locationLongitude,
+  );
+  const accuracy = Number(
+    captureType === 'engine_seize'
+      ? claim.engineSeizeLocationAccuracyMeters
+      : claim.locationAccuracyMeters,
+  );
+  const capturedAt =
+    captureType === 'engine_seize'
+      ? claim.engineSeizeLocationCapturedAt
+      : claim.locationCapturedAt;
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
   const href = `https://www.google.com/maps?q=${latitude},${longitude}`;
+  const accuracyLabel = Number.isFinite(accuracy)
+    ? ` · ±${Math.round(accuracy)}m`
+    : '';
+  const timeLabel = capturedAt ? ` · ${formatDate(capturedAt, true)}` : '';
+
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#4309ac] hover:underline"
-    >
-      <MapPin className="h-3.5 w-3.5" />
-      Open captured location
-    </a>
+    <div className="space-y-1">
+      <p className="text-xs font-semibold text-slate-700">
+        {latitude.toFixed(6)}, {longitude.toFixed(6)}
+        {accuracyLabel}
+        {timeLabel}
+      </p>
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#4309ac] hover:underline"
+      >
+        <MapPin className="h-3.5 w-3.5" />
+        Open map
+      </a>
+    </div>
   );
 }
