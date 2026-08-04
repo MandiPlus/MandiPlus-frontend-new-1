@@ -688,8 +688,6 @@ export interface InvoiceFilterParams {
   supplierName?: string;
   buyerName?: string;
   productName?: string;
-  joinedStartDate?: string;
-  joinedEndDate?: string;
   userId?: string;
   sourceSurface?: string;
   sourceSurfaces?: string;

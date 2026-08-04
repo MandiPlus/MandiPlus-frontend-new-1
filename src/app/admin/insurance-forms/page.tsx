@@ -14,17 +14,9 @@ import { FileText, RefreshCw, Upload, Eye, CheckCircle, AlertCircle, X, XCircle,
 
 import InsuranceUploadModal from '@/features/admin/components/InsuranceUploadModal';
 import PartyCombobox, { type PartyComboboxOption } from '@/features/admin/components/PartyCombobox';
-import AsyncSearchableSelect from '@/features/admin/components/AsyncSearchableSelect';
 import { getHsnForProduct, itemsData } from '@/features/insurance/productCatalog';
 import { getVehicleRecentInvoiceStatus, getSupplierHistoricalParties, getBuyerHistoricalSuppliers } from '@/features/insurance/api';
 import type { HistoricalPartyOption } from '@/features/insurance/api';
-
-function formatDateForInput(date: Date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
 
 function useDebounce<T>(value: T, delay: number): T {
     const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -112,8 +104,6 @@ interface Invoice {
     otherPartyDisplayName?: string;
     insuredPersonDisplayAddress?: string[];
     otherPartyDisplayAddress?: string[];
-    personInvoiceCount?: number;
-    insuredPersonJoinedAt?: string | null;
     isVerified?: boolean;
     isRejected?: boolean;
     rejectionReason?: string | null;
@@ -541,10 +531,6 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         supplierName: '',
         buyerName: '',
         productName: '',
-        joinedStartDate: '',
-        joinedEndDate: '',
-        userId: '',
-        paymentStatus: '',
         sourceSurface: appQueueMode ? 'USER_APP' : '',
         verificationStatus: '',
     });
@@ -592,22 +578,6 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
 
         if (sourceFilters.productName?.trim()) {
             activeFilters.productName = sourceFilters.productName.trim();
-        }
-
-        if (sourceFilters.joinedStartDate) {
-            activeFilters.joinedStartDate = sourceFilters.joinedStartDate;
-        }
-
-        if (sourceFilters.joinedEndDate) {
-            activeFilters.joinedEndDate = sourceFilters.joinedEndDate;
-        }
-
-        if (sourceFilters.userId?.trim()) {
-            activeFilters.userId = sourceFilters.userId.trim();
-        }
-
-        if (sourceFilters.paymentStatus?.trim()) {
-            activeFilters.paymentStatus = sourceFilters.paymentStatus.trim();
         }
 
         if (appQueueMode && sourceFilters.sourceSurface === 'USER_APP') {
@@ -1286,39 +1256,6 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setFilters((prev) => ({ ...prev, [name]: value }));
-        setCurrentPage(1);
-    };
-
-    const resetAppFilters = () => {
-        setFilters({
-            invoiceType: '',
-            invoiceNumber: '',
-            vehicleNumber: '',
-            startDate: '',
-            endDate: '',
-            supplierName: '',
-            buyerName: '',
-            productName: '',
-            joinedStartDate: '',
-            joinedEndDate: '',
-            userId: '',
-            paymentStatus: '',
-            sourceSurface: appQueueMode ? 'USER_APP' : '',
-            verificationStatus: '',
-        });
-        setCurrentPage(1);
-    };
-
-    const applyInvoiceDatePreset = (preset: 'today' | '7d' | '30d') => {
-        const end = new Date();
-        const start = new Date();
-        if (preset === '7d') start.setDate(end.getDate() - 6);
-        if (preset === '30d') start.setDate(end.getDate() - 29);
-        setFilters((prev) => ({
-            ...prev,
-            startDate: formatDateForInput(start),
-            endDate: formatDateForInput(end),
-        }));
         setCurrentPage(1);
     };
 
@@ -2542,41 +2479,8 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                     </div>
                 </div>
 
-                <div className="bg-white text-black p-3 sm:p-4 rounded-xl border border-slate-200 shadow-sm mb-4 sm:mb-6">
-                    {appQueueMode ? (
-                        <div className="mb-3 flex flex-wrap items-center gap-2">
-                            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Invoice date</span>
-                            <button
-                                type="button"
-                                onClick={() => applyInvoiceDatePreset('today')}
-                                className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
-                            >
-                                Today
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => applyInvoiceDatePreset('7d')}
-                                className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
-                            >
-                                Last 7 days
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => applyInvoiceDatePreset('30d')}
-                                className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
-                            >
-                                Last 30 days
-                            </button>
-                            <button
-                                type="button"
-                                onClick={resetAppFilters}
-                                className="ml-auto rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                            >
-                                Reset Filters
-                            </button>
-                        </div>
-                    ) : null}
-                    <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 ${appQueueMode ? 'xl:grid-cols-4' : 'xl:grid-cols-10'}`}>
+                <div className="bg-white text-black p-3 sm:p-4 rounded-lg shadow mb-4 sm:mb-6">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-10">
                         <select
                             name="invoiceType"
                             value={filters.invoiceType || ''}
@@ -2612,7 +2516,6 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                             value={filters.startDate}
                             onChange={handleFilterChange}
                             className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
-                            title="Invoice date from"
                         />
 
                         <input
@@ -2621,7 +2524,6 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                             value={filters.endDate}
                             onChange={handleFilterChange}
                             className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
-                            title="Invoice date to"
                         />
 
                         <input
@@ -2681,111 +2583,12 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                 <option value="Web">Web</option>
                             </select>
                         ) : null}
-
-                        {appQueueMode ? (
-                            <>
-                                <input
-                                    type="date"
-                                    name="joinedStartDate"
-                                    value={filters.joinedStartDate || ''}
-                                    onChange={handleFilterChange}
-                                    className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
-                                    title="Joined from"
-                                    placeholder="Joined from"
-                                />
-                                <input
-                                    type="date"
-                                    name="joinedEndDate"
-                                    value={filters.joinedEndDate || ''}
-                                    onChange={handleFilterChange}
-                                    className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
-                                    title="Joined to"
-                                />
-                                <select
-                                    name="paymentStatus"
-                                    value={filters.paymentStatus || ''}
-                                    onChange={handleFilterChange}
-                                    className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
-                                >
-                                    <option value="">All payment statuses</option>
-                                    <option value="PENDING">Pending</option>
-                                    <option value="PAID">Paid</option>
-                                    <option value="PARTIAL">Partial</option>
-                                    <option value="FAILED">Failed</option>
-                                    <option value="REFUNDED">Refunded</option>
-                                    <option value="NOT_REQUIRED">Not required</option>
-                                </select>
-                                <AsyncSearchableSelect
-                                    label=""
-                                    value={filters.userId || ''}
-                                    onChange={(val) => {
-                                        setFilters((prev) => ({ ...prev, userId: val }));
-                                        setCurrentPage(1);
-                                    }}
-                                    placeholder="All Users"
-                                    searchPlaceholder="Search by name or phone..."
-                                    className="w-full"
-                                    onSearch={async (q) => {
-                                        const res = await adminApi.searchUsers(q, 100, { verified: true });
-                                        if (!res.success || !Array.isArray(res.data)) return [];
-                                        return [
-                                            { value: '', label: 'All Users' },
-                                            ...res.data.map((u) => ({
-                                                value: u.id,
-                                                label: `${u.name || ''} | ${u.mobileNumber || ''}`,
-                                            })),
-                                        ];
-                                    }}
-                                />
-                            </>
-                        ) : null}
                     </div>
 
                     <div className="mt-3 flex items-center justify-between gap-3 text-xs sm:text-sm text-slate-500">
-                        <span>
-                            Showing {invoices.length} of {serverTotal}{' '}
-                            {appQueueMode ? 'app invoices' : 'invoices'}
-                        </span>
+                        <span>Showing {invoices.length} {appQueueMode ? 'app invoices' : 'invoices'}</span>
                     </div>
                 </div>
-
-                {appQueueMode ? (
-                    <div className="mb-4 sm:mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
-                            <p className="text-xs uppercase tracking-wide text-slate-600">Rows</p>
-                            <p className="mt-1 text-2xl font-bold text-slate-900">{summaryStats.totalRows}</p>
-                        </div>
-                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-                            <p className="text-xs uppercase tracking-wide text-emerald-700">Verified</p>
-                            <p className="mt-1 text-2xl font-bold text-emerald-900">{summaryStats.verifiedCount}</p>
-                        </div>
-                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-                            <p className="text-xs uppercase tracking-wide text-amber-700">Pending review</p>
-                            <p className="mt-1 text-2xl font-bold text-amber-900">
-                                {Math.max(
-                                    0,
-                                    summaryStats.totalRows -
-                                        summaryStats.verifiedCount -
-                                        summaryStats.rejectedCount,
-                                )}
-                            </p>
-                        </div>
-                        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
-                            <p className="text-xs uppercase tracking-wide text-rose-700">Rejected</p>
-                            <p className="mt-1 text-2xl font-bold text-rose-900">{summaryStats.rejectedCount}</p>
-                        </div>
-                        <div className="rounded-xl border border-orange-200 bg-orange-50 p-4 shadow-sm">
-                            <p className="text-xs uppercase tracking-wide text-orange-700">Pending payment</p>
-                            <p className="mt-1 text-2xl font-bold text-orange-900">{summaryStats.pendingPaymentCount}</p>
-                        </div>
-                        <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 shadow-sm">
-                            <p className="text-xs uppercase tracking-wide text-cyan-700">Total premium</p>
-                            <p className="mt-1 text-2xl font-bold text-cyan-900">
-                                {formatCurrency(summaryStats.totalPremium)}
-                            </p>
-                        </div>
-                    </div>
-                ) : null}
 
                 {/* Error Banner */}
                 {error && (
@@ -2815,9 +2618,6 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                         <th className="sticky left-[248px] z-40 w-32 bg-slate-50 px-3 py-3 xl:px-2 xl:py-2 text-left text-xs xl:text-[11px] font-semibold text-slate-600 uppercase tracking-wider relative isolate border-r border-slate-200">
                                             Insured Person
                                         </th>
-                                        <th className="w-20 bg-slate-50 px-2 py-3 xl:py-2 text-center text-xs xl:text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
-                                            Invoices
-                                        </th>
                                         <th className="w-36 bg-slate-50 px-3 py-3 xl:px-2 xl:py-2 text-left text-xs xl:text-[11px] font-semibold text-slate-600 uppercase tracking-wider pl-6">
                                             Other Party
                                         </th>
@@ -2838,7 +2638,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                 <tbody className="divide-y divide-gray-200">
                                     {paginatedInvoices.length === 0 ? (
                                         <tr>
-                                            <td colSpan={16} className="px-6 py-12 text-center text-sm text-gray-500">
+                                            <td colSpan={15} className="px-6 py-12 text-center text-sm text-gray-500">
                                                 {loading ? 'Loading...' : 'No invoices found matching criteria.'}
                                             </td>
                                         </tr>
@@ -2887,11 +2687,6 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                                     </td>
                                                     <td className={`sticky left-[248px] z-30 w-32 bg-white px-3 py-3 xl:px-2 xl:py-2 text-sm xl:text-[13px] text-slate-700 align-top relative isolate border-r border-slate-200 ${expandedInvoiceId === inv.id ? 'bg-slate-50' : ''}`}>
                                                         <div className="whitespace-normal break-words leading-snug">{getInsuredPersonName(inv)}</div>
-                                                    </td>
-                                                    <td className={`w-20 px-2 py-3 xl:py-2 text-center align-top ${expandedInvoiceId === inv.id ? 'bg-slate-50' : 'bg-white'}`}>
-                                                        <span className="inline-flex min-w-[2rem] items-center justify-center rounded-md bg-indigo-50 px-2 py-0.5 text-sm font-semibold text-indigo-800">
-                                                            {Number(inv.personInvoiceCount || 0)}
-                                                        </span>
                                                     </td>
                                                     <td className={`w-36 px-3 py-3 xl:px-2 xl:py-2 text-sm xl:text-[13px] text-slate-700 align-top pl-6 ${expandedInvoiceId === inv.id ? 'bg-slate-50' : 'bg-white'}`}>
                                                         <div className="whitespace-normal break-words leading-snug">{getOtherPartyName(inv)}</div>
@@ -3207,7 +3002,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
 
                                                 {expandedInvoiceId === inv.id && (
                                                     <tr className="bg-slate-50/60">
-                                                        <td colSpan={16} className="px-4 pb-4">
+                                                        <td colSpan={15} className="px-4 pb-4">
                                                             <div className="sticky left-0 z-10 mt-3 w-full max-w-[min(100%,calc(100vw-18rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                                                                 <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                                                                     <div className="min-w-0">
@@ -3561,12 +3356,6 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                         <div>
                                             <p className="text-xs text-gray-500 mb-0.5">Insured Person</p>
                                             <p className="text-sm font-medium text-gray-900 truncate">{getInsuredPersonName(inv)}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs text-gray-500 mb-0.5">Invoices</p>
-                                            <p className="text-sm font-medium text-gray-900">
-                                                {Number(inv.personInvoiceCount || 0)}
-                                            </p>
                                         </div>
                                         <div>
                                             <p className="text-xs text-gray-500 mb-0.5">Other Party</p>
