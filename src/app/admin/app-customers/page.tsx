@@ -297,8 +297,8 @@ function CustomerDrawer({
           <section className="mt-6">
             <h3 className="text-sm font-black uppercase tracking-[0.08em] text-slate-500">Activity</h3>
             <div className="mt-3 divide-y divide-slate-200 rounded-lg border border-slate-200">
+              <TimelineRow label="Invoices made" value={customer.stats.formsSubmitted} at={customer.stats.lastFormSubmittedAt} />
               <TimelineRow label="App forms submitted" value={customer.stats.appFormsSubmitted} at={customer.stats.lastFormSubmittedAt} />
-              <TimelineRow label="All linked forms" value={customer.stats.formsSubmitted} at={customer.stats.lastFormSubmittedAt} />
               <TimelineRow label="Files submitted" value={customer.stats.filesSubmitted} />
               <TimelineRow label="Claims submitted" value={customer.stats.claimsSubmitted} at={customer.stats.lastClaimSubmittedAt} />
               <TimelineRow label="Wallet activity" value={customer.stats.walletTransactionCount} at={customer.stats.lastWalletActivityAt} />
@@ -517,6 +517,7 @@ export default function AdminAppCustomersPage() {
                   <TableHeader>Last login</TableHeader>
                   <TableHeader>Last activity</TableHeader>
                   <TableHeader>Onboarding</TableHeader>
+                  <TableHeader align="right">Invoices</TableHeader>
                   <TableHeader align="right">App forms</TableHeader>
                   <TableHeader align="right">Files</TableHeader>
                   <TableHeader align="right">Claims</TableHeader>
@@ -526,14 +527,14 @@ export default function AdminAppCustomersPage() {
                 {loading ? (
                   Array.from({ length: 8 }).map((_, index) => (
                     <tr key={index}>
-                      <td colSpan={9} className="px-4 py-3">
+                      <td colSpan={10} className="px-4 py-3">
                         <div className="h-10 animate-pulse rounded-md bg-slate-100" />
                       </td>
                     </tr>
                   ))
                 ) : customers.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-4 py-14 text-center">
+                    <td colSpan={10} className="px-4 py-14 text-center">
                       <DocumentTextIcon className="mx-auto h-10 w-10 text-slate-300" />
                       <p className="mt-3 text-sm font-black text-slate-900">No app customers found</p>
                       <p className="mt-1 text-sm text-slate-500">Try changing the search or status filter.</p>
@@ -579,6 +580,7 @@ export default function AdminAppCustomersPage() {
                           </p>
                         </div>
                       </td>
+                      <TableNumber value={customer.stats.formsSubmitted} />
                       <TableNumber value={customer.stats.appFormsSubmitted} />
                       <TableNumber value={customer.stats.filesSubmitted} />
                       <TableNumber value={customer.stats.claimsSubmitted} />
