@@ -226,17 +226,8 @@ export default function AdminTripsPage() {
       return;
     }
     setBusyFlag('track', true);
-    const response = await getTruckTracking(truckNumber);
-    if (!response.success) {
-      toast.error(response.message || 'Failed to fetch tracking data.');
-    } else {
-      const data = response.data;
-      if (!data) {
-        toast.error('Tracking data is unavailable for this trip.');
-        setBusyFlag('track', false);
-        return;
-      }
 
+    const openTrackModal = (data: TruckTrackingResponse) => {
       const sourceCoords =
         data.origin && typeof data.origin.lat === 'number' && typeof data.origin.lng === 'number'
           ? normalizeCoordValue(`${data.origin.lat},${data.origin.lng}`)
@@ -249,9 +240,13 @@ export default function AdminTripsPage() {
           : null;
 
       const currentName = data.location?.address || '';
-      const sourceName = getTripSourceLabel(trip) || (sourceCoords ? routeLabels[sourceCoords] || sourceCoords : '');
+      const sourceName =
+        getTripSourceLabel(trip) ||
+        (sourceCoords ? routeLabels[sourceCoords] || sourceCoords : '');
       const destinationName = destinationCoords
-        ? getTripDestinationLabel(trip) || routeLabels[destinationCoords] || destinationCoords
+        ? getTripDestinationLabel(trip) ||
+          routeLabels[destinationCoords] ||
+          destinationCoords
         : getTripDestinationLabel(trip);
 
       setTrackModal({
@@ -268,7 +263,53 @@ export default function AdminTripsPage() {
         sourceName,
         destinationName,
       });
+    };
+
+    const response = await getTruckTracking(truckNumber);
+    if (response.success && response.data) {
+      openTrackModal(response.data);
+      setBusyFlag('track', false);
+      return;
     }
+
+    // Fastag / cached fallback: list already has latest location — open map anyway.
+    const lat = trip.lastLocation?.lat;
+    const lng = trip.lastLocation?.lng;
+    if (
+      typeof lat === 'number' &&
+      typeof lng === 'number' &&
+      Number.isFinite(lat) &&
+      Number.isFinite(lng)
+    ) {
+      openTrackModal({
+        vehicleNumber: truckNumber,
+        truckId: trip.truck?.id || '',
+        tripId: trip.traqoTripId,
+        tripStatus: trip.status,
+        status: 'tracking',
+        location: {
+          lat,
+          lng,
+          address: trip.lastLocation?.address || null,
+          timeRecorded: trip.lastLocation?.timeRecorded || null,
+          distanceRemained:
+            trip.lastLocation?.distanceRemained != null
+              ? String(trip.lastLocation.distanceRemained)
+              : null,
+          timeRemained: trip.lastLocation?.timeRemained || null,
+          distanceTravel: trip.lastLocation?.distanceTravel ?? null,
+          totalDistance: trip.lastLocation?.totalDistance ?? null,
+        },
+        origin: null,
+        destination: null,
+        consentStatus: trip.invoice?.driverConsentStatus || null,
+        eta: null,
+      });
+      setBusyFlag('track', false);
+      return;
+    }
+
+    toast.error(response.message || 'Failed to fetch tracking data.');
     setBusyFlag('track', false);
   };
 

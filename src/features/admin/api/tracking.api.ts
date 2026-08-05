@@ -149,6 +149,8 @@ export interface AdminTripRow {
     lastEta?: string | null;
   } | null;
   lastLocation?: {
+    lat?: number | null;
+    lng?: number | null;
     address?: string | null;
     timeRecorded?: string | null;
     distanceRemained?: number | null;
