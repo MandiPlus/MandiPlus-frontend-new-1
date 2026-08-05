@@ -208,6 +208,18 @@ export interface PublicClaimCaptureLink {
   videoCount: number;
   coreComplete: boolean;
   canAddMore: boolean;
+  photos?: Array<{
+    url: string;
+    label?: string | null;
+    kind: "photo";
+    capturedAt: string;
+  }>;
+  videos?: Array<{
+    url: string;
+    label?: string | null;
+    kind: "video";
+    capturedAt: string;
+  }>;
 }
 
 export interface ClaimEligibleVehicle {

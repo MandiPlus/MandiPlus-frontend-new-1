@@ -10,12 +10,13 @@ import {
 
 type Capture = {
   id: string;
-  file: File;
+  file?: File;
   preview: string;
   capturedAt: string;
   label: string;
   kind: "photo" | "video";
   uploadState: "queued" | "uploading" | "ready" | "failed" | "saved";
+  fromServer?: boolean;
 };
 
 export type ClaimCaptureType = "accident" | "engine_seize";
@@ -24,6 +25,13 @@ type CaptureStep = {
   label: string;
   minDurationMs?: number;
   maxDurationMs?: number;
+};
+
+type GallerySeed = {
+  url: string;
+  label?: string | null;
+  kind: "photo" | "video";
+  capturedAt: string;
 };
 
 const PHOTO_STEPS: CaptureStep[] = Array.from({ length: 4 }, (_, index) => ({
@@ -56,6 +64,7 @@ type Props = {
   mode?: "wizard" | "addMore";
   initialPhotoCount?: number;
   initialVideoCount?: number;
+  initialMedia?: GallerySeed[];
   onClose?: () => void;
   onStateChange: (state: AppendResult) => void;
   prepareUpload: typeof getClaimEvidenceUploadTarget;
@@ -102,6 +111,7 @@ export default function ClaimCaptureFlow({
   mode = "wizard",
   initialPhotoCount = 0,
   initialVideoCount = 0,
+  initialMedia = [],
   onClose,
   onStateChange,
   prepareUpload,
@@ -116,57 +126,63 @@ export default function ClaimCaptureFlow({
   const recordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recordTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingStartedAtRef = useRef(0);
-  const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const locationWatchRef = useRef<number | null>(null);
   const locationRef = useRef<ClaimLocation | null>(null);
-  const capturesRef = useRef<Capture[]>([]);
+  const sessionItemsRef = useRef<Capture[]>([]);
   const submissionIdRef = useRef(createSubmissionId());
   const uploadGenerationRef = useRef(0);
   const uploadQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const serverPhotoCountRef = useRef(initialPhotoCount);
-  const serverVideoCountRef = useRef(initialVideoCount);
+  const baselinePhotosRef = useRef(initialPhotoCount);
+  const baselineVideosRef = useRef(initialVideoCount);
 
-  const [serverPhotoCount, setServerPhotoCount] = useState(initialPhotoCount);
-  const [serverVideoCount, setServerVideoCount] = useState(initialVideoCount);
-  const [pending, setPending] = useState<Capture[]>([]);
-  const [addMoreKind, setAddMoreKind] = useState<"photo" | "video">("photo");
+  const [sessionItems, setSessionItems] = useState<Capture[]>([]);
+  const [freeCapture, setFreeCapture] = useState(addMore);
+  const [captureKind, setCaptureKind] = useState<"photo" | "video">(
+    addMore || initialPhotoCount >= CORE_PHOTO_COUNT ? "video" : "photo",
+  );
+  const [showGallery, setShowGallery] = useState(false);
   const [location, setLocation] = useState<ClaimLocation | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [videoProfileReady, setVideoProfileReady] = useState(false);
   const [photoCaptureBusy, setPhotoCaptureBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [recordingElapsed, setRecordingElapsed] = useState(0);
-  const [captureFeedback, setCaptureFeedback] = useState<string | null>(null);
   const [minVideoPopup, setMinVideoPopup] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const pendingPhotos = pending.filter((item) => item.kind === "photo").length;
-  const pendingVideos = pending.filter((item) => item.kind === "video").length;
-  const photoDone = serverPhotoCount >= CORE_PHOTO_COUNT;
-  const videoDone = serverVideoCount >= CORE_VIDEO_COUNT;
-  const capturingPhotos =
-    !addMore && serverPhotoCount + pendingPhotos < CORE_PHOTO_COUNT;
-  const capturingVideos =
-    !addMore &&
-    photoDone &&
-    pendingPhotos === 0 &&
-    serverVideoCount + pendingVideos < CORE_VIDEO_COUNT;
-  const currentPhotoStep =
-    PHOTO_STEPS[
-      Math.min(serverPhotoCount + pendingPhotos, CORE_PHOTO_COUNT - 1)
-    ];
-  const currentVideoStep =
-    VIDEO_STEPS[
-      Math.min(serverVideoCount + pendingVideos, CORE_VIDEO_COUNT - 1)
-    ];
-  const activeVideoStep = addMore
+  const sessionPhotos = sessionItems.filter((item) => item.kind === "photo")
+    .length;
+  const sessionVideos = sessionItems.filter((item) => item.kind === "video")
+    .length;
+  const totalPhotos = baselinePhotosRef.current + sessionPhotos;
+  const totalVideos = baselineVideosRef.current + sessionVideos;
+  const photoDone = totalPhotos >= CORE_PHOTO_COUNT;
+  const videoDone = totalVideos >= CORE_VIDEO_COUNT;
+  const coreFilled = photoDone && videoDone;
+  const inFreeMode = freeCapture || addMore;
+  const wizardJustFinished = !inFreeMode && coreFilled;
+
+  const activeVideoStep = inFreeMode
     ? { label: "Video", minDurationMs: 30_000, maxDurationMs: 90_000 }
-    : currentVideoStep;
+    : VIDEO_STEPS[Math.min(totalVideos, CORE_VIDEO_COUNT - 1)];
   const recordingLimitMs = activeVideoStep?.maxDurationMs || 90_000;
   const recordingSeconds = Math.min(
     Math.floor(recordingElapsed / 1000),
     recordingLimitMs / 1000,
   );
+
+  const galleryItems: Capture[] = [
+    ...initialMedia.map((item, index) => ({
+      id: `server-${item.kind}-${index}`,
+      preview: item.url,
+      capturedAt: item.capturedAt,
+      label: item.label || (item.kind === "photo" ? "Photo" : "Video"),
+      kind: item.kind,
+      uploadState: "saved" as const,
+      fromServer: true,
+    })),
+    ...sessionItems,
+  ];
 
   const clearRecordingTimers = useCallback(() => {
     if (recordTimerRef.current) clearTimeout(recordTimerRef.current);
@@ -175,19 +191,9 @@ export default function ClaimCaptureFlow({
     recordTickRef.current = null;
   }, []);
 
-  const showCaptureFeedback = useCallback((message: string) => {
-    if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
-    setCaptureFeedback(message);
-    navigator.vibrate?.(35);
-    feedbackTimerRef.current = setTimeout(() => {
-      setCaptureFeedback(null);
-      feedbackTimerRef.current = null;
-    }, 1700);
-  }, []);
-
   const updateCaptureState = useCallback(
     (captureId: string, uploadState: Capture["uploadState"]) => {
-      setPending((items) =>
+      setSessionItems((items) =>
         items.map((item) =>
           item.id === captureId ? { ...item, uploadState } : item,
         ),
@@ -206,24 +212,19 @@ export default function ClaimCaptureFlow({
         item: { ...proof, label: capture.label },
         location: currentLocation,
       });
-      serverPhotoCountRef.current = state.photoCount;
-      serverVideoCountRef.current = state.videoCount;
-      setServerPhotoCount(state.photoCount);
-      setServerVideoCount(state.videoCount);
       updateCaptureState(capture.id, "saved");
-      setPending((items) => items.filter((item) => item.id !== capture.id));
-      URL.revokeObjectURL(capture.preview);
-      showCaptureFeedback("✓ Admin ko mil gaya");
       onStateChange(state);
       return state;
     },
-    [appendItem, onStateChange, showCaptureFeedback, updateCaptureState],
+    [appendItem, onStateChange, updateCaptureState],
   );
 
   const beginBackgroundUpload = useCallback(
     (capture: Capture) => {
+      if (!capture.file) return Promise.resolve();
       const generation = uploadGenerationRef.current;
       const submissionId = submissionIdRef.current;
+      const file = capture.file;
       const task = uploadQueueRef.current
         .catch(() => undefined)
         .then(async () => {
@@ -231,18 +232,14 @@ export default function ClaimCaptureFlow({
             throw new Error("Capture reset");
           }
           if (
-            capture.file.type.startsWith("video/") &&
-            capture.file.size > VIDEO_MAX_UPLOAD_BYTES
+            file.type.startsWith("video/") &&
+            file.size > VIDEO_MAX_UPLOAD_BYTES
           ) {
             throw new Error("Video bada ho gaya, dubara chhota record karo");
           }
           updateCaptureState(capture.id, "uploading");
           const target = await prepareUpload(submissionId);
-          const proof = await uploadFile(
-            target,
-            capture.file,
-            capture.capturedAt,
-          );
+          const proof = await uploadFile(target, file, capture.capturedAt);
           if (generation !== uploadGenerationRef.current) {
             throw new Error("Capture reset");
           }
@@ -378,20 +375,28 @@ export default function ClaimCaptureFlow({
       if (locationWatchRef.current !== null) {
         navigator.geolocation.clearWatch(locationWatchRef.current);
       }
-      if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
-      capturesRef.current.forEach((capture) =>
-        URL.revokeObjectURL(capture.preview),
-      );
+      sessionItemsRef.current.forEach((capture) => {
+        if (!capture.fromServer) URL.revokeObjectURL(capture.preview);
+      });
     };
   }, [startCamera, startLocation, stopCamera]);
 
   useEffect(() => {
-    capturesRef.current = pending;
-  }, [pending]);
+    sessionItemsRef.current = sessionItems;
+  }, [sessionItems]);
 
   useEffect(() => {
-    const needVideoProfile =
-      addMore || (photoDone && !videoDone) || addMoreKind === "video";
+    if (!inFreeMode && photoDone && captureKind === "photo" && !videoDone) {
+      setCaptureKind("video");
+    }
+  }, [captureKind, inFreeMode, photoDone, videoDone]);
+
+  useEffect(() => {
+    if (wizardJustFinished) setShowGallery(true);
+  }, [wizardJustFinished]);
+
+  useEffect(() => {
+    const needVideoProfile = captureKind === "video" || recording;
     if (!needVideoProfile || !cameraReady) return;
 
     let cancelled = false;
@@ -423,22 +428,30 @@ export default function ClaimCaptureFlow({
     return () => {
       cancelled = true;
     };
-  }, [addMore, addMoreKind, cameraReady, photoDone, videoDone]);
+  }, [cameraReady, captureKind, recording]);
 
   const enqueueCapture = (capture: Capture) => {
-    setPending((items) => [...items, capture]);
+    setSessionItems((items) => [...items, capture]);
+    navigator.vibrate?.(25);
     void beginBackgroundUpload(capture).catch(() => undefined);
   };
 
+  const canTakePhoto =
+    !recording &&
+    (inFreeMode
+      ? captureKind === "photo"
+      : !photoDone && captureKind === "photo");
+  const canRecordVideo = inFreeMode
+    ? captureKind === "video"
+    : photoDone && !videoDone && captureKind === "video";
+
   const takePhoto = () => {
     const video = videoRef.current;
-    const canTakeWizard = capturingPhotos;
-    const canTakeAddMore = addMore && addMoreKind === "photo";
     if (
       !video ||
       !cameraReady ||
       photoCaptureBusyRef.current ||
-      (!canTakeWizard && !canTakeAddMore)
+      !canTakePhoto
     ) {
       return;
     }
@@ -457,10 +470,9 @@ export default function ClaimCaptureFlow({
     canvas.height = height;
     canvas.getContext("2d")?.drawImage(video, 0, 0, width, height);
     const capturedAt = new Date().toISOString();
-    const label = addMore
-      ? `Photo ${serverPhotoCount + pendingPhotos + 1}`
-      : PHOTO_STEPS[Math.min(serverPhotoCount + pendingPhotos, CORE_PHOTO_COUNT - 1)]
-          .label;
+    const label = inFreeMode
+      ? `Photo ${totalPhotos + 1}`
+      : PHOTO_STEPS[Math.min(totalPhotos, CORE_PHOTO_COUNT - 1)].label;
     canvas.toBlob(
       (blob) => {
         photoCaptureBusyRef.current = false;
@@ -471,7 +483,7 @@ export default function ClaimCaptureFlow({
           `${captureType}-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.jpg`,
           { type: "image/jpeg", lastModified: Date.now() },
         );
-        const capture: Capture = {
+        enqueueCapture({
           id: `${submissionIdRef.current}-photo-${Date.now()}`,
           file,
           preview: URL.createObjectURL(file),
@@ -479,8 +491,7 @@ export default function ClaimCaptureFlow({
           label,
           kind: "photo",
           uploadState: "queued",
-        };
-        enqueueCapture(capture);
+        });
       },
       "image/jpeg",
       0.76,
@@ -490,7 +501,11 @@ export default function ClaimCaptureFlow({
   const stopRecording = (force = false) => {
     const minMs = activeVideoStep?.minDurationMs || 30_000;
     const elapsed = performance.now() - recordingStartedAtRef.current;
-    if (!force && recorderRef.current?.state === "recording" && elapsed < minMs) {
+    if (
+      !force &&
+      recorderRef.current?.state === "recording" &&
+      elapsed < minMs
+    ) {
       const remainingSec = Math.ceil((minMs - elapsed) / 1000);
       setMinVideoPopup(`Thoda aur chalao — ~${remainingSec} sec baki`);
       return;
@@ -501,13 +516,11 @@ export default function ClaimCaptureFlow({
   };
 
   const startRecording = () => {
-    const canRecordWizard = capturingVideos;
-    const canRecordAddMore = addMore && addMoreKind === "video";
     if (
       !streamRef.current ||
       !videoProfileReady ||
       recording ||
-      (!canRecordWizard && !canRecordAddMore) ||
+      !canRecordVideo ||
       typeof MediaRecorder === "undefined"
     ) {
       if (typeof MediaRecorder === "undefined")
@@ -537,11 +550,9 @@ export default function ClaimCaptureFlow({
       } else if (blob.size > VIDEO_MAX_UPLOAD_BYTES) {
         setError("Video bada ho gaya, dubara chhota record karo");
       } else {
-        const label = addMore
-          ? `Video ${serverVideoCount + pendingVideos + 1}`
-          : VIDEO_STEPS[
-              Math.min(serverVideoCount + pendingVideos, CORE_VIDEO_COUNT - 1)
-            ].label;
+        const label = inFreeMode
+          ? `Video ${totalVideos + 1}`
+          : VIDEO_STEPS[Math.min(totalVideos, CORE_VIDEO_COUNT - 1)].label;
         const extension = finalType.includes("mp4") ? "mp4" : "webm";
         const file = new File(
           [blob],
@@ -551,7 +562,7 @@ export default function ClaimCaptureFlow({
             lastModified: Date.now(),
           },
         );
-        const capture: Capture = {
+        enqueueCapture({
           id: `${submissionIdRef.current}-video-${Date.now()}`,
           file,
           preview: URL.createObjectURL(file),
@@ -559,8 +570,7 @@ export default function ClaimCaptureFlow({
           label,
           kind: "video",
           uploadState: "queued",
-        };
-        enqueueCapture(capture);
+        });
       }
       setRecording(false);
       setRecordingElapsed(0);
@@ -571,16 +581,20 @@ export default function ClaimCaptureFlow({
     setRecording(true);
     recordTickRef.current = setInterval(() => {
       setRecordingElapsed(
-        Math.min(performance.now() - recordingStartedAtRef.current, recordingLimitMs),
+        Math.min(
+          performance.now() - recordingStartedAtRef.current,
+          recordingLimitMs,
+        ),
       );
     }, 100);
-    recordTimerRef.current = setTimeout(() => stopRecording(true), recordingLimitMs);
+    recordTimerRef.current = setTimeout(
+      () => stopRecording(true),
+      recordingLimitMs,
+    );
   };
 
-  const showPhotoShutter =
-    (capturingPhotos || (addMore && addMoreKind === "photo")) && !recording;
-  const showVideoShutter =
-    capturingVideos || (addMore && addMoreKind === "video");
+  const showKindSwitch =
+    !recording && (inFreeMode || (photoDone && !wizardJustFinished));
 
   return (
     <div className="fixed inset-0 z-[70] flex flex-col bg-[#0d1117] text-white">
@@ -589,17 +603,14 @@ export default function ClaimCaptureFlow({
           {captureType === "engine_seize" ? "Engine seize" : "Accident"} ·{" "}
           {truckNumber.toUpperCase()}
         </span>
-        {onClose ? (
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-h-10 px-2 text-sm text-white/80"
-          >
-            Band
-          </button>
-        ) : (
-          <span aria-hidden="true" className="w-10" />
-        )}
+        <button
+          type="button"
+          onClick={() => setShowGallery(true)}
+          className="min-h-10 px-2 text-sm font-bold text-white"
+        >
+          Gallery
+          {galleryItems.length > 0 ? ` (${galleryItems.length})` : ""}
+        </button>
       </header>
 
       <main className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black">
@@ -609,90 +620,30 @@ export default function ClaimCaptureFlow({
           muted
           className="h-full w-full object-contain"
         />
-        <div className="absolute left-3 right-3 top-3 rounded-2xl border border-white/15 bg-black/75 px-4 py-3 shadow-lg backdrop-blur-sm">
-          <div className="flex items-center justify-between text-sm font-black">
-            <span>
-              {addMore
-                ? addMoreKind === "photo"
-                  ? "Aur photo"
-                  : "Aur video"
-                : capturingPhotos
-                  ? currentPhotoStep?.label || "Photo"
-                  : currentVideoStep?.label || "Video"}
-            </span>
-            <span className="rounded-full bg-white px-2.5 py-1 text-xs text-[#111827]">
-              {addMore
-                ? `${serverPhotoCount}p · ${serverVideoCount}v`
-                : capturingPhotos
-                  ? `${Math.min(serverPhotoCount + pendingPhotos + 1, CORE_PHOTO_COUNT)} / ${CORE_PHOTO_COUNT}`
-                  : `${Math.min(serverVideoCount + pendingVideos + 1, CORE_VIDEO_COUNT)} / ${CORE_VIDEO_COUNT}`}
-            </span>
-          </div>
-          {!addMore && (
-            <div className="mt-2 flex gap-2" aria-hidden="true">
-              {Array.from({
-                length: capturingPhotos ? CORE_PHOTO_COUNT : CORE_VIDEO_COUNT,
-              }).map((_, index) => {
-                const complete =
-                  index <
-                  (capturingPhotos
-                    ? serverPhotoCount + pendingPhotos
-                    : serverVideoCount + pendingVideos);
-                const current =
-                  index ===
-                  (capturingPhotos
-                    ? serverPhotoCount + pendingPhotos
-                    : serverVideoCount + pendingVideos);
-                return (
-                  <span
-                    key={index}
-                    className={`h-2 flex-1 rounded-full ${
-                      complete
-                        ? "bg-emerald-400"
-                        : current
-                          ? "bg-white"
-                          : "bg-white/25"
-                    }`}
-                  />
-                );
-              })}
-            </div>
-          )}
-          {(recording || captureFeedback) && (
-            <p
-              className={`mt-2 text-center text-sm font-bold ${
-                captureFeedback ? "text-emerald-300" : "text-white"
-              }`}
-              aria-live="polite"
-            >
-              {recording
-                ? `● ${formatDuration(recordingSeconds)} / ${formatDuration(recordingLimitMs / 1000)}`
-                : captureFeedback}
-            </p>
-          )}
-        </div>
 
-        {addMore && !recording && (
-          <div className="absolute bottom-28 left-1/2 flex -translate-x-1/2 gap-2 rounded-full bg-black/70 p-1">
-            <button
-              type="button"
-              onClick={() => setAddMoreKind("photo")}
-              className={`min-h-10 rounded-full px-4 text-sm font-black ${
-                addMoreKind === "photo" ? "bg-white text-[#111827]" : "text-white/80"
-              }`}
-            >
-              Photo
-            </button>
-            <button
-              type="button"
-              onClick={() => setAddMoreKind("video")}
-              className={`min-h-10 rounded-full px-4 text-sm font-black ${
-                addMoreKind === "video" ? "bg-white text-[#111827]" : "text-white/80"
-              }`}
-            >
-              Video
-            </button>
+        {!inFreeMode && !wizardJustFinished && (
+          <div className="absolute left-3 right-3 top-3 flex gap-1.5">
+            {Array.from({
+              length: photoDone ? CORE_VIDEO_COUNT : CORE_PHOTO_COUNT,
+            }).map((_, index) => {
+              const doneCount = photoDone ? totalVideos : totalPhotos;
+              return (
+                <span
+                  key={index}
+                  className={`h-1 flex-1 rounded-full ${
+                    index < doneCount ? "bg-white" : "bg-white/25"
+                  }`}
+                />
+              );
+            })}
           </div>
+        )}
+
+        {recording && (
+          <p className="absolute left-0 right-0 top-8 text-center text-sm font-bold">
+            ● {formatDuration(recordingSeconds)} /{" "}
+            {formatDuration(recordingLimitMs / 1000)}
+          </p>
         )}
 
         {minVideoPopup && (
@@ -720,8 +671,42 @@ export default function ClaimCaptureFlow({
             Location aa raha…
           </p>
         )}
-        <div className="flex items-center justify-center gap-4">
-          {showPhotoShutter && (
+
+        {showKindSwitch && (
+          <div className="mb-3 flex justify-center">
+            <div className="flex gap-1 rounded-full bg-white/10 p-1">
+              {(inFreeMode || !photoDone) && (
+                <button
+                  type="button"
+                  onClick={() => setCaptureKind("photo")}
+                  className={`min-h-10 rounded-full px-5 text-sm font-black ${
+                    captureKind === "photo"
+                      ? "bg-white text-[#111827]"
+                      : "text-white/75"
+                  }`}
+                >
+                  Photo
+                </button>
+              )}
+              {(inFreeMode || photoDone) && (
+                <button
+                  type="button"
+                  onClick={() => setCaptureKind("video")}
+                  className={`min-h-10 rounded-full px-5 text-sm font-black ${
+                    captureKind === "video"
+                      ? "bg-white text-[#111827]"
+                      : "text-white/75"
+                  }`}
+                >
+                  Video
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-center">
+          {canTakePhoto && (
             <button
               type="button"
               onClick={takePhoto}
@@ -732,13 +717,13 @@ export default function ClaimCaptureFlow({
               <span className="h-14 w-14 rounded-full bg-white" />
             </button>
           )}
-          {showVideoShutter && (
+          {(canRecordVideo || recording) && (
             <button
               type="button"
               onClick={() => (recording ? stopRecording() : startRecording())}
               disabled={
-                (!recording && (!cameraReady || !videoProfileReady || !location)) ||
-                false
+                !recording &&
+                (!cameraReady || !videoProfileReady || !location)
               }
               className="grid h-20 w-20 place-items-center rounded-full border-4 border-white bg-white/15 disabled:opacity-40"
               aria-label={recording ? "Video band" : "Video chalu"}
@@ -754,15 +739,80 @@ export default function ClaimCaptureFlow({
           )}
         </div>
         <p className="mt-2 text-center text-xs font-bold text-white/55">
-          {showPhotoShutter
-            ? "Photo lo"
-            : recording
-              ? "Band karne ke liye dabao"
-              : showVideoShutter
+          {recording
+            ? "Band karne ke liye dabao"
+            : canTakePhoto
+              ? "Photo lo"
+              : canRecordVideo
                 ? "Video chalu"
-                : "Save ho raha…"}
+                : "Gallery dekho"}
         </p>
       </footer>
+
+      {showGallery && (
+        <div className="absolute inset-0 z-20 flex flex-col bg-[#0d1117]">
+          <header className="flex min-h-14 items-center justify-between border-b border-white/10 px-4">
+            <span className="text-sm font-bold">Gallery</span>
+            <button
+              type="button"
+              onClick={() => {
+                if (wizardJustFinished && !freeCapture) onClose?.();
+                else setShowGallery(false);
+              }}
+              className="min-h-10 px-2 text-sm font-bold text-white/80"
+            >
+              {wizardJustFinished && !freeCapture ? "Ho gaya" : "Wapas"}
+            </button>
+          </header>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            {galleryItems.length === 0 ? (
+              <p className="mt-10 text-center text-sm font-bold text-white/55">
+                Abhi kuch nahi hai
+              </p>
+            ) : (
+              <div className="mx-auto grid max-w-lg grid-cols-3 gap-2">
+                {galleryItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="relative aspect-square overflow-hidden rounded-xl bg-black"
+                  >
+                    {item.kind === "video" ? (
+                      <video
+                        src={item.preview}
+                        className="h-full w-full object-cover"
+                        muted
+                        playsInline
+                      />
+                    ) : (
+                      <img
+                        src={item.preview}
+                        alt={item.label}
+                        className="h-full w-full object-cover"
+                      />
+                    )}
+                    <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-bold">
+                      {item.kind === "video" ? "Video" : "Photo"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="border-t border-white/10 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+            <button
+              type="button"
+              onClick={() => {
+                setFreeCapture(true);
+                setCaptureKind("photo");
+                setShowGallery(false);
+              }}
+              className="min-h-14 w-full rounded-2xl bg-white text-base font-black text-[#111827]"
+            >
+              Aur kheecho
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
