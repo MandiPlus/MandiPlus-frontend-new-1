@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
+  ArrowTopRightOnSquareIcon,
   CheckCircleIcon,
   ClockIcon,
   DocumentTextIcon,
   ExclamationTriangleIcon,
   MagnifyingGlassIcon,
   PhoneIcon,
+  PlayCircleIcon,
   UserCircleIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
@@ -18,6 +20,7 @@ import {
   AdminAppCustomersSummary,
   adminApi,
 } from '@/features/admin/api/admin.api';
+import { postHogSessionRecordingsUrl } from '@/features/admin/posthogLinks';
 
 const ITEMS_PER_PAGE = 20;
 
@@ -232,6 +235,7 @@ function CustomerDrawer({
   if (!customer) return null;
 
   const location = customer.onboarding.location.map(cleanLabel).filter(Boolean);
+  const replayUrl = postHogSessionRecordingsUrl(customer.id);
 
   return (
     <div className="fixed inset-0 z-50">
@@ -250,6 +254,18 @@ function CustomerDrawer({
                 <h2 className="text-xl font-black text-slate-950">{customer.name || 'Unnamed customer'}</h2>
               </div>
               <p className="mt-1 text-sm font-medium text-slate-500">{formatPhone(customer.mobileNumber)}</p>
+              {replayUrl ? (
+                <a
+                  href={replayUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-[#4309ac] px-3 py-2 text-xs font-black text-white hover:bg-[#350888]"
+                >
+                  <PlayCircleIcon className="h-4 w-4" />
+                  Session recordings
+                  <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5 opacity-80" />
+                </a>
+              ) : null}
             </div>
             <button
               type="button"

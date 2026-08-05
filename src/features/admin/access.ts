@@ -29,6 +29,7 @@ import {
   PresentationChartLineIcon,
   TicketIcon,
   TrashIcon,
+  PlayCircleIcon,
 } from '@heroicons/react/24/outline';
 
 export const ADMIN_SECTIONS = [
@@ -97,6 +98,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Users', href: '/admin/users', icon: UsersIcon, section: 'users' },
   { name: 'Ledger', href: '/admin/ledger', icon: DocumentTextIcon, section: 'ledger' },
   { name: 'Customers', href: '/admin/app-customers', icon: UserCircleIcon, section: 'app-customers' },
+  { name: 'Activity', href: '/admin/app/activity', icon: PlayCircleIcon, section: 'app-customers' },
   { name: 'Account Memberships', href: '/admin/account-memberships', icon: LinkIcon, section: 'account-memberships' },
   { name: 'Invoices', href: '/admin/app-invoices', icon: DevicePhoneMobileIcon, section: 'app-invoices' },
   { name: 'Quick Details', href: '/admin/quick-details', icon: InboxArrowDownIcon, section: 'app-quick-details' },
@@ -176,6 +178,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/users': 'users',
   '/admin/ledger': 'ledger',
   '/admin/app-customers': 'app-customers',
+  '/admin/app/activity': 'app-customers',
   '/admin/account-memberships': 'account-memberships',
   '/admin/app-invoices': 'app-invoices',
   '/admin/app/notifications': 'notifications',
