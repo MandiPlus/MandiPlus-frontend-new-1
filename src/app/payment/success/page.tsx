@@ -6,6 +6,8 @@ import {
   Download,
   LoaderCircle,
   MessageCircle,
+  Pencil,
+  X,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -20,6 +22,7 @@ import {
   getCustomerDashboardInvoices,
   getCustomerPaymentCheckoutStatus,
 } from "@/features/customer/api";
+import { updateCustomerInvoice } from "@/features/customer-app/api";
 import { clearCustomerInvoicePaymentAttempt } from "@/features/customer-app/payment-attempt";
 import {
   getInvoicePdfUrl,
@@ -44,6 +47,16 @@ type ReadyInvoiceDocument = {
   pdfUrl: string;
 };
 
+type InvoiceEditForm = {
+  invoiceDate: string;
+  supplierName: string;
+  supplierAddress: string;
+  placeOfSupply: string;
+  buyerName: string;
+  buyerAddress: string;
+  vehicleNumber: string;
+};
+
 function SuccessContent() {
   const router = useRouter();
   const params = useSearchParams();
@@ -66,6 +79,18 @@ function SuccessContent() {
   const [loadError, setLoadError] = useState("");
   const [downloading, setDownloading] = useState(false);
   const [actionMessage, setActionMessage] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [editForm, setEditForm] = useState<InvoiceEditForm>({
+    invoiceDate: "",
+    supplierName: "",
+    supplierAddress: "",
+    placeOfSupply: "",
+    buyerName: "",
+    buyerAddress: "",
+    vehicleNumber: "",
+  });
 
   useEffect(() => {
     setReferences((current) =>
@@ -286,6 +311,99 @@ function SuccessContent() {
     router.replace("/home");
   };
 
+  const openInvoiceEditor = () => {
+    if (!activeInvoice) return;
+    setEditForm({
+      invoiceDate: String(activeInvoice.invoiceDate || "").slice(0, 10),
+      supplierName: String(activeInvoice.supplierName || ""),
+      supplierAddress: addressLines(activeInvoice.supplierAddress),
+      placeOfSupply: String(activeInvoice.placeOfSupply || ""),
+      buyerName: String(
+        activeInvoice.billToName || activeInvoice.shipToName || "",
+      ),
+      buyerAddress: addressLines(
+        activeInvoice.billToAddress || activeInvoice.shipToAddress,
+      ),
+      vehicleNumber: invoiceVehicle(activeInvoice)
+        .replace(/unavailable|not added/gi, "")
+        .trim(),
+    });
+    setEditError("");
+    setEditOpen(true);
+  };
+
+  const saveInvoiceEdits = async () => {
+    if (!activeInvoice || editSaving) return;
+    if (
+      !editForm.supplierName.trim() ||
+      !editForm.supplierAddress.trim() ||
+      !editForm.buyerName.trim() ||
+      !editForm.buyerAddress.trim() ||
+      !editForm.placeOfSupply.trim() ||
+      !editForm.invoiceDate.trim()
+    ) {
+      setEditError("Naam, address, place of supply aur date bharo.");
+      return;
+    }
+
+    setEditSaving(true);
+    setEditError("");
+    try {
+      const productName = Array.isArray(activeInvoice.productName)
+        ? activeInvoice.productName[0]
+        : String(activeInvoice.productName || "");
+      const updated = await updateCustomerInvoice(String(activeInvoice.id), {
+        invoiceDate: editForm.invoiceDate.slice(0, 10),
+        supplierName: editForm.supplierName,
+        supplierAddress: editForm.supplierAddress,
+        placeOfSupply: editForm.placeOfSupply,
+        buyerName: editForm.buyerName,
+        buyerAddress: editForm.buyerAddress,
+        vehicleNumber: editForm.vehicleNumber,
+        productName,
+      });
+      setInvoices((current) =>
+        current.map((invoice) =>
+          String(invoice.id) === String(activeInvoice.id)
+            ? { ...invoice, ...updated }
+            : invoice,
+        ),
+      );
+      setReferences((current) =>
+        current.map((reference) =>
+          reference.id === String(activeInvoice.id)
+            ? {
+                ...reference,
+                vehicle:
+                  invoiceVehicle(updated as CustomerInvoice) ||
+                  reference.vehicle,
+                invoiceNumber: String(
+                  updated.invoiceNumber || reference.invoiceNumber,
+                ),
+              }
+            : reference,
+        ),
+      );
+      setLoadedPdfUrls((current) => {
+        const next = new Set(current);
+        const oldUrl = getInvoicePdfUrl(activeInvoice);
+        if (oldUrl) next.delete(oldUrl);
+        return next;
+      });
+      setActionMessage("Invoice update ho gaya.");
+      setEditOpen(false);
+      void refreshInvoices();
+    } catch (error) {
+      setEditError(
+        error instanceof Error
+          ? error.message
+          : "Invoice update nahi ho paya.",
+      );
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
@@ -366,17 +484,29 @@ function SuccessContent() {
         <section className={styles.invoiceCard}>
           <header className={styles.invoiceHeading}>
             <strong>{activeVehicle}</strong>
-            {isBulk ? (
-              <span>
-                {Math.max(
-                  references.findIndex(
-                    (reference) => reference.id === activeReference?.id,
-                  ) + 1,
-                  1,
-                )}{" "}
-                of {references.length}
-              </span>
-            ) : null}
+            <div className={styles.invoiceHeadingActions}>
+              {isBulk ? (
+                <span>
+                  {Math.max(
+                    references.findIndex(
+                      (reference) => reference.id === activeReference?.id,
+                    ) + 1,
+                    1,
+                  )}{" "}
+                  of {references.length}
+                </span>
+              ) : null}
+              {activeInvoice ? (
+                <button
+                  type="button"
+                  className={styles.editButton}
+                  onClick={openInvoiceEditor}
+                >
+                  <Pencil size={15} />
+                  Edit
+                </button>
+              ) : null}
+            </div>
           </header>
 
           <div className={styles.pdfFrame}>
@@ -447,8 +577,194 @@ function SuccessContent() {
           </button>
         </div>
       </div>
+
+      {editOpen ? (
+        <div className={styles.editBackdrop} role="dialog" aria-modal="true">
+          <div className={styles.editSheet}>
+            <div className={styles.editHeader}>
+              <strong>Invoice edit karein</strong>
+              <button
+                type="button"
+                className={styles.editClose}
+                onClick={() => !editSaving && setEditOpen(false)}
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <p className={styles.editHint}>
+              Naam, address, date, place of supply change kar sakte ho. Quantity /
+              rate / amount locked hain.
+            </p>
+            <div className={styles.editFields}>
+              <label>
+                <span>Invoice date</span>
+                <input
+                  type="date"
+                  value={editForm.invoiceDate}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      invoiceDate: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                <span>Loading vala</span>
+                <input
+                  value={editForm.supplierName}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      supplierName: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                <span>Loading vala address</span>
+                <textarea
+                  rows={3}
+                  value={editForm.supplierAddress}
+                  onChange={(event) => {
+                    const supplierAddress = event.target.value;
+                    setEditForm((current) => {
+                      const derived = derivePlaceOfSupplyFromAddress(
+                        supplierAddress,
+                        current.placeOfSupply,
+                      );
+                      return {
+                        ...current,
+                        supplierAddress,
+                        ...(derived ? { placeOfSupply: derived } : {}),
+                      };
+                    });
+                  }}
+                />
+              </label>
+              <label>
+                <span>Place of supply</span>
+                <input
+                  value={editForm.placeOfSupply}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      placeOfSupply: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                <span>Unloading vala</span>
+                <input
+                  value={editForm.buyerName}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      buyerName: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                <span>Unloading vala address</span>
+                <textarea
+                  rows={3}
+                  value={editForm.buyerAddress}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      buyerAddress: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                <span>Vehicle number</span>
+                <input
+                  value={editForm.vehicleNumber}
+                  onChange={(event) =>
+                    setEditForm((current) => ({
+                      ...current,
+                      vehicleNumber: event.target.value
+                        .toUpperCase()
+                        .replace(/[^A-Z0-9]/g, ""),
+                    }))
+                  }
+                />
+              </label>
+              {editError ? <p className={styles.editError}>{editError}</p> : null}
+            </div>
+            <div className={styles.editActions}>
+              <button
+                type="button"
+                className={styles.editCancel}
+                disabled={editSaving}
+                onClick={() => setEditOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={styles.editSave}
+                disabled={editSaving}
+                onClick={() => void saveInvoiceEdits()}
+              >
+                {editSaving ? <LoaderCircle size={18} /> : null}
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
+}
+
+function addressLines(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean).join(", ");
+  }
+  return String(value || "").trim();
+}
+
+function derivePlaceOfSupplyFromAddress(
+  supplierAddress: string,
+  currentPlaceOfSupply = "",
+) {
+  const address = String(supplierAddress || "").trim();
+  if (!address) return "";
+  const haystack = address
+    .toLowerCase()
+    .replace(/[_/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const districtMatch = haystack.match(
+    /\b(?:dist\.?|district|zilla|zila)\s*[:=\-.]?\s*([a-z][a-z.]+(?:\s+[a-z][a-z.]+)?)/i,
+  );
+  if (districtMatch?.[1]) {
+    return districtMatch[1]
+      .replace(/\./g, " ")
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+  }
+  const current = String(currentPlaceOfSupply || "").trim();
+  if (!current) return "";
+  const needle = current.toLowerCase().replace(/[_/]+/g, " ").trim();
+  if (needle.length >= 3 && haystack.includes(needle)) {
+    return current
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+  }
+  return "";
 }
 
 function invoiceReferencesFromQuery(

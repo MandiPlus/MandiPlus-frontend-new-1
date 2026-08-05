@@ -30,6 +30,14 @@ import {
 import Lottie from "lottie-react";
 import { INDIA_STATES } from "./indiaStates";
 
+const PARTY_UI_LABELS = {
+  shipper: "Loading vala",
+  shipperAddress: "Loading vala address",
+  consignee: "Unloading vala",
+  consigneeAddress: "Unloading vala address",
+  consigneeMobile: "Unloading vala mobile",
+} as const;
+
 import { useAuth } from "@/features/auth/context/AuthContext";
 import {
   createCustomerWebPaymentCheckout,
@@ -382,6 +390,7 @@ export default function CustomerCreateInsurancePage() {
   const paymentAttemptRef = useRef<CustomerInvoicePaymentAttempt | null>(null);
   const paymentStatusCheckingRef = useRef(false);
   const paymentStatusGenerationRef = useRef(0);
+  const placeOfSupplyAutoSyncedRef = useRef<string | null>(null);
 
   const [stage, setStage] = useState<Stage>("capture");
   const [extractionState, setExtractionState] =
@@ -795,6 +804,19 @@ export default function CustomerCreateInsurancePage() {
             roundCustomerInvoiceMoney(quantity * rate),
           );
         }
+      }
+      if (field === "supplierAddress") {
+        const derivedPlace = resolvePlaceOfSupplyFromSupplierAddress(
+          value,
+          String(current.placeOfSupply || ""),
+        );
+        if (derivedPlace) {
+          next.placeOfSupply = derivedPlace;
+          placeOfSupplyAutoSyncedRef.current = derivedPlace;
+        }
+      }
+      if (field === "placeOfSupply") {
+        placeOfSupplyAutoSyncedRef.current = null;
       }
       return next;
     });
@@ -1833,51 +1855,80 @@ export default function CustomerCreateInsurancePage() {
         <section className={styles.detailCard}>
           <DetailSection title="Party" icon={<Users size={20} />}>
             <CompactInput
-              label={isTenderCoconut ? "Vyapari" : "Supplier"}
+              label={PARTY_UI_LABELS.shipper}
               value={draft.supplierName}
               onChange={(value) => update("supplierName", value)}
             />
             <CompactInput
-              label="Buyer"
+              label={PARTY_UI_LABELS.consignee}
               value={draft.buyerName}
               onChange={(value) => update("buyerName", value)}
             />
             <CompactInput
-              label={isTenderCoconut ? "Vyapari address" : "Supplier address"}
+              label={PARTY_UI_LABELS.shipperAddress}
               value={draft.supplierAddress}
-              full
               multiline
               onChange={(value) => update("supplierAddress", value)}
             />
             <CompactInput
-              label="Buyer address"
+              label={PARTY_UI_LABELS.consigneeAddress}
               value={draft.buyerAddress}
-              full
               multiline
               onChange={(value) => update("buyerAddress", value)}
-            />
-            <CompactInput
-              label="Place of supply"
-              value={draft.placeOfSupply}
-              full
-              multiline
-              onChange={(value) => update("placeOfSupply", value)}
             />
           </DetailSection>
 
           <DetailSection title="Goods & vehicle" icon={<Truck size={20} />}>
-            <CompactInput
-              label="Quantity"
-              inputMode="decimal"
-              value={draft.quantity}
-              onChange={(value) => update("quantity", value)}
-            />
-            <CompactInput
-              label="Rate"
-              inputMode="decimal"
-              value={draft.rate}
-              onChange={(value) => update("rate", value)}
-            />
+            <div
+              className={`${styles.dealStrip} ${
+                !String(draft.quantity || "").trim() ||
+                !String(draft.rate || "").trim()
+                  ? styles.dealStripIncomplete
+                  : styles.dealStripComplete
+              }`}
+            >
+              <div className={styles.dealStripRow}>
+                <label
+                  className={`${styles.dealStripCell} ${
+                    !String(draft.quantity || "").trim()
+                      ? styles.dealStripCellEmpty
+                      : ""
+                  }`}
+                >
+                  <span>Quantity</span>
+                  <input
+                    inputMode="decimal"
+                    value={draft.quantity}
+                    placeholder="Likhein"
+                    onChange={(event) =>
+                      update("quantity", event.target.value)
+                    }
+                  />
+                </label>
+                <div className={styles.dealStripDivider} aria-hidden="true" />
+                <label
+                  className={`${styles.dealStripCell} ${
+                    !String(draft.rate || "").trim()
+                      ? styles.dealStripCellEmpty
+                      : ""
+                  }`}
+                >
+                  <span>Rate</span>
+                  <input
+                    inputMode="decimal"
+                    value={draft.rate}
+                    placeholder="Likhein"
+                    onChange={(event) => update("rate", event.target.value)}
+                  />
+                </label>
+              </div>
+              {!String(draft.quantity || "").trim() ||
+              !String(draft.rate || "").trim() ? (
+                <p className={styles.dealStripHint}>
+                  Quantity aur rate dono bharo
+                </p>
+              ) : null}
+            </div>
             <CompactInput
               label="Vehicle number"
               value={draft.vehicleNumber}
@@ -1913,7 +1964,7 @@ export default function CustomerCreateInsurancePage() {
 
           <DetailSection title="Contact" icon={<Phone size={20} />}>
             <CompactInput
-              label="Buyer mobile"
+              label={PARTY_UI_LABELS.consigneeMobile}
               inputMode="tel"
               value={draft.insuredPartyPhone}
               onChange={(value) =>
@@ -2303,13 +2354,14 @@ function applyExtraction(
     canonicalizeCommodityLabel(
       text(raw.commodity || raw.product_name || raw.product),
     ) || current.product;
+  const nextSupplierAddress =
+    text(raw.supplier_address) || current.supplierAddress;
   const isPomegranate = isPomegranateProduct(nextProduct);
 
   return {
     ...current,
     supplierName: extractedSupplierName || current.supplierName,
-    supplierAddress:
-      text(raw.supplier_address) || current.supplierAddress,
+    supplierAddress: nextSupplierAddress,
     buyerName:
       text(raw.buyer_name || raw.billToName || raw.shipToName) ||
       current.buyerName,
@@ -2324,7 +2376,10 @@ function applyExtraction(
             raw.shipToAddress,
         ) || current.buyerAddress,
     placeOfSupply: humanStateLabel(
-      text(raw.place_of_supply) || current.placeOfSupply,
+      resolvePlaceOfSupplyFromSupplierAddress(
+        nextSupplierAddress,
+        text(raw.place_of_supply) || current.placeOfSupply,
+      ),
     ),
     product: nextProduct,
     quantity: quantity || current.quantity,
@@ -2439,14 +2494,18 @@ function withPomegranateProfileDefaults(
   // Always ask "Mal kidhar ja raha hai?" — never trust OCR/profile destination.
   next.buyerAddress = "";
 
-  next.placeOfSupply = humanStateLabel(
-    next.placeOfSupply || user?.state || "India",
-  );
-
   if (!next.supplierName.trim() && userName) next.supplierName = userName;
   if (!next.supplierAddress.trim() && userAddress) {
     next.supplierAddress = userAddress;
   }
+  next.placeOfSupply = humanStateLabel(
+    resolvePlaceOfSupplyFromSupplierAddress(
+      next.supplierAddress,
+      next.placeOfSupply,
+    ) ||
+      user?.state ||
+      "India",
+  );
   if (
     userName &&
     next.buyerName.trim().toLowerCase() === userName.toLowerCase()
@@ -2470,6 +2529,70 @@ function humanStateLabel(value: unknown) {
       item.value.replace(/_/g, " ").toLowerCase() === raw.toLowerCase(),
   );
   return match?.label || raw;
+}
+
+function placeOfSupplyFromAddress(address: string) {
+  const haystack = String(address || "")
+    .toLowerCase()
+    .replace(/[_/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!haystack) return "";
+
+  const districtMatch = haystack.match(
+    /\b(?:dist\.?|district|zilla|zila)\s*[:=\-.]?\s*([a-z][a-z.]+(?:\s+[a-z][a-z.]+)?)/i,
+  );
+  if (districtMatch?.[1]) {
+    return titleCasePlace(districtMatch[1].replace(/\./g, " "));
+  }
+
+  let bestLabel = "";
+  let bestLength = 0;
+  for (const state of INDIA_STATES) {
+    const candidates = [
+      state.label.toLowerCase(),
+      state.value.replace(/_/g, " ").toLowerCase(),
+    ];
+    for (const candidate of candidates) {
+      if (!candidate || candidate.length < 3) continue;
+      if (haystack.includes(candidate) && candidate.length > bestLength) {
+        bestLabel = state.label;
+        bestLength = candidate.length;
+      }
+    }
+  }
+  return bestLabel;
+}
+
+function resolvePlaceOfSupplyFromSupplierAddress(
+  supplierAddress: string,
+  currentPlaceOfSupply = "",
+) {
+  const address = String(supplierAddress || "").trim();
+  if (!address) return "";
+
+  const derived = placeOfSupplyFromAddress(address);
+  if (derived) return derived;
+
+  const current = String(currentPlaceOfSupply || "").trim();
+  if (!current) return "";
+
+  const haystack = address.toLowerCase().replace(/[_/]+/g, " ");
+  const needle = current.toLowerCase().replace(/[_/]+/g, " ").trim();
+  if (needle.length >= 3 && haystack.includes(needle)) {
+    return titleCasePlace(current);
+  }
+  return "";
+}
+
+function titleCasePlace(value: string) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 function getMissingDetailKeys(
@@ -2512,14 +2635,14 @@ function isMissingDetailAnswered(key: MissingDetailKey, value: string) {
 }
 
 function validateDraft(draft: CustomerInvoiceDraft) {
-  const supplier = isTenderCoconutProduct(draft.product)
-    ? "Vyapari"
-    : "Supplier";
-  if (!draft.supplierName.trim()) return `${supplier} ka naam add karein.`;
-  if (!draft.supplierAddress.trim()) return `${supplier} address add karein.`;
-  if (!draft.placeOfSupply.trim()) return "Place of supply add karein.";
-  if (!draft.buyerName.trim()) return "Buyer ka naam add karein.";
-  if (!draft.buyerAddress.trim()) return "Buyer address add karein.";
+  if (!draft.supplierName.trim())
+    return `${PARTY_UI_LABELS.shipper} ka naam add karein.`;
+  if (!draft.supplierAddress.trim())
+    return `${PARTY_UI_LABELS.shipperAddress} add karein.`;
+  if (!draft.buyerName.trim())
+    return `${PARTY_UI_LABELS.consignee} ka naam add karein.`;
+  if (!draft.buyerAddress.trim())
+    return `${PARTY_UI_LABELS.consigneeAddress} add karein.`;
   if (!draft.product.trim()) return "Commodity add karein.";
   if (!(Number(draft.quantity) > 0)) return "Sahi quantity add karein.";
   if (!(Number(draft.rate) > 0)) return "Sahi rate add karein.";
@@ -2532,7 +2655,7 @@ function validateDraft(draft: CustomerInvoiceDraft) {
     return "Vehicle tonnage chunein.";
   }
   if (!/^[6-9]\d{9}$/.test(phone(draft.insuredPartyPhone))) {
-    return "Buyer ka 10 digit mobile number add karein.";
+    return `${PARTY_UI_LABELS.consignee} ka 10 digit mobile number add karein.`;
   }
   if (
     draft.driverPhone.trim() &&

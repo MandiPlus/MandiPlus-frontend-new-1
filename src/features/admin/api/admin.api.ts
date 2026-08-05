@@ -2468,6 +2468,8 @@ class AdminApi {
     limit?: number;
     search?: string;
     status?: string;
+    joinedStartDate?: string;
+    joinedEndDate?: string;
   }): Promise<{
     success: boolean;
     data?: AdminAppCustomer[];

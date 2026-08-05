@@ -2032,6 +2032,79 @@
   border-bottom-color: var(--mp-accent);
 }
 
+.dealStrip {
+  grid-column: 1 / -1;
+  margin: 2px 0 6px;
+  border-radius: 14px;
+  padding: 10px 12px;
+  border-width: 1.5px;
+}
+
+.dealStripIncomplete {
+  background: rgba(232, 168, 56, 0.12);
+  border: 1.5px dashed rgba(196, 130, 28, 0.55);
+}
+
+.dealStripComplete {
+  background: rgba(20, 80, 60, 0.06);
+  border: 1.5px solid rgba(20, 80, 60, 0.18);
+}
+
+.dealStripRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr);
+  gap: 0 10px;
+  align-items: stretch;
+}
+
+.dealStripCell {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dealStripCell > span {
+  color: var(--mp-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.dealStripCell input {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  color: var(--mp-ink);
+  background: transparent;
+  font: inherit;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 28px;
+}
+
+.dealStripCell input::placeholder {
+  color: var(--mp-muted);
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.dealStripDivider {
+  width: 1px;
+  background: rgba(20, 40, 60, 0.12);
+}
+
+.dealStripHint {
+  margin: 8px 0 0;
+  color: #9a5b00;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+}
+
 .tonnageField {
   display: grid;
   gap: 5px;

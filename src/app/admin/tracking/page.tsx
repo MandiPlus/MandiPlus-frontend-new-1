@@ -1143,14 +1143,22 @@ export default function AdminTrackingPage() {
                         ? "bg-red-100 text-red-700"
                         : "bg-amber-100 text-amber-700";
                   const tripLabel = reg.autoTrip
-                    ? `Auto-created (${reg.autoTrip.status})`
+                    ? reg.autoTrip.traqoTripId
+                      ? `Auto-created (${reg.autoTrip.status})`
+                      : `Fastag tracking (${reg.autoTrip.status})`
                     : reg.consentState === "ALLOWED"
                       ? reg.giveUpNotifiedAt
                         ? "No invoice found — create manually"
                         : reg.autoTripError
                           ? "Retrying (last error logged)"
                           : "Waiting for invoice..."
-                      : "—";
+                      : reg.consentState === "PENDING"
+                        ? reg.invoice
+                          ? reg.autoTripError
+                            ? "Retrying Fastag trip..."
+                            : "Starting Fastag trip..."
+                          : "Waiting for invoice..."
+                        : "—";
                   return (
                     <tr key={reg.id} className="border-b border-gray-100">
                       <td className="py-2 pr-4 text-gray-800">

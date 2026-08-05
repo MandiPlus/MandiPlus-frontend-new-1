@@ -7,6 +7,32 @@ import {
 import type { InsuranceForm } from "@/features/insurance/api";
 import { canonicalizeCommodityLabel } from "./commodity-normalization";
 
+/** Canonical invoice/PDF product name. UI may show Anar; invoices store Pomegranate. */
+export function invoiceProductNameForSubmit(product: string): string {
+  const cleaned = String(product || "").trim();
+  if (!cleaned) return cleaned;
+  if (canonicalizeCommodityLabel(cleaned) === "Pomegranate (Anar)") {
+    return "Pomegranate";
+  }
+  return cleaned;
+}
+
+/** Catalog HSN used when customer create/update omits hsnCode. */
+export function invoiceHsnCodeForSubmit(product: string): string {
+  const canonical = canonicalizeCommodityLabel(product);
+  const byName: Record<string, string> = {
+    "Pomegranate (Anar)": "08109010",
+    "Tender Coconut": "08011910",
+    Tomato: "07020000",
+    Mango: "08045020",
+    Banana: "08039010",
+    Onion: "07031010",
+    Potato: "07019000",
+    "Mosambi (Sweet Lime)": "08059000",
+  };
+  return byName[canonical] || "";
+}
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 
@@ -314,12 +340,23 @@ export async function createCustomerInvoice(
   form.append("invoiceType", cash ? "BUYER_INVOICE" : "SUPPLIER_INVOICE");
   form.append("supplierName", draft.supplierName.trim());
   form.append("supplierAddress", JSON.stringify([draft.supplierAddress.trim()]));
-  form.append("placeOfSupply", draft.placeOfSupply.trim());
+  form.append(
+    "placeOfSupply",
+    resolvePlaceOfSupplyForSubmit(
+      draft.supplierAddress,
+      draft.placeOfSupply,
+    ),
+  );
   form.append("billToName", draft.buyerName.trim());
   form.append("billToAddress", JSON.stringify([draft.buyerAddress.trim()]));
   form.append("shipToName", draft.buyerName.trim());
   form.append("shipToAddress", JSON.stringify([draft.buyerAddress.trim()]));
-  form.append("productName", draft.product.trim());
+  form.append(
+    "productName",
+    invoiceProductNameForSubmit(draft.product),
+  );
+  const hsnCode = invoiceHsnCodeForSubmit(draft.product);
+  if (hsnCode) form.append("hsnCode", hsnCode);
   form.append("quantity", String(quantity));
   form.append("rate", String(rate));
   form.append("amount", String(amount));
@@ -353,8 +390,108 @@ export async function createCustomerInvoice(
   });
 }
 
+export async function updateCustomerInvoice(
+  invoiceId: string,
+  payload: {
+    invoiceDate: string;
+    supplierName: string;
+    supplierAddress: string;
+    placeOfSupply: string;
+    buyerName: string;
+    buyerAddress: string;
+    vehicleNumber?: string;
+    productName?: string;
+  },
+): Promise<InsuranceForm> {
+  const form = new FormData();
+  form.append("invoiceDate", payload.invoiceDate);
+  form.append("supplierName", payload.supplierName.trim());
+  form.append(
+    "supplierAddress",
+    JSON.stringify([payload.supplierAddress.trim()]),
+  );
+  form.append(
+    "placeOfSupply",
+    resolvePlaceOfSupplyForSubmit(
+      payload.supplierAddress,
+      payload.placeOfSupply,
+    ),
+  );
+  form.append("billToName", payload.buyerName.trim());
+  form.append(
+    "billToAddress",
+    JSON.stringify([payload.buyerAddress.trim()]),
+  );
+  form.append("shipToName", payload.buyerName.trim());
+  form.append(
+    "shipToAddress",
+    JSON.stringify([payload.buyerAddress.trim()]),
+  );
+  if (payload.vehicleNumber?.trim()) {
+    const vehicle = payload.vehicleNumber
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+    form.append("vehicleNumber", vehicle);
+    form.append("truckNumber", vehicle);
+  }
+  if (payload.productName?.trim()) {
+    form.append(
+      "productName",
+      invoiceProductNameForSubmit(payload.productName),
+    );
+    const hsnCode = invoiceHsnCodeForSubmit(payload.productName);
+    if (hsnCode) form.append("hsnCode", hsnCode);
+  }
+
+  return customerRequest({
+    method: "PATCH",
+    url: `/invoices/${encodeURIComponent(invoiceId)}`,
+    data: form,
+  });
+}
+
 function digits(value: string) {
   return value.replace(/\D/g, "").slice(-10);
+}
+
+function resolvePlaceOfSupplyForSubmit(
+  supplierAddress: string,
+  currentPlaceOfSupply: string,
+) {
+  const address = String(supplierAddress || "").trim();
+  const current = String(currentPlaceOfSupply || "").trim();
+  if (!address) return current || "India";
+
+  const haystack = address
+    .toLowerCase()
+    .replace(/[_/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const districtMatch = haystack.match(
+    /\b(?:dist\.?|district|zilla|zila)\s*[:=\-.]?\s*([a-z][a-z.]+(?:\s+[a-z][a-z.]+)?)/i,
+  );
+  if (districtMatch?.[1]) {
+    return titleCasePlace(districtMatch[1].replace(/\./g, " "));
+  }
+
+  if (current) {
+    const needle = current.toLowerCase().replace(/[_/]+/g, " ").trim();
+    if (needle.length >= 3 && haystack.includes(needle)) {
+      return titleCasePlace(current);
+    }
+  }
+
+  return current || "India";
+}
+
+function titleCasePlace(value: string) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 export function isTenderCoconutProduct(value: string) {
