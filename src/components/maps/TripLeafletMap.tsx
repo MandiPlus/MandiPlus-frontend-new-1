@@ -18,11 +18,19 @@ type TripLeafletMapProps = {
   className?: string;
 };
 
+// OSM's free tile CDN blocks most production referrers (returns blank tiles).
+// Prefer MapTiler when keyed; otherwise CARTO Voyager (same stack as app tracking maps).
+const MAPTILER_KEY = process.env.NEXT_PUBLIC_MAPTILER_API_KEY || '';
 const DEFAULT_TILE_URL =
-  process.env.NEXT_PUBLIC_MAP_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  process.env.NEXT_PUBLIC_MAP_TILE_URL ||
+  (MAPTILER_KEY
+    ? `https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=${encodeURIComponent(MAPTILER_KEY)}`
+    : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png');
 const DEFAULT_ATTRIBUTION =
   process.env.NEXT_PUBLIC_MAP_TILE_ATTRIBUTION ||
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+  (MAPTILER_KEY
+    ? '&copy; <a href="https://www.maptiler.com/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>');
 
 function isCoord(value?: MapCoord | null): value is MapCoord {
   return (
@@ -81,6 +89,25 @@ function MapViewport({
   const map = useMap();
 
   useEffect(() => {
+    // Modal/flex layouts often mount Leaflet before the container has a real size.
+    const invalidate = () => map.invalidateSize();
+    invalidate();
+    const raf = window.requestAnimationFrame(invalidate);
+    const t1 = window.setTimeout(invalidate, 50);
+    const t2 = window.setTimeout(invalidate, 250);
+    window.addEventListener('resize', invalidate);
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+      window.removeEventListener('resize', invalidate);
+    };
+  }, [map]);
+
+  useEffect(() => {
+    map.invalidateSize();
+
     if (points.length > 1) {
       const bounds = points.map(toLatLng) as LatLngBoundsExpression;
       map.fitBounds(bounds, {
@@ -115,19 +142,20 @@ export default function TripLeafletMap({
     [current, source, destination],
   );
   const mapCenter = isCoord(center) ? center : { lat: 22.9734, lng: 78.6569 };
+  const usesSubdomains = DEFAULT_TILE_URL.includes('{s}');
 
   return (
     <MapContainer
       center={toLatLng(mapCenter)}
       zoom={zoom}
       className={className}
-      style={{ height: '100%', width: '100%' }}
+      style={{ height: '100%', width: '100%', minHeight: 320, background: '#eef3fa' }}
       scrollWheelZoom
     >
       <TileLayer
         attribution={DEFAULT_ATTRIBUTION}
         maxZoom={19}
-        referrerPolicy="strict-origin-when-cross-origin"
+        {...(usesSubdomains ? { subdomains: 'abcd' } : {})}
         url={DEFAULT_TILE_URL}
       />
       <MapViewport center={mapCenter} points={points} zoom={zoom} />

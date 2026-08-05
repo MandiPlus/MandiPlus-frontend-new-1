@@ -68,6 +68,23 @@ function normalizeCoordValue(value?: string | null): string | null {
   return normalized || null;
 }
 
+function toMapCoord(
+  lat?: number | string | null,
+  lng?: number | string | null,
+): Coord | null {
+  const parsedLat = typeof lat === 'number' ? lat : Number(lat);
+  const parsedLng = typeof lng === 'number' ? lng : Number(lng);
+  if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng)) return null;
+  return { lat: parsedLat, lng: parsedLng };
+}
+
+function parseCoordPair(value?: string | null): Coord | null {
+  const normalized = normalizeCoordValue(value);
+  if (!normalized) return null;
+  const [lat, lng] = normalized.split(',');
+  return toMapCoord(lat, lng);
+}
+
 async function reverseGeocodeWithGoogle(
   coords: string
 ): Promise<string | null> {
@@ -455,45 +472,34 @@ export default function AdminTripsPage() {
   }, [searchFilters.driverPhone, searchFilters.vehicleNumber, trips]);
 
   const trackCurrent = useMemo<Coord | null>(() => {
-    if (
-      trackModal?.tracking.location &&
-      typeof trackModal.tracking.location.lat === 'number' &&
-      typeof trackModal.tracking.location.lng === 'number'
-    ) {
-      return {
-        lat: trackModal.tracking.location.lat,
-        lng: trackModal.tracking.location.lng,
-      };
-    }
-    return null;
+    if (!trackModal) return null;
+    return (
+      toMapCoord(
+        trackModal.tracking.location?.lat,
+        trackModal.tracking.location?.lng,
+      ) ||
+      toMapCoord(trackModal.trip.lastLocation?.lat, trackModal.trip.lastLocation?.lng)
+    );
   }, [trackModal]);
 
   const trackDestination = useMemo<Coord | null>(() => {
-    if (
-      trackModal?.tracking.destination &&
-      typeof trackModal.tracking.destination.lat === 'number' &&
-      typeof trackModal.tracking.destination.lng === 'number'
-    ) {
-      return {
-        lat: trackModal.tracking.destination.lat,
-        lng: trackModal.tracking.destination.lng,
-      };
-    }
-    return null;
+    if (!trackModal) return null;
+    return (
+      toMapCoord(
+        trackModal.tracking.destination?.lat,
+        trackModal.tracking.destination?.lng,
+      ) || parseCoordPair(trackModal.trip.dest)
+    );
   }, [trackModal]);
 
   const trackSource = useMemo<Coord | null>(() => {
-    if (
-      trackModal?.tracking.origin &&
-      typeof trackModal.tracking.origin.lat === 'number' &&
-      typeof trackModal.tracking.origin.lng === 'number'
-    ) {
-      return {
-        lat: trackModal.tracking.origin.lat,
-        lng: trackModal.tracking.origin.lng,
-      };
-    }
-    return null;
+    if (!trackModal) return null;
+    return (
+      toMapCoord(
+        trackModal.tracking.origin?.lat,
+        trackModal.tracking.origin?.lng,
+      ) || parseCoordPair(trackModal.trip.src)
+    );
   }, [trackModal]);
 
   const trackCenter = useMemo<Coord>(
@@ -990,17 +996,22 @@ export default function AdminTripsPage() {
               ×
             </button>
 
-            <div className="min-h-[420px] flex-1 bg-white p-4">
-              <div className="h-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
+            <div className="h-[min(52vh,520px)] min-h-[360px] flex-1 bg-white p-4 xl:h-auto xl:min-h-[520px]">
+              <div className="relative h-full min-h-[320px] overflow-hidden rounded-2xl border border-slate-200 bg-[#eef3fa]">
                 <TripLeafletMap
                   center={trackCenter}
                   current={trackCurrent}
                   source={trackSource}
                   destination={trackDestination}
-                  currentLabel={trackModal.tracking.location?.address || 'Current location'}
+                  currentLabel={
+                    trackModal.tracking.location?.address ||
+                    trackModal.trip.lastLocation?.address ||
+                    'Current location'
+                  }
                   sourceLabel={trackModal.sourceName || 'Source'}
                   destinationLabel={trackModal.destinationName || 'Destination'}
                   zoom={6}
+                  className="h-full w-full"
                 />
               </div>
             </div>
@@ -1053,7 +1064,11 @@ export default function AdminTripsPage() {
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Last Location
                     </div>
-                    <div className="mt-1">{trackModal.tracking.location?.address || 'Not available'}</div>
+                    <div className="mt-1">
+                      {trackModal.tracking.location?.address ||
+                        trackModal.trip.lastLocation?.address ||
+                        'Not available'}
+                    </div>
                   </div>
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
