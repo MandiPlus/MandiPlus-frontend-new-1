@@ -405,14 +405,20 @@ export default function AdminTripsPage() {
           )
         );
       }
+      const alertResult = response.data as
+        | { deferred?: boolean; message?: string }
+        | undefined;
       toast.success(
-        `${
-          alertKind === 'reached'
-            ? 'Reached'
-            : alertKind === 'delayed'
-            ? 'Delayed'
-            : 'Current position'
-        } alert sent successfully.`
+        alertResult?.deferred
+          ? alertResult.message ||
+              'Location pending — WhatsApp will send when available.'
+          : `${
+              alertKind === 'reached'
+                ? 'Reached'
+                : alertKind === 'delayed'
+                ? 'Delayed'
+                : 'Current position'
+            } alert sent successfully.`
       );
       await fetchTrips();
       if (phoneOverride) {
