@@ -1311,7 +1311,7 @@ export interface ClaimCaptureLinkResult {
 export interface FilterClaimRequestsDto {
   status?: ClaimStatus;
   paymentStatus?: ClaimPaymentStatus;
-  evidenceStatus?: 'not_requested' | 'active' | 'received' | 'expired';
+  evidenceStatus?: 'not_requested' | 'active' | 'in_progress' | 'received' | 'expired';
   captureType?: 'accident' | 'engine_seize';
   truckNumber?: string;
   invoiceId?: string;
