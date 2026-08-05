@@ -105,6 +105,31 @@ const createSubmissionId = () => {
 const formatDuration = (seconds: number) =>
   `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
+const waitForLocation = (
+  getLocation: () => ClaimLocation | null,
+  timeoutMs = 45_000,
+) =>
+  new Promise<ClaimLocation>((resolve, reject) => {
+    const existing = getLocation();
+    if (existing) {
+      resolve(existing);
+      return;
+    }
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      const current = getLocation();
+      if (current) {
+        clearInterval(timer);
+        resolve(current);
+        return;
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        clearInterval(timer);
+        reject(new Error("Location nahi mili, dubara try karo"));
+      }
+    }, 250);
+  });
+
 export default function ClaimCaptureFlow({
   truckNumber,
   captureType = "accident",
@@ -204,8 +229,7 @@ export default function ClaimCaptureFlow({
 
   const persistCapture = useCallback(
     async (capture: Capture, proof: ClaimEvidenceUploadProof) => {
-      const currentLocation = locationRef.current;
-      if (!currentLocation) throw new Error("Location nahi mili, dubara try karo");
+      const currentLocation = await waitForLocation(() => locationRef.current);
       const state = await appendItem({
         submissionId: submissionIdRef.current,
         kind: capture.kind,
@@ -455,10 +479,6 @@ export default function ClaimCaptureFlow({
     ) {
       return;
     }
-    if (!locationRef.current) {
-      setError("Location nahi mili, dubara try karo");
-      return;
-    }
     photoCaptureBusyRef.current = true;
     setPhotoCaptureBusy(true);
     const canvas = document.createElement("canvas");
@@ -525,10 +545,6 @@ export default function ClaimCaptureFlow({
     ) {
       if (typeof MediaRecorder === "undefined")
         setError("Video support nahi hai");
-      return;
-    }
-    if (!locationRef.current) {
-      setError("Location nahi mili, dubara try karo");
       return;
     }
     const chunks: BlobPart[] = [];
@@ -666,11 +682,6 @@ export default function ClaimCaptureFlow({
             {error}
           </p>
         )}
-        {!location && (
-          <p className="mb-2 text-center text-xs font-bold text-white/60">
-            Location aa raha…
-          </p>
-        )}
 
         {showKindSwitch && (
           <div className="mb-3 flex justify-center">
@@ -710,7 +721,7 @@ export default function ClaimCaptureFlow({
             <button
               type="button"
               onClick={takePhoto}
-              disabled={!cameraReady || photoCaptureBusy || !location}
+              disabled={!cameraReady || photoCaptureBusy}
               className="grid h-20 w-20 place-items-center rounded-full border-4 border-white bg-white/15 disabled:opacity-40"
               aria-label="Photo lo"
             >
@@ -721,10 +732,7 @@ export default function ClaimCaptureFlow({
             <button
               type="button"
               onClick={() => (recording ? stopRecording() : startRecording())}
-              disabled={
-                !recording &&
-                (!cameraReady || !videoProfileReady || !location)
-              }
+              disabled={!recording && (!cameraReady || !videoProfileReady)}
               className="grid h-20 w-20 place-items-center rounded-full border-4 border-white bg-white/15 disabled:opacity-40"
               aria-label={recording ? "Video band" : "Video chalu"}
             >
