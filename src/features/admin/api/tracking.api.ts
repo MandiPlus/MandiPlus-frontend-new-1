@@ -155,6 +155,7 @@ export interface AdminTripRow {
     timeRemained?: string | null;
     distanceTravel?: number | null;
     totalDistance?: number | null;
+    locationSource?: "live" | "fastag" | null;
   } | null;
 }
 

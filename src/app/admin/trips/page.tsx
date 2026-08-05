@@ -575,6 +575,7 @@ export default function AdminTripsPage() {
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Truck</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Driver</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Status</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-700">Location Source</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Completion</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">WhatsApp</th>
                 <th className="px-3 py-2 text-left font-semibold text-gray-700">Alerts</th>
@@ -586,7 +587,7 @@ export default function AdminTripsPage() {
             <tbody className="divide-y divide-gray-100 bg-white">
               {filteredTrips.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-3 py-4 text-center text-gray-500">
+                    <td colSpan={10} className="px-3 py-4 text-center text-gray-500">
                     {trips.length === 0 ? 'No trips found.' : 'No trips match the current search.'}
                   </td>
                 </tr>
@@ -632,6 +633,26 @@ export default function AdminTripsPage() {
                       >
                         {trip.status}
                       </span>
+                    </td>
+                    <td className="px-3 py-3 align-top">
+                      {(() => {
+                        const source = trip.lastLocation?.locationSource;
+                        if (source === 'live') {
+                          return (
+                            <span className="rounded bg-sky-100 px-2 py-1 text-xs font-semibold text-sky-800">
+                              Live
+                            </span>
+                          );
+                        }
+                        if (source === 'fastag') {
+                          return (
+                            <span className="rounded bg-violet-100 px-2 py-1 text-xs font-semibold text-violet-800">
+                              Fastag
+                            </span>
+                          );
+                        }
+                        return <span className="text-xs text-slate-400">—</span>;
+                      })()}
                     </td>
                     <td className="px-3 py-3 align-top text-gray-700">
                       {(() => {
@@ -998,6 +1019,18 @@ export default function AdminTripsPage() {
                       Last Location At
                     </div>
                     <div className="mt-1">{trackModal.tracking.location?.timeRecorded || '-'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Location Source
+                    </div>
+                    <div className="mt-1">
+                      {trackModal.trip.lastLocation?.locationSource === 'live'
+                        ? 'Live'
+                        : trackModal.trip.lastLocation?.locationSource === 'fastag'
+                          ? 'Fastag'
+                          : '—'}
+                    </div>
                   </div>
                 </div>
               </div>
