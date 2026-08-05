@@ -45,6 +45,7 @@ export const ADMIN_SECTIONS = [
   'claims',
   'tracking',
   'trips',
+  'fasttag',
   'agent-commissions',
   'insurance-payments',
   'arrival-reports',
@@ -107,6 +108,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Capture Links', href: '/admin/claims/capture-links', icon: LinkIcon, section: 'claims' },
   { name: 'Tracking', href: '/admin/tracking', icon: MapPinIcon, section: 'tracking' },
   { name: 'Created Trips', href: '/admin/trips', icon: MapPinIcon, section: 'trips' },
+  { name: 'Fastag', href: '/admin/operations/fasttag', icon: MapPinIcon, section: 'fasttag' },
   { name: 'Agent Commissions', href: '/admin/agent-commissions', icon: BanknotesIcon, section: 'agent-commissions' },
   { name: 'Insurance Payments', href: '/admin/insurance-payments', icon: CreditCardIcon, section: 'insurance-payments' },
   { name: 'Arrival Reports', href: '/admin/arrival-reports', icon: DocumentChartBarIcon, section: 'arrival-reports' },
@@ -157,7 +159,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   },
   {
     name: 'Operations',
-    sections: ['tracking', 'trips', 'arrival-reports', 'field-operations', 'fssai-leads'],
+    sections: ['tracking', 'trips', 'fasttag', 'arrival-reports', 'field-operations', 'fssai-leads'],
   },
   {
     name: 'Insurance & Claims',
@@ -186,6 +188,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/claims/capture-links': 'claims',
   '/admin/tracking': 'tracking',
   '/admin/trips': 'trips',
+  '/admin/operations/fasttag': 'fasttag',
   '/admin/agent-commissions': 'agent-commissions',
   '/admin/insurance-payments': 'insurance-payments',
   '/admin/arrival-reports': 'arrival-reports',

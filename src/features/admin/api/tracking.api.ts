@@ -149,6 +149,8 @@ export interface AdminTripRow {
     lastEta?: string | null;
   } | null;
   lastLocation?: {
+    lat?: number | null;
+    lng?: number | null;
     address?: string | null;
     timeRecorded?: string | null;
     distanceRemained?: number | null;
@@ -556,6 +558,39 @@ export async function sendCurrentPositionAlertsForActiveTrips(): Promise<
         error,
         "Failed to send current-position alerts for active trips",
       ),
+    };
+  }
+}
+
+export type FastagTollPoint = {
+  lat: number;
+  lng: number;
+  address: string | null;
+  timeRecorded: string | null;
+};
+
+export type FastagLookupResult = {
+  vehicleNumber: string;
+  latest: FastagTollPoint | null;
+  tolls: FastagTollPoint[];
+};
+
+export async function lookupFastagVehicle(
+  vehicleNumber: string,
+): Promise<AdminTrackingApiResponse<FastagLookupResult>> {
+  try {
+    const res = await axios.get<FastagLookupResult>(
+      `${API_BASE_URL}/traqo/fastag`,
+      {
+        params: { vehicle: vehicleNumber },
+        headers: getAuthHeaders(),
+      },
+    );
+    return { success: true, data: res.data };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to fetch Fastag tolls"),
     };
   }
 }
