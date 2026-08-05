@@ -89,7 +89,7 @@ export default function PublicClaimCapturePage({ token }: { token: string }) {
             </h1>
             <p className="mt-1 text-sm font-bold text-[#6c7482]">
               {claim.captureType === "engine_seize"
-                ? "RC · 9 photo · 2 video"
+                ? "RC · 10 photo · 2 video"
                 : "4 photo · 2 video"}
             </p>
             <button
