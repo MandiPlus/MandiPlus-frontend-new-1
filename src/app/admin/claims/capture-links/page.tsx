@@ -235,8 +235,12 @@ export default function CaptureLinksPage() {
     const response = await adminApi.getClaimCaptureLinks({
       search: search || undefined,
       evidenceStatus:
-        (state as 'not_requested' | 'active' | 'received' | 'expired') ||
-        undefined,
+        (state as
+          | 'not_requested'
+          | 'active'
+          | 'in_progress'
+          | 'received'
+          | 'expired') || undefined,
       captureType,
       page,
       limit: 20,
@@ -357,6 +361,7 @@ export default function CaptureLinksPage() {
               >
                 <option value="">All evidence states</option>
                 <option value="received">Evidence received</option>
+                <option value="in_progress">In progress</option>
                 <option value="active">Link active</option>
                 <option value="expired">Link expired</option>
                 <option value="not_requested">Not requested</option>

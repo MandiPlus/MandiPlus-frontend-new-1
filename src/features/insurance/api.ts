@@ -204,6 +204,10 @@ export interface PublicClaimCaptureLink {
   submitted: boolean;
   submittedAt?: string | null;
   captureType: "accident" | "engine_seize";
+  photoCount: number;
+  videoCount: number;
+  coreComplete: boolean;
+  canAddMore: boolean;
 }
 
 export interface ClaimEligibleVehicle {
@@ -855,6 +859,26 @@ export const createPublicClaimWithEvidence = async (
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(evidence),
+    },
+  );
+  return readPublicClaimResponse<PublicClaimCaptureLink>(response);
+};
+
+export const appendPublicClaimEvidenceItem = async (
+  token: string,
+  payload: {
+    submissionId: string;
+    kind: "photo" | "video";
+    item: ClaimEvidenceUploadProof;
+    location: ClaimLocation;
+  },
+): Promise<PublicClaimCaptureLink> => {
+  const response = await fetch(
+    `${API_BASE_URL}/claim-requests/public/${encodeURIComponent(token)}/evidence/items`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     },
   );
   return readPublicClaimResponse<PublicClaimCaptureLink>(response);

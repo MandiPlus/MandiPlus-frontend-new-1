@@ -3,7 +3,12 @@
 import type { ClaimRequest } from '@/features/admin/api/admin.api';
 import { AlertCircle, CheckCircle2, Clock3, Link2, MapPin } from 'lucide-react';
 
-export type EvidenceState = 'not_requested' | 'active' | 'received' | 'expired';
+export type EvidenceState =
+  | 'not_requested'
+  | 'active'
+  | 'in_progress'
+  | 'received'
+  | 'expired';
 export type CaptureType = 'accident' | 'engine_seize';
 
 const developerTestIdentityPattern = /O[m]\s+B[h]ojane(?:\s*\(Test\))?/gi;
@@ -138,9 +143,16 @@ export function getEvidenceState(
   const linkExpiresAt = engineSeize
     ? claim.engineSeizeCaptureLinkExpiresAt
     : claim.captureLinkExpiresAt;
-  const linkUsedAt = engineSeize
-    ? claim.engineSeizeCaptureLinkUsedAt
-    : claim.captureLinkUsedAt;
+  const photos = engineSeize
+    ? claim.engineSeizeEvidencePhotos?.length || 0
+    : claim.evidencePhotos?.length || 0;
+  const videos = engineSeize
+    ? claim.engineSeizeEvidenceVideos?.length || 0
+    : claim.evidenceVideos?.length || 0;
+  const hasPartial =
+    photos + videos > 0 &&
+    (photos < 4 || videos < 2) &&
+    !submittedAt;
 
   if (submittedAt || (!captureType && claim.engineSeizeEvidenceSubmittedAt)) {
     return 'received';
@@ -157,11 +169,10 @@ export function getEvidenceState(
       ? new Date(claim.engineSeizeCaptureLinkExpiresAt || 0).getTime()
       : 0,
   );
-  if (
-    (!linkUsedAt || (!captureType && !claim.engineSeizeCaptureLinkUsedAt)) &&
-    Number.isFinite(expiresAt) &&
-    expiresAt > Date.now()
-  ) {
+  if (Number.isFinite(expiresAt) && expiresAt > Date.now()) {
+    if (hasPartial || (!captureType && ((claim.evidencePhotos?.length || 0) > 0 || (claim.engineSeizeEvidencePhotos?.length || 0) > 0) && !claim.evidenceSubmittedAt && !claim.engineSeizeEvidenceSubmittedAt)) {
+      return 'in_progress';
+    }
     return 'active';
   }
   return 'expired';
@@ -268,6 +279,14 @@ export function EvidenceBadge({
         : `${photos + (claim.engineSeizeEvidencePhotos?.length || 0)} photos · ${videos + (claim.engineSeizeEvidenceVideos?.length || 0)} videos`,
       classes: 'border-emerald-200 bg-emerald-50 text-emerald-700',
       icon: CheckCircle2,
+    },
+    in_progress: {
+      label: 'In progress',
+      detail: captureType
+        ? `${photos}p · ${videos}v saved`
+        : `${photos + (claim.engineSeizeEvidencePhotos?.length || 0)}p · ${videos + (claim.engineSeizeEvidenceVideos?.length || 0)}v saved`,
+      classes: 'border-amber-200 bg-amber-50 text-amber-800',
+      icon: Clock3,
     },
     active: {
       label: 'Link active',
