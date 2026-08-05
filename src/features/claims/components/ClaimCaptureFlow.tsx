@@ -166,7 +166,6 @@ export default function ClaimCaptureFlow({
     addMore || initialPhotoCount >= CORE_PHOTO_COUNT ? "video" : "photo",
   );
   const [showGallery, setShowGallery] = useState(false);
-  const [location, setLocation] = useState<ClaimLocation | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [videoProfileReady, setVideoProfileReady] = useState(false);
   const [photoCaptureBusy, setPhotoCaptureBusy] = useState(false);
@@ -310,7 +309,6 @@ export default function ClaimCaptureFlow({
       (position) => {
         if (position.coords.accuracy > 1000) {
           locationRef.current = null;
-          setLocation(null);
           return;
         }
         const currentLocation = {
@@ -320,12 +318,10 @@ export default function ClaimCaptureFlow({
           capturedAt: new Date(position.timestamp || Date.now()).toISOString(),
         };
         locationRef.current = currentLocation;
-        setLocation(currentLocation);
         setError(null);
       },
       (geoError) => {
         locationRef.current = null;
-        setLocation(null);
         setError(
           geoError.code === geoError.PERMISSION_DENIED
             ? "Location allow karo"
