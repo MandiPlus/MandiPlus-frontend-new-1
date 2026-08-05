@@ -9,16 +9,7 @@ import {
   getClaimEvidenceUploadTarget,
   uploadClaimEvidence,
 } from "@/features/insurance/api";
-import {
-  Boxes,
-  FileText,
-  Gauge,
-  LayoutDashboard,
-  PackageOpen,
-  Truck,
-  Upload,
-  Wrench,
-} from "lucide-react";
+import { Upload } from "lucide-react";
 
 type Capture = {
   id: string;
@@ -66,12 +57,13 @@ const ENGINE_SEIZE_PHOTO_STEPS: CaptureStep[] = [
 const ENGINE_SEIZE_VIDEO_STEPS: CaptureStep[] = [
   {
     label: "Engine video",
-    minDurationMs: 60_000,
+    minDurationMs: 30_000,
     maxDurationMs: 90_000,
   },
   {
     label: "Cross-load video",
-    maxDurationMs: 60_000,
+    minDurationMs: 30_000,
+    maxDurationMs: 90_000,
   },
 ];
 const VIDEO_WIDTH = 1280;
@@ -138,24 +130,6 @@ const loadImageFile = (file: File) =>
     };
     image.src = objectUrl;
   });
-
-function CaptureGuide({ step }: { step: CaptureStep }) {
-  let Icon = Truck;
-  if (step.label === "RC") Icon = FileText;
-  if (step.label === "Engine") Icon = Wrench;
-  if (step.label === "Dashboard") Icon = LayoutDashboard;
-  if (step.label === "Odometer") Icon = Gauge;
-  if (step.label === "Loading") Icon = Boxes;
-  if (step.label === "Goods") Icon = PackageOpen;
-
-  return (
-    <div className="pointer-events-none absolute inset-x-6 top-1/2 flex -translate-y-1/2 flex-col items-center">
-      <div className="grid h-40 w-full max-w-xs place-items-center rounded-[28px] border border-dashed border-white/55 bg-black/10">
-        <Icon className="h-16 w-16 stroke-[1.35] text-white/80 drop-shadow" />
-      </div>
-    </div>
-  );
-}
 
 function UploadBadge({ state }: { state: Capture["uploadState"] }) {
   const ready = state === "ready";
@@ -798,9 +772,6 @@ export default function ClaimCaptureFlow<TResult = ClaimRequest>({
             muted
             className="h-full w-full object-contain"
           />
-          {engineSeize && capturingPhotos && currentPhotoStep && (
-            <CaptureGuide step={currentPhotoStep} />
-          )}
           <div className="absolute left-3 right-3 top-3 rounded-2xl border border-white/15 bg-black/75 px-4 py-3 shadow-lg backdrop-blur-sm">
             <div className="flex items-center justify-between text-sm font-black">
               <span>
