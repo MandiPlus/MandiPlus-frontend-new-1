@@ -44,6 +44,21 @@ export default function PublicClaimCapturePage({ token }: { token: string }) {
   const expired =
     !!claim?.expiresAt && new Date(claim.expiresAt).getTime() <= Date.now();
 
+  const initialMedia = [
+    ...(claim?.photos || []).map((item) => ({
+      url: item.url,
+      label: item.label,
+      kind: "photo" as const,
+      capturedAt: item.capturedAt,
+    })),
+    ...(claim?.videos || []).map((item) => ({
+      url: item.url,
+      label: item.label,
+      kind: "video" as const,
+      capturedAt: item.capturedAt,
+    })),
+  ];
+
   if (cameraMode && claim) {
     return (
       <ClaimCaptureFlow
@@ -52,11 +67,14 @@ export default function PublicClaimCapturePage({ token }: { token: string }) {
         mode={cameraMode}
         initialPhotoCount={claim.photoCount || 0}
         initialVideoCount={claim.videoCount || 0}
+        initialMedia={initialMedia}
         prepareUpload={(submissionId) =>
           getPublicClaimEvidenceUploadTarget(token, submissionId)
         }
         appendItem={(payload) => appendPublicClaimEvidenceItem(token, payload)}
-        onClose={() => setCameraMode(null)}
+        onClose={() => {
+          void refresh().finally(() => setCameraMode(null));
+        }}
         onStateChange={(state) => {
           setClaim((current) =>
             current
@@ -70,9 +88,6 @@ export default function PublicClaimCapturePage({ token }: { token: string }) {
                 }
               : current,
           );
-          if (cameraMode === "wizard" && state.coreComplete) {
-            setCameraMode(null);
-          }
         }}
       />
     );
@@ -111,16 +126,13 @@ export default function PublicClaimCapturePage({ token }: { token: string }) {
             <p className="mt-2 text-sm font-bold text-[#6c7482]">
               {claim.vehicleNumber}
             </p>
-            <p className="mt-1 text-sm font-bold text-[#6c7482]">
-              {claim.photoCount} photo · {claim.videoCount} video
-            </p>
             {claim.canAddMore ? (
               <button
                 type="button"
                 onClick={() => setCameraMode("addMore")}
                 className="mt-8 min-h-14 w-full rounded-2xl bg-[#172033] px-5 text-base font-black text-white active:scale-[0.99]"
               >
-                Aur add karo
+                Aur kheecho
               </button>
             ) : null}
           </>
@@ -132,12 +144,6 @@ export default function PublicClaimCapturePage({ token }: { token: string }) {
             <p className="mt-1 text-sm font-bold text-[#6c7482]">
               4 photo · 2 video
             </p>
-            {(claim.photoCount > 0 || claim.videoCount > 0) && (
-              <p className="mt-2 text-sm font-bold text-emerald-700">
-                {claim.photoCount} photo · {claim.videoCount} video save ho
-                chuki
-              </p>
-            )}
             <button
               type="button"
               onClick={() => setCameraMode("wizard")}
