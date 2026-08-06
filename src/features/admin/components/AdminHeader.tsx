@@ -50,6 +50,8 @@ const adminTitles: Record<string, string> = {
     '/admin/claims': 'Claim Requests',
     '/admin/tracking': 'Tracking',
     '/admin/trips': 'Created Trips',
+    '/admin/operations/fasttag': 'Fastag',
+    '/admin/operations/tracking-children': 'Add Children',
     '/admin/agent-commissions': 'Agent Commissions',
     '/admin/insurance-payments': 'Insurance Payments',
     '/admin/arrival-reports': 'Arrival Reports',

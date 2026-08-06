@@ -594,3 +594,124 @@ export async function lookupFastagVehicle(
     };
   }
 }
+
+export type TrackingChildInsuredUser = {
+  id: string;
+  name: string;
+  mobileNumber: string;
+  secondaryMobileNumber?: string | null;
+};
+
+export type TrackingNotifyChildRow = {
+  id: string;
+  insuredUserId: string;
+  phone: string;
+  label: string | null;
+  isActive: boolean;
+  createdByAdminId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  insuredUser?: {
+    id: string;
+    name: string;
+    mobileNumber: string;
+  } | null;
+};
+
+export async function searchTrackingChildInsuredUsers(
+  query: string,
+  limit = 20,
+): Promise<AdminTrackingApiResponse<TrackingChildInsuredUser[]>> {
+  try {
+    const res = await axios.get<TrackingChildInsuredUser[]>(
+      `${API_BASE_URL}/admin/tracking-children/insured-users/search`,
+      {
+        params: { q: query, limit },
+        headers: getAuthHeaders(),
+      },
+    );
+    return { success: true, data: Array.isArray(res.data) ? res.data : [] };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to search insured persons"),
+    };
+  }
+}
+
+export async function listTrackingChildren(params?: {
+  insuredUserId?: string;
+  q?: string;
+}): Promise<AdminTrackingApiResponse<TrackingNotifyChildRow[]>> {
+  try {
+    const res = await axios.get<TrackingNotifyChildRow[]>(
+      `${API_BASE_URL}/admin/tracking-children`,
+      {
+        params,
+        headers: getAuthHeaders(),
+      },
+    );
+    return { success: true, data: Array.isArray(res.data) ? res.data : [] };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to load tracking children"),
+    };
+  }
+}
+
+export async function createTrackingChild(payload: {
+  insuredUserId: string;
+  phone: string;
+  label?: string;
+}): Promise<AdminTrackingApiResponse<TrackingNotifyChildRow>> {
+  try {
+    const res = await axios.post<TrackingNotifyChildRow>(
+      `${API_BASE_URL}/admin/tracking-children`,
+      payload,
+      { headers: getAuthHeaders() },
+    );
+    return { success: true, data: res.data };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to add tracking child"),
+    };
+  }
+}
+
+export async function updateTrackingChild(
+  id: string,
+  payload: { label?: string | null; isActive?: boolean },
+): Promise<AdminTrackingApiResponse<TrackingNotifyChildRow>> {
+  try {
+    const res = await axios.patch<TrackingNotifyChildRow>(
+      `${API_BASE_URL}/admin/tracking-children/${encodeURIComponent(id)}`,
+      payload,
+      { headers: getAuthHeaders() },
+    );
+    return { success: true, data: res.data };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to update tracking child"),
+    };
+  }
+}
+
+export async function deleteTrackingChild(
+  id: string,
+): Promise<AdminTrackingApiResponse<{ success: boolean; id: string }>> {
+  try {
+    const res = await axios.delete<{ success: boolean; id: string }>(
+      `${API_BASE_URL}/admin/tracking-children/${encodeURIComponent(id)}`,
+      { headers: getAuthHeaders() },
+    );
+    return { success: true, data: res.data };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to remove tracking child"),
+    };
+  }
+}
