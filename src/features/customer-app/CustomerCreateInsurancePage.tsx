@@ -302,6 +302,7 @@ const COMMODITY_OPTIONS = [
   ["Kiwi", "🥝"],
   ["Mango", "🥭"],
   ["Banana", "🍌"],
+  ["Apple", "🍎"],
   ["Papaya (Papita)", "🧡"],
   ["Anar", "🍎"],
   ["Oranges", "🍊"],
