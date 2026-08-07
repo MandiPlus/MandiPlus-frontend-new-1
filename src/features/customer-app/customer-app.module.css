@@ -315,6 +315,41 @@
   gap: 12px;
 }
 
+.setupSuggestionBlock {
+  display: grid;
+  gap: 8px;
+}
+
+.setupSuggestionLabel {
+  color: var(--mp-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.setupSuggestionChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.setupSuggestionChip {
+  border: 1.5px solid var(--mp-line);
+  border-radius: 999px;
+  background: var(--mp-surface, #fff);
+  color: var(--mp-ink);
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.setupSuggestionChipActive {
+  border-color: var(--mp-ink);
+  background: var(--mp-soft);
+  font-weight: 900;
+}
+
 .setupTwoColumnGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
