@@ -8,6 +8,7 @@ const COMMODITIES: readonly CommodityDefinition[] = [
   { name: "Kiwi", aliases: [] },
   { name: "Mango", aliases: ["aam"] },
   { name: "Banana", aliases: ["kela"] },
+  { name: "Apple", aliases: ["seb", "sebb"] },
   { name: "Papaya (Papita)", aliases: ["papaya", "papita"] },
   { name: "Pomegranate (Anar)", aliases: ["pomegranate", "anar", "dalimb", "dalimba", "daalimb"] },
   { name: "Oranges", aliases: ["orange"] },
@@ -81,11 +82,13 @@ export function canonicalizeCommodityLabel(value: unknown): string {
   if (exact) return exact.commodity.name;
 
   const contained = candidates
-    .filter(
-      ({ candidate }) =>
+    .filter(({ candidate }) => {
+      if (candidate === "apple" && wanted.includes("pineapple")) return false;
+      return (
         candidate.length >= 4 &&
-        (wanted.includes(candidate) || candidate.includes(wanted)),
-    )
+        (wanted.includes(candidate) || candidate.includes(wanted))
+      );
+    })
     .sort((left, right) => right.candidate.length - left.candidate.length)[0];
   if (contained) return contained.commodity.name;
 

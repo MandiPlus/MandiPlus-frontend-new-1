@@ -26,6 +26,7 @@ export function invoiceHsnCodeForSubmit(product: string): string {
     Tomato: "07020000",
     Mango: "08045020",
     Banana: "08039010",
+    Apple: "08081000",
     Onion: "07031010",
     Potato: "07019000",
     "Mosambi (Sweet Lime)": "08059000",
