@@ -314,15 +314,44 @@ export async function lookupDriverOperator(
   }
 }
 
-export async function listDriverRegistrations(): Promise<
-  AdminTrackingApiResponse<DriverConsentRegistrationRow[]>
+export async function listDriverRegistrations(params?: {
+  page?: number;
+  limit?: number;
+  search?: string;
+}): Promise<
+  AdminTrackingApiResponse<{
+    data: DriverConsentRegistrationRow[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  }>
 > {
   try {
-    const res = await axios.get<DriverConsentRegistrationRow[]>(
-      `${API_BASE_URL}/traqo/driver-registrations`,
-      { headers: getAuthHeaders() },
-    );
-    return { success: true, data: Array.isArray(res.data) ? res.data : [] };
+    const res = await axios.get<{
+      data: DriverConsentRegistrationRow[];
+      total: number;
+      page: number;
+      pageSize: number;
+      totalPages: number;
+    }>(`${API_BASE_URL}/traqo/driver-registrations`, {
+      headers: getAuthHeaders(),
+      params: {
+        page: params?.page ?? 1,
+        limit: params?.limit ?? 40,
+        search: params?.search?.trim() || undefined,
+      },
+    });
+    return {
+      success: true,
+      data: {
+        data: Array.isArray(res.data?.data) ? res.data.data : [],
+        total: Number(res.data?.total) || 0,
+        page: Number(res.data?.page) || 1,
+        pageSize: Number(res.data?.pageSize) || 40,
+        totalPages: Number(res.data?.totalPages) || 1,
+      },
+    };
   } catch (error) {
     return {
       success: false,
