@@ -33,6 +33,8 @@ function toTenDigitPhone(input: string) {
   return digits;
 }
 
+const REGISTRATIONS_PAGE_SIZE = 40;
+
 function consentApproved(consent: string | null) {
   if (!consent) return false;
   const value = consent.toLowerCase();
@@ -145,6 +147,11 @@ export default function AdminTrackingPage() {
     DriverConsentRegistrationRow[]
   >([]);
   const [registrationsLoading, setRegistrationsLoading] = useState(false);
+  const [registrationsPage, setRegistrationsPage] = useState(1);
+  const [registrationsTotal, setRegistrationsTotal] = useState(0);
+  const [registrationsTotalPages, setRegistrationsTotalPages] = useState(1);
+  const [registrationsSearchInput, setRegistrationsSearchInput] = useState("");
+  const [registrationsSearch, setRegistrationsSearch] = useState("");
   const [consentForm, setConsentForm] = useState<CheckConsentPayload>({
     tel: "",
   });
@@ -357,12 +364,36 @@ export default function AdminTrackingPage() {
 
   const refreshRegistrations = useCallback(async () => {
     setRegistrationsLoading(true);
-    const response = await listDriverRegistrations();
-    if (response.success) {
-      setRegistrations(response.data || []);
+    const response = await listDriverRegistrations({
+      page: registrationsPage,
+      limit: REGISTRATIONS_PAGE_SIZE,
+      search: registrationsSearch,
+    });
+    if (response.success && response.data) {
+      setRegistrations(response.data.data || []);
+      setRegistrationsTotal(response.data.total || 0);
+      setRegistrationsTotalPages(response.data.totalPages || 1);
+      if (
+        response.data.page &&
+        response.data.page !== registrationsPage
+      ) {
+        setRegistrationsPage(response.data.page);
+      }
     }
     setRegistrationsLoading(false);
-  }, []);
+  }, [registrationsPage, registrationsSearch]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const next = registrationsSearchInput.trim();
+      setRegistrationsSearch((prev) => {
+        if (prev === next) return prev;
+        setRegistrationsPage(1);
+        return next;
+      });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [registrationsSearchInput]);
 
   useEffect(() => {
     if (loading || !isAuthenticated) return;
@@ -1117,79 +1148,149 @@ export default function AdminTrackingPage() {
           </button>
         </div>
 
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <input
+            className={`${inputClass} w-full max-w-md`}
+            placeholder="Search invoice or vehicle number…"
+            value={registrationsSearchInput}
+            onChange={(e) => setRegistrationsSearchInput(e.target.value)}
+          />
+          {registrationsSearch ? (
+            <button
+              type="button"
+              onClick={() => {
+                setRegistrationsSearchInput("");
+                setRegistrationsSearch("");
+                setRegistrationsPage(1);
+              }}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700"
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
+
         {registrations.length === 0 ? (
           <p className="mt-4 text-sm text-gray-400">
-            No driver registrations yet.
+            {registrationsLoading
+              ? "Loading registrations..."
+              : registrationsSearch
+                ? "No registrations match that invoice or vehicle number."
+                : "No driver registrations yet."}
           </p>
         ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-xs uppercase text-gray-400">
-                  <th className="py-2 pr-4">Driver</th>
-                  <th className="py-2 pr-4">Vehicle</th>
-                  <th className="py-2 pr-4">Consent</th>
-                  <th className="py-2 pr-4">Invoice</th>
-                  <th className="py-2 pr-4">Trip</th>
-                  <th className="py-2 pr-4">Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {registrations.map((reg) => {
-                  const consentBadge =
-                    reg.consentState === "ALLOWED"
-                      ? "bg-emerald-100 text-emerald-700"
-                      : reg.consentState === "DENIED"
-                        ? "bg-red-100 text-red-700"
-                        : "bg-amber-100 text-amber-700";
-                  const tripLabel = reg.autoTrip
-                    ? reg.autoTrip.traqoTripId
-                      ? `Auto-created (${reg.autoTrip.status})`
-                      : `Fastag tracking (${reg.autoTrip.status})`
-                    : reg.consentState === "ALLOWED"
-                      ? reg.giveUpNotifiedAt
-                        ? "No invoice found — create manually"
-                        : reg.autoTripError
-                          ? "Retrying (last error logged)"
-                          : "Waiting for invoice..."
-                      : reg.consentState === "PENDING"
-                        ? reg.invoice
-                          ? reg.autoTripError
-                            ? "Retrying Fastag trip..."
-                            : "Starting Fastag trip..."
-                          : "Waiting for invoice..."
-                        : "—";
-                  return (
-                    <tr key={reg.id} className="border-b border-gray-100">
-                      <td className="py-2 pr-4 text-gray-800">
-                        {reg.phoneNumber}
-                        {reg.driverName ? ` (${reg.driverName})` : ""}
-                      </td>
-                      <td className="py-2 pr-4 text-gray-800">
-                        {reg.vehicleNumber}
-                      </td>
-                      <td className="py-2 pr-4">
-                        <span
-                          className={`rounded px-2 py-0.5 text-xs font-semibold ${consentBadge}`}
-                        >
-                          {reg.consentState}
-                        </span>
-                      </td>
-                      <td className="py-2 pr-4 text-gray-600">
-                        {reg.invoice?.invoiceNumber || "—"}
-                      </td>
-                      <td className="py-2 pr-4 text-gray-600">{tripLabel}</td>
-                      <td className="py-2 pr-4 text-gray-400">
-                        {new Date(reg.updatedAt).toLocaleString("en-IN", {
-                          timeZone: "Asia/Kolkata",
-                        })}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-xs uppercase text-gray-400">
+                    <th className="py-2 pr-4">Driver</th>
+                    <th className="py-2 pr-4">Vehicle</th>
+                    <th className="py-2 pr-4">Consent</th>
+                    <th className="py-2 pr-4">Invoice</th>
+                    <th className="py-2 pr-4">Trip</th>
+                    <th className="py-2 pr-4">Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {registrations.map((reg) => {
+                    const consentBadge =
+                      reg.consentState === "ALLOWED"
+                        ? "bg-emerald-100 text-emerald-700"
+                        : reg.consentState === "DENIED"
+                          ? "bg-red-100 text-red-700"
+                          : "bg-amber-100 text-amber-700";
+                    const tripLabel = reg.autoTrip
+                      ? reg.autoTrip.traqoTripId
+                        ? `Auto-created (${reg.autoTrip.status})`
+                        : `Fastag tracking (${reg.autoTrip.status})`
+                      : reg.consentState === "ALLOWED"
+                        ? reg.giveUpNotifiedAt
+                          ? "No invoice found — create manually"
+                          : reg.autoTripError
+                            ? "Retrying (last error logged)"
+                            : "Waiting for invoice..."
+                        : reg.consentState === "PENDING"
+                          ? reg.invoice
+                            ? reg.autoTripError
+                              ? "Retrying Fastag trip..."
+                              : "Starting Fastag trip..."
+                            : "Waiting for invoice..."
+                          : "—";
+                    return (
+                      <tr key={reg.id} className="border-b border-gray-100">
+                        <td className="py-2 pr-4 text-gray-800">
+                          {reg.phoneNumber}
+                          {reg.driverName ? ` (${reg.driverName})` : ""}
+                        </td>
+                        <td className="py-2 pr-4 text-gray-800">
+                          {reg.vehicleNumber}
+                        </td>
+                        <td className="py-2 pr-4">
+                          <span
+                            className={`rounded px-2 py-0.5 text-xs font-semibold ${consentBadge}`}
+                          >
+                            {reg.consentState}
+                          </span>
+                        </td>
+                        <td className="py-2 pr-4 text-gray-600">
+                          {reg.invoice?.invoiceNumber || "—"}
+                        </td>
+                        <td className="py-2 pr-4 text-gray-600">{tripLabel}</td>
+                        <td className="py-2 pr-4 text-gray-400">
+                          {new Date(reg.updatedAt).toLocaleString("en-IN", {
+                            timeZone: "Asia/Kolkata",
+                          })}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-3">
+              <p className="text-xs text-gray-500">
+                {registrationsTotal === 0
+                  ? "No results"
+                  : `Showing ${(registrationsPage - 1) * REGISTRATIONS_PAGE_SIZE + 1}–${Math.min(
+                      registrationsPage * REGISTRATIONS_PAGE_SIZE,
+                      registrationsTotal,
+                    )} of ${registrationsTotal}`}
+                {registrationsSearch
+                  ? ` matching “${registrationsSearch}”`
+                  : ""}{" "}
+                · page {registrationsPage} of {registrationsTotalPages}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setRegistrationsPage((current) => Math.max(1, current - 1))
+                  }
+                  disabled={registrationsPage <= 1 || registrationsLoading}
+                  className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setRegistrationsPage((current) =>
+                      Math.min(registrationsTotalPages, current + 1),
+                    )
+                  }
+                  disabled={
+                    registrationsPage >= registrationsTotalPages ||
+                    registrationsLoading
+                  }
+                  className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
 
