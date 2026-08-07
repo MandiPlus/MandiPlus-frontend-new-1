@@ -15,6 +15,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -26,6 +27,7 @@ import { updateCustomerInvoice } from "@/features/customer-app/api";
 import { clearCustomerInvoicePaymentAttempt } from "@/features/customer-app/payment-attempt";
 import {
   getInvoicePdfUrl,
+  invoicePremium,
   invoiceVehicle,
   type CustomerInvoice,
 } from "@/features/customer-app/utils";
@@ -33,6 +35,11 @@ import {
 import styles from "./payment-success.module.css";
 
 const PDF_POLL_INTERVAL_MS = 1_500;
+const PAYMENT_RECEIPT_AUTO_ADVANCE_MS = 5_000;
+const INVOICE_HOME_REDIRECT_SECS = 10;
+
+type PaymentSuccessPhase = "ceremony" | "invoice";
+type PaymentSuccessRail = "phonepe" | "wallet";
 
 type InvoiceReference = {
   id: string;
@@ -62,10 +69,18 @@ function SuccessContent() {
   const params = useSearchParams();
   const queryKey = params.toString();
   const merchantOrderId = params.get("merchantOrderId") || "";
+  const sourceParam = params.get("source") || "";
+  const amountParam = Number(params.get("amount") || 0);
+  const paymentRail: PaymentSuccessRail =
+    sourceParam === "wallet" ? "wallet" : "phonepe";
   const queryReferences = useMemo(
     () => invoiceReferencesFromQuery(new URLSearchParams(queryKey)),
     [queryKey],
   );
+  const [paidAmount, setPaidAmount] = useState(
+    Number.isFinite(amountParam) && amountParam > 0 ? amountParam : 0,
+  );
+  const [paidAtLabel, setPaidAtLabel] = useState(() => formatPaidAt(new Date()));
   const [references, setReferences] =
     useState<InvoiceReference[]>(queryReferences);
   const [invoices, setInvoices] = useState<CustomerInvoice[]>([]);
@@ -91,6 +106,11 @@ function SuccessContent() {
     buyerAddress: "",
     vehicleNumber: "",
   });
+  const [successPhase, setSuccessPhase] =
+    useState<PaymentSuccessPhase>("ceremony");
+  const [homeRedirectSecs, setHomeRedirectSecs] = useState(
+    INVOICE_HOME_REDIRECT_SECS,
+  );
 
   useEffect(() => {
     setReferences((current) =>
@@ -113,6 +133,20 @@ function SuccessContent() {
         setReferences((current) =>
           mergeInvoiceReferences(current, confirmedReferences),
         );
+        const statusAmount = status.invoices.reduce((sum, invoice) => {
+          const value = Number(invoice.paymentAmount || 0);
+          return sum + (Number.isFinite(value) ? value : 0);
+        }, 0);
+        if (statusAmount > 0) setPaidAmount(statusAmount);
+        const completedAt = status.invoices
+          .map((invoice) => invoice.paymentCompletedAt)
+          .find(Boolean);
+        if (completedAt) {
+          const parsed = new Date(completedAt);
+          if (!Number.isNaN(parsed.getTime())) {
+            setPaidAtLabel(formatPaidAt(parsed));
+          }
+        }
       })
       .catch(() => {
         // The pending page has already confirmed this payment. Query references
@@ -145,6 +179,15 @@ function SuccessContent() {
         .map((reference) => invoiceById.get(reference.id))
         .filter(Boolean) as CustomerInvoice[];
       setInvoices(matchedInvoices);
+      if (matchedInvoices.length) {
+        const invoiceAmount = matchedInvoices.reduce(
+          (sum, invoice) => sum + invoicePremium(invoice),
+          0,
+        );
+        if (invoiceAmount > 0) {
+          setPaidAmount((current) => (current > 0 ? current : invoiceAmount));
+        }
+      }
       setLoadError("");
       setHasLoadedInvoiceList(true);
       return references.every((reference) => {
@@ -311,6 +354,23 @@ function SuccessContent() {
     router.replace("/home");
   };
 
+  useEffect(() => {
+    if (successPhase !== "invoice" || editOpen) return;
+    setHomeRedirectSecs(INVOICE_HOME_REDIRECT_SECS);
+    const tick = window.setInterval(() => {
+      setHomeRedirectSecs((current) => {
+        if (current <= 1) {
+          window.clearInterval(tick);
+          clearCustomerInvoicePaymentAttempt();
+          router.replace("/home");
+          return 0;
+        }
+        return current - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(tick);
+  }, [successPhase, editOpen, router]);
+
   const openInvoiceEditor = () => {
     if (!activeInvoice) return;
     setEditForm({
@@ -404,6 +464,21 @@ function SuccessContent() {
     }
   };
 
+  if (successPhase === "ceremony") {
+    return (
+      <PaymentCeremony
+        invoiceCount={Math.max(1, references.length)}
+        vehicleLabel={activeVehicle}
+        invoiceNumber={activeInvoiceNumber}
+        amountLabel={formatPaymentMoney(paidAmount)}
+        rail={paymentRail}
+        transactionId={merchantOrderId}
+        paidAtLabel={paidAtLabel}
+        onContinue={() => setSuccessPhase("invoice")}
+      />
+    );
+  }
+
   return (
     <main className={styles.page}>
       <div className={styles.shell}>
@@ -419,6 +494,14 @@ function SuccessContent() {
           <h1 className={styles.title}>
             {isBulk ? "Invoices generated" : "Invoice generated"}
           </h1>
+          {!editOpen ? (
+            <span className={styles.redirectChip}>
+              Redirecting in {homeRedirectSecs} sec
+              {homeRedirectSecs === 1 ? "" : "s"}…
+            </span>
+          ) : (
+            <span />
+          )}
         </header>
 
         <section className={styles.insuranceBanner}>
@@ -780,6 +863,158 @@ function invoiceReferencesFromQuery(
       vehicle: String(vehicles[index] || "").trim(),
     }))
     .filter((reference) => reference.id);
+}
+
+function PaymentCeremony({
+  invoiceCount,
+  vehicleLabel,
+  invoiceNumber,
+  amountLabel,
+  rail,
+  transactionId,
+  paidAtLabel,
+  onContinue,
+}: {
+  invoiceCount: number;
+  vehicleLabel: string;
+  invoiceNumber: string;
+  amountLabel: string;
+  rail: PaymentSuccessRail;
+  transactionId: string;
+  paidAtLabel: string;
+  onContinue: () => void;
+}) {
+  const [beat, setBeat] = useState<"celebrating" | "receipt">("celebrating");
+  const [secondsLeft, setSecondsLeft] = useState(
+    Math.ceil(PAYMENT_RECEIPT_AUTO_ADVANCE_MS / 1000),
+  );
+  const completedRef = useRef(false);
+
+  const finish = useCallback(() => {
+    if (completedRef.current) return;
+    completedRef.current = true;
+    onContinue();
+  }, [onContinue]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setBeat("receipt"), 1400);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (beat !== "receipt") return;
+    let remaining = PAYMENT_RECEIPT_AUTO_ADVANCE_MS;
+    setSecondsLeft(Math.ceil(remaining / 1000));
+    const tick = window.setInterval(() => {
+      remaining -= 250;
+      if (remaining <= 0) {
+        window.clearInterval(tick);
+        finish();
+        return;
+      }
+      setSecondsLeft(Math.ceil(remaining / 1000));
+    }, 250);
+    return () => window.clearInterval(tick);
+  }, [beat, finish]);
+
+  const isWallet = rail === "wallet";
+  const statusTitle = isWallet ? "Wallet debited" : "Payment successful";
+  const methodLabel = isWallet ? "Wallet" : "PhonePe";
+  const invoiceLabel =
+    invoiceCount > 1 ? `${invoiceCount} invoices` : invoiceNumber || "—";
+  const txnDisplay =
+    !isWallet && transactionId ? shortPaymentRef(transactionId) : "";
+  const detailBlocks: Array<{
+    label: string;
+    value: string;
+    mono?: boolean;
+  }> = [
+    { label: "To", value: "Mandi Plus" },
+    {
+      label: invoiceCount > 1 ? "Invoices" : "Invoice",
+      value: invoiceLabel,
+    },
+    ...(vehicleLabel
+      ? [{ label: "Vehicle", value: vehicleLabel }]
+      : []),
+    ...(txnDisplay
+      ? [{ label: "Txn ID", value: txnDisplay, mono: true }]
+      : []),
+    { label: "Via", value: `${methodLabel} · ${paidAtLabel}` },
+  ];
+
+  return (
+    <main className={`${styles.page} ${styles.ceremonyPage}`}>
+      <div className={styles.ceremonyShell}>
+        <div
+          className={`${styles.ceremonyMark} ${
+            beat === "receipt" ? styles.ceremonyMarkCompact : ""
+          }`}
+          aria-hidden="true"
+        >
+          <span className={styles.ceremonyCheck}>
+            <Check size={beat === "receipt" ? 28 : 44} strokeWidth={3.5} />
+          </span>
+        </div>
+        {beat === "celebrating" ? (
+          <h1 className={styles.ceremonyTitle}>{statusTitle}</h1>
+        ) : (
+          <>
+            <div className={styles.ceremonyReceiptHero}>
+              <strong className={styles.ceremonyAmount}>
+                {amountLabel || "—"}
+              </strong>
+              <p className={styles.ceremonyStatus}>{statusTitle}</p>
+            </div>
+            <dl className={styles.ceremonyReceipt}>
+              {detailBlocks.map((block) => (
+                <div key={block.label}>
+                  <dt>{block.label}</dt>
+                  <dd className={block.mono ? styles.ceremonyMono : undefined}>
+                    {block.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <p className={styles.ceremonyCountdown}>
+              Next in {secondsLeft}s
+            </p>
+            <button
+              type="button"
+              className={styles.ceremonyNext}
+              onClick={finish}
+            >
+              Next
+            </button>
+          </>
+        )}
+      </div>
+    </main>
+  );
+}
+
+function formatPaidAt(date: Date) {
+  return date.toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatPaymentMoney(value: number) {
+  if (!(value > 0)) return "";
+  const amount = Math.round(value * 100) / 100;
+  return `Rs ${amount.toLocaleString("en-IN", {
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function shortPaymentRef(value: string) {
+  const clean = String(value || "").trim();
+  if (clean.length <= 14) return clean;
+  return `${clean.slice(0, 6)}…${clean.slice(-4)}`;
 }
 
 function mergeInvoiceReferences(

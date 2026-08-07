@@ -76,6 +76,7 @@ type Stage = "capture" | "review" | "creating";
 type ExtractionState = "idle" | "optimizing" | "reading" | "ready" | "failed";
 type MissingDetailKey =
   | "supplierName"
+  | "supplierAddress"
   | "buyerName"
   | "buyerAddress"
   | "quantity"
@@ -136,6 +137,7 @@ function missingVoiceEndSilenceMillis(key: MissingDetailKey) {
     case "buyerName":
     case "vehicleNumber":
       return 1000;
+    case "supplierAddress":
     case "buyerAddress":
       return 1400;
     case "insuredPartyPhone":
@@ -195,64 +197,103 @@ const POMEGRANATE_QUESTION_LABELS: Partial<
   },
 };
 
+const QUESTION_VOICE_CACHE = "v3";
+function questionVoiceUrl(fileName: string) {
+  return `/customer-app/voices/${fileName}?v=${QUESTION_VOICE_CACHE}`;
+}
+
 const MISSING_QUESTIONS: Record<
   MissingDetailKey,
   { label: string; audio: string; target?: InvoiceVoiceTargetField }
 > = {
   supplierName: {
     label: "Aapka vyapari kaun hai?",
-    audio: "/customer-app/voices/tender-coconut-supplier-name.mp3",
+    audio: questionVoiceUrl("tender-coconut-supplier-name.mp3"),
     target: "supplier_name",
+  },
+  supplierAddress: {
+    label: "Vyapari ka address",
+    audio: questionVoiceUrl("vyapariaddress.mp3"),
+    target: "supplier_address",
   },
   buyerName: {
     label: "Buyer ka naam",
-    audio: "/customer-app/voices/tender-coconut-buyer-name.mp3",
+    audio: questionVoiceUrl("tender-coconut-buyer-name.mp3"),
     target: "buyer_name",
   },
   buyerAddress: {
     label: "Buyer ka address",
-    audio: "/customer-app/voices/tender-coconut-buyer-address.mp3",
+    audio: questionVoiceUrl("tender-coconut-buyer-address.mp3"),
     target: "buyer_address",
   },
   quantity: {
     label: "Kitne dane hain?",
-    audio: "/customer-app/voices/tender-coconut-quantity.mp3",
+    audio: questionVoiceUrl("tender-coconut-quantity.mp3"),
     target: "quantity",
   },
   rate: {
     label: "Rate kya hai?",
-    audio: "/customer-app/voices/pomegranate-rate.mp3",
+    audio: questionVoiceUrl("pomegranate-rate.mp3"),
     target: "rate",
   },
   totalAmount: {
     label: "Kitne lakh ka maal hai?",
-    audio: "/customer-app/voices/tender-coconut-total-amount.mp3",
+    audio: questionVoiceUrl("tender-coconut-total-amount.mp3"),
     target: "total_amount",
   },
   vehicleNumber: {
     label: "Gaadi number kya hai?",
-    audio: "/customer-app/voices/pomegranate-vehicle-number.mp3",
+    audio: questionVoiceUrl("pomegranate-vehicle-number.mp3"),
     target: "vehicle_number",
   },
   vehicleTonnage: {
     label: "Gaadi kitne ton ki hai?",
-    audio: "/customer-app/voices/tender-coconut-vehicle-tonnage.mp3",
+    audio: questionVoiceUrl("tender-coconut-vehicle-tonnage.mp3"),
   },
   insuredPartyPhone: {
     label: "Buyer mobile",
-    audio: "/customer-app/voices/tender-coconut-buyer-mobile.mp3",
+    audio: questionVoiceUrl("tender-coconut-buyer-mobile.mp3"),
     target: "insured_party_phone",
+  },
+};
+
+/** Tender coconut: opposite party is always spoken/shown as Vyapari. */
+const TENDER_COCONUT_VYAPARI_QUESTIONS: Partial<
+  Record<
+    MissingDetailKey,
+    { label: string; audio: string; target?: InvoiceVoiceTargetField }
+  >
+> = {
+  supplierName: {
+    label: "Vyapari ka naam",
+    audio: questionVoiceUrl("vyapariname.mp3"),
+    target: "supplier_name",
+  },
+  supplierAddress: {
+    label: "Vyapari ka address",
+    audio: questionVoiceUrl("vyapariaddress.mp3"),
+    target: "supplier_address",
+  },
+  buyerName: {
+    label: "Vyapari ka naam",
+    audio: questionVoiceUrl("vyapariname.mp3"),
+    target: "buyer_name",
+  },
+  buyerAddress: {
+    label: "Vyapari ka address",
+    audio: questionVoiceUrl("vyapariaddress.mp3"),
+    target: "buyer_address",
   },
 };
 
 const POMEGRANATE_QUESTION_AUDIO: Partial<
   Record<MissingDetailKey, string>
 > = {
-  buyerAddress: "/customer-app/voices/pomegranate-destination.mp3",
-  buyerName: "/customer-app/voices/pomegranate-consignee.mp3",
-  quantity: "/customer-app/voices/pomegranate-quantity.mp3",
-  rate: "/customer-app/voices/pomegranate-rate.mp3",
-  vehicleNumber: "/customer-app/voices/pomegranate-vehicle-number.mp3",
+  buyerAddress: questionVoiceUrl("pomegranate-destination.mp3"),
+  buyerName: questionVoiceUrl("pomegranate-consignee.mp3"),
+  quantity: questionVoiceUrl("pomegranate-quantity.mp3"),
+  rate: questionVoiceUrl("pomegranate-rate.mp3"),
+  vehicleNumber: questionVoiceUrl("pomegranate-vehicle-number.mp3"),
 };
 
 /** Fixed supplier-path questions for every anar invoice — identity ignored. */
@@ -278,15 +319,28 @@ function resolveMissingQuestion(
   language: unknown,
 ) {
   const base = MISSING_QUESTIONS[key];
-  if (!isPomegranateProduct(product)) return base;
-  const labels = POMEGRANATE_QUESTION_LABELS[key];
-  const audio = POMEGRANATE_QUESTION_AUDIO[key];
-  // Never fall back to tender-coconut prompts for anar.
-  return {
-    ...base,
-    label: labels ? resolveLocalizedMissingLabel(labels, language) : base.label,
-    audio: audio || "",
-  };
+  if (isPomegranateProduct(product)) {
+    const labels = POMEGRANATE_QUESTION_LABELS[key];
+    const audio = POMEGRANATE_QUESTION_AUDIO[key];
+    // Never fall back to tender-coconut prompts for anar.
+    return {
+      ...base,
+      label: labels
+        ? resolveLocalizedMissingLabel(labels, language)
+        : base.label,
+      audio: audio || "",
+    };
+  }
+  if (isTenderCoconutProduct(product)) {
+    const vyapari = TENDER_COCONUT_VYAPARI_QUESTIONS[key];
+    if (vyapari) {
+      return {
+        ...base,
+        ...vyapari,
+      };
+    }
+  }
+  return base;
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -321,7 +375,7 @@ const COMMODITY_OPTIONS = [
 ] as const;
 
 function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft {
-  const userName = String(user?.name || user?.fullName || "");
+  const userName = String(user?.name || user?.fullName || "").trim();
   const userPhone = String(
     user?.phone ||
       user?.mobile ||
@@ -340,18 +394,27 @@ function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft 
   // Anar is always the supplier shipper flow — never prefill consignee as self
   // (that would skip "Kiske paas"). Coconut buyers can still default to self.
   const isPomegranate = isPomegranateProduct(product);
-  const buyerName =
-    !isPomegranate && identity === "BUYER" ? userName : "";
-  const insuredPartyPhone =
-    !isPomegranate && identity === "BUYER" ? userPhone : "";
+  const isTenderCoconut = isTenderCoconutProduct(product);
+  const isBuyer = !isPomegranate && identity === "BUYER";
+  const isSupplier = identity === "SUPPLIER";
+  const onboardingAddress = isTenderCoconut
+    ? onboardingMandiAddressFromUser(user)
+    : "";
   return {
     invoiceDate: today(),
-    mode: "Cash",
-    supplierName: "",
-    supplierAddress: "",
-    buyerName,
-    buyerAddress: "",
-    placeOfSupply: humanStateLabel(user?.state),
+    mode: isSupplier ? "Commission" : "Cash",
+    supplierName: isTenderCoconut && isSupplier ? userName : "",
+    supplierAddress: isTenderCoconut && isSupplier ? onboardingAddress : "",
+    buyerName: isBuyer ? userName : "",
+    buyerAddress: isTenderCoconut && isBuyer ? onboardingAddress : "",
+    placeOfSupply:
+      isTenderCoconut && isSupplier
+        ? humanStateLabel(
+            resolvePlaceOfSupplyFromSupplierAddress(onboardingAddress, "") ||
+              user?.state ||
+              "",
+          )
+        : humanStateLabel(user?.state),
     product,
     quantity: "",
     rate: "",
@@ -360,7 +423,7 @@ function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft 
     vehicleTonnage: "",
     includeLogistics: true,
     driverPhone: "",
-    insuredPartyPhone,
+    insuredPartyPhone: isBuyer ? userPhone : "",
     ownerName: "",
     note: "",
   };
@@ -432,6 +495,25 @@ export default function CustomerCreateInsurancePage() {
   activeFileIndexRef.current = activeFileIndex;
 
   const isTenderCoconut = isTenderCoconutProduct(draft.product);
+  const identityLocksMode = /^(BUYER|SUPPLIER)$/.test(
+    String(user?.identity || user?.role || "")
+      .trim()
+      .toUpperCase(),
+  );
+
+  useEffect(() => {
+    if (!identityLocksMode) return;
+    const lockedMode =
+      String(user?.identity || user?.role || "")
+        .trim()
+        .toUpperCase() === "SUPPLIER"
+        ? "Commission"
+        : "Cash";
+    if (draft.mode !== lockedMode) {
+      setDraft((current) => ({ ...current, mode: lockedMode }));
+    }
+  }, [draft.mode, identityLocksMode, user?.identity, user?.role]);
+
   const amountBreakdown = useMemo(
     () => resolveInvoiceAmountBreakdown(draft, pricing),
     [draft, pricing],
@@ -586,6 +668,7 @@ export default function CustomerCreateInsurancePage() {
         router.replace(
           customerInvoiceSuccessUrl({
             invoices: paymentAttemptReferences(attempt),
+            merchantOrderId: attempt.merchantOrderId,
           }),
         );
         return;
@@ -882,7 +965,7 @@ export default function CustomerCreateInsurancePage() {
   };
 
   const openMissingDetails = (nextDraft: CustomerInvoiceDraft) => {
-    const preparedDraft = withPomegranateProfileDefaults(nextDraft, user);
+    const preparedDraft = finalizeInvoicePartyDefaults(nextDraft, user);
     if (preparedDraft !== nextDraft) {
       setDraft(preparedDraft);
       setBatchDrafts((current) => {
@@ -917,7 +1000,7 @@ export default function CustomerCreateInsurancePage() {
           ? draftRef.current
           : freshBatchDraft(draftRef.current));
       return result.status === "fulfilled"
-        ? applyExtraction(baseDraft, result.value)
+        ? applyExtraction(baseDraft, result.value, user)
         : baseDraft;
     });
     if (!nextDrafts.length) {
@@ -1453,10 +1536,15 @@ export default function CustomerCreateInsurancePage() {
       if (!unpaidInvoiceReferences.length) {
         clearCustomerInvoicePaymentAttempt();
         paymentAttemptRef.current = null;
+        const paidAmount = paymentDrafts.reduce(
+          (sum, item) => sum + customerInvoicePremium(item, pricing),
+          0,
+        );
         router.replace(
           customerInvoiceSuccessUrl({
             invoices: invoiceReferences,
             source: "wallet",
+            amount: paidAmount,
           }),
         );
         return;
@@ -1828,18 +1916,20 @@ export default function CustomerCreateInsurancePage() {
             ) : null}
           </div>
           <div className={styles.reviewModeRow}>
-            {(["Cash", "Commission"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className={`${styles.modeButton} ${
-                  draft.mode === mode ? styles.modeButtonActive : ""
-                }`}
-                onClick={() => update("mode", mode)}
-              >
-                {mode}
-              </button>
-            ))}
+            {!identityLocksMode
+              ? (["Cash", "Commission"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`${styles.modeButton} ${
+                    draft.mode === mode ? styles.modeButtonActive : ""
+                  }`}
+                  onClick={() => update("mode", mode)}
+                >
+                  {mode}
+                </button>
+              ))
+              : null}
             <label className={styles.reviewDate}>
               <span>{shortDate(draft.invoiceDate)}</span>
               <CalendarDays size={16} aria-hidden="true" />
@@ -1850,6 +1940,11 @@ export default function CustomerCreateInsurancePage() {
                 onChange={(event) => update("invoiceDate", event.target.value)}
               />
             </label>
+            {total > 0 ? (
+              <strong className={styles.reviewTotalInline}>
+                Total {money(total)}
+              </strong>
+            ) : null}
           </div>
         </section>
 
@@ -2339,36 +2434,50 @@ function CompactInput({
 function applyExtraction(
   current: CustomerInvoiceDraft,
   response: Record<string, unknown>,
+  user?: Record<string, unknown> | null,
 ): CustomerInvoiceDraft {
   const raw = extractionDraft(response);
   const extractedSupplierName = plausiblePartyName(
     raw.seller_name || raw.supplier_name,
   );
-  const quantity = numberText(raw.quantity);
+  const nextProduct =
+    canonicalizeCommodityLabel(
+      text(raw.commodity || raw.product_name || raw.product),
+    ) || current.product;
+  const isPomegranate = isPomegranateProduct(nextProduct);
+  const isTenderCoconut = isTenderCoconutProduct(nextProduct);
+  const identity = String(
+    user?.identity || user?.role || user?.userType || "",
+  )
+    .trim()
+    .toUpperCase();
+  const skipTenderPartyOcr =
+    isTenderCoconut && (identity === "BUYER" || identity === "SUPPLIER");
+  // Weighbridge kg must never become coconut nut count.
+  const quantity = isTenderCoconut ? "" : numberText(raw.quantity);
   const extractedTotal = numberText(raw.total_amount || raw.amount);
   const rate =
     numberText(raw.rate) ||
     (quantity && extractedTotal
       ? String(round(Number(extractedTotal) / Number(quantity)))
       : "");
-  const nextProduct =
-    canonicalizeCommodityLabel(
-      text(raw.commodity || raw.product_name || raw.product),
-    ) || current.product;
-  const nextSupplierAddress =
-    text(raw.supplier_address) || current.supplierAddress;
-  const isPomegranate = isPomegranateProduct(nextProduct);
+  const nextSupplierAddress = skipTenderPartyOcr
+    ? ""
+    : text(raw.supplier_address) || current.supplierAddress;
 
-  return {
+  const next: CustomerInvoiceDraft = {
     ...current,
-    supplierName: extractedSupplierName || current.supplierName,
+    supplierName: skipTenderPartyOcr
+      ? ""
+      : extractedSupplierName || current.supplierName,
     supplierAddress: nextSupplierAddress,
-    buyerName:
-      text(raw.buyer_name || raw.billToName || raw.shipToName) ||
-      current.buyerName,
+    buyerName: skipTenderPartyOcr
+      ? ""
+      : text(raw.buyer_name || raw.billToName || raw.shipToName) ||
+        current.buyerName,
     // Anar destination is asked by voice ("mal kidhar") — OCR addresses
     // like "District: Mumbai" were skipping that question entirely.
-    buyerAddress: isPomegranate
+    buyerAddress: isPomegranate || skipTenderPartyOcr
       ? ""
       : text(
           raw.buyer_address ||
@@ -2402,6 +2511,10 @@ function applyExtraction(
     invoiceDate: normalizeDate(raw.invoice_date) || current.invoiceDate,
     note: text(raw.notes) || current.note,
   };
+
+  return finalizeInvoicePartyDefaults(next, user, {
+    clearOppositeParty: true,
+  });
 }
 
 function applyMissingVoiceValue(
@@ -2435,6 +2548,8 @@ function missingVoiceValue(
   switch (key) {
     case "supplierName":
       return text(raw.seller_name || raw.supplier_name);
+    case "supplierAddress":
+      return text(raw.supplier_address);
     case "buyerName":
       return text(raw.buyer_name);
     case "buyerAddress":
@@ -2519,6 +2634,74 @@ function withPomegranateProfileDefaults(
   return next;
 }
 
+/** Onboarding mandi + state — preferred address for tender coconut own-party. */
+function onboardingMandiAddressFromUser(
+  user?: Record<string, unknown> | null,
+) {
+  const mandi = String(user?.mandiName || "").trim();
+  const stateLabel = humanStateLabel(user?.state);
+  if (mandi && stateLabel) return `${mandi}, ${stateLabel}`;
+  if (mandi) return mandi;
+  if (stateLabel) return stateLabel;
+  return String(user?.address || "").trim();
+}
+
+/**
+ * Tender coconut only: own party from onboarding; opposite asked as Vyapari.
+ */
+function withTenderCoconutIdentityDefaults(
+  draft: CustomerInvoiceDraft,
+  user?: Record<string, unknown> | null,
+  options?: { clearOppositeParty?: boolean },
+) {
+  if (!isTenderCoconutProduct(draft.product)) return draft;
+  const identity = String(
+    user?.identity || user?.role || user?.userType || "",
+  )
+    .trim()
+    .toUpperCase();
+  if (identity !== "BUYER" && identity !== "SUPPLIER") return draft;
+
+  const userName = String(user?.name || user?.fullName || "").trim();
+  const userAddress = onboardingMandiAddressFromUser(user);
+  const next = { ...draft };
+  const clearOpposite = Boolean(options?.clearOppositeParty);
+
+  if (identity === "BUYER") {
+    if (userName) next.buyerName = userName;
+    if (userAddress) next.buyerAddress = userAddress;
+    if (clearOpposite) {
+      next.supplierName = "";
+      next.supplierAddress = "";
+    }
+  } else {
+    if (userName) next.supplierName = userName;
+    if (userAddress) next.supplierAddress = userAddress;
+    if (clearOpposite) {
+      next.buyerName = "";
+      next.buyerAddress = "";
+    }
+    next.placeOfSupply = humanStateLabel(
+      resolvePlaceOfSupplyFromSupplierAddress(next.supplierAddress, "") ||
+        user?.state ||
+        next.placeOfSupply,
+    );
+  }
+  return next;
+}
+
+function finalizeInvoicePartyDefaults(
+  draft: CustomerInvoiceDraft,
+  user?: Record<string, unknown> | null,
+  options?: { clearOppositeParty?: boolean },
+) {
+  return withTenderCoconutIdentityDefaults(
+    withPomegranateProfileDefaults(draft, user),
+    user,
+    options,
+  );
+}
+
 function humanStateLabel(value: unknown) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -2598,23 +2781,53 @@ function titleCasePlace(value: string) {
 
 function getMissingDetailKeys(
   draft: CustomerInvoiceDraft,
-  _user?: Record<string, unknown> | null,
+  user?: Record<string, unknown> | null,
 ) {
   if (!String(draft.product || "").trim()) return [];
 
   const isTenderCoconut = isTenderCoconutProduct(draft.product);
   const isPomegranate = isPomegranateProduct(draft.product);
-  const ordered: MissingDetailKey[] = isPomegranate
-    ? POMEGRANATE_MISSING_DETAIL_KEYS
-    : [
-        "supplierName",
-        "buyerName",
-        "buyerAddress",
-        "quantity",
-        "totalAmount",
-        "insuredPartyPhone",
-        ...(isTenderCoconut ? (["vehicleTonnage"] as const) : []),
-      ];
+  if (isPomegranate) {
+    return POMEGRANATE_MISSING_DETAIL_KEYS.filter(
+      (key) => !isMissingDetailAnswered(key, String(draft[key] || "")),
+    );
+  }
+
+  if (isTenderCoconut) {
+    const identity = String(
+      user?.identity || user?.role || user?.userType || "",
+    )
+      .trim()
+      .toUpperCase();
+    const ordered: MissingDetailKey[] =
+      identity === "BUYER"
+        ? [
+            "supplierName",
+            "supplierAddress",
+            "quantity",
+            "totalAmount",
+            "vehicleTonnage",
+          ]
+        : [
+            "buyerName",
+            "buyerAddress",
+            "quantity",
+            "totalAmount",
+            "vehicleTonnage",
+          ];
+    return ordered.filter(
+      (key) => !isMissingDetailAnswered(key, String(draft[key] || "")),
+    );
+  }
+
+  const ordered: MissingDetailKey[] = [
+    "supplierName",
+    "buyerName",
+    "buyerAddress",
+    "quantity",
+    "totalAmount",
+    "insuredPartyPhone",
+  ];
   return ordered.filter(
     (key) => !isMissingDetailAnswered(key, String(draft[key] || "")),
   );
@@ -2694,9 +2907,13 @@ function questionnaireAnswerKey(
 function customerInvoiceSuccessUrl({
   invoices,
   source,
+  merchantOrderId,
+  amount,
 }: {
   invoices: CustomerInvoicePaymentReference[];
   source?: "wallet";
+  merchantOrderId?: string | null;
+  amount?: number | null;
 }) {
   const params = new URLSearchParams();
   invoices.forEach((invoice) => {
@@ -2706,6 +2923,10 @@ function customerInvoiceSuccessUrl({
     params.append("vehicle", invoice.vehicleNumber || "");
   });
   if (source) params.set("source", source);
+  if (merchantOrderId) params.set("merchantOrderId", merchantOrderId);
+  if (typeof amount === "number" && Number.isFinite(amount) && amount > 0) {
+    params.set("amount", String(amount));
+  }
   return `/payment/success?${params.toString()}`;
 }
 

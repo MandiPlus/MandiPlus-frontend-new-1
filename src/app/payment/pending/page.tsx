@@ -18,9 +18,13 @@ const CUSTOMER_PAYMENT_STATUS_INTERVAL_MS = 1_500;
 function customerInvoiceSuccessUrl({
   invoices,
   merchantOrderId,
+  amount,
+  source,
 }: {
   invoices: CustomerPaymentStatusInvoice[];
   merchantOrderId?: string | null;
+  amount?: number | null;
+  source?: "wallet";
 }) {
   const query = new URLSearchParams();
   invoices.forEach((invoice) => {
@@ -30,6 +34,10 @@ function customerInvoiceSuccessUrl({
     query.append('vehicle', invoice.vehicleNumber || '');
   });
   if (merchantOrderId) query.set('merchantOrderId', merchantOrderId);
+  if (source) query.set('source', source);
+  if (typeof amount === 'number' && Number.isFinite(amount) && amount > 0) {
+    query.set('amount', String(amount));
+  }
   return `/payment/success?${query.toString()}`;
 }
 
@@ -156,10 +164,15 @@ function PendingContent() {
               if (matchingInvoicePaymentAttempt) {
                 clearCustomerInvoicePaymentAttempt();
               }
+              const paidAmount = successInvoices.reduce((sum, invoice) => {
+                const value = Number(invoice.paymentAmount || 0);
+                return sum + (Number.isFinite(value) ? value : 0);
+              }, 0);
               router.replace(
                 customerInvoiceSuccessUrl({
                   invoices: successInvoices,
                   merchantOrderId,
+                  amount: paidAmount > 0 ? paidAmount : undefined,
                 }),
               );
               return;

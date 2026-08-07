@@ -13,8 +13,9 @@
 
 .header {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) 64px;
+  grid-template-columns: 64px minmax(0, 1fr) minmax(64px, auto);
   align-items: center;
+  gap: 8px;
   margin-bottom: 24px;
 }
 
@@ -539,5 +540,172 @@
 @media (prefers-reduced-motion: reduce) {
   .pdfLoader svg {
     animation-duration: 1.8s;
+  }
+}
+
+.redirectChip {
+  justify-self: end;
+  color: #5b6358;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.ceremonyPage {
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(46, 125, 50, 0.12), transparent 42%),
+    #f5f6fb;
+}
+
+.ceremonyShell {
+  width: min(100%, 420px);
+  padding: 48px 28px;
+  text-align: center;
+}
+
+.ceremonyMark {
+  display: grid;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 28px;
+  place-items: center;
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(160deg, #2f9e44, #1b7a32);
+  box-shadow: 0 18px 40px rgba(27, 122, 50, 0.28);
+  animation: ceremonyPop 520ms cubic-bezier(0.2, 0.9, 0.2, 1);
+  transition: width 280ms ease, height 280ms ease, margin 280ms ease;
+}
+
+.ceremonyMarkCompact {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 18px;
+}
+
+.ceremonyCheck {
+  display: grid;
+  place-items: center;
+  animation: ceremonyCheck 420ms ease 180ms both;
+}
+
+.ceremonyTitle {
+  margin: 0;
+  font-size: clamp(28px, 7vw, 36px);
+  font-weight: 950;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+.ceremonyEyebrow {
+  margin: 0 0 8px;
+  color: #2f9e44;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ceremonyReceiptHero {
+  margin: 0 0 8px;
+}
+
+.ceremonyAmount {
+  display: block;
+  font-size: clamp(34px, 8vw, 44px);
+  font-weight: 950;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+}
+
+.ceremonyStatus {
+  margin: 8px 0 0;
+  color: #50564e;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.ceremonyReceipt {
+  display: grid;
+  gap: 12px;
+  margin: 28px 0 20px;
+  padding: 18px 20px;
+  border-radius: 22px;
+  text-align: left;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(32, 48, 68, 0.06);
+}
+
+.ceremonyReceipt div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ceremonyReceipt dt {
+  color: #747a72;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ceremonyReceipt dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 900;
+  text-align: right;
+}
+
+.ceremonyMono {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.ceremonyCountdown {
+  margin: 0 0 12px;
+  color: #747a72;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.ceremonyNext {
+  width: 100%;
+  min-height: 56px;
+  border: 0;
+  border-radius: 18px;
+  color: #fff;
+  background: #1b2430;
+  font-size: 17px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+@keyframes ceremonyPop {
+  from {
+    transform: scale(0.72);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes ceremonyCheck {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ceremonyMark,
+  .ceremonyCheck {
+    animation: none;
   }
 }
