@@ -131,6 +131,7 @@ export async function extractCustomerInvoiceText(
 
 export type InvoiceVoiceTargetField =
   | "supplier_name"
+  | "supplier_address"
   | "buyer_name"
   | "buyer_address"
   | "quantity"

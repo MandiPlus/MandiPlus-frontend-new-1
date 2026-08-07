@@ -16,6 +16,11 @@ import {
   useReferenceCommodities,
   useReferenceStates,
 } from "@/features/reference";
+import {
+  nextMandiForStateChange,
+  reconcileStateAndMandi,
+  statesForCommodities,
+} from "@/features/reference/commodityGeography";
 import { updateCustomerUser } from "./api";
 import { readableError } from "./utils";
 import styles from "./customer-app.module.css";
@@ -30,8 +35,8 @@ const languages = [
 ] as const;
 
 const roles = [
-  ["BUYER", "Buyer", ShoppingCart],
-  ["SUPPLIER", "Supplier", Store],
+  ["SUPPLIER", "Loading vala", Store],
+  ["BUYER", "Unloading vala", ShoppingCart],
   ["TRANSPORTER", "Transporter", Truck],
 ] as const;
 
@@ -60,6 +65,11 @@ export function CustomerSetupModal() {
   const [error, setError] = useState("");
 
   const profile = useMemo(() => readProfile(user, commodities), [user, commodities]);
+
+  const visibleStates = useMemo(
+    () => statesForCommodities(selectedCommodities, states),
+    [selectedCommodities, states],
+  );
 
   useEffect(() => {
     if (!user?.id) return;
@@ -100,6 +110,20 @@ export function CustomerSetupModal() {
     setVisible(true);
     setError("");
   }, [profile, user]);
+
+  useEffect(() => {
+    if (!visible || step !== 4) return;
+    const reconciled = reconcileStateAndMandi({
+      commodityCodes: selectedCommodities,
+      allStates: states,
+      state,
+      mandiName,
+    });
+    if (reconciled.state !== state) setState(reconciled.state);
+    if (reconciled.mandiName !== mandiName) setMandiName(reconciled.mandiName);
+    // Only re-run when commodities / catalog / step change — not on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
+  }, [selectedCommodities, states, step, visible]);
 
   if (!visible || !user?.id) return null;
 
@@ -274,7 +298,24 @@ export function CustomerSetupModal() {
                       active ? styles.setupChoiceActive : ""
                     }`}
                   >
-                    <span>{item.emoji}</span>
+                    {item.code === "POMEGRANATE" ? (
+                      <svg
+                        width="22"
+                        height="22"
+                        viewBox="0 0 32 32"
+                        aria-hidden
+                      >
+                        <path
+                          d="M11.5 7.2c1.2-.9 2.6-1.4 4.5-1.4 1.9 0 3.3.5 4.5 1.4 2.1 1.5 3.4 4 3.4 7.1 0 5.4-3.4 10.2-7.9 10.2s-7.9-4.8-7.9-10.2c0-3.1 1.3-5.6 3.4-7.1z"
+                          fill="#C0392B"
+                        />
+                        <circle cx="13.2" cy="15.5" r="1.15" fill="#F5D0C8" />
+                        <circle cx="16.4" cy="17.8" r="1.05" fill="#F5D0C8" />
+                        <circle cx="18.8" cy="14.6" r="0.95" fill="#F5D0C8" />
+                      </svg>
+                    ) : (
+                      <span>{item.emoji}</span>
+                    )}
                     <strong>{item.label}</strong>
                     {active ? <Check size={16} /> : null}
                   </button>
@@ -316,10 +357,16 @@ export function CustomerSetupModal() {
               <span>Select State</span>
               <select
                 value={state}
-                onChange={(event) => setState(event.target.value)}
+                onChange={(event) => {
+                  const nextState = event.target.value;
+                  setState(nextState);
+                  setMandiName((current) =>
+                    nextMandiForStateChange(current, nextState),
+                  );
+                }}
               >
                 <option value="">Select State</option>
-                {states.map((item) => (
+                {visibleStates.map((item) => (
                   <option key={item.value} value={item.value}>
                     {item.label}
                   </option>
@@ -333,6 +380,7 @@ export function CustomerSetupModal() {
                 placeholder="Mandi ka naam likhein"
                 onChange={(event) => setMandiName(event.target.value)}
               />
+              <small>Suggested mandi — aap badal sakte ho</small>
             </label>
             <SetupContinue
               saving={saving}

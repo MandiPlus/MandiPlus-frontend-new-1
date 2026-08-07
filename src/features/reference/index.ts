@@ -65,12 +65,12 @@ export const FALLBACK_INDIA_STATES: ReferenceStateOption[] = [
 export const FALLBACK_COMMODITIES: ReferenceCommodityOption[] = [
   { code: "TENDER_COCONUT", label: "Tender Coconut", emoji: "🥥", sortOrder: 10 },
   { code: "TOMATO", label: "Tomato", emoji: "🍅", sortOrder: 20 },
+  { code: "POMEGRANATE", label: "Anar", emoji: "🍎", sortOrder: 25 },
   { code: "MANGO", label: "Mango", emoji: "🥭", sortOrder: 30 },
   { code: "APPLE", label: "Apple", emoji: "🍎", sortOrder: 35 },
   { code: "BANANA", label: "Banana", emoji: "🍌", sortOrder: 40 },
   { code: "ONION", label: "Onion", emoji: "🧅", sortOrder: 50 },
   { code: "POTATO", label: "Potato", emoji: "🥔", sortOrder: 60 },
-  { code: "POMEGRANATE", label: "Anar", emoji: "🍎", sortOrder: 70 },
   { code: "OTHER", label: "Other", emoji: "🌾", sortOrder: 80 },
 ];
 
@@ -78,9 +78,18 @@ export const FALLBACK_COMMODITIES: ReferenceCommodityOption[] = [
 function withAnarCommodityLabel(
   commodities: ReferenceCommodityOption[],
 ): ReferenceCommodityOption[] {
-  return commodities.map((item) =>
-    item.code === "POMEGRANATE" ? { ...item, label: "Anar" } : item,
-  );
+  return commodities
+    .map((item) =>
+      item.code === "POMEGRANATE"
+        ? { ...item, label: "Anar", sortOrder: item.sortOrder ?? 25 }
+        : item,
+    )
+    .slice()
+    .sort(
+      (left, right) =>
+        (left.sortOrder ?? 999) - (right.sortOrder ?? 999) ||
+        left.label.localeCompare(right.label),
+    );
 }
 
 function readCache<T>(key: string): T | null {

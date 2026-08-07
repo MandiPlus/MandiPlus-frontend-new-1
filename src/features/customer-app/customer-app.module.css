@@ -1859,14 +1859,23 @@
 }
 
 .reviewModeRow {
-  display: grid;
+  display: flex;
   min-height: 46px;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(96px, 0.75fr);
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
   border-top: 1px solid var(--mp-line);
   background: var(--mp-soft);
+}
+
+.reviewTotalInline {
+  margin-left: auto;
+  color: var(--mp-ink);
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
 }
 
 .modeButton {
@@ -1991,16 +2000,18 @@
 }
 
 .compactField > span {
-  color: var(--mp-muted);
-  font-size: 10px;
-  font-weight: 800;
+  color: var(--mp-ink);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: normal;
 }
 
 .compactField input,
 .compactField textarea {
   min-width: 0;
   width: 100%;
-  min-height: 22px;
+  min-height: 24px;
   border: 0;
   border-bottom: 1px solid transparent;
   outline: 0;
@@ -2008,9 +2019,9 @@
   color: var(--mp-ink);
   background: transparent;
   font: inherit;
-  font-size: 14px;
-  font-weight: 850;
-  line-height: 18px;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 22px;
 }
 
 .compactField textarea {

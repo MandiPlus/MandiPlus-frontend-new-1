@@ -19,6 +19,10 @@ import {
   useReferenceCommodities,
   useReferenceStates,
 } from "@/features/reference";
+import {
+  nextMandiForStateChange,
+  statesForCommodities,
+} from "@/features/reference/commodityGeography";
 import { updateCustomerUser } from "./api";
 import { CustomerAppShell } from "./CustomerAppShell";
 import { initials, readableError } from "./utils";
@@ -43,8 +47,8 @@ const languageOptions = [
 ] as const;
 
 const profileRoles = [
-  ["BUYER", "Buyer"],
-  ["SUPPLIER", "Supplier"],
+  ["SUPPLIER", "Loading vala"],
+  ["BUYER", "Unloading vala"],
   ["TRANSPORTER", "Transporter"],
 ] as const;
 
@@ -103,6 +107,11 @@ export default function CustomerProfilePage() {
         user?.mobileNumber || user?.phone || user?.phoneNumber || "",
       ).slice(-10),
     [user],
+  );
+
+  const visibleStates = useMemo(
+    () => statesForCommodities(profile.commodityCodes, states),
+    [profile.commodityCodes, states],
   );
 
   useEffect(() => {
@@ -284,8 +293,17 @@ export default function CustomerProfilePage() {
             <ProfileSelect
               label="State"
               value={profile.state}
-              options={states}
-              onChange={(value) => setProfile({ ...profile, state: value })}
+              options={visibleStates}
+              onChange={(value) =>
+                setProfile({
+                  ...profile,
+                  state: value,
+                  mandiName: nextMandiForStateChange(
+                    profile.mandiName,
+                    value,
+                  ),
+                })
+              }
             />
             <ProfileField
               label="Mandi name"
