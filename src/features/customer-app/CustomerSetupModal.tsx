@@ -20,6 +20,8 @@ import {
   nextMandiForStateChange,
   reconcileStateAndMandi,
   statesForCommodities,
+  suggestedMandisForState,
+  suggestedStateOptionsForCommodities,
 } from "@/features/reference/commodityGeography";
 import { updateCustomerUser } from "./api";
 import { readableError } from "./utils";
@@ -59,6 +61,7 @@ export function CustomerSetupModal() {
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [selectedCommodities, setSelectedCommodities] = useState<string[]>([]);
+  const [otherCommodityText, setOtherCommodityText] = useState("");
   const [state, setState] = useState("");
   const [mandiName, setMandiName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -71,6 +74,22 @@ export function CustomerSetupModal() {
     [selectedCommodities, states],
   );
 
+  const suggestedStateChips = useMemo(
+    () => suggestedStateOptionsForCommodities(selectedCommodities, states),
+    [selectedCommodities, states],
+  );
+
+  const suggestedMandiChips = useMemo(
+    () => suggestedMandisForState(state),
+    [state],
+  );
+
+  const otherSelected = selectedCommodities.includes("OTHER");
+  const cleanedOtherCommodity = otherCommodityText.replace(/\s+/g, " ").trim();
+  const commoditiesReady =
+    selectedCommodities.length > 0 &&
+    (!otherSelected || Boolean(cleanedOtherCommodity));
+
   useEffect(() => {
     if (!user?.id) return;
 
@@ -78,6 +97,7 @@ export function CustomerSetupModal() {
     setName(profile.name);
     setRole(profile.role);
     setSelectedCommodities(profile.commodityCodes);
+    setOtherCommodityText(profile.otherCommodityText);
     setState(profile.state);
     setMandiName(profile.mandiName);
 
@@ -173,10 +193,16 @@ export function CustomerSetupModal() {
       setError("Choose at least one commodity");
       return;
     }
+    if (otherSelected && !cleanedOtherCommodity) {
+      setError("Other commodity ka naam likhein");
+      return;
+    }
     const selected = commodities.filter((item) =>
       selectedCommodities.includes(item.code),
     );
-    const labels = selected.map((item) => item.label);
+    const labels = selected.map((item) =>
+      item.code === "OTHER" ? cleanedOtherCommodity : item.label,
+    );
     const primary = selected[0]?.code || "OTHER";
     const anarSelected = selectedCommodities.includes("POMEGRANATE");
     const payload: Record<string, unknown> = {
@@ -322,7 +348,25 @@ export function CustomerSetupModal() {
                 );
               })}
             </div>
-            <SetupContinue saving={saving} onClick={saveCommodities} />
+            {otherSelected ? (
+              <label className={styles.field}>
+                <span>Other commodity</span>
+                <input
+                  autoFocus
+                  value={otherCommodityText}
+                  placeholder="Apni commodity ka naam likhein"
+                  onChange={(event) => {
+                    setOtherCommodityText(event.target.value);
+                    if (error) setError("");
+                  }}
+                />
+              </label>
+            ) : null}
+            <SetupContinue
+              saving={saving}
+              disabled={!commoditiesReady}
+              onClick={saveCommodities}
+            />
           </div>
         ) : null}
 
@@ -353,6 +397,34 @@ export function CustomerSetupModal() {
 
         {step === 4 ? (
           <div className={styles.setupForm}>
+            {suggestedStateChips.length > 0 && !state ? (
+              <div className={styles.setupSuggestionBlock}>
+                <span className={styles.setupSuggestionLabel}>
+                  Suggested states
+                </span>
+                <div className={styles.setupSuggestionChips}>
+                  {suggestedStateChips.map((item) => {
+                    return (
+                      <button
+                        key={item.value}
+                        type="button"
+                        disabled={saving}
+                        className={styles.setupSuggestionChip}
+                        onClick={() => {
+                          setState(item.value);
+                          setMandiName((current) =>
+                            nextMandiForStateChange(current, item.value),
+                          );
+                          setError("");
+                        }}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             <label className={styles.field}>
               <span>Select State</span>
               <select
@@ -373,6 +445,35 @@ export function CustomerSetupModal() {
                 ))}
               </select>
             </label>
+            {suggestedMandiChips.length ? (
+              <div className={styles.setupSuggestionBlock}>
+                <span className={styles.setupSuggestionLabel}>
+                  Suggested mandis
+                </span>
+                <div className={styles.setupSuggestionChips}>
+                  {suggestedMandiChips.map((mandi) => {
+                    const active =
+                      mandiName.trim().toLowerCase() === mandi.toLowerCase();
+                    return (
+                      <button
+                        key={mandi}
+                        type="button"
+                        disabled={saving}
+                        className={`${styles.setupSuggestionChip} ${
+                          active ? styles.setupSuggestionChipActive : ""
+                        }`}
+                        onClick={() => {
+                          setMandiName(mandi);
+                          setError("");
+                        }}
+                      >
+                        {mandi}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             <label className={styles.field}>
               <span>Mandi name</span>
               <input
@@ -380,7 +481,6 @@ export function CustomerSetupModal() {
                 placeholder="Mandi ka naam likhein"
                 onChange={(event) => setMandiName(event.target.value)}
               />
-              <small>Suggested mandi — aap badal sakte ho</small>
             </label>
             <SetupContinue
               saving={saving}
@@ -398,16 +498,18 @@ function SetupContinue({
   saving,
   onClick,
   label = "Next",
+  disabled = false,
 }: {
   saving: boolean;
   onClick: () => void | Promise<void>;
   label?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       className={styles.wideButton}
-      disabled={saving}
+      disabled={saving || disabled}
       onClick={() => void onClick()}
     >
       {saving ? <RefreshCw size={18} className="animate-spin" /> : null}
@@ -456,6 +558,10 @@ function readProfile(
       ) {
         return "POMEGRANATE";
       }
+      if (normalized && normalized !== "other") {
+        // Free-text Other crop (Garlic, Pineapple, etc.)
+        return "OTHER";
+      }
       return "";
     })
     .filter(Boolean) as string[];
@@ -488,6 +594,23 @@ function readProfile(
       ...(products.length && !productCommodityCodes.length ? ["OTHER"] : []),
     ]),
   ];
+  const catalogLabels = new Set(
+    commodities.map((item) => normalize(item.label)),
+  );
+  const otherCommodityText =
+    products.find((product) => {
+      const normalized = normalize(product);
+      if (!normalized || normalized === "other") return false;
+      if (catalogLabels.has(normalized)) return false;
+      if (
+        normalized.includes("pomegranate") ||
+        normalized.includes("anar") ||
+        normalized.includes("dalimb")
+      ) {
+        return false;
+      }
+      return true;
+    }) || "";
   const mandiName = String(user?.mandiName || "").trim();
   const state = normalizeState(user?.state);
   const language = String(user?.preferredLanguage || "");
@@ -505,6 +628,7 @@ function readProfile(
     name,
     role,
     commodityCodes,
+    otherCommodityText,
     state,
     mandiName,
     complete,
