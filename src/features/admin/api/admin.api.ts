@@ -4436,6 +4436,17 @@ class AdminApi {
     }
   };
 
+  public exportClaimsToExcel = async (
+    filters?: FilterClaimRequestsDto,
+  ): Promise<Blob> => {
+    const response = await this.client.get("/claim-requests/admin/export", {
+      params: filters,
+      responseType: "blob",
+    });
+
+    return response.data;
+  };
+
   public getClaimsSummary = async (): Promise<ApiResponse<ClaimsSummary>> => {
     try {
       const response = await this.client.get<ClaimsSummary>(
