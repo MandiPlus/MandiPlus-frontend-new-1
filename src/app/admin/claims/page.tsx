@@ -2833,6 +2833,7 @@ export default function AdminClaimsPage() {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [tableScale, setTableScale] = useState(90); // Default 90% zoom for optimal view
+  const [exporting, setExporting] = useState(false);
 
   // Modals state
   const [selectedClaim, setSelectedClaim] = useState<ClaimRequest | null>(null);
@@ -2937,6 +2938,30 @@ export default function AdminClaimsPage() {
       updateClaimRow(response.data);
     } else {
       toast.error(response.message || 'Could not update status');
+    }
+  };
+
+  const exportToExcel = async () => {
+    setExporting(true);
+    try {
+      const blob = await adminApi.exportClaimsToExcel({
+        search: search || undefined,
+        status: (status as ClaimStatus) || undefined,
+        paymentStatus: (paymentStatus as ClaimPaymentStatus) || undefined,
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `mandiplus-claim-status-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast.success('Claim status tracker exported');
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to export claims to Excel',
+      );
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -3055,6 +3080,16 @@ export default function AdminClaimsPage() {
                     </option>
                   ))}
                 </select>
+
+                <button
+                  type="button"
+                  onClick={() => void exportToExcel()}
+                  disabled={exporting}
+                  className="inline-flex items-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 shadow-sm transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  {exporting ? 'Exporting...' : 'Export to Excel'}
+                </button>
 
                 <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
                   <button
