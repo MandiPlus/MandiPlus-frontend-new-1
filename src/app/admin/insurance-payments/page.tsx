@@ -2216,7 +2216,7 @@ export default function AdminInsurancePaymentsPage() {
               <img
                 src={summaryImagePreview.imageUrl}
                 alt={`Payment summary for ${summaryImagePreview.invoiceLabel}`}
-                className="mx-auto h-auto max-h-[68vh] max-w-full bg-white object-contain shadow-sm"
+                className="mx-auto block h-auto w-full max-w-full bg-white shadow-sm"
               />
             </div>
 
