@@ -303,25 +303,43 @@ function ReportTable({
   }
 
   if (report === 'lapsed') {
-    const rows = data.lapsedCustomers.filter((row) => includesSearch(row, search));
+    const rows = data.lapsedCustomers;
     if (!rows.length) return <EmptyState />;
     return (
       <TableContainer>
         <table className="min-w-full">
-          <thead><tr><Th>Customer</Th><Th>Location</Th><Th>Last Vehicle</Th><Th>Last Sale</Th><Th right>Inactive Days</Th><Th right>Usual Frequency</Th><Th right>Lifetime Vehicles</Th><Th right>Premium at Risk / Month</Th><Th>Risk</Th></tr></thead>
-          <tbody>{rows.map((row) => (
-            <tr key={row.id} className="hover:bg-gray-50">
-              <Td strong>{row.name}</Td>
-              <Td>{row.state || '-'}</Td>
-              <Td><span className="font-mono text-xs font-semibold text-gray-800">{row.lastVehicle || '-'}</span></Td>
-              <Td>{formatDate(row.lastSaleDate)}</Td>
-              <Td right strong>{formatCount(row.daysInactive)}</Td>
-              <Td right>{row.usualCadenceDays} days</Td>
-              <Td right>{formatCount(row.lifetimeLoads)}</Td>
-              <Td right strong>{formatCurrency(row.monthlyPremiumAtRisk)}</Td>
-              <Td><Badge status={row.risk}>{row.risk}</Badge></Td>
+          <thead>
+            <tr>
+              <Th>Insured Person</Th>
+              <Th>Commodity</Th>
+              <Th>Location</Th>
+              <Th>Last Sale</Th>
+              <Th right>Inactive Days</Th>
+              <Th right>Total Invoices</Th>
+              <Th right>Total Premium Amount</Th>
+              <Th right>Average</Th>
             </tr>
-          ))}</tbody>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="hover:bg-gray-50">
+                <Td strong>{row.name}</Td>
+                <Td>{row.commodity || '-'}</Td>
+                <Td>{row.state || '-'}</Td>
+                <Td>{formatDate(row.lastSaleDate)}</Td>
+                <Td right strong>
+                  {formatCount(row.daysInactive)}
+                </Td>
+                <Td right>{formatCount(row.lifetimeLoads ?? row.lifetimeVehicles)}</Td>
+                <Td right strong>
+                  {formatCurrency(Number(row.totalPremiumAmount ?? row.lifetimePremium ?? 0))}
+                </Td>
+                <Td right>
+                  {formatCurrency(row.monthlyPremiumAtRisk)}
+                </Td>
+              </tr>
+            ))}
+          </tbody>
         </table>
       </TableContainer>
     );
@@ -360,8 +378,110 @@ function reportRowCount(report: ReportKey, data: SalesAnalyticsPayload) {
   if (report === 'locations') return data.locations.length;
   if (report === 'acquisition') return data.newCustomers.length;
   if (report === 'followups') return data.followUps.length;
-  if (report === 'lapsed') return data.lapsedCustomers.length;
+  if (report === 'lapsed') return data.lapsedPagination?.total ?? data.lapsedCustomers.length;
   return data.daily.length;
+}
+
+function StoppedVehiclesInsight({
+  data,
+  commodityFilter,
+  onCommodityChange,
+}: {
+  data: SalesAnalyticsPayload;
+  commodityFilter: string;
+  onCommodityChange: (commodity: string) => void;
+}) {
+  const summary = data.lapsedCommoditySummary || [];
+  const totals = data.lapsedTotals;
+
+  return (
+    <div className="mb-4 space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-gray-500">Commodity</span>
+        <span className="text-xs text-gray-500">More</span>
+        <select
+          value={commodityFilter}
+          onChange={(event) => onCommodityChange(event.target.value)}
+          className="min-w-[220px] rounded-md border border-gray-300 px-2.5 py-1.5 text-sm"
+        >
+          <option value="">All commodities</option>
+          {summary.map((item) => (
+            <option key={item.commodity} value={item.commodity}>
+              {item.commodity} ({item.stoppedPairs})
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Stopped pairs</p>
+          <p className="mt-0.5 text-xl font-bold text-slate-900">
+            {formatCount(Number(totals?.stoppedPairs || 0))}
+          </p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Distinct insured persons</p>
+          <p className="mt-0.5 text-xl font-bold text-slate-900">
+            {formatCount(Number(totals?.customers || 0))}
+          </p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Premium at risk / month</p>
+          <p className="mt-0.5 text-xl font-bold text-slate-900">
+            {formatCurrency(Number(totals?.monthlyPremiumAtRisk || 0))}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StoppedVehiclesPagination({
+  page,
+  totalPages,
+  total,
+  pageSize,
+  loading,
+  onPageChange,
+}: {
+  page: number;
+  totalPages: number;
+  total: number;
+  pageSize: number;
+  loading: boolean;
+  onPageChange: (page: number) => void;
+}) {
+  if (total <= 0) return null;
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  return (
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+      <p className="text-xs text-gray-500">
+        Showing {formatCount(from)}–{formatCount(to)} of {formatCount(total)}
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={loading || page <= 1}
+          onClick={() => onPageChange(page - 1)}
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          Previous
+        </button>
+        <span className="text-xs text-gray-600">
+          Page {page} / {totalPages}
+        </span>
+        <button
+          type="button"
+          disabled={loading || page >= totalPages}
+          onClick={() => onPageChange(page + 1)}
+          className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function SalesAnalyticsPage() {
@@ -372,22 +492,42 @@ export default function SalesAnalyticsPage() {
   const [toDate, setToDate] = useState(today);
   const [report, setReport] = useState<ReportKey>('executives');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [commodityFilter, setCommodityFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(25);
   const [data, setData] = useState<SalesAnalyticsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [exportingStopped, setExportingStopped] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setData(await adminApi.getSalesAnalytics(fromDate, toDate));
+      setData(
+        await adminApi.getSalesAnalytics(fromDate, toDate, {
+          commodity: commodityFilter || null,
+          page: report === 'lapsed' ? page : 1,
+          pageSize: report === 'lapsed' ? pageSize : 25,
+          search: report === 'lapsed' ? debouncedSearch || null : null,
+        }),
+      );
     } catch (requestError: unknown) {
       setError(requestError instanceof Error ? requestError.message : 'Failed to load analytics');
     } finally {
       setLoading(false);
     }
-  }, [fromDate, toDate]);
+  }, [fromDate, toDate, commodityFilter, page, pageSize, debouncedSearch, report]);
 
   useEffect(() => {
     if (!authLoading && (!isAuthenticated || !canAccessSection('reports'))) {
@@ -401,12 +541,19 @@ export default function SalesAnalyticsPage() {
     setFromDate(addDays(today, -29));
     setToDate(today);
     setSearch('');
+    setDebouncedSearch('');
+    setCommodityFilter('');
+    setPage(1);
   };
 
   const exportExcel = async () => {
     setExporting(true);
     try {
-      const blob = await adminApi.exportSalesAnalytics(fromDate, toDate);
+      const blob = await adminApi.exportSalesAnalytics(
+        fromDate,
+        toDate,
+        commodityFilter || null,
+      );
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
@@ -416,6 +563,29 @@ export default function SalesAnalyticsPage() {
     } finally {
       setExporting(false);
     }
+  };
+
+  const exportStopped = async () => {
+    setExportingStopped(true);
+    try {
+      const blob = await adminApi.exportStoppedVehicles(fromDate, toDate, {
+        commodity: commodityFilter || null,
+        search: debouncedSearch || null,
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `stopped-vehicles-${fromDate}-to-${toDate}.xlsx`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportingStopped(false);
+    }
+  };
+
+  const onCommodityChange = (commodity: string) => {
+    setCommodityFilter(commodity);
+    setPage(1);
   };
 
   if (authLoading || (loading && !data)) {
@@ -436,6 +606,12 @@ export default function SalesAnalyticsPage() {
   }
 
   const activeReport = REPORTS.find((item) => item.key === report) || REPORTS[0];
+  const lapsedPagination = data.lapsedPagination || {
+    page,
+    pageSize,
+    total: data.lapsedCustomers.length,
+    totalPages: 1,
+  };
 
   return (
     <div className="py-6">
@@ -468,11 +644,22 @@ export default function SalesAnalyticsPage() {
             </label>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-gray-600">Report</span>
-              <select value={report} onChange={(event) => { setReport(event.target.value as ReportKey); setSearch(''); }} className="min-w-[220px] rounded-md border border-gray-300 px-3 py-2 text-sm">
+              <select
+                value={report}
+                onChange={(event) => {
+                  const next = event.target.value as ReportKey;
+                  setReport(next);
+                  setSearch('');
+                  setDebouncedSearch('');
+                  setPage(1);
+                  if (next !== 'lapsed') setCommodityFilter('');
+                }}
+                className="min-w-[220px] rounded-md border border-gray-300 px-3 py-2 text-sm"
+              >
                 {REPORTS.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
               </select>
             </label>
-            <button type="button" onClick={() => void fetchData()} disabled={loading} className="inline-flex h-[38px] items-center gap-2 rounded-md bg-[#4309ac] px-4 text-sm font-medium text-white hover:bg-[#360789] disabled:opacity-60">
+            <button type="button" onClick={() => { setPage(1); void fetchData(); }} disabled={loading} className="inline-flex h-[38px] items-center gap-2 rounded-md bg-[#4309ac] px-4 text-sm font-medium text-white hover:bg-[#360789] disabled:opacity-60">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Apply Filters
             </button>
@@ -496,14 +683,43 @@ export default function SalesAnalyticsPage() {
                 <h2 className="text-lg font-semibold text-gray-900">{activeReport.label}</h2>
                 <p className="mt-0.5 text-xs text-gray-500">{reportRowCount(report, data)} rows · {formatDate(data.range.from)} to {formatDate(data.range.to)}</p>
               </div>
-              <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search results" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm sm:w-[240px]" />
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search results"
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm sm:w-[240px]"
+                />
+                {report === 'lapsed' ? (
+                  <button
+                    type="button"
+                    onClick={() => void exportStopped()}
+                    disabled={exportingStopped}
+                    className="inline-flex items-center gap-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                  >
+                    {exportingStopped ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                    {exportingStopped ? 'Exporting...' : 'Export'}
+                  </button>
+                ) : null}
+              </div>
             </div>
             <div className="flex gap-1 overflow-x-auto">
               {REPORTS.map((item) => {
                 const Icon = item.icon;
                 const active = item.key === report;
                 return (
-                  <button key={item.key} onClick={() => { setReport(item.key); setSearch(''); }} className={`inline-flex min-w-fit items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium ${active ? 'border-[#4309ac] text-[#4309ac]' : 'border-transparent text-gray-500 hover:text-gray-800'}`}>
+                  <button
+                    key={item.key}
+                    onClick={() => {
+                      setReport(item.key);
+                      setSearch('');
+                      setDebouncedSearch('');
+                      setPage(1);
+                      if (item.key !== 'lapsed') setCommodityFilter('');
+                    }}
+                    className={`inline-flex min-w-fit items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium ${active ? 'border-[#4309ac] text-[#4309ac]' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+                  >
                     <Icon className="h-4 w-4" />{item.label}
                   </button>
                 );
@@ -511,7 +727,24 @@ export default function SalesAnalyticsPage() {
             </div>
           </div>
           <div className="p-4">
+            {report === 'lapsed' ? (
+              <StoppedVehiclesInsight
+                data={data}
+                commodityFilter={commodityFilter}
+                onCommodityChange={onCommodityChange}
+              />
+            ) : null}
             <ReportTable report={report} data={data} search={search} />
+            {report === 'lapsed' ? (
+              <StoppedVehiclesPagination
+                page={lapsedPagination.page}
+                totalPages={lapsedPagination.totalPages}
+                total={lapsedPagination.total}
+                pageSize={lapsedPagination.pageSize}
+                loading={loading}
+                onPageChange={setPage}
+              />
+            ) : null}
           </div>
         </div>
 
