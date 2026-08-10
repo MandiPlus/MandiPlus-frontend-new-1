@@ -11,7 +11,6 @@ import {
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  CalendarDays,
   Camera,
   ChevronDown,
   FileText,
@@ -343,7 +342,18 @@ function resolveMissingQuestion(
   return base;
 }
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => {
+  const parts = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+  return `${values.year}-${values.month}-${values.day}`;
+};
 
 const QUESTIONNAIRE_AUDIO_CONSTRAINTS = {
   channelCount: 1,
@@ -771,8 +781,12 @@ export default function CustomerCreateInsurancePage() {
     }
 
     paymentAttemptRef.current = attempt;
-    const restoredDrafts =
-      attempt.drafts?.length ? attempt.drafts : [attempt.draft];
+    const restoredDrafts = (
+      attempt.drafts?.length ? attempt.drafts : [attempt.draft]
+    ).map((restoredDraft) => ({
+      ...restoredDraft,
+      invoiceDate: today(),
+    }));
     batchDraftsRef.current = restoredDrafts;
     setBatchDrafts(restoredDrafts);
     setActiveFileIndex(0);
@@ -1448,7 +1462,7 @@ export default function CustomerCreateInsurancePage() {
         missingDraftIndexes.map((index) =>
           createCustomerInvoice(
             userId,
-            paymentDrafts[index],
+            { ...paymentDrafts[index], invoiceDate: today() },
             [files[index]],
             pricing,
           ),
@@ -1930,16 +1944,9 @@ export default function CustomerCreateInsurancePage() {
                 </button>
               ))
               : null}
-            <label className={styles.reviewDate}>
-              <span>{shortDate(draft.invoiceDate)}</span>
-              <CalendarDays size={16} aria-hidden="true" />
-              <input
-                type="date"
-                aria-label="Invoice date"
-                value={draft.invoiceDate}
-                onChange={(event) => update("invoiceDate", event.target.value)}
-              />
-            </label>
+            <div className={styles.reviewDate} aria-label="Invoice date">
+              {shortDate(today())}
+            </div>
             {total > 0 ? (
               <strong className={styles.reviewTotalInline}>
                 Total {money(total)}
@@ -2508,7 +2515,8 @@ function applyExtraction(
       current.insuredPartyPhone,
     ownerName:
       text(raw.owner_name || raw.transporter_name) || current.ownerName,
-    invoiceDate: normalizeDate(raw.invoice_date) || current.invoiceDate,
+    // Uploaded document dates must never backdate a customer-created invoice.
+    invoiceDate: today(),
     note: text(raw.notes) || current.note,
   };
 
@@ -3077,15 +3085,6 @@ function phoneInput(value: string) {
 
 function tonnage(value: unknown) {
   return String(value || "").match(/\b(25|30)\b/)?.[1] || "";
-}
-
-function normalizeDate(value: unknown) {
-  const raw = text(value);
-  if (!raw) return "";
-  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
 }
 
 function shortDate(value: string) {

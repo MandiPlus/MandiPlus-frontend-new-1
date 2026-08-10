@@ -1929,23 +1929,13 @@
 }
 
 .reviewDate {
-  position: relative;
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 4px;
   color: var(--mp-ink);
   justify-content: flex-end;
   font-size: 14px;
   font-weight: 900;
-}
-
-.reviewDate input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  cursor: pointer;
-  opacity: 0;
 }
 
 .invoicePreviewModal {
