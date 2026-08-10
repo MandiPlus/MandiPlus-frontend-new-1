@@ -627,6 +627,7 @@ export interface SalesAnalyticsPayload {
   lapsedCustomers: Array<{
     id: string;
     name: string;
+    commodity: string;
     state: string;
     lastSaleDate: string;
     daysInactive: number;
@@ -634,12 +635,31 @@ export interface SalesAnalyticsPayload {
     lapseThresholdDays: number;
     lifetimeLoads: number;
     lifetimeVehicles: number;
-    lastVehicle?: string | null;
     lifetimePremium: number;
+    totalPremiumAmount: number;
     monthlyPremiumAtRisk: number;
     risk: string;
     riskScore: number;
   }>;
+  lapsedCommoditySummary: Array<{
+    commodity: string;
+    stoppedPairs: number;
+    customers: number;
+    monthlyPremiumAtRisk: number;
+  }>;
+  lapsedTotals: {
+    stoppedPairs: number;
+    customers: number;
+    monthlyPremiumAtRisk: number;
+    totalPremium: number;
+  };
+  lapsedPagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+  commodityFilter: string | null;
   quality: Array<{
     key: string;
     label: string;
@@ -5016,10 +5036,25 @@ class AdminApi {
   public getSalesAnalytics = async (
     from: string,
     to: string,
+    options?: {
+      commodity?: string | null;
+      page?: number;
+      pageSize?: number;
+      search?: string | null;
+    },
   ): Promise<SalesAnalyticsPayload> => {
     const response = await this.client.get<SalesAnalyticsPayload>(
       "/admin/sales-analytics",
-      { params: { from, to } },
+      {
+        params: {
+          from,
+          to,
+          ...(options?.commodity ? { commodity: options.commodity } : {}),
+          ...(options?.page ? { page: options.page } : {}),
+          ...(options?.pageSize ? { pageSize: options.pageSize } : {}),
+          ...(options?.search ? { search: options.search } : {}),
+        },
+      },
     );
     return response.data;
   };
@@ -5027,11 +5062,39 @@ class AdminApi {
   public exportSalesAnalytics = async (
     from: string,
     to: string,
+    commodity?: string | null,
   ): Promise<Blob> => {
     const response = await this.client.get("/admin/sales-analytics/export", {
-      params: { from, to },
+      params: {
+        from,
+        to,
+        ...(commodity ? { commodity } : {}),
+      },
       responseType: "blob",
     });
+    return response.data;
+  };
+
+  public exportStoppedVehicles = async (
+    from: string,
+    to: string,
+    options?: {
+      commodity?: string | null;
+      search?: string | null;
+    },
+  ): Promise<Blob> => {
+    const response = await this.client.get(
+      "/admin/sales-analytics/export-stopped",
+      {
+        params: {
+          from,
+          to,
+          ...(options?.commodity ? { commodity: options.commodity } : {}),
+          ...(options?.search ? { search: options.search } : {}),
+        },
+        responseType: "blob",
+      },
+    );
     return response.data;
   };
 
