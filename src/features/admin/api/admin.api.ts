@@ -3948,6 +3948,7 @@ class AdminApi {
     excludePaymentMethod?: string;
     paymentMethods?: string;
     productName?: string;
+    mandiName?: string; // single name or comma-separated multi-select
     invoiceNumber?: string;
     insuredPersonQuery?: string;
     buyerQuery?: string;
@@ -4012,6 +4013,7 @@ class AdminApi {
     toDate?: string;
     dateFilterField?: "invoiceDate" | "createdAt";
     productName?: string;
+    mandiName?: string; // single name or comma-separated multi-select
     paymentStatus?: string;
     paymentMethod?: string;
     excludePaymentMethod?: string;
@@ -4199,6 +4201,7 @@ class AdminApi {
     excludePaymentMethod?: string;
     paymentMethods?: string;
     productName?: string;
+    mandiName?: string; // single name or comma-separated multi-select
     invoiceNumber?: string;
     insuredPersonQuery?: string;
     buyerQuery?: string;
