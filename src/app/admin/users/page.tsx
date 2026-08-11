@@ -77,6 +77,10 @@ type AdminEditUserForm = {
     identity: AdminCreateUserPayload['identity'];
     billingType: 'BULK' | 'PER_POLICY';
     unionMember: boolean;
+    insurancePremiumPerLakh: string;
+    originalInsurancePremiumPerLakh: number;
+    insurancePremiumRateVersion: number;
+    premiumChangeReason: string;
 };
 
 const emptyCreateUserForm: AdminCreateUserForm = {
@@ -716,6 +720,10 @@ export default function UsersPage() {
             identity: (user.identity as AdminCreateUserPayload['identity']) || 'BUYER',
             billingType: user.billingType === 'PER_POLICY' ? 'PER_POLICY' : 'BULK',
             unionMember: String(user.unionMember || '').toUpperCase() === 'GCA',
+            insurancePremiumPerLakh: String(user.insurancePremiumPerLakh ?? 200),
+            originalInsurancePremiumPerLakh: Number(user.insurancePremiumPerLakh ?? 200),
+            insurancePremiumRateVersion: Number(user.insurancePremiumRateVersion || 1),
+            premiumChangeReason: '',
         });
         setEditUserModalOpen(true);
     };
@@ -921,6 +929,22 @@ export default function UsersPage() {
             return;
         }
 
+        const nextPremiumPerLakh = Number(editUserForm.insurancePremiumPerLakh);
+        const premiumChanged =
+            isFullAdmin &&
+            nextPremiumPerLakh !== editUserForm.originalInsurancePremiumPerLakh;
+        if (
+            isFullAdmin &&
+            (!Number.isFinite(nextPremiumPerLakh) || nextPremiumPerLakh <= 0)
+        ) {
+            toast.error('Premium per ₹1 lakh must be a positive amount');
+            return;
+        }
+        if (premiumChanged && !editUserForm.premiumChangeReason.trim()) {
+            toast.error('Please add a reason for the premium rate change');
+            return;
+        }
+
         setEditUserLoading(true);
         try {
             const payload: AdminUpdateUserPayload = {
@@ -943,31 +967,75 @@ export default function UsersPage() {
             }
             const updatedData = response.data;
 
-            setAllUsers((prev) =>
-                prev.map((user) =>
-                    user.id === editUserForm.id
+            let premiumUpdate = null;
+            if (premiumChanged) {
+                const premiumResponse = await adminApi.updateUserInsurancePremium(
+                    editUserForm.id,
+                    {
+                        premiumPerLakh: nextPremiumPerLakh,
+                        reason: editUserForm.premiumChangeReason.trim(),
+                        expectedVersion: editUserForm.insurancePremiumRateVersion,
+                    },
+                );
+                if (!premiumResponse.success || !premiumResponse.data) {
+                    toast.error(
+                        premiumResponse.message ||
+                        'User details were saved, but the premium rate was not updated',
+                    );
+                    return;
+                }
+                premiumUpdate = premiumResponse.data;
+            }
+
+            const mergeUpdatedUser = (user: User): User => {
+                const isProfileUser = user.id === editUserForm.id;
+                const isPremiumUser = Boolean(
+                    premiumUpdate &&
+                    (user.id === premiumUpdate.id || user.id === editUserForm.id),
+                );
+                if (!isProfileUser && !isPremiumUser) return user;
+
+                return {
+                    ...user,
+                    ...(isProfileUser ? updatedData : {}),
+                    ...(isPremiumUser && premiumUpdate
                         ? {
-                            ...user,
-                            ...updatedData,
-                            id: String(updatedData.id || user.id),
-                            canonicalUserId: String(
-                                updatedData.canonicalUserId || user.canonicalUserId || user.id,
-                            ),
-                            secondaryMobileNumber:
-                                updatedData.secondaryMobileNumber ?? null,
-                            aliasNames: Array.isArray(updatedData.aliasNames)
-                                ? updatedData.aliasNames
-                                : user.aliasNames,
-                            aliasPhones: Array.isArray(updatedData.aliasPhones)
-                                ? updatedData.aliasPhones
-                                : user.aliasPhones,
+                            insurancePremiumPerLakh:
+                                premiumUpdate.insurancePremiumPerLakh,
+                            insurancePremiumRateVersion:
+                                premiumUpdate.insurancePremiumRateVersion,
                         }
-                        : user,
-                ),
-            );
+                        : {}),
+                    id: String(isProfileUser ? updatedData.id || user.id : user.id),
+                    canonicalUserId: String(
+                        premiumUpdate?.canonicalUserId ||
+                        updatedData.canonicalUserId ||
+                        user.canonicalUserId ||
+                        user.id,
+                    ),
+                    secondaryMobileNumber: isProfileUser
+                        ? updatedData.secondaryMobileNumber ?? null
+                        : user.secondaryMobileNumber,
+                    aliasNames:
+                        isProfileUser && Array.isArray(updatedData.aliasNames)
+                            ? updatedData.aliasNames
+                            : user.aliasNames,
+                    aliasPhones:
+                        isProfileUser && Array.isArray(updatedData.aliasPhones)
+                            ? updatedData.aliasPhones
+                            : user.aliasPhones,
+                };
+            };
+
+            setAllUsers((prev) => prev.map(mergeUpdatedUser));
+            setFilteredUsers((prev) => prev.map(mergeUpdatedUser));
 
             closeEditUserModal();
-            toast.success('User details updated successfully');
+            toast.success(
+                premiumChanged
+                    ? 'User details and future invoice premium rate updated'
+                    : 'User details updated successfully',
+            );
         } catch (err: any) {
             toast.error(err?.message || 'Failed to update user');
         } finally {
@@ -2680,11 +2748,11 @@ export default function UsersPage() {
 
             {editUserModalOpen && editUserForm && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl">
+                    <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl">
                         <div className="border-b px-5 py-4">
                             <h3 className="text-lg font-semibold text-gray-900">Edit User Details</h3>
                             <p className="mt-1 text-sm text-gray-500">
-                                Update name, role, mobile number, alternate number, and state from the dashboard.
+                                Update profile details and the pricing used for this user's future invoices.
                             </p>
                         </div>
 
@@ -2822,6 +2890,99 @@ export default function UsersPage() {
                                             <span>Per Policy</span>
                                         </label>
                                     </div>
+                                </div>
+                            ) : null}
+
+                            {isFullAdmin ? (
+                                <div className="sm:col-span-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-4">
+                                    <div className="flex flex-wrap items-start justify-between gap-2">
+                                        <div>
+                                            <p className="text-sm font-semibold text-gray-900">
+                                                Insurance premium pricing
+                                            </p>
+                                            <p className="mt-1 text-xs text-gray-600">
+                                                User-wise, effective immediately for newly created invoices only.
+                                                Existing invoices keep their original premium.
+                                            </p>
+                                        </div>
+                                        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
+                                            Rate version {editUserForm.insurancePremiumRateVersion}
+                                        </span>
+                                    </div>
+
+                                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                                        <div>
+                                            <label className="mb-1 block text-sm font-medium text-gray-700">
+                                                Premium per ₹1 lakh
+                                            </label>
+                                            <div className="relative">
+                                                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-500">
+                                                    ₹
+                                                </span>
+                                                <input
+                                                    type="number"
+                                                    inputMode="decimal"
+                                                    min="0.01"
+                                                    step="0.01"
+                                                    value={editUserForm.insurancePremiumPerLakh}
+                                                    onChange={(e) =>
+                                                        setEditUserForm((prev) => (
+                                                            prev
+                                                                ? {
+                                                                    ...prev,
+                                                                    insurancePremiumPerLakh: e.target.value,
+                                                                }
+                                                                : prev
+                                                        ))
+                                                    }
+                                                    className="block w-full rounded-md border border-gray-300 py-2 pl-8 pr-3 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="rounded-md bg-white px-3 py-2 ring-1 ring-emerald-100">
+                                            <p className="text-xs text-gray-500">Derived premium rate</p>
+                                            <p className="mt-1 text-lg font-semibold text-emerald-700">
+                                                {Number.isFinite(Number(editUserForm.insurancePremiumPerLakh))
+                                                    ? Number(
+                                                        (Number(editUserForm.insurancePremiumPerLakh) / 1000)
+                                                            .toFixed(5),
+                                                    )
+                                                    : 0}%
+                                            </p>
+                                            <p className="text-xs text-gray-500">
+                                                ₹{Number(editUserForm.insurancePremiumPerLakh || 0).toLocaleString('en-IN')} on ₹1,00,000 credit
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {Number(editUserForm.insurancePremiumPerLakh) !==
+                                    editUserForm.originalInsurancePremiumPerLakh ? (
+                                        <div className="mt-4">
+                                            <label className="mb-1 block text-sm font-medium text-gray-700">
+                                                Reason for change
+                                            </label>
+                                            <textarea
+                                                rows={2}
+                                                maxLength={500}
+                                                value={editUserForm.premiumChangeReason}
+                                                onChange={(e) =>
+                                                    setEditUserForm((prev) => (
+                                                        prev
+                                                            ? {
+                                                                ...prev,
+                                                                premiumChangeReason: e.target.value,
+                                                            }
+                                                            : prev
+                                                    ))
+                                                }
+                                                placeholder="Example: Updated commercial pricing approved by management"
+                                                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                            />
+                                            <p className="mt-1 text-xs text-gray-500">
+                                                Required and saved in the pricing audit history.
+                                            </p>
+                                        </div>
+                                    ) : null}
                                 </div>
                             ) : null}
 

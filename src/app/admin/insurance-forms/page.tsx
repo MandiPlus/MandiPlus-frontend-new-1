@@ -2823,9 +2823,9 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                                     </td>
                                                     <td className={`px-2 py-3 xl:py-2 text-center align-top ${expandedInvoiceId === inv.id ? 'bg-slate-50' : 'bg-white'}`}>
                                                         <span className="text-sm xl:text-[13px] font-semibold text-slate-900">
-                                                            {typeof inv.premiumAmount === 'number'
-                                                                ? formatCurrency(inv.premiumAmount)
-                                                                : formatCurrency((Number(inv.amount) || 0) * 0.002)}
+                                                            {Number.isFinite(Number(inv.premiumAmount))
+                                                                ? formatCurrency(Number(inv.premiumAmount))
+                                                                : formatCurrency(0)}
                                                         </span>
                                                     </td>
                                                     <td className={`px-2 py-3 xl:py-2 text-center align-top ${expandedInvoiceId === inv.id ? 'bg-slate-50' : 'bg-white'}`}>

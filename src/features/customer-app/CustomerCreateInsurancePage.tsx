@@ -442,6 +442,11 @@ function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft 
 export default function CustomerCreateInsurancePage() {
   const router = useRouter();
   const { user } = useAuth();
+  const parsedPremiumPerLakh = Number(user?.insurancePremiumPerLakh);
+  const premiumPerLakh =
+    Number.isFinite(parsedPremiumPerLakh) && parsedPremiumPerLakh > 0
+      ? parsedPremiumPerLakh
+      : 200;
   const cameraRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const eagerExtractionRef = useRef<EagerExtraction | null>(null);
@@ -541,7 +546,7 @@ export default function CustomerCreateInsurancePage() {
         paymentDrafts
           .reduce(
             (sum, paymentDraft) =>
-              sum + customerInvoicePremium(paymentDraft, pricing),
+              sum + customerInvoicePremium(paymentDraft, pricing, premiumPerLakh),
             0,
           )
           .toFixed(2),
@@ -1550,10 +1555,17 @@ export default function CustomerCreateInsurancePage() {
       if (!unpaidInvoiceReferences.length) {
         clearCustomerInvoicePaymentAttempt();
         paymentAttemptRef.current = null;
-        const paidAmount = paymentDrafts.reduce(
-          (sum, item) => sum + customerInvoicePremium(item, pricing),
-          0,
-        );
+        const paidAmount = paymentDrafts.reduce((sum, item, index) => {
+          const storedPremium = Number(
+            createdInvoiceByIndex.get(index)?.premiumAmount,
+          );
+          return (
+            sum +
+            (Number.isFinite(storedPremium) && storedPremium >= 0
+              ? storedPremium
+              : customerInvoicePremium(item, pricing, premiumPerLakh))
+          );
+        }, 0);
         router.replace(
           customerInvoiceSuccessUrl({
             invoices: invoiceReferences,
@@ -1572,7 +1584,18 @@ export default function CustomerCreateInsurancePage() {
         return unpaidInvoiceIds.has(reference.id) &&
           Number.isInteger(draftIndex) &&
           paymentDrafts[draftIndex]
-          ? sum + customerInvoicePremium(paymentDrafts[draftIndex], pricing)
+          ? sum +
+            (() => {
+              const createdInvoice = createdInvoiceByIndex.get(draftIndex);
+              const storedPremium = Number(createdInvoice?.premiumAmount);
+              return Number.isFinite(storedPremium) && storedPremium >= 0
+                ? storedPremium
+                : customerInvoicePremium(
+                    paymentDrafts[draftIndex],
+                    pricing,
+                    premiumPerLakh,
+                  );
+            })()
           : sum;
       }, 0);
       const checkout = await createCustomerWebPaymentCheckout(
@@ -2950,11 +2973,14 @@ function paymentAttemptReferences(
 function customerInvoicePremium(
   draft: CustomerInvoiceDraft,
   pricing: CustomerAppPricing["tenderCoconut"],
+  premiumPerLakh = 200,
 ) {
   return Number(
-    (resolveInvoiceAmountBreakdown(draft, pricing).totalAmount * 0.002).toFixed(
-      2,
-    ),
+    (
+      (resolveInvoiceAmountBreakdown(draft, pricing).totalAmount *
+        premiumPerLakh) /
+      100_000
+    ).toFixed(2),
   );
 }
 

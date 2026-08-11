@@ -27,13 +27,16 @@ function positiveNumber(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
+function nonNegativeNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
 export function invoicePremium(invoice: CustomerInvoice): number {
   return (
-    positiveNumber(invoice.premiumAmount) ??
-    positiveNumber(invoice.premium) ??
-    (positiveNumber(invoice.amount)
-      ? Number((asNumber(invoice.amount) * 0.002).toFixed(2))
-      : null) ??
+    nonNegativeNumber(invoice.premiumAmount) ??
+    nonNegativeNumber(invoice.premium) ??
     positiveNumber(invoice.paymentAmount) ??
     0
   );
