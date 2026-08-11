@@ -20,6 +20,10 @@ type TripGoogleMapProps = {
   isOnline?: boolean;
   routeDistanceMeters?: number | null;
   routeDurationSeconds?: number | null;
+  canSimulate?: boolean;
+  simulationSpeedKph?: number | null;
+  predictionValidUntil?: string | null;
+  motionState?: string | null;
   className?: string;
 };
 
@@ -47,7 +51,7 @@ type TruckOverlay = google.maps.OverlayView & {
 };
 
 const FOLLOW_ZOOM = 16;
-const MAX_DEAD_RECKON_SECONDS = 45 * 60;
+const MAX_DEAD_RECKON_SECONDS = 10 * 60;
 const mapContainerStyle = { width: '100%', height: '100%' };
 
 function isCoord(value?: MapCoord | null): value is MapCoord {
@@ -225,11 +229,19 @@ function projectPointOnRoute(metrics: RouteMetrics, current: MapCoord) {
   return bestDistanceFromStart;
 }
 
-function inferredSpeedMps(distance?: number | null, duration?: number | null) {
+function inferredSpeedMps(
+  distance?: number | null,
+  duration?: number | null,
+  simulationSpeedKph?: number | null,
+) {
+  const configuredSpeed = Number(simulationSpeedKph) > 0
+    ? Number(simulationSpeedKph) / 3.6
+    : 0;
+  if (configuredSpeed > 0) return Math.max(1.5, Math.min(8.33, configuredSpeed));
   const routeSpeed = Number(distance) > 0 && Number(duration) > 0
     ? Number(distance) / Number(duration)
     : 0;
-  return Math.max(3, Math.min(19, routeSpeed || 12.5));
+  return Math.max(1.5, Math.min(8.33, (routeSpeed || 6.1) * 0.5));
 }
 
 function simulationMaxDistance(startDistance: number, totalDistance: number) {
@@ -261,9 +273,16 @@ function createRouteState(
   lastGpsRecordedAt: string | null | undefined,
   routeDistanceMeters: number | null | undefined,
   routeDurationSeconds: number | null | undefined,
+  canSimulate: boolean,
+  simulationSpeedKph: number | null | undefined,
+  predictionValidUntil: string | null | undefined,
 ): RouteState {
   const metrics = buildMetrics(points);
-  const speedMps = inferredSpeedMps(routeDistanceMeters || metrics.totalDistance, routeDurationSeconds);
+  const speedMps = inferredSpeedMps(
+    routeDistanceMeters || metrics.totalDistance,
+    routeDurationSeconds,
+    simulationSpeedKph,
+  );
   if (!points.length) {
     return {
       metrics,
@@ -278,14 +297,29 @@ function createRouteState(
   }
 
   const projectedDistance = current ? projectPointOnRoute(metrics, current) : 0;
-  const deadReckonedMeters = Math.min(MAX_DEAD_RECKON_SECONDS, secondsSince(lastGpsRecordedAt)) * speedMps;
-  const maxForwardFromGps = Math.min(45_000, Math.max(1_500, metrics.totalDistance * 0.28));
-  const startDistance = Math.min(
-    simulationMaxDistance(projectedDistance, metrics.totalDistance),
-    projectedDistance + Math.min(deadReckonedMeters, maxForwardFromGps),
-  );
-  const maxDistance = simulationMaxDistance(startDistance, metrics.totalDistance);
-  const startPoint = pointAtDistance(metrics, startDistance);
+  const deadReckonedMeters = canSimulate
+    ? Math.min(MAX_DEAD_RECKON_SECONDS, secondsSince(lastGpsRecordedAt)) * speedMps
+    : 0;
+  const maxForwardFromGps = Math.min(5_000, Math.max(500, metrics.totalDistance * 0.05));
+  const startDistance = canSimulate
+    ? Math.min(
+        simulationMaxDistance(projectedDistance, metrics.totalDistance),
+        projectedDistance + Math.min(deadReckonedMeters, maxForwardFromGps),
+      )
+    : projectedDistance;
+  const validUntilMs = predictionValidUntil ? Date.parse(predictionValidUntil) : Number.NaN;
+  const predictionSeconds = Number.isFinite(validUntilMs)
+    ? Math.max(0, Math.min(MAX_DEAD_RECKON_SECONDS, (validUntilMs - Date.now()) / 1000))
+    : MAX_DEAD_RECKON_SECONDS;
+  const maxDistance = canSimulate
+    ? Math.min(
+        simulationMaxDistance(startDistance, metrics.totalDistance),
+        startDistance + Math.min(5_000, predictionSeconds * speedMps),
+      )
+    : startDistance;
+  const startPoint = canSimulate
+    ? pointAtDistance(metrics, startDistance)
+    : current || pointAtDistance(metrics, startDistance);
 
   return {
     metrics,
@@ -330,6 +364,8 @@ function createTruckOverlay(
       element.innerHTML =
         '<span class="tracking-truck-pulse"></span><img src="/images/truck-marker.svg" alt="" />';
       this.element = element;
+      this.element.dataset.lat = this.position.lat.toFixed(6);
+      this.element.dataset.lng = this.position.lng.toFixed(6);
       this.getPanes()?.overlayMouseTarget.appendChild(element);
       this.applyRotation();
     }
@@ -353,6 +389,10 @@ function createTruckOverlay(
 
     setPosition(position: MapCoord) {
       this.position = position;
+      if (this.element) {
+        this.element.dataset.lat = position.lat.toFixed(6);
+        this.element.dataset.lng = position.lng.toFixed(6);
+      }
       this.draw();
     }
 
@@ -388,6 +428,10 @@ export default function TripGoogleMap({
   isOnline = false,
   routeDistanceMeters,
   routeDurationSeconds,
+  canSimulate = false,
+  simulationSpeedKph,
+  predictionValidUntil,
+  motionState,
   className,
 }: TripGoogleMapProps) {
   const [map, setMap] = useState<google.maps.Map | null>(null);
@@ -422,8 +466,20 @@ export default function TripGoogleMap({
       lastGpsRecordedAt,
       routeDistanceMeters,
       routeDurationSeconds,
+      canSimulate,
+      simulationSpeedKph,
+      predictionValidUntil,
     ),
-    [current, lastGpsRecordedAt, routeDistanceMeters, routeDurationSeconds, validRoutePoints],
+    [
+      canSimulate,
+      current,
+      lastGpsRecordedAt,
+      predictionValidUntil,
+      routeDistanceMeters,
+      routeDurationSeconds,
+      simulationSpeedKph,
+      validRoutePoints,
+    ],
   );
 
   const sourceFlagIcon = useMemo(() => {
@@ -456,7 +512,12 @@ export default function TripGoogleMap({
 
     if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current);
     truckOverlayRef.current?.setMap(null);
-    const overlay = createTruckOverlay(map, routeState.startPoint, routeState.initialBearing, isOnline);
+    const overlay = createTruckOverlay(
+      map,
+      routeState.startPoint,
+      routeState.initialBearing,
+      isOnline && canSimulate,
+    );
     truckOverlayRef.current = overlay;
     completedLineRef.current?.setPath(routeState.completed);
     remainingLineRef.current?.setPath(routeState.remaining);
@@ -466,7 +527,12 @@ export default function TripGoogleMap({
       map.setZoom(FOLLOW_ZOOM);
     }
 
-    if (!isOnline || routeState.metrics.totalDistance < 20 || routeState.remaining.length < 2) {
+    if (
+      !isOnline ||
+      !canSimulate ||
+      routeState.metrics.totalDistance < 20 ||
+      routeState.remaining.length < 2
+    ) {
       return () => {
         overlay.setMap(null);
         if (truckOverlayRef.current === overlay) truckOverlayRef.current = null;
@@ -513,7 +579,7 @@ export default function TripGoogleMap({
       overlay.setMap(null);
       if (truckOverlayRef.current === overlay) truckOverlayRef.current = null;
     };
-  }, [followMode, isOnline, map, routeState]);
+  }, [canSimulate, followMode, isOnline, map, routeState]);
 
   useEffect(() => {
     if (!map || followMode || !window.google?.maps) return;
@@ -548,7 +614,12 @@ export default function TripGoogleMap({
   }
 
   return (
-    <div className={className ? `relative h-full w-full overflow-hidden ${className}` : 'relative h-full w-full overflow-hidden'}>
+    <div
+      className={className ? `relative h-full w-full overflow-hidden ${className}` : 'relative h-full w-full overflow-hidden'}
+      data-can-simulate={canSimulate ? 'true' : 'false'}
+      data-motion-state={motionState || ''}
+      data-testid="trip-tracking-map"
+    >
       <GoogleMap
         zoom={followMode ? FOLLOW_ZOOM : zoom}
         center={routeState.startPoint || mapCenter}

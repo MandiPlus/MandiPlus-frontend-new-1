@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Allow an isolated local-test build to run alongside the normal dev server.
+  distDir: process.env.NEXT_DIST_DIR?.trim() || ".next",
   async headers() {
     return [
       {

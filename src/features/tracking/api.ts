@@ -25,6 +25,28 @@ export interface LocationPoint {
   lng: number;
 }
 
+export type TrackingMotionState =
+  | "AT_START"
+  | "MOVEMENT_CANDIDATE"
+  | "MOVING"
+  | "HOLDING"
+  | "ARRIVED";
+
+export interface TrackingMotionDecision {
+  state: TrackingMotionState;
+  canSimulate: boolean;
+  reason: string;
+  checkpointCount: number;
+  rejectedCheckpointCount?: number;
+  forwardTransitions?: number;
+  progressFromStartKm?: number;
+  observedSpeedKph?: number | null;
+  displaySpeedKph: number;
+  lastObservedAt?: string | null;
+  predictionValidUntil?: string | null;
+  confidence?: "low" | "medium" | "high";
+}
+
 export interface TruckSessionInfo {
   id?: string;
   startedAt?: string;
@@ -83,6 +105,8 @@ export interface TrackingData {
   shareUrl?: string;
   shareToken?: string;
   session?: TruckSessionInfo;
+  motion?: TrackingMotionDecision | null;
+  locationSource?: "live" | "fastag" | null;
   // Allow backend to send extra fields without breaking the UI
   [key: string]: any;
 }
@@ -146,6 +170,13 @@ export interface TrackingLinkVerifyResponse extends TrackingLinkOtpResponse {
   expiresIn?: string;
 }
 
+export interface LocalTrackingMotionFixture {
+  scenario: string;
+  scenarios: string[];
+  tracking: TrackingData;
+  route: TrackingRoute;
+}
+
 export interface ApiError {
   success: boolean;
   message: string;
@@ -198,7 +229,12 @@ export const trackVehicle = async (
         truckId: raw.truckId,
         tripId: raw.tripId,
         tripStatus: raw.tripStatus,
-        status: raw.status === 'tracking' ? 'online' : 'offline',
+        status:
+          raw.status === 'tracking' || raw.status === 'online'
+            ? 'online'
+            : raw.status === 'offline'
+              ? 'offline'
+              : raw.status || 'unknown',
         location: raw.location,
         origin: raw.origin,
         destination: raw.destination,
@@ -207,6 +243,11 @@ export const trackVehicle = async (
         consentStatus: raw.consentStatus,
         eta: raw.eta,
         shareUrl: raw.shareUrl ?? raw.shareURL,
+        motion: raw.motion ?? null,
+        locationSource:
+          raw.locationSource === 'live' || raw.locationSource === 'fastag'
+            ? raw.locationSource
+            : null,
       },
       message: raw.message,
     };
@@ -220,6 +261,15 @@ export const trackVehicle = async (
       "Failed to fetch vehicle location";
     throw { message };
   }
+};
+
+export const getLocalTrackingMotionScenario = async (
+  scenario: string,
+): Promise<LocalTrackingMotionFixture> => {
+  const response = await axios.get<LocalTrackingMotionFixture>(
+    `${API_BASE_URL}/trucks/track/dev-motion/${encodeURIComponent(scenario)}`,
+  );
+  return response.data;
 };
 
 export const getLiveTrackingTrips = async (): Promise<LiveTrackingTrip[]> => {

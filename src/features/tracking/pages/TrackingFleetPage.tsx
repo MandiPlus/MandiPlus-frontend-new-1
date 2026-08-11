@@ -18,6 +18,7 @@ import ProtectedRoute from '@/features/auth/components/ProtectedRoute';
 import { getStoredAuthToken } from '@/features/auth/api';
 import {
   getLiveTrackingTrips,
+  getLocalTrackingMotionScenario,
   getTrackingRoute,
   LiveTrackingTrip,
   LocationPoint,
@@ -197,7 +198,26 @@ function formatEta(tracking?: TrackingData | null, trip?: LiveTrackingTrip | nul
   const eta = String(tracking?.eta || trip?.eta || '').trim();
   if (eta) return formatEtaValue(eta);
 
-  return 'Time not available';
+  return null;
+}
+
+function motionStatus(tracking?: TrackingData | null) {
+  switch (tracking?.motion?.state) {
+    case 'ARRIVED':
+      return { label: 'Destination reached', active: false };
+    case 'AT_START':
+    case 'MOVEMENT_CANDIDATE':
+      return { label: 'Trip not started', active: false };
+    case 'HOLDING':
+      return { label: 'Waiting for checkpoint', active: false };
+    case 'MOVING':
+      return { label: 'On the way', active: Boolean(tracking.motion.canSimulate) };
+    default:
+      return {
+        label: tracking?.status === 'online' ? 'Live location' : 'Last location',
+        active: false,
+      };
+  }
 }
 
 function numberFromDistance(value: unknown) {
@@ -240,6 +260,19 @@ function MapLoading({ label }: { label: string }) {
 }
 
 export default function TrackingFleetPage() {
+  const searchParams = useSearchParams();
+  const localScenario = searchParams.get('localScenario');
+  const localTestEnabled =
+    process.env.NEXT_PUBLIC_TRACKING_LOCAL_TEST_MODE === 'true';
+
+  if (localTestEnabled && localScenario) {
+    return <TrackingMotionLab scenario={localScenario} />;
+  }
+
+  return <AuthenticatedTrackingFleetPage />;
+}
+
+function AuthenticatedTrackingFleetPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [trips, setTrips] = useState<LiveTrackingTrip[]>([]);
@@ -658,6 +691,8 @@ function TripDetail({
   progress: ReturnType<typeof tripProgress>;
 }) {
   const isOnline = tracking?.status === 'online';
+  const motion = motionStatus(tracking);
+  const eta = formatEta(tracking, trip);
   const headline = isOnline ? `${currentName} → ${destinationName}` : currentName;
 
   const shareTrip = async () => {
@@ -693,6 +728,10 @@ function TripDetail({
           isOnline={isOnline}
           routeDistanceMeters={route?.distanceMeters ?? null}
           routeDurationSeconds={route?.durationSeconds ?? null}
+          canSimulate={Boolean(tracking?.motion?.canSimulate)}
+          simulationSpeedKph={tracking?.motion?.displaySpeedKph ?? null}
+          predictionValidUntil={tracking?.motion?.predictionValidUntil ?? null}
+          motionState={tracking?.motion?.state ?? null}
         />
         {loading && !tracking ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -703,8 +742,8 @@ function TripDetail({
           </div>
         ) : null}
         <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-full border border-[#e7ebf3] bg-white/95 px-3 py-2 text-xs font-black text-[#203044] shadow-sm">
-          <span className={`h-2 w-2 rounded-full ${isOnline ? 'animate-pulse bg-[#22a66b]' : 'bg-[#c88d37]'}`} />
-          {isOnline ? 'On the way' : 'Last location'}
+          <span className={`h-2 w-2 rounded-full ${motion.active ? 'animate-pulse bg-[#22a66b]' : 'bg-[#c88d37]'}`} />
+          {motion.label}
         </div>
       </div>
 
@@ -715,7 +754,7 @@ function TripDetail({
             <p className="mt-2 truncate text-sm font-semibold text-[#7b8176]">{headline}</p>
           </div>
           <p className="shrink-0 rounded-full bg-[#eef3fa] px-3 py-1.5 text-xs font-black text-[#203044]">
-            {isOnline ? 'Live' : 'Paused'}
+            {motion.active ? 'Moving' : 'Stationary'}
           </p>
         </div>
 
@@ -726,17 +765,19 @@ function TripDetail({
         </div>
 
         <div className="mt-4 rounded-[20px] border border-[#e7ebf3] px-3.5 py-[13px]">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <Clock3 className="h-6 w-6 shrink-0 text-[#203044]" strokeWidth={2.2} />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-extrabold leading-[15px] text-[#7b8176]">Pahunchne ka time</p>
-              <p className="mt-0.5 truncate text-sm font-black leading-[19px] text-[#171914]">
-                {formatEta(tracking, trip)}
-              </p>
+          {eta ? (
+            <div className="flex min-w-0 items-center gap-2.5">
+              <Clock3 className="h-6 w-6 shrink-0 text-[#203044]" strokeWidth={2.2} />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-extrabold leading-[15px] text-[#7b8176]">Pahunchne ka time</p>
+                <p className="mt-0.5 truncate text-sm font-black leading-[19px] text-[#171914]">
+                  {eta}
+                </p>
+              </div>
             </div>
-          </div>
+          ) : null}
 
-          <div className="mt-3 border-t border-[#e7ebf3] pt-3">
+          <div className={eta ? 'mt-3 border-t border-[#e7ebf3] pt-3' : ''}>
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-extrabold leading-[15px] text-[#7b8176]">Trip ki progress</p>
               <p className="text-sm font-black leading-[18px] text-[#203044]">{progress.percentLabel}</p>
@@ -771,6 +812,114 @@ function TripDetail({
         </div>
       </div>
     </section>
+  );
+}
+
+function TrackingMotionLab({ scenario }: { scenario: string }) {
+  const router = useRouter();
+  const [fixture, setFixture] = useState<Awaited<ReturnType<typeof getLocalTrackingMotionScenario>> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFixture(null);
+    setError(null);
+    void getLocalTrackingMotionScenario(scenario)
+      .then((next) => {
+        if (!cancelled) setFixture(next);
+      })
+      .catch((nextError) => {
+        if (!cancelled) {
+          setError(nextError instanceof Error ? nextError.message : 'Scenario unavailable');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [scenario]);
+
+  const tracking = fixture?.tracking || null;
+  const trip: LiveTrackingTrip | null = tracking
+    ? {
+        id: tracking.tripId || scenario,
+        tripId: tracking.tripId,
+        vehicleNumber: tracking.vehicleNumber,
+        status: tracking.tripStatus || 'ACTIVE',
+        sourceName: tracking.originLabel,
+        destinationName: tracking.destinationLabel,
+        eta: tracking.eta,
+      }
+    : null;
+
+  return (
+    <main
+      className="min-h-screen bg-[#f5f6fb] pb-8 text-[#171914]"
+      data-testid="tracking-motion-lab"
+      style={{ fontFamily: 'Poppins, sans-serif' }}
+    >
+      <section className="mx-auto max-w-3xl px-5 pt-5">
+        <div className="rounded-[22px] border border-[#e7ebf3] bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.1em] text-[#7b8176]">Local motion lab</p>
+              <h1 className="mt-1 text-xl font-black">Tracking simulation gate</h1>
+            </div>
+            {tracking?.motion ? (
+              <div className="text-right" data-testid="motion-evidence">
+                <p className="text-sm font-black">{tracking.motion.state}</p>
+                <p className="text-xs text-[#7b8176]">{tracking.motion.reason}</p>
+                <p className="text-xs text-[#7b8176]">
+                  {tracking.motion.checkpointCount} accepted · {tracking.motion.rejectedCheckpointCount || 0} rejected
+                </p>
+              </div>
+            ) : null}
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {(fixture?.scenarios || [
+              'at-start',
+              'moving',
+              'origin-exit',
+              'stale',
+              'impossible-jump',
+              'arrived',
+            ]).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => router.replace(`/tracking?localScenario=${value}`)}
+                className={`rounded-full px-3 py-2 text-xs font-black ${
+                  value === scenario
+                    ? 'bg-[#203044] text-white'
+                    : 'border border-[#d7deea] bg-white text-[#203044]'
+                }`}
+              >
+                {value}
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {error ? (
+        <div className="mx-auto mt-4 max-w-3xl px-5 text-sm font-semibold text-red-700">{error}</div>
+      ) : null}
+      {!fixture || !trip ? (
+        <div className="mx-auto mt-5 max-w-3xl px-5"><MapLoading label="Loading scenario…" /></div>
+      ) : (
+        <TripDetail
+          trip={trip}
+          tracking={fixture.tracking}
+          route={fixture.route}
+          loading={false}
+          error={null}
+          center={fixture.tracking.location || fixture.tracking.origin || { lat: 22.9734, lng: 78.6569 }}
+          currentName={shortPlace(fixture.tracking.location?.address) || 'Current checkpoint'}
+          sourceName={shortPlace(fixture.tracking.originLabel) || 'Route start'}
+          destinationName={shortPlace(fixture.tracking.destinationLabel) || 'Route end'}
+          progress={tripProgress(fixture.tracking)}
+        />
+      )}
+    </main>
   );
 }
 
