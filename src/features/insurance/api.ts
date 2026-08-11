@@ -35,13 +35,20 @@ export const getStoredInsuranceAdminToken = (): string | null => {
   if (sessionStorage.getItem("impersonationActive") === "1") return null;
 
   const token = localStorage.getItem("adminToken");
+  return getEligibleInsuranceAdminToken(token);
+};
+
+const getEligibleInsuranceAdminToken = (
+  token: string | null,
+): string | null => {
   if (!token) return null;
 
   const claims = decodeJwtClaims(token);
   if (!claims?.exp || claims.exp * 1000 <= Date.now()) return null;
-  if (claims.role === "admin") return token;
+  const role = String(claims.role || "").toLowerCase();
+  if (role === "admin") return token;
   if (
-    claims.role === "limited_admin" &&
+    role === "limited_admin" &&
     Array.isArray(claims.sections) &&
     claims.sections.includes("insurance-forms")
   ) {
@@ -52,6 +59,22 @@ export const getStoredInsuranceAdminToken = (): string | null => {
 
 export const hasStoredInsuranceAdminSession = (): boolean =>
   Boolean(getStoredInsuranceAdminToken());
+
+export const getStoredInsuranceAdminActorToken = (): string | null => {
+  if (typeof window === "undefined") return null;
+
+  const isImpersonating =
+    sessionStorage.getItem("impersonationActive") === "1";
+  const token = isImpersonating
+    ? sessionStorage.getItem("impersonationAdminToken") ||
+      localStorage.getItem("adminToken")
+    : localStorage.getItem("adminToken");
+
+  return getEligibleInsuranceAdminToken(token);
+};
+
+export const hasStoredInsuranceAdminActorSession = (): boolean =>
+  Boolean(getStoredInsuranceAdminActorToken());
 
 const getInsuranceRequestToken = (): string | null => {
   return getStoredInsuranceAdminToken() || getStoredAuthToken();
