@@ -3,7 +3,7 @@ import ProductsPage from "@/features/landing/ProductsPage";
 export const metadata = {
   title: "Products | MandiPlus",
   description:
-    "MandiPlus Platform products: transit risk insurance, NBFC credit, working capital, logistics management, and AI market insights for mandi traders.",
+    "Explore MandiPlus transit risk insurance, credit, working capital, logistics, harvesting technology, marketplace and mandi market insights.",
 };
 
 export default function Page() {
