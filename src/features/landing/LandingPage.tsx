@@ -64,6 +64,29 @@ const featureShowcase = [
   },
 ] as const;
 
+const appPreviewScreens = [
+  {
+    id: "insurance",
+    src: "/images/landing/app-screens/4.webp",
+    alt: "Insurance records and payments inside the MandiPlus app",
+  },
+  {
+    id: "home",
+    src: "/images/landing/app-screens/2.webp",
+    alt: "MandiPlus app home with insurance, payments, claims and tracking",
+  },
+  {
+    id: "tracking",
+    src: "/images/landing/app-screens/3.webp",
+    alt: "Live vehicle tracking inside the MandiPlus app",
+  },
+  {
+    id: "cover",
+    src: "/images/landing/app-screens/1.webp",
+    alt: "MandiPlus trip insurance, vehicle tracking and claims support",
+  },
+] as const;
+
 const PlayStoreIcon = ({ size = 16 }: { size?: number }) => (
   <svg
     viewBox="0 0 512 512"
@@ -137,6 +160,7 @@ const LandingPage = () => {
   const { user, loading } = useAuth();
   const [activeFeature, setActiveFeature] = useState(0);
   const [featureCycleKey, setFeatureCycleKey] = useState(0);
+  const [activeAppScreen, setActiveAppScreen] = useState(0);
   const [translationIndex, setTranslationIndex] = useState(0);
   const [showMobileBar, setShowMobileBar] = useState(false);
   const heroCtaRef = useRef<HTMLAnchorElement>(null);
@@ -172,6 +196,20 @@ const LandingPage = () => {
 
     return () => window.clearInterval(interval);
   }, [featureCycleKey]);
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setActiveAppScreen(
+        (current) => (current + 1) % appPreviewScreens.length,
+      );
+    }, 2400);
+
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (loading || user || !heroCtaRef.current) {
@@ -406,14 +444,40 @@ const LandingPage = () => {
               ]}
             />
 
-            <div className={styles.servicesPhone} aria-label="MandiPlus app preview">
-              <Image
-                src="/images/landing/app-screens/4.webp"
-                alt="Insurance list inside the MandiPlus app"
-                fill
-                sizes="300px"
-                className={styles.servicesPhoneImage}
-              />
+            <div
+              className={styles.servicesPhone}
+              role="region"
+              aria-roledescription="carousel"
+              aria-label="MandiPlus app preview"
+            >
+              {appPreviewScreens.map((screen, index) => {
+                const relativePosition =
+                  (index - activeAppScreen + appPreviewScreens.length) %
+                  appPreviewScreens.length;
+                const positionClass =
+                  relativePosition === 0
+                    ? styles.servicesPhoneSlideActive
+                    : relativePosition === 1
+                      ? styles.servicesPhoneSlideNext
+                      : styles.servicesPhoneSlidePrevious;
+
+                return (
+                  <div
+                    key={screen.id}
+                    className={`${styles.servicesPhoneSlide} ${positionClass}`}
+                    aria-hidden={activeAppScreen !== index}
+                  >
+                    <Image
+                      src={screen.src}
+                      alt={activeAppScreen === index ? screen.alt : ""}
+                      fill
+                      sizes="300px"
+                      className={styles.servicesPhoneImage}
+                    />
+                  </div>
+                );
+              })}
+
             </div>
 
             <ServicePanel

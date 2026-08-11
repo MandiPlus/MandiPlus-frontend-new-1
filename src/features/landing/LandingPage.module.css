@@ -702,6 +702,32 @@
   box-shadow: 0 28px 50px rgba(23, 23, 21, 0.16);
 }
 
+.servicesPhoneSlide {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: #fff;
+  transform: translate3d(100%, 0, 0);
+  transition: transform 620ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.servicesPhoneSlideActive {
+  z-index: 2;
+  transform: translate3d(0, 0, 0);
+}
+
+.servicesPhoneSlideNext {
+  z-index: 0;
+  transform: translate3d(100%, 0, 0);
+}
+
+.servicesPhoneSlidePrevious {
+  z-index: 1;
+  transform: translate3d(-100%, 0, 0);
+}
+
 .servicesPhoneImage {
   object-fit: cover;
   object-position: top;
