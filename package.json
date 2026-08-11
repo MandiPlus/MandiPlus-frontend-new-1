@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:customer-insurance-contract": "node scripts/test-customer-insurance-contract.mjs",
-    "test:insurance-slip": "node --no-warnings scripts/test-insurance-slip-submit.mjs"
+    "test:insurance-slip": "node --no-warnings scripts/test-insurance-slip-submit.mjs",
+    "test:desktop-creation-access": "node --no-warnings scripts/test-desktop-creation-access.mjs"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.9",

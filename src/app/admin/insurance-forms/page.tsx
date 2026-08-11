@@ -10,13 +10,15 @@ import 'cropperjs/dist/cropper.css';
 import Cropper, { ReactCropperElement } from "react-cropper";
 import { ArrowPathIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { Menu, Transition } from '@headlessui/react';
-import { FileText, RefreshCw, Upload, Eye, CheckCircle, AlertCircle, X, XCircle, Pencil, ChevronDown, ChevronRight, MoreVertical, Link as LinkIcon, RotateCcw } from 'lucide-react';
+import { FileText, RefreshCw, Upload, Eye, CheckCircle, AlertCircle, X, XCircle, Pencil, ChevronDown, ChevronRight, MoreVertical, Link as LinkIcon, RotateCcw, Monitor } from 'lucide-react';
 
 import InsuranceUploadModal from '@/features/admin/components/InsuranceUploadModal';
 import PartyCombobox, { type PartyComboboxOption } from '@/features/admin/components/PartyCombobox';
 import { getHsnForProduct, itemsData } from '@/features/insurance/productCatalog';
 import { getVehicleRecentInvoiceStatus, getSupplierHistoricalParties, getBuyerHistoricalSuppliers } from '@/features/insurance/api';
 import type { HistoricalPartyOption } from '@/features/insurance/api';
+import DesktopRequiredNotice from '@/shared/components/DesktopRequiredNotice';
+import { useDesktopCreationAccess } from '@/shared/hooks/useDesktopCreationAccess';
 
 function useDebounce<T>(value: T, delay: number): T {
     const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -440,6 +442,7 @@ const EXPORTABLE_INVOICE_COLUMNS = [
 export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFormsPageProps) {
     const router = useRouter();
     const { isAuthenticated } = useAdmin();
+    const desktopCreationAccess = useDesktopCreationAccess();
 
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [insuranceOverrides, setInsuranceOverrides] = useState<
@@ -479,6 +482,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
     const [invoiceMenuPlacement, setInvoiceMenuPlacement] = useState<Record<string, 'up' | 'down'>>({});
     const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
+    const [createInvoiceBlockedNoticeOpen, setCreateInvoiceBlockedNoticeOpen] = useState(false);
     const [createInvoiceSubmitting, setCreateInvoiceSubmitting] = useState(false);
     const [createInvoiceParsing, setCreateInvoiceParsing] = useState(false);
     const [verifiedUsers, setVerifiedUsers] = useState<AdminLedgerUser[]>([]);
@@ -1044,6 +1048,12 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     };
 
     const openCreateInvoiceModal = () => {
+        if (!desktopCreationAccess.ready) return;
+        if (!desktopCreationAccess.allowed) {
+            setCreateInvoiceBlockedNoticeOpen(true);
+            return;
+        }
+
         setCreateInvoiceForm(emptyAdminCreateInvoiceForm());
         setCreateWeighmentFiles([]);
         setCreatePurchaseBillFile(null);
@@ -1140,6 +1150,12 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     };
 
     const handleCreateInvoiceSubmit = async () => {
+        if (!desktopCreationAccess.ready || !desktopCreationAccess.allowed) {
+            setCreateInvoiceOpen(false);
+            setCreateInvoiceBlockedNoticeOpen(true);
+            return;
+        }
+
         const insuredUser = selectedInsuredUser;
         if (!insuredUser) {
             toast.error('Select a registered verified insured party.');
@@ -1990,8 +2006,32 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         }
     }, [currentPage, totalPages]);
 
+    useEffect(() => {
+        if (
+            desktopCreationAccess.ready &&
+            !desktopCreationAccess.allowed &&
+            createInvoiceOpen &&
+            !createInvoiceSubmitting
+        ) {
+            setCreateInvoiceOpen(false);
+            setCreateInvoiceBlockedNoticeOpen(true);
+        }
+    }, [
+        createInvoiceOpen,
+        createInvoiceSubmitting,
+        desktopCreationAccess.allowed,
+        desktopCreationAccess.ready,
+    ]);
+
     return (
         <div className="min-h-screen bg-gray-50 py-4 sm:py-6">
+            {createInvoiceBlockedNoticeOpen && (
+                <DesktopRequiredNotice
+                    variant="dialog"
+                    onDismiss={() => setCreateInvoiceBlockedNoticeOpen(false)}
+                />
+            )}
+
             {modalOpen && (
                 <div className="fixed inset-0 z-[2100] flex items-center justify-center p-3 sm:p-4">
                     <div
@@ -2448,11 +2488,21 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                         {!appQueueMode ? (
                             <button
                                 onClick={openCreateInvoiceModal}
-                                disabled={loading}
-                                className="bg-slate-800 hover:bg-slate-900 text-white px-3 sm:px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
+                                disabled={loading || !desktopCreationAccess.ready}
+                                className={`px-3 sm:px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto ${
+                                    desktopCreationAccess.ready && !desktopCreationAccess.allowed
+                                        ? 'border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                                        : 'bg-slate-800 text-white hover:bg-slate-900'
+                                }`}
                             >
-                                <FileText className="w-4 h-4" />
-                                Create Invoice
+                                {desktopCreationAccess.ready && !desktopCreationAccess.allowed ? (
+                                    <Monitor className="w-4 h-4" />
+                                ) : (
+                                    <FileText className="w-4 h-4" />
+                                )}
+                                {desktopCreationAccess.ready && !desktopCreationAccess.allowed
+                                    ? 'Create Invoice · Desktop only'
+                                    : 'Create Invoice'}
                             </button>
                         ) : null}
                         <button
