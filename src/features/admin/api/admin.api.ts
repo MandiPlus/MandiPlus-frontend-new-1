@@ -841,6 +841,14 @@ export interface AppPaymentsSummary {
 }
 
 export type TrackingPurchaseStatus = 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'FAILED';
+export type TrackingPaymentMethod =
+  | 'PHONEPE'
+  | 'CASH'
+  | 'UPI'
+  | 'BANK_TRANSFER'
+  | 'CARD'
+  | 'OTHER';
+export type TrackingPurchaseSource = 'APP' | 'ADMIN';
 
 export interface AdminTrackingPurchase {
   id: string;
@@ -858,6 +866,11 @@ export interface AdminTrackingPurchase {
   merchantOrderId: string;
   phonepeOrderId: string | null;
   phonepeUtr: string | null;
+  paymentMethod: TrackingPaymentMethod;
+  paymentReference: string | null;
+  purchaseSource: TrackingPurchaseSource;
+  activatedBy: string | null;
+  adminNote: string | null;
   status: TrackingPurchaseStatus;
   paidAt: string | null;
   expiresAt: string | null;
@@ -875,6 +888,27 @@ export interface AdminTrackingPurchaseSummary {
   pendingPurchases: number;
   failedPurchases: number;
   expiredPurchases: number;
+  manualPurchases: number;
+}
+
+export interface AdminTrackingPlanCustomer {
+  id: string;
+  name: string;
+  mobileNumber: string;
+  secondaryMobileNumber: string | null;
+  state: string | null;
+  identity: string | null;
+  active: boolean;
+  expiresAt: string | null;
+}
+
+export interface GrantTrackingPlanPayload {
+  userId: string;
+  idempotencyKey: string;
+  paymentMethod: Exclude<TrackingPaymentMethod, 'PHONEPE'>;
+  amountPaid: number;
+  paymentReference?: string;
+  note?: string;
 }
 
 export interface AdminTrackingPurchaseFilters {
@@ -4350,6 +4384,53 @@ class AdminApi {
         message:
           axiosError.response?.data?.message ||
           'Failed to fetch tracking purchase summary',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public searchTrackingPlanCustomers = async (
+    query: string,
+    limit: number = 10,
+  ): Promise<ApiResponse<AdminTrackingPlanCustomer[]>> => {
+    try {
+      const response = await this.client.get(
+        '/tracking-packs/admin/customers/search',
+        { params: { q: query, limit } },
+      );
+      return {
+        success: response.data?.success !== false,
+        data: Array.isArray(response.data?.data) ? response.data.data : [],
+      };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message || 'Failed to search customers',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public grantTrackingPlan = async (
+    payload: GrantTrackingPlanPayload,
+  ): Promise<ApiResponse<AdminTrackingPurchase>> => {
+    try {
+      const response = await this.client.post(
+        '/tracking-packs/admin/grants',
+        payload,
+      );
+      return {
+        success: response.data?.success !== false,
+        data: response.data?.data,
+      };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message || 'Failed to activate plan',
         error: error instanceof Error ? error.message : String(error),
       };
     }

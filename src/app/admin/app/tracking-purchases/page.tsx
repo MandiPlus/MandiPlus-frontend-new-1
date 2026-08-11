@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import toast from 'react-hot-toast';
 import {
   Activity,
+  Banknote,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -11,15 +13,20 @@ import {
   CreditCard,
   IndianRupee,
   MapPin,
+  Plus,
   RefreshCw,
   Search,
   ShieldCheck,
   UserRound,
+  X,
 } from 'lucide-react';
 import {
   adminApi,
   AdminTrackingPurchase,
   AdminTrackingPurchaseSummary,
+  AdminTrackingPlanCustomer,
+  GrantTrackingPlanPayload,
+  TrackingPaymentMethod,
   TrackingPurchaseStatus,
 } from '@/features/admin/api/admin.api';
 
@@ -34,7 +41,19 @@ const EMPTY_SUMMARY: AdminTrackingPurchaseSummary = {
   pendingPurchases: 0,
   failedPurchases: 0,
   expiredPurchases: 0,
+  manualPurchases: 0,
 };
+
+const MANUAL_PAYMENT_METHODS: Array<{
+  value: GrantTrackingPlanPayload['paymentMethod'];
+  label: string;
+}> = [
+  { value: 'CASH', label: 'Cash' },
+  { value: 'UPI', label: 'UPI' },
+  { value: 'BANK_TRANSFER', label: 'Bank transfer' },
+  { value: 'CARD', label: 'Card' },
+  { value: 'OTHER', label: 'Other' },
+];
 
 function formatCurrency(value?: number | null) {
   return new Intl.NumberFormat('en-IN', {
@@ -63,6 +82,12 @@ function compactReference(value?: string | null) {
   if (!normalized) return '—';
   if (normalized.length <= 25) return normalized;
   return `${normalized.slice(0, 11)}…${normalized.slice(-9)}`;
+}
+
+function formatPaymentMethod(value: TrackingPaymentMethod) {
+  if (value === 'PHONEPE') return 'PhonePe';
+  if (value === 'BANK_TRANSFER') return 'Bank transfer';
+  return value.charAt(0) + value.slice(1).toLowerCase();
 }
 
 function CopyReference({ value, label }: { value?: string | null; label: string }) {
@@ -141,6 +166,7 @@ export default function TrackingPurchasesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [grantOpen, setGrantOpen] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -213,17 +239,27 @@ export default function TrackingPurchasesPage() {
               </span>
               <h1 className="text-2xl font-semibold text-slate-950">Tracking Purchases</h1>
             </div>
-            <p className="mt-1.5 text-sm text-slate-500">FastTag pack payments and 30-day access.</p>
+            <p className="mt-1.5 text-sm text-slate-500">Paid FastTag plans and 30-day access.</p>
           </div>
-          <button
-            type="button"
-            onClick={() => setRefreshKey((value) => value + 1)}
-            disabled={loading}
-            className="inline-flex h-10 items-center justify-center gap-2 self-start rounded-md border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
-          >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2 self-start">
+            <button
+              type="button"
+              onClick={() => setGrantOpen(true)}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
+            >
+              <Plus size={17} />
+              Grant plan
+            </button>
+            <button
+              type="button"
+              onClick={() => setRefreshKey((value) => value + 1)}
+              disabled={loading}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60"
+            >
+              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+          </div>
         </div>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -258,10 +294,10 @@ export default function TrackingPurchasesPage() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
-          <span><strong className="font-semibold text-slate-800">{summary.totalAttempts}</strong> total attempts</span>
-          <span><strong className="font-semibold text-amber-700">{summary.pendingPurchases}</strong> pending</span>
-          <span><strong className="font-semibold text-rose-700">{summary.failedPurchases}</strong> failed</span>
+          <span><strong className="font-semibold text-slate-800">{summary.paidPurchases}</strong> paid plans</span>
+          <span><strong className="font-semibold text-emerald-700">{summary.manualPurchases}</strong> granted by admin</span>
           <span><strong className="font-semibold text-slate-700">{summary.expiredPurchases}</strong> expired</span>
+          <span className="text-slate-400">Pending and failed checkouts are hidden.</span>
         </div>
 
         <section className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -290,9 +326,7 @@ export default function TrackingPurchasesPage() {
               >
                 <option value="">All statuses</option>
                 <option value="ACTIVE">Active</option>
-                <option value="PENDING">Pending</option>
                 <option value="EXPIRED">Expired</option>
-                <option value="FAILED">Failed</option>
               </select>
             </label>
             <div className="grid grid-cols-2 gap-3">
@@ -356,7 +390,7 @@ export default function TrackingPurchasesPage() {
                       <th className="w-[110px] px-4 py-3">Status</th>
                       <th className="w-[125px] px-4 py-3 text-right">Amount</th>
                       <th className="w-[235px] px-4 py-3">Payment timing</th>
-                      <th className="w-[260px] px-4 py-3">PhonePe</th>
+                      <th className="w-[260px] px-4 py-3">Payment</th>
                       <th className="w-[255px] px-4 py-3">Checkout</th>
                     </tr>
                   </thead>
@@ -392,8 +426,8 @@ export default function TrackingPurchasesPage() {
                   <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
                     <MapPin size={20} />
                   </span>
-                  <p className="mt-3 text-sm font-medium text-slate-800">No tracking purchases found</p>
-                  <p className="mt-1 text-xs text-slate-500">New checkout attempts will appear here.</p>
+                  <p className="mt-3 text-sm font-medium text-slate-800">No paid tracking plans found</p>
+                  <p className="mt-1 text-xs text-slate-500">Confirmed payments and admin grants will appear here.</p>
                 </div>
               )}
 
@@ -426,6 +460,14 @@ export default function TrackingPurchasesPage() {
           )}
         </section>
       </div>
+      <GrantPlanDialog
+        open={grantOpen}
+        onClose={() => setGrantOpen(false)}
+        onGranted={() => {
+          setPage(1);
+          setRefreshKey((value) => value + 1);
+        }}
+      />
     </div>
   );
 }
@@ -491,12 +533,17 @@ function PurchaseTableRow({ row }: { row: AdminTrackingPurchase }) {
         <p><span className="text-slate-400">Started</span> <span className="text-slate-700">{formatDateTime(row.createdAt)}</span></p>
       </td>
       <td className="space-y-1 px-4 py-3">
-        <ReferenceLine label="UTR" value={row.phonepeUtr} />
-        <ReferenceLine label="Order" value={row.phonepeOrderId} />
+        <p className="mb-1 text-xs font-semibold text-slate-800">{formatPaymentMethod(row.paymentMethod)}</p>
+        <ReferenceLine label="Ref" value={row.paymentReference} />
+        {row.phonepeOrderId ? <ReferenceLine label="Order" value={row.phonepeOrderId} /> : null}
+        {row.purchaseSource === 'ADMIN' ? (
+          <p className="pl-[60px] text-[10px] text-slate-400">Granted by {row.activatedBy || 'Admin'}</p>
+        ) : null}
       </td>
       <td className="space-y-1 px-4 py-3">
         <ReferenceLine label="Merchant" value={row.merchantOrderId} />
         <ReferenceLine label="Record" value={row.id} />
+        {row.adminNote ? <p className="pl-[60px] text-[10px] text-slate-500" title={row.adminNote}>{row.adminNote}</p> : null}
         <p className="pl-[60px] text-[10px] text-slate-400">Updated {formatDateTime(row.updatedAt)}</p>
       </td>
     </tr>
@@ -527,8 +574,9 @@ function PurchaseMobileCard({ row }: { row: AdminTrackingPurchase }) {
         </div>
       </div>
       <div className="mt-3 space-y-1">
-        <ReferenceLine label="UTR" value={row.phonepeUtr} />
-        <ReferenceLine label="PhonePe" value={row.phonepeOrderId} />
+        <p className="text-xs font-semibold text-slate-800">Paid via {formatPaymentMethod(row.paymentMethod)}</p>
+        <ReferenceLine label="Ref" value={row.paymentReference} />
+        {row.phonepeOrderId ? <ReferenceLine label="PhonePe" value={row.phonepeOrderId} /> : null}
         <ReferenceLine label="Merchant" value={row.merchantOrderId} />
         <ReferenceLine label="Record" value={row.id} />
       </div>
@@ -537,7 +585,301 @@ function PurchaseMobileCard({ row }: { row: AdminTrackingPurchase }) {
         <span>{row.daysRemaining > 0 ? `${row.daysRemaining} days left` : 'No active days'}</span>
         <span>Started {formatDateTime(row.createdAt)}</span>
         <span>Updated {formatDateTime(row.updatedAt)}</span>
+        {row.purchaseSource === 'ADMIN' ? <span>Granted by {row.activatedBy || 'Admin'}</span> : null}
       </div>
+      {row.adminNote ? <p className="mt-2 text-xs text-slate-500">Note: {row.adminNote}</p> : null}
     </article>
+  );
+}
+
+function GrantPlanDialog({
+  open,
+  onClose,
+  onGranted,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onGranted: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<AdminTrackingPlanCustomer[]>([]);
+  const [selected, setSelected] = useState<AdminTrackingPlanCustomer | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<GrantTrackingPlanPayload['paymentMethod']>('CASH');
+  const [amountPaid, setAmountPaid] = useState('99');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [idempotencyKey, setIdempotencyKey] = useState(() => globalThis.crypto.randomUUID());
+
+  useEffect(() => {
+    if (!open || selected || query.trim().length < 2) {
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setSearching(true);
+      const response = await adminApi.searchTrackingPlanCustomers(query.trim(), 10);
+      if (cancelled) return;
+      setResults(response.success ? response.data || [] : []);
+      setError(response.success ? '' : response.message || 'Customer search failed.');
+      setSearching(false);
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [open, query, selected]);
+
+  const resetAndClose = () => {
+    setQuery('');
+    setResults([]);
+    setSelected(null);
+    setPaymentMethod('CASH');
+    setAmountPaid('99');
+    setPaymentReference('');
+    setNote('');
+    setError('');
+    setIdempotencyKey(globalThis.crypto.randomUUID());
+    onClose();
+  };
+
+  const submit = async () => {
+    if (!selected) {
+      setError('Select a customer first.');
+      return;
+    }
+    const amount = Number(amountPaid);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError('Enter a valid amount received.');
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+    const response = await adminApi.grantTrackingPlan({
+      userId: selected.id,
+      idempotencyKey,
+      paymentMethod,
+      amountPaid: amount,
+      ...(paymentReference.trim() ? { paymentReference: paymentReference.trim() } : {}),
+      ...(note.trim() ? { note: note.trim() } : {}),
+    });
+    setSubmitting(false);
+    if (!response.success || !response.data) {
+      setError(response.message || 'Plan could not be activated.');
+      return;
+    }
+    toast.success(`Tracking plan activated for ${selected.name}`);
+    onGranted();
+    resetAndClose();
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-5">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="grant-tracking-plan-title"
+        className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-slate-200 bg-white shadow-2xl sm:rounded-xl"
+      >
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white">
+                <ShieldCheck size={18} />
+              </span>
+              <div>
+                <h2 id="grant-tracking-plan-title" className="text-lg font-semibold text-slate-950">Grant tracking plan</h2>
+                <p className="text-xs text-slate-500">Record an offline payment and activate 30 days.</p>
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={resetAndClose}
+            aria-label="Close"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-5">
+          {!selected ? (
+            <div>
+              <label>
+                <span className="mb-1.5 block text-xs font-semibold text-slate-700">Find customer</span>
+                <span className="relative block">
+                  <Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    autoFocus
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      setError('');
+                    }}
+                    placeholder="Search by customer name or mobile number"
+                    className="h-11 w-full rounded-md border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </span>
+              </label>
+
+              <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
+                {query.trim().length < 2 ? (
+                  <div className="px-4 py-8 text-center text-sm text-slate-500">Type at least 2 characters.</div>
+                ) : searching ? (
+                  <div className="px-4 py-8 text-center text-sm text-slate-500">Searching customers…</div>
+                ) : results.length ? (
+                  <div className="divide-y divide-slate-100">
+                    {results.map((customer) => (
+                      <button
+                        type="button"
+                        key={customer.id}
+                        onClick={() => {
+                          setSelected(customer);
+                          setError('');
+                        }}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50"
+                      >
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                          <UserRound size={18} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold text-slate-950">{customer.name}</span>
+                          <span className="mt-0.5 block text-xs text-slate-500">
+                            {customer.mobileNumber} · {[customer.identity, customer.state].filter(Boolean).join(' · ') || 'Customer'}
+                          </span>
+                        </span>
+                        {customer.active ? (
+                          <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                            Active until {formatDateTime(customer.expiresAt)}
+                          </span>
+                        ) : (
+                          <span className="shrink-0 text-xs font-medium text-slate-400">Select</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-4 py-8 text-center text-sm text-slate-500">No matching customers found.</div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-4">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-emerald-700 shadow-sm">
+                  <UserRound size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-950">{selected.name}</p>
+                  <p className="mt-0.5 text-xs text-slate-600">{selected.mobileNumber} · {[selected.identity, selected.state].filter(Boolean).join(' · ')}</p>
+                  {selected.active ? (
+                    <p className="mt-1.5 text-xs font-medium text-emerald-700">Already active until {formatDateTime(selected.expiresAt)}. This grant adds 30 days after that date.</p>
+                  ) : (
+                    <p className="mt-1.5 text-xs font-medium text-emerald-700">Access starts immediately for 30 days.</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelected(null);
+                    setResults([]);
+                  }}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-800"
+                >
+                  Change
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <label>
+                  <span className="mb-1.5 block text-xs font-semibold text-slate-700">Payment method</span>
+                  <select
+                    value={paymentMethod}
+                    onChange={(event) => setPaymentMethod(event.target.value as GrantTrackingPlanPayload['paymentMethod'])}
+                    className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  >
+                    {MANUAL_PAYMENT_METHODS.map((method) => (
+                      <option key={method.value} value={method.value}>{method.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span className="mb-1.5 block text-xs font-semibold text-slate-700">Amount received</span>
+                  <span className="relative block">
+                    <IndianRupee size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="number"
+                      min="1"
+                      max="100000"
+                      step="0.01"
+                      value={amountPaid}
+                      onChange={(event) => setAmountPaid(event.target.value)}
+                      className="h-11 w-full rounded-md border border-slate-200 bg-white pl-9 pr-3 text-sm tabular-nums text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                    />
+                  </span>
+                </label>
+              </div>
+
+              <label className="mt-4 block">
+                <span className="mb-1.5 block text-xs font-semibold text-slate-700">Payment reference <span className="font-normal text-slate-400">(optional)</span></span>
+                <input
+                  value={paymentReference}
+                  onChange={(event) => setPaymentReference(event.target.value)}
+                  placeholder={paymentMethod === 'CASH' ? 'Receipt number or collector name' : 'Transaction or bank reference'}
+                  maxLength={128}
+                  className="h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                />
+              </label>
+
+              <label className="mt-4 block">
+                <span className="mb-1.5 block text-xs font-semibold text-slate-700">Admin note <span className="font-normal text-slate-400">(optional)</span></span>
+                <textarea
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                  placeholder="Anything the team should know about this payment"
+                  maxLength={500}
+                  rows={3}
+                  className="w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                />
+              </label>
+
+              <div className="mt-5 flex items-start gap-3 rounded-lg bg-slate-50 p-3.5">
+                <Banknote size={18} className="mt-0.5 shrink-0 text-slate-500" />
+                <p className="text-xs leading-5 text-slate-600">
+                  This creates a paid audit record and unlocks FastTag tracking immediately. Pending PhonePe checkouts remain hidden and unchanged.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {error ? <p className="mt-4 rounded-md bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p> : null}
+        </div>
+
+        <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-4">
+          <button
+            type="button"
+            onClick={resetAndClose}
+            disabled={submitting}
+            className="h-10 rounded-md px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={!selected || submitting}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <ShieldCheck size={16} />
+            {submitting ? 'Activating…' : 'Activate 30 days'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
