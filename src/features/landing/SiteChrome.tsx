@@ -1,58 +1,96 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowUpRight, Menu, X } from "lucide-react";
+import { useState } from "react";
+import styles from "@/features/landing/LandingPage.module.css";
+import { COMPANY_INFO } from "@/features/landing/landingData";
 
 type SiteChromeProps = {
   active?: "home" | "products";
-  tone?: "light" | "dark";
 };
 
-const SiteChrome = ({ active, tone = "light" }: SiteChromeProps) => {
-  const dark = tone === "dark";
-  const muted = dark ? "text-white/55 hover:text-white" : "text-[#6b6b76] hover:text-[#1a1a1f]";
-  const activeCls = dark ? "text-white" : "text-[#1a1a1f]";
+const navItems = [
+  { label: "Products", href: "/products", id: "products" },
+];
+
+const SiteChrome = ({ active }: SiteChromeProps) => {
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <header className="relative z-20 flex items-center justify-between gap-4">
-      <Link
-        href="/"
-        className={`text-[1.35rem] font-semibold tracking-tight ${
-          dark ? "text-white" : "text-[#1a1a1f]"
-        }`}
-        aria-label="Mandiplus home"
-      >
-        Mandi<span className="text-[#7c6ee6]">Plus</span>
+    <header className={styles.siteHeader}>
+      <Link href="/" className={styles.logo} aria-label="MandiPlus home">
+        Mandi<span className={styles.logoPlus}>Plus</span>
       </Link>
 
-      <nav className="hidden items-center gap-7 text-[0.95rem] font-medium md:flex">
-        <Link
-          href="/products"
-          className={`transition ${active === "products" ? activeCls : muted}`}
-        >
-          Products
-        </Link>
-        <a href="/#app" className={`transition ${muted}`}>
-          App
-        </a>
-        <Link
-          href="/login"
-          className="rounded-full bg-[#7c6ee6] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#584ab8]"
-        >
-          Login
-        </Link>
+      <nav className={styles.desktopNav} aria-label="Primary navigation">
+        {navItems.map((item) => (
+          <Link
+            key={item.label}
+            href={item.href}
+            className={`${styles.navLink} ${
+              item.id === active ? styles.navActive : ""
+            }`}
+          >
+            {item.label}
+          </Link>
+        ))}
       </nav>
 
-      <div className="flex items-center gap-3 md:hidden">
-        <Link href="/products" className={`text-sm font-medium ${muted}`}>
-          Products
-        </Link>
-        <Link
-          href="/login"
-          className="rounded-full bg-[#7c6ee6] px-3.5 py-1.5 text-sm font-semibold text-white"
-        >
+      <div className={styles.headerActions}>
+        <Link href="/login" className={styles.loginLink}>
           Login
         </Link>
+        <a href={COMPANY_INFO.phoneHref} className={styles.headerCta}>
+          Contact us
+        </a>
       </div>
+
+      <button
+        type="button"
+        className={styles.menuButton}
+        aria-label={menuOpen ? "Close menu" : "Open menu"}
+        aria-expanded={menuOpen}
+        aria-controls="mobile-navigation"
+        onClick={() => setMenuOpen((open) => !open)}
+      >
+        {menuOpen ? <X size={20} /> : <Menu size={20} />}
+      </button>
+
+      {menuOpen ? (
+        <nav
+          id="mobile-navigation"
+          className={styles.mobileMenu}
+          aria-label="Mobile navigation"
+        >
+          {navItems.map((item) => (
+            <Link
+              key={item.label}
+              href={item.href}
+              className={styles.mobileNavLink}
+              onClick={() => setMenuOpen(false)}
+            >
+              {item.label}
+              <ArrowUpRight size={15} aria-hidden="true" />
+            </Link>
+          ))}
+          <Link
+            href="/login"
+            className={styles.mobileNavLink}
+            onClick={() => setMenuOpen(false)}
+          >
+            Login
+            <ArrowUpRight size={15} aria-hidden="true" />
+          </Link>
+          <a
+            href={COMPANY_INFO.phoneHref}
+            className={styles.mobileNavLink}
+            onClick={() => setMenuOpen(false)}
+          >
+            Contact us
+          </a>
+        </nav>
+      ) : null}
     </header>
   );
 };

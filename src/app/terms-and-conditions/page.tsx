@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { COMPANY_INFO } from "@/features/landing/landingData";
 
 const coveredItems = [
   "Truck Accident",
@@ -29,7 +30,14 @@ const TermsAndConditionsPage = () => {
         <h1 className="text-2xl font-bold text-slate-800 mb-1">
           <span className="text-[#4309ac]">Terms &amp; Conditions</span>
         </h1>
-        <p className="text-slate-500 text-sm mb-6">Last updated: January 2025</p>
+        <p className="mb-3 text-sm text-slate-500">Last updated: January 2025</p>
+        <p className="mb-6 text-sm leading-relaxed text-slate-600">
+          MandiPlus is owned and operated by{" "}
+          <strong className="font-semibold text-slate-800">
+            {COMPANY_INFO.parent}
+          </strong>
+          .
+        </p>
 
         {/* What is COVERED? */}
         <div className="bg-white rounded-3xl shadow-sm p-5 border border-[#e0d7fc]/50 mb-4">
@@ -67,7 +75,7 @@ const TermsAndConditionsPage = () => {
             </li>
             <li className="flex items-start gap-2.5">
               <span className="shrink-0 w-1.5 h-1.5 mt-2 rounded-full bg-[#4309ac]" aria-hidden="true" />
-              MandiPlus reserves the right to verify all claims before settlement.
+              ENP FARMS PRIVATE LIMITED, operating MandiPlus, reserves the right to verify all claims before settlement.
             </li>
             <li className="flex items-start gap-2.5">
               <span className="shrink-0 w-1.5 h-1.5 mt-2 rounded-full bg-[#4309ac]" aria-hidden="true" />
@@ -77,7 +85,7 @@ const TermsAndConditionsPage = () => {
 
           <h3 className="text-sm font-semibold text-slate-800 mt-5 mb-2">Instructions to Register Your Claim</h3>
           <p className="text-slate-600 text-sm mb-4">
-            In the event of loss or damage which may involve a claim under this insurance, immediate notice of such loss or damage should be given to the MandiPlus company&apos;s representative or contact us at +91 99001 86757.
+            In the event of loss or damage which may involve a claim under this insurance, immediate notice should be given to the MandiPlus support team at +91 {COMPANY_INFO.phone}.
           </p>
 
           <h3 className="text-sm font-semibold text-slate-800 mt-5 mb-2">Documentation of Claims</h3>
@@ -93,6 +101,19 @@ const TermsAndConditionsPage = () => {
             <li>Correspondence exchanged with the Carriers and other Parties regarding their liability for the loss or damage.</li>
           </ol>
         </div>
+
+        <footer className="mt-4 rounded-3xl border border-[#e0d7fc]/50 bg-white p-5 shadow-sm">
+          <p className="text-sm leading-relaxed text-slate-600">
+            MandiPlus is owned and operated by{" "}
+            <strong className="font-semibold text-slate-800">
+              {COMPANY_INFO.parent}
+            </strong>
+            .
+          </p>
+          <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
+            © 2026 ENP FARMS PRIVATE LIMITED. All rights reserved.
+          </p>
+        </footer>
       </div>
     </div>
   );

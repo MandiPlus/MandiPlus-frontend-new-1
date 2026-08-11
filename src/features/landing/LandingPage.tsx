@@ -3,110 +3,143 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  ArrowRight,
   Camera,
-  Download,
+  Facebook,
   FileText,
+  Instagram,
+  Linkedin,
   MapPin,
   Phone,
   ShieldCheck,
   Truck,
+  Youtube,
 } from "lucide-react";
 import { useAuth } from "@/features/auth/context/AuthContext";
 import SiteChrome from "@/features/landing/SiteChrome";
+import styles from "@/features/landing/LandingPage.module.css";
+import {
+  CALL_URL,
+  COMPANY_INFO,
+  PLAY_STORE_URL,
+  SOCIAL_LINKS,
+} from "@/features/landing/landingData";
 
-const PLAY_STORE_URL =
-  "https://play.google.com/store/apps/details?id=com.mandiplus.customer";
-const CALL_URL = "tel:+919900186757";
-
-const APP_SCREENS = [
-  { src: "/images/landing/app-screens/1.webp", alt: "MandiPlus app screen 1" },
-  { src: "/images/landing/app-screens/2.webp", alt: "MandiPlus app screen 2" },
-  { src: "/images/landing/app-screens/3.webp", alt: "MandiPlus app screen 3" },
-  { src: "/images/landing/app-screens/4.webp", alt: "MandiPlus app screen 4" },
+const profitTranslations = [
+  { lang: "hi", text: "मुनाफ़ा आपका।" },
+  { lang: "kn", text: "ಲಾಭ ನಿಮ್ಮದು." },
+  { lang: "mr", text: "नफा तुमचा." },
+  { lang: "pa", text: "ਮੁਨਾਫ਼ਾ ਤੁਹਾਡਾ।" },
+  { lang: "gu", text: "નફો તમારો." },
+  { lang: "ta", text: "லாபம் உங்களுக்கே." },
+  { lang: "te", text: "లాభం మీదే." },
+  { lang: "bn", text: "লাভ আপনার।" },
 ];
 
-const features = [
+const featureShowcase = [
   {
     id: "insurance",
-    title: "Insurance",
-    text: "Maal route par covered.",
-    image: "/images/landing/feature-insurance-wide.png",
-    alt: "Insurance — Maal route par covered.",
+    name: "Insurance",
+    subtitle: "Maal route par covered.",
+    wideImage: "/images/landing/feature-insurance-wide.png",
+    mobileImage: "/images/landing/feature-insurance.png",
+    alt: "A produce truck and policy showing insurance cover for a mandi load",
   },
   {
     id: "tracking",
-    title: "Tracking",
-    text: "Truck kahan hai — live.",
-    image: "/images/landing/feature-tracking-wide.png",
-    alt: "Tracking — Truck kahan hai — live.",
+    name: "Tracking",
+    subtitle: "Truck kahan hai — live.",
+    wideImage: "/images/landing/feature-tracking-wide.png",
+    mobileImage: "/images/landing/feature-tracking-mobile-safe.png",
+    alt: "A live truck route shown in the MandiPlus app",
   },
   {
     id: "claims",
-    title: "Claims",
-    text: "Photo bhejo. Team sambhalegi.",
-    image: "/images/landing/feature-claims-wide.png",
-    alt: "Claims — Photo bhejo. Team sambhalegi.",
+    name: "Claims",
+    subtitle: "Photo bhejo. Team sambhalegi.",
+    wideImage: "/images/landing/feature-claims-wide.png",
+    mobileImage: "/images/landing/feature-claims.png",
+    alt: "A mandi trader photographing damaged produce for claim support",
   },
-];
+] as const;
 
-const brochures = [
-  {
-    label: "English",
-    href: "/brochures/Mandi-Plus-brochure-English-compressed.pdf",
-  },
-  {
-    label: "Hindi",
-    href: "/brochures/Mandi-Plus-brochure-Hindi-compressed.pdf",
-  },
-  {
-    label: "Kannada",
-    href: "/brochures/mandi-plus-brochure-kannada.pdf",
-  },
-];
-
-const PlayStoreIcon = ({ className }: { className?: string }) => (
+const PlayStoreIcon = ({ size = 16 }: { size?: number }) => (
   <svg
     viewBox="0 0 512 512"
     aria-hidden="true"
-    className={className}
+    width={size}
+    height={size}
     fill="currentColor"
   >
     <path d="M325.3 234.3 104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l265.6-265.6L47 0zm425.2 225.6-58.9-34.1-65.7 65.7 65.7 65.7 60.1-34.1c17.9-10.4 17.9-36.8-1.2-47.2zM104.6 499l280.8-161.2-60.1-60.1L104.6 499z" />
   </svg>
 );
 
-const OliveLeaves = ({ flip = false }: { flip?: boolean }) => (
-  <img
-    src="/images/landing/olive-leaves.svg"
-    alt=""
-    width={28}
-    height={68}
-    aria-hidden="true"
-    className={`h-[56px] w-[23px] shrink-0 object-contain sm:h-[64px] sm:w-[26px] ${
-      flip ? "-scale-x-100" : ""
-    }`}
-  />
-);
+const FooterSocialIcon = ({ id }: { id: string }) => {
+  const props = { size: 16, strokeWidth: 1.8, "aria-hidden": true } as const;
 
-const HeroBadge = ({ className = "" }: { className?: string }) => (
-  <div className={`inline-flex items-center gap-3 sm:gap-3.5 ${className}`}>
-    <OliveLeaves />
-    <p className="text-center text-[15px] font-semibold leading-[1.25] tracking-tight text-[#1a1a1f] sm:text-base">
-      <span className="block">India&apos;s #1 agri tech</span>
-      <span className="block">insurance app</span>
+  switch (id) {
+    case "instagram":
+      return <Instagram {...props} />;
+    case "linkedin":
+      return <Linkedin {...props} />;
+    case "youtube":
+      return <Youtube {...props} />;
+    case "facebook":
+      return <Facebook {...props} />;
+    default:
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          width="15"
+          height="15"
+          aria-hidden="true"
+          fill="none"
+        >
+          <path
+            d="M5 4 19 20M19 4 5 20"
+            stroke="currentColor"
+            strokeWidth="1.8"
+          />
+        </svg>
+      );
+  }
+};
+
+const HeroBadge = () => (
+  <div className={styles.heroBadge}>
+    <Image
+      src="/images/landing/olive-leaves.svg"
+      alt=""
+      width={28}
+      height={68}
+      aria-hidden="true"
+      className={styles.heroBadgeLeaves}
+    />
+    <p>
+      India&apos;s #1 agri tech
+      <span>insurance app</span>
     </p>
-    <OliveLeaves flip />
+    <Image
+      src="/images/landing/olive-leaves.svg"
+      alt=""
+      width={28}
+      height={68}
+      aria-hidden="true"
+      className={`${styles.heroBadgeLeaves} ${styles.heroBadgeLeavesFlipped}`}
+    />
   </div>
 );
 
 const LandingPage = () => {
   const router = useRouter();
   const { user, loading } = useAuth();
-  const [screenIndex, setScreenIndex] = useState(0);
-  const [featureIndex, setFeatureIndex] = useState(0);
+  const [activeFeature, setActiveFeature] = useState(0);
+  const [featureCycleKey, setFeatureCycleKey] = useState(0);
+  const [translationIndex, setTranslationIndex] = useState(0);
+  const [showMobileBar, setShowMobileBar] = useState(false);
+  const heroCtaRef = useRef<HTMLAnchorElement>(null);
 
   useEffect(() => {
     if (!loading && user) {
@@ -115,173 +148,222 @@ const LandingPage = () => {
   }, [user, loading, router]);
 
   useEffect(() => {
-    const id = window.setInterval(() => {
-      setScreenIndex((prev) => (prev + 1) % APP_SCREENS.length);
-    }, 3000);
-    return () => window.clearInterval(id);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setTranslationIndex(
+        (current) => (current + 1) % profitTranslations.length,
+      );
+    }, 1800);
+
+    return () => window.clearInterval(interval);
   }, []);
 
   useEffect(() => {
-    const id = window.setInterval(() => {
-      setFeatureIndex((prev) => (prev + 1) % features.length);
-    }, 2000);
-    return () => window.clearInterval(id);
-  }, []);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setActiveFeature((current) => (current + 1) % featureShowcase.length);
+    }, 1800);
+
+    return () => window.clearInterval(interval);
+  }, [featureCycleKey]);
+
+  useEffect(() => {
+    if (loading || user || !heroCtaRef.current) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setShowMobileBar(
+          !entry.isIntersecting && entry.boundingClientRect.top < 0,
+        );
+      },
+      { threshold: 0.2 },
+    );
+
+    observer.observe(heroCtaRef.current);
+    return () => observer.disconnect();
+  }, [loading, user]);
 
   if (loading || user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f6f6f8]">
-        <div className="h-10 w-10 animate-spin rounded-full border-[3px] border-[#7c6ee6] border-t-transparent" />
+      <div className="flex min-h-screen items-center justify-center bg-[#f8f6f1]">
+        <div className="h-9 w-9 animate-spin rounded-full border-[3px] border-[#5a36cf] border-t-transparent" />
       </div>
     );
   }
 
+  const selectFeature = (index: number) => {
+    setActiveFeature(index);
+    setFeatureCycleKey((current) => current + 1);
+  };
+
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#f6f6f8] text-[#1a1a1f]">
-      {/* Mobile hero — copy on white, photo below */}
-      <section className="flex min-h-[100svh] flex-col bg-[#f6f6f8] md:hidden">
-        <div className="shrink-0 bg-[#f6f6f8] px-4 pb-5 pt-5">
+    <main className={styles.site}>
+      <section className={styles.hero}>
+        <div className={styles.container}>
           <SiteChrome active="home" />
 
-          <div className="mt-6">
-            <HeroBadge className="mb-7" />
-            <h1 className="text-[3.15rem] font-semibold leading-[0.94] tracking-tight text-[#1a1a1f]">
-              <span className="block">Risk humara.</span>
-              <span className="block text-[#7c6ee6]">Munafa aapka.</span>
-            </h1>
-            <p className="mt-4 max-w-[17rem] text-base font-medium leading-7 text-[#4a4a55]">
-              <span className="block">Insurance, tracking aur claims</span>
-              <span className="block">ek app mein.</span>
-            </p>
-          </div>
-        </div>
-
-        <div className="relative min-h-0 flex-1 overflow-hidden">
-          <Image
-            src="/images/landing/hero-mandi-bleed.png"
-            alt="Mandi morning — crates, truck, and market sheds"
-            fill
-            priority
-            sizes="100vw"
-            className="object-cover object-[center_58%]"
-          />
-          <div className="absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-[#f6f6f8] to-transparent" />
-        </div>
-      </section>
-
-      {/* Desktop hero — full bleed */}
-      <section className="relative isolate hidden min-h-[100svh] flex-col overflow-hidden md:flex">
-        <Image
-          src="/images/landing/hero-mandi-bleed.png"
-          alt="Mandi morning — crates, truck, and market sheds"
-          fill
-          priority
-          sizes="100vw"
-          className="absolute inset-0 -z-30 object-cover object-[72%_center]"
-        />
-        <div className="absolute inset-0 -z-20 bg-[linear-gradient(105deg,rgba(246,246,248,0.97)_0%,rgba(246,246,248,0.88)_34%,rgba(246,246,248,0.35)_58%,rgba(246,246,248,0.08)_100%)]" />
-        <div className="absolute inset-x-0 bottom-0 -z-10 h-36 bg-gradient-to-b from-transparent to-[#f6f6f8]" />
-
-        <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-6 py-5 lg:px-8">
-          <SiteChrome active="home" />
-
-          <div className="flex flex-1 flex-col justify-center pb-24 pt-10">
-            <div className="max-w-[38rem]">
-              <HeroBadge className="mb-5" />
-              <h1 className="text-7xl font-semibold leading-[0.94] tracking-tight text-[#1a1a1f] lg:text-[5.2rem]">
-                <span className="block">Risk humara.</span>
-                <span className="block text-[#7c6ee6]">Munafa aapka.</span>
+          <div className={styles.heroGrid}>
+            <div className={styles.heroCopyColumn}>
+              <HeroBadge />
+              <h1 className={styles.heroTitle}>
+                <span>Risk humara.</span>
+                <span className="sr-only"> Munafa aapka.</span>
+                <span className={styles.rotatingLine} aria-hidden="true">
+                  <span
+                    key={profitTranslations[translationIndex].lang}
+                    lang={profitTranslations[translationIndex].lang}
+                    className={styles.rotatingText}
+                  >
+                    {profitTranslations[translationIndex].text}
+                  </span>
+                </span>
               </h1>
-              <p className="mt-6 max-w-md text-xl font-medium leading-8 text-[#6b6b76]">
-                <span className="block">Insurance, tracking aur claims</span>
-                <span className="block">ek app mein.</span>
-              </p>
 
-              <div className="mt-8 flex flex-row items-center gap-3">
+              <div
+                className={styles.claimProof}
+                aria-label="₹1 crore plus worth of claims covered"
+              >
+                <ShieldCheck size={19} strokeWidth={2} aria-hidden="true" />
+                <strong>₹1 Cr+</strong>
+                <span className={styles.claimProofLabel}>
+                  worth of claims covered
+                </span>
+              </div>
+
+              <div className={styles.heroActions}>
                 <a
+                  ref={heroCtaRef}
                   href={PLAY_STORE_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[#1a1a1f] px-6 py-3.5 text-sm font-semibold text-white transition hover:bg-[#7c6ee6]"
+                  className={styles.primaryCta}
                 >
-                  <Download className="h-4 w-4" />
-                  Download App
+                  <PlayStoreIcon />
+                  Get the app
                 </a>
-                <Link
-                  href="/products"
-                  className="inline-flex items-center justify-center gap-2 rounded-full border border-[#1a1a1f]/12 bg-white/70 px-6 py-3.5 text-sm font-semibold text-[#1a1a1f] backdrop-blur transition hover:bg-white"
-                >
-                  Products
-                  <ArrowRight className="h-4 w-4" />
+                <Link href="/login" className={styles.heroLogin}>
+                  Login
                 </Link>
               </div>
+            </div>
+
+            <div className={styles.heroVisual}>
+              <Image
+                src="/images/landing/hero-claim-received-bgmatch.webp"
+                alt="A MandiPlus trader showing a successful claim status to two fellow mandi users"
+                fill
+                priority
+                sizes="(max-width: 800px) 92vw, (max-width: 1200px) 52vw, 650px"
+                className={`${styles.heroIllustration} ${styles.heroIllustrationDesktop}`}
+              />
+              <Image
+                src="/images/landing/hero-claim-received-mobile-bgmatch.webp"
+                alt="A MandiPlus trader showing a successful claim status to two fellow mandi users"
+                fill
+                priority
+                sizes="100vw"
+                className={`${styles.heroIllustration} ${styles.heroIllustrationMobile}`}
+              />
             </div>
           </div>
         </div>
       </section>
 
-      {/* Features — editorial tabbed showcase (not 3 cards) */}
-      <section id="features" className="px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-14">
-        <div className="mx-auto max-w-6xl">
-          <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-3 sm:gap-x-3">
-            {features.map((feature, index) => (
-              <span key={feature.id} className="inline-flex items-center gap-x-2 sm:gap-x-3">
-                <button
-                  type="button"
-                  onClick={() => setFeatureIndex(index)}
-                  className={`text-2xl font-semibold tracking-tight transition sm:text-3xl lg:text-4xl ${
-                    index === featureIndex
-                      ? "text-[#1a1a1f]"
-                      : "text-[#c4c4cc] hover:text-[#8a8a96]"
-                  }`}
-                  aria-pressed={index === featureIndex}
-                >
-                  {feature.title}
-                </button>
-                {index < features.length - 1 ? (
-                  <span className="text-2xl font-semibold text-[#c4c4cc] sm:text-3xl lg:text-4xl" aria-hidden>
-                    .
+      <section id="products" className={styles.showcaseSection}>
+        <div className={`${styles.container} ${styles.showcaseContainer}`}>
+          <div
+            className={styles.showcaseTabs}
+            role="tablist"
+            aria-label="MandiPlus services"
+          >
+            {featureShowcase.map((feature, index) => (
+              <span key={feature.id} className={styles.showcaseTabItem}>
+                {index > 0 ? (
+                  <span className={styles.showcaseSeparator} aria-hidden="true">
+                    ·
                   </span>
                 ) : null}
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeFeature === index}
+                  aria-controls="feature-showcase-panel"
+                  className={`${styles.showcaseTab} ${
+                    activeFeature === index ? styles.showcaseTabActive : ""
+                  }`}
+                  onClick={() => selectFeature(index)}
+                >
+                  {feature.name}
+                </button>
               </span>
             ))}
           </div>
 
-          <div className="relative mt-5 flex justify-center overflow-hidden rounded-[1.5rem] bg-[#efeff3] sm:mt-8 sm:block sm:rounded-[1.75rem]">
-            {/* Mobile: keep full 3:2 artwork. Desktop: earlier full-bleed height. */}
-            <div className="relative aspect-[3/2] w-full max-h-[min(52svh,360px)] max-w-[min(100%,calc(min(52svh,360px)*3/2))] sm:aspect-auto sm:h-[min(64svh,580px)] sm:max-h-none sm:max-w-none lg:h-[min(68svh,620px)]">
-              {features.map((feature, index) => (
+          <div
+            id="feature-showcase-panel"
+            role="tabpanel"
+            className={styles.showcaseFrame}
+            aria-live="polite"
+          >
+            {featureShowcase.map((feature, index) => {
+              const relativePosition =
+                (index - activeFeature + featureShowcase.length) %
+                featureShowcase.length;
+              const positionClass =
+                relativePosition === 0
+                  ? styles.showcaseSlideActive
+                  : relativePosition === 1
+                    ? styles.showcaseSlideNext
+                    : styles.showcaseSlidePrevious;
+
+              return (
                 <div
                   key={feature.id}
-                  id={feature.id}
-                  className={`absolute inset-0 transition-opacity duration-500 ${
-                    index === featureIndex ? "opacity-100" : "opacity-0"
-                  }`}
+                  className={`${styles.showcaseSlide} ${positionClass}`}
+                  aria-hidden={activeFeature !== index}
                 >
+                  <div className={styles.showcaseMobileCopy}>
+                    <h2>{feature.name}</h2>
+                    <p>{feature.subtitle}</p>
+                  </div>
+
                   <Image
-                    src={feature.image}
-                    alt={feature.alt}
+                    src={feature.wideImage}
+                    alt={activeFeature === index ? feature.alt : ""}
                     fill
-                    sizes="(max-width: 1024px) 100vw, 1152px"
-                    className="object-contain object-center sm:object-cover"
-                    priority={index === 0}
+                    sizes="(max-width: 760px) 0px, min(100vw - 48px, 1240px)"
+                    className={`${styles.showcaseImage} ${styles.showcaseImageWide}`}
+                  />
+                  <Image
+                    src={feature.mobileImage}
+                    alt={activeFeature === index ? feature.alt : ""}
+                    fill
+                    sizes="(max-width: 760px) calc(100vw - 40px), 0px"
+                    className={`${styles.showcaseImage} ${styles.showcaseImageMobile}`}
                   />
                 </div>
-              ))}
-            </div>
+              );
+            })}
 
-            <div className="absolute bottom-4 right-4 flex gap-1.5 sm:bottom-5 sm:right-5">
-              {features.map((feature, index) => (
+            <div className={styles.showcaseDots} aria-label="Choose a service">
+              {featureShowcase.map((feature, index) => (
                 <button
-                  key={`${feature.id}-dot`}
+                  key={feature.id}
                   type="button"
-                  aria-label={`Show ${feature.title}`}
-                  onClick={() => setFeatureIndex(index)}
-                  className={`h-1.5 rounded-full transition-all ${
-                    index === featureIndex
-                      ? "w-6 bg-[#1a1a1f]/70"
-                      : "w-1.5 bg-[#1a1a1f]/25 hover:bg-[#1a1a1f]/45"
+                  className={`${styles.showcaseDot} ${
+                    activeFeature === index ? styles.showcaseDotActive : ""
                   }`}
+                  onClick={() => selectFeature(index)}
+                  aria-label={`Show ${feature.name}`}
+                  aria-current={activeFeature === index ? "true" : undefined}
                 />
               ))}
             </div>
@@ -289,186 +371,196 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* App showcase — ACKO-inspired, MandiPlus content */}
-      <section id="app" className="px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
-        <div className="mx-auto max-w-6xl text-center">
-          <h2 className="text-2xl font-semibold tracking-tight text-[#1a1a1f] sm:text-3xl">
-            Explore all helpful services on our app
-          </h2>
-          <p className="mt-2 text-base font-medium text-[#6b6b76]">
-            Load details, insurance, tracking, claims
-          </p>
-          <a
-            href={PLAY_STORE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-[#1a1a1f] px-5 py-3.5 text-sm font-semibold text-white transition hover:bg-[#7c6ee6]"
-          >
-            <PlayStoreIcon className="h-4 w-4" />
-            Download the app
-          </a>
-        </div>
+      <section className={styles.servicesSection}>
+        <div className={`${styles.container} ${styles.servicesContainer}`}>
+          <header className={styles.servicesHeader}>
+            <h2 className={styles.servicesTitle}>
+              Explore all helpful services on our app
+            </h2>
+            <p className={styles.servicesSubtitle}>
+              Load details, insurance, tracking, claims
+            </p>
+            <a
+              href={PLAY_STORE_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.servicesCta}
+            >
+              <PlayStoreIcon size={16} />
+              Download the app
+            </a>
+          </header>
 
-        <div className="relative mx-auto mt-8 max-w-6xl sm:mt-12 lg:mt-16">
-          <div className="grid items-stretch gap-4 lg:grid-cols-[1fr_240px_1fr] lg:gap-6">
-            {/* Left panel — below phone on mobile */}
-            <div className="relative order-2 overflow-hidden rounded-[1.5rem] bg-white p-5 sm:p-6 lg:order-1">
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-[radial-gradient(ellipse_at_bottom,rgba(124,110,230,0.12),transparent_70%)]" />
-              <h3 className="relative text-lg font-semibold text-[#1a1a1f]">
-                Insurance for every load
-              </h3>
-              <div className="relative mt-4 grid grid-cols-2 gap-3">
-                <AppTile icon={FileText} label="Load details" />
-                <AppTile icon={ShieldCheck} label="Route cover" />
-                <AppTile icon={FileText} label="Policy papers" active />
-                <div className="relative min-h-[7.5rem] overflow-hidden rounded-2xl bg-[#f0f0f4]">
-                  <Image
-                    src="/images/landing/feature-insurance.png"
-                    alt="Transit insurance"
-                    fill
-                    sizes="180px"
-                    className="object-cover"
-                  />
-                </div>
-              </div>
+          <div className={styles.servicesStage}>
+            <ServicePanel
+              title="Insurance for every load"
+              items={[
+                { label: "Load details", icon: <FileText size={21} /> },
+                { label: "Route cover", icon: <ShieldCheck size={21} /> },
+                { label: "Policy papers", icon: <FileText size={21} /> },
+                {
+                  label: "",
+                  image: "/images/landing/feature-insurance.png",
+                  imageAlt: "A covered mandi produce load",
+                },
+              ]}
+            />
+
+            <div className={styles.servicesPhone} aria-label="MandiPlus app preview">
+              <Image
+                src="/images/landing/app-screens/4.webp"
+                alt="Insurance list inside the MandiPlus app"
+                fill
+                sizes="300px"
+                className={styles.servicesPhoneImage}
+              />
             </div>
 
-            {/* Phone carousel — directly under Download on mobile */}
-            <div className="relative z-10 order-1 mx-auto w-[240px] shrink-0 justify-self-center lg:order-2 lg:self-center">
-              <div className="relative h-[470px] w-[240px] overflow-hidden rounded-[2rem] border-[6px] border-[#1a1a1f] bg-[#eeeafc] shadow-[0_28px_60px_-28px_rgba(26,26,31,0.55)] lg:-my-10">
-                {APP_SCREENS.map((screen, index) => (
-                  <Image
-                    key={screen.src}
-                    src={screen.src}
-                    alt={screen.alt}
-                    fill
-                    sizes="240px"
-                    priority={index === 0}
-                    unoptimized
-                    className={`object-cover object-top transition-opacity duration-500 ${
-                      index === screenIndex ? "z-10 opacity-100" : "z-0 opacity-0"
-                    }`}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Right panel */}
-            <div className="relative order-3 overflow-hidden rounded-[1.5rem] bg-white p-5 sm:p-6">
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-[radial-gradient(ellipse_at_bottom,rgba(133,182,61,0.10),transparent_70%)]" />
-              <h3 className="relative text-lg font-semibold text-[#1a1a1f]">
-                Tracking & claims
-              </h3>
-              <div className="relative mt-4 grid grid-cols-2 gap-3">
-                <AppTile icon={MapPin} label="Live truck map" />
-                <AppTile icon={Truck} label="Trip updates" />
-                <div className="relative min-h-[7.5rem] overflow-hidden rounded-2xl bg-[#f0f0f4]">
-                  <Image
-                    src="/images/landing/feature-claims.png"
-                    alt="Claims"
-                    fill
-                    sizes="180px"
-                    className="object-cover"
-                  />
-                </div>
-                <AppTile icon={Camera} label="Photo claim" />
-              </div>
-            </div>
+            <ServicePanel
+              title="Tracking & claims"
+              items={[
+                { label: "Live truck map", icon: <MapPin size={21} /> },
+                { label: "Trip updates", icon: <Truck size={21} /> },
+                {
+                  label: "",
+                  image: "/images/landing/feature-claims.png",
+                  imageAlt: "Photo-led produce claim support",
+                },
+                { label: "Photo claim", icon: <Camera size={21} /> },
+              ]}
+            />
           </div>
         </div>
       </section>
 
-      {/* Brochures */}
-      <section id="brochure" className="px-4 pb-10 sm:px-6 lg:px-8">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 rounded-[1.5rem] border border-[#ececf2] bg-white px-6 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-8">
-          <h2 className="text-base font-semibold text-[#1a1a1f]">Brochures</h2>
-          <div className="flex flex-wrap gap-2">
-            {brochures.map((brochure) => (
-              <a
-                key={brochure.href}
-                href={brochure.href}
-                className="inline-flex items-center gap-2 rounded-full border border-[#e8e8ee] px-4 py-2 text-sm font-medium text-[#1a1a1f] transition hover:border-[#cfc8f0]"
-              >
-                <Download className="h-3.5 w-3.5" />
-                {brochure.label}
-              </a>
-            ))}
-          </div>
-        </div>
-      </section>
+      <SiteFooter />
 
-      <footer className="mt-4 bg-[#17171c] pb-24 text-white md:pb-0">
-        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10 sm:flex-row sm:items-start sm:justify-between sm:px-6 lg:px-8">
-          <div>
-            <p className="text-sm font-semibold tracking-tight">
-              Mandi<span className="text-[#b5a9ff]">Plus</span>
-            </p>
-            <p className="mt-2 max-w-xs text-xs font-medium text-white/40">
-              B2B insurance, tracking & claims for mandi trade.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium text-white/55">
-            <Link href="/products" className="hover:text-white">
-              Products
-            </Link>
-            <Link href="/pricing" className="hover:text-white">
-              Pricing
-            </Link>
-            <Link href="/support" className="hover:text-white">
-              Support
-            </Link>
-            <Link href="/privacy-policy" className="hover:text-white">
-              Privacy
-            </Link>
-            <Link href="/terms-and-conditions" className="hover:text-white">
-              Terms
-            </Link>
-          </div>
-        </div>
-      </footer>
-
-      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-white/40 bg-white/55 px-3 py-3 backdrop-blur-xl md:hidden supports-[backdrop-filter]:bg-white/45">
-        <div className="mx-auto grid w-full max-w-[22rem] grid-cols-2 gap-2">
-          <a
-            href={PLAY_STORE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-full bg-[#1a1a1f] px-2 py-3 text-sm font-semibold text-white"
-          >
-            <PlayStoreIcon className="h-4 w-4 shrink-0" />
-            <span className="truncate">Download</span>
+      {showMobileBar ? (
+        <div className={styles.mobileBar}>
+          <a href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer">
+            <PlayStoreIcon size={14} /> Get the app
           </a>
-          <a
-            href={CALL_URL}
-            className="inline-flex min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#e8e8ee]/80 bg-white/70 px-2 py-3 text-sm font-semibold text-[#1a1a1f] backdrop-blur-md"
-          >
-            <Phone className="h-4 w-4 shrink-0" />
-            <span className="truncate">Call</span>
+          <a href={CALL_URL}>
+            <Phone size={14} aria-hidden="true" /> Contact us
           </a>
         </div>
-      </div>
+      ) : null}
     </main>
   );
 };
 
-function AppTile({
-  icon: Icon,
-  label,
-  active = false,
-}: {
-  icon: typeof FileText;
+type ServicePanelItem = {
   label: string;
-  active?: boolean;
+  icon?: React.ReactNode;
+  image?: string;
+  imageAlt?: string;
+};
+
+function ServicePanel({
+  title,
+  items,
+}: {
+  title: string;
+  items: ServicePanelItem[];
 }) {
   return (
-    <div
-      className={`flex min-h-[7.5rem] flex-col justify-between rounded-2xl bg-[#f6f6f8] p-3.5 ${
-        active ? "ring-1 ring-[#7c6ee6]/45" : ""
-      }`}
-    >
-      <Icon className="h-5 w-5 text-[#1a1a1f]" strokeWidth={1.75} />
-      <p className="text-sm font-medium leading-5 text-[#1a1a1f]">{label}</p>
-    </div>
+    <article className={styles.servicePanel}>
+      <h3>{title}</h3>
+      <div className={styles.serviceTiles}>
+        {items.map((item, index) => (
+          <div
+            key={`${item.label}-${index}`}
+            className={`${styles.serviceTile} ${
+              item.image ? styles.serviceTileImage : ""
+            }`}
+          >
+            {item.image ? (
+              <Image
+                src={item.image}
+                alt={item.imageAlt ?? ""}
+                fill
+                sizes="(max-width: 800px) 45vw, 180px"
+                className={styles.serviceTileArtwork}
+              />
+            ) : (
+              <>
+                <span className={styles.serviceTileIcon} aria-hidden="true">
+                  {item.icon}
+                </span>
+                <span>{item.label}</span>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+export function SiteFooter() {
+  return (
+    <footer className={styles.footer}>
+      <div className={`${styles.container} ${styles.footerMain}`}>
+        <div className={styles.footerTop}>
+          <div>
+            <p className={styles.footerBrand}>
+              Mandi<span className={styles.logoPlus}>Plus</span>
+            </p>
+            <p className={styles.footerCopy}>
+              Insurance, tracking aur claims—mandi trade ke liye, ek jagah.
+            </p>
+          </div>
+          <nav className={styles.footerLinks} aria-label="Footer navigation">
+            <Link href="/products" className={styles.footerLink}>Products</Link>
+            <Link href="/pricing" className={styles.footerLink}>Pricing</Link>
+            <Link href="/support" className={styles.footerLink}>Support</Link>
+            <Link href="/privacy-policy" className={styles.footerLink}>Privacy</Link>
+            <Link href="/terms-and-conditions" className={styles.footerLink}>Terms</Link>
+          </nav>
+        </div>
+
+        <div className={styles.footerCompanyRow}>
+          <div className={styles.footerCompany}>
+            <p className={styles.footerCompanyName}>
+              MandiPlus is owned and operated by <strong>{COMPANY_INFO.parent}</strong>.
+            </p>
+            <address className={styles.footerAddress}>
+              {COMPANY_INFO.address.map((line) => (
+                <span key={line}>{line}</span>
+              ))}
+            </address>
+            <a href={COMPANY_INFO.phoneHref} className={styles.footerPhone}>
+              <Phone size={14} aria-hidden="true" />
+              {COMPANY_INFO.phone}
+            </a>
+          </div>
+
+          <div className={styles.footerSocials} aria-label="MandiPlus social links">
+            {SOCIAL_LINKS.map((social) => (
+              <a
+                key={social.id}
+                href={social.href}
+                className={styles.footerSocialLink}
+                aria-label={social.label}
+              >
+                <FooterSocialIcon id={social.id} />
+              </a>
+            ))}
+          </div>
+        </div>
+
+        <div className={styles.footerBottom}>
+          <p className={styles.footerDisclaimer}>
+            Insurance products are subject to eligibility, policy terms,
+            exclusions and insurer approval. MandiPlus facilitates access and
+            claim support; it does not underwrite risk.
+          </p>
+          <p className={styles.footerCopyright}>
+            © 2026 ENP FARMS PRIVATE LIMITED. All rights reserved.
+          </p>
+        </div>
+      </div>
+    </footer>
   );
 }
 
