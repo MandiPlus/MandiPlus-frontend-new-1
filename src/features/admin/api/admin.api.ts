@@ -404,11 +404,12 @@ export interface UpdateUserInsurancePremiumPayload {
 }
 
 export interface UserInsurancePremiumUpdate {
-  id: string;
+  userId: string;
   canonicalUserId: string;
   insurancePremiumPerLakh: number;
   insurancePremiumPercentage: number;
   insurancePremiumRateVersion: number;
+  changed: boolean;
 }
 
 export interface InsuranceForm {
@@ -2044,7 +2045,14 @@ class AdminApi {
         `/users/admin/${userId}/insurance-premium`,
         payload,
       );
-      return response.data as ApiResponse<UserInsurancePremiumUpdate>;
+      const data: unknown = response.data;
+      if (data && typeof data === "object" && "success" in data) {
+        return data as ApiResponse<UserInsurancePremiumUpdate>;
+      }
+      return {
+        success: true,
+        data: data as UserInsurancePremiumUpdate,
+      };
     } catch (error: any) {
       return {
         success: false,

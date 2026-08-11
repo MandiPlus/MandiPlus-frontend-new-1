@@ -991,7 +991,9 @@ export default function UsersPage() {
                 const isProfileUser = user.id === editUserForm.id;
                 const isPremiumUser = Boolean(
                     premiumUpdate &&
-                    (user.id === premiumUpdate.id || user.id === editUserForm.id),
+                    (user.id === premiumUpdate.userId ||
+                        user.id === premiumUpdate.canonicalUserId ||
+                        user.id === editUserForm.id),
                 );
                 if (!isProfileUser && !isPremiumUser) return user;
 
