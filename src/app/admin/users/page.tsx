@@ -2896,75 +2896,61 @@ export default function UsersPage() {
                             ) : null}
 
                             {isFullAdmin ? (
-                                <div className="sm:col-span-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-4">
-                                    <div className="flex flex-wrap items-start justify-between gap-2">
-                                        <div>
-                                            <p className="text-sm font-semibold text-gray-900">
-                                                Insurance premium pricing
-                                            </p>
-                                            <p className="mt-1 text-xs text-gray-600">
-                                                User-wise, effective immediately for newly created invoices only.
-                                                Existing invoices keep their original premium.
-                                            </p>
+                                <>
+                                    <div>
+                                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                                            Premium per ₹1 lakh
+                                        </label>
+                                        <div className="relative">
+                                            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-500">
+                                                ₹
+                                            </span>
+                                            <input
+                                                type="number"
+                                                inputMode="decimal"
+                                                min="0.01"
+                                                step="0.01"
+                                                value={editUserForm.insurancePremiumPerLakh}
+                                                onChange={(e) =>
+                                                    setEditUserForm((prev) => (
+                                                        prev
+                                                            ? {
+                                                                ...prev,
+                                                                insurancePremiumPerLakh: e.target.value,
+                                                            }
+                                                            : prev
+                                                    ))
+                                                }
+                                                className="block w-full rounded-md border border-gray-300 py-2 pl-8 pr-3 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                            />
                                         </div>
-                                        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
-                                            Rate version {editUserForm.insurancePremiumRateVersion}
-                                        </span>
                                     </div>
 
-                                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                                        <div>
-                                            <label className="mb-1 block text-sm font-medium text-gray-700">
-                                                Premium per ₹1 lakh
-                                            </label>
-                                            <div className="relative">
-                                                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-500">
-                                                    ₹
-                                                </span>
-                                                <input
-                                                    type="number"
-                                                    inputMode="decimal"
-                                                    min="0.01"
-                                                    step="0.01"
-                                                    value={editUserForm.insurancePremiumPerLakh}
-                                                    onChange={(e) =>
-                                                        setEditUserForm((prev) => (
-                                                            prev
-                                                                ? {
-                                                                    ...prev,
-                                                                    insurancePremiumPerLakh: e.target.value,
-                                                                }
-                                                                : prev
-                                                        ))
-                                                    }
-                                                    className="block w-full rounded-md border border-gray-300 py-2 pl-8 pr-3 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
-                                                />
-                                            </div>
-                                        </div>
-                                        <div className="rounded-md bg-white px-3 py-2 ring-1 ring-emerald-100">
-                                            <p className="text-xs text-gray-500">Derived premium rate</p>
-                                            <p className="mt-1 text-lg font-semibold text-emerald-700">
-                                                {Number.isFinite(Number(editUserForm.insurancePremiumPerLakh))
-                                                    ? Number(
-                                                        (Number(editUserForm.insurancePremiumPerLakh) / 1000)
-                                                            .toFixed(5),
-                                                    )
-                                                    : 0}%
-                                            </p>
-                                            <p className="text-xs text-gray-500">
-                                                ₹{Number(editUserForm.insurancePremiumPerLakh || 0).toLocaleString('en-IN')} on ₹1,00,000 credit
-                                            </p>
-                                        </div>
+                                    <div>
+                                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                                            Premium rate
+                                        </label>
+                                        <input
+                                            type="text"
+                                            readOnly
+                                            value={`${Number.isFinite(Number(editUserForm.insurancePremiumPerLakh))
+                                                ? Number(
+                                                    (Number(editUserForm.insurancePremiumPerLakh) / 1000)
+                                                        .toFixed(5),
+                                                )
+                                                : 0}%`}
+                                            className="block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-700 shadow-sm"
+                                        />
                                     </div>
 
                                     {Number(editUserForm.insurancePremiumPerLakh) !==
                                     editUserForm.originalInsurancePremiumPerLakh ? (
-                                        <div className="mt-4">
+                                        <div className="sm:col-span-2">
                                             <label className="mb-1 block text-sm font-medium text-gray-700">
                                                 Reason for change
                                             </label>
-                                            <textarea
-                                                rows={2}
+                                            <input
+                                                type="text"
                                                 maxLength={500}
                                                 value={editUserForm.premiumChangeReason}
                                                 onChange={(e) =>
@@ -2977,15 +2963,11 @@ export default function UsersPage() {
                                                             : prev
                                                     ))
                                                 }
-                                                placeholder="Example: Updated commercial pricing approved by management"
                                                 className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
                                             />
-                                            <p className="mt-1 text-xs text-gray-500">
-                                                Required and saved in the pricing audit history.
-                                            </p>
                                         </div>
                                     ) : null}
-                                </div>
+                                </>
                             ) : null}
 
                             <div className="sm:col-span-2">
