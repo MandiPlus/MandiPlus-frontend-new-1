@@ -79,3 +79,12 @@ export function evaluateDesktopCreationAccess({
 
   return { allowed: true, reason: null };
 }
+
+export function isIOSSafariUserAgent(userAgent: string): boolean {
+  return (
+    /iPad|iPhone|iPod/i.test(userAgent) &&
+    /WebKit/i.test(userAgent) &&
+    /Safari/i.test(userAgent) &&
+    !/CriOS|FxiOS|EdgiOS|OPiOS/i.test(userAgent)
+  );
+}

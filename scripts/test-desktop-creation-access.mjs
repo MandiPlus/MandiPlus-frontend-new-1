@@ -4,8 +4,12 @@ import {
   MIN_DESKTOP_CREATION_WIDTH,
   detectMobileDeviceType,
   evaluateDesktopCreationAccess,
+  isIOSSafariUserAgent,
 } from "../src/shared/device/desktopCreationAccess.ts";
-import { resolveInsuranceCreationAudience } from "../src/features/insurance/creationAccessPolicy.ts";
+import {
+  isAllowedInternalMobileInvoiceCreator,
+  resolveInsuranceCreationAudience,
+} from "../src/features/insurance/creationAccessPolicy.ts";
 
 const iphoneSafari = {
   userAgent:
@@ -14,6 +18,13 @@ const iphoneSafari = {
   maxTouchPoints: 5,
 };
 assert.equal(detectMobileDeviceType(iphoneSafari), "phone");
+assert.equal(isIOSSafariUserAgent(iphoneSafari.userAgent), true);
+assert.equal(
+  isIOSSafariUserAgent(
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 CriOS/140.0 Mobile/15E148 Safari/604.1",
+  ),
+  false,
+);
 
 const androidPhone = {
   userAgent:
@@ -86,7 +97,11 @@ assert.deepEqual(
     hasDirectAdminSession: false,
     hasAdminActorSession: false,
   }),
-  { isPrivilegedActor: false, usesInternalFlow: false },
+  {
+    isPrivilegedActor: false,
+    usesInternalFlow: false,
+    canCreateOnMobile: false,
+  },
 );
 
 assert.deepEqual(
@@ -95,7 +110,11 @@ assert.deepEqual(
     hasDirectAdminSession: false,
     hasAdminActorSession: false,
   }),
-  { isPrivilegedActor: true, usesInternalFlow: true },
+  {
+    isPrivilegedActor: true,
+    usesInternalFlow: true,
+    canCreateOnMobile: false,
+  },
 );
 
 assert.deepEqual(
@@ -104,7 +123,11 @@ assert.deepEqual(
     hasDirectAdminSession: false,
     hasAdminActorSession: true,
   }),
-  { isPrivilegedActor: true, usesInternalFlow: false },
+  {
+    isPrivilegedActor: true,
+    usesInternalFlow: false,
+    canCreateOnMobile: false,
+  },
   "An impersonating admin is blocked on mobile but keeps the customer flow on desktop.",
 );
 
@@ -114,7 +137,53 @@ assert.deepEqual(
     hasDirectAdminSession: true,
     hasAdminActorSession: true,
   }),
-  { isPrivilegedActor: true, usesInternalFlow: true },
+  {
+    isPrivilegedActor: true,
+    usesInternalFlow: true,
+    canCreateOnMobile: false,
+  },
+);
+
+for (const mobileNumber of ["+91 87892 50356", "89046 28742"]) {
+  const allowedUser = { identity: "INTERNAL_TEAM", mobileNumber };
+  assert.equal(isAllowedInternalMobileInvoiceCreator(allowedUser), true);
+  assert.deepEqual(
+    resolveInsuranceCreationAudience({
+      user: allowedUser,
+      hasDirectAdminSession: false,
+      hasAdminActorSession: false,
+    }),
+    {
+      isPrivilegedActor: true,
+      usesInternalFlow: true,
+      canCreateOnMobile: true,
+    },
+  );
+}
+
+assert.equal(
+  isAllowedInternalMobileInvoiceCreator({
+    identity: "INTERNAL_TEAM",
+    phone: "+91 99999 99999",
+  }),
+  false,
+);
+assert.equal(
+  isAllowedInternalMobileInvoiceCreator({
+    identity: "CUSTOMER",
+    phone: "+91 87892 50356",
+  }),
+  false,
+  "The mobile exception applies only to internal-team identities.",
+);
+assert.equal(
+  resolveInsuranceCreationAudience({
+    user: { identity: "INTERNAL_TEAM", phone: "+91 87892 50356" },
+    hasDirectAdminSession: false,
+    hasAdminActorSession: true,
+  }).canCreateOnMobile,
+  false,
+  "An admin actor cannot gain the exception through impersonation.",
 );
 
 console.log("Desktop creation access checks passed.");
