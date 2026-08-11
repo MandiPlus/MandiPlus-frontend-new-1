@@ -840,6 +840,52 @@ export interface AppPaymentsSummary {
   paidToday: number;
 }
 
+export type TrackingPurchaseStatus = 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'FAILED';
+
+export interface AdminTrackingPurchase {
+  id: string;
+  userId: string;
+  customerName: string;
+  mobileNumber: string;
+  secondaryMobileNumber: string | null;
+  state: string | null;
+  identity: string | null;
+  packId: string;
+  packCode: string;
+  packLabel: string;
+  amountPaid: number;
+  listPriceAmount: number;
+  merchantOrderId: string;
+  phonepeOrderId: string | null;
+  phonepeUtr: string | null;
+  status: TrackingPurchaseStatus;
+  paidAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  daysRemaining: number;
+}
+
+export interface AdminTrackingPurchaseSummary {
+  totalAttempts: number;
+  paidPurchases: number;
+  activeCustomers: number;
+  totalRevenue: number;
+  paidToday: number;
+  pendingPurchases: number;
+  failedPurchases: number;
+  expiredPurchases: number;
+}
+
+export interface AdminTrackingPurchaseFilters {
+  search?: string;
+  status?: TrackingPurchaseStatus;
+  fromDate?: string;
+  toDate?: string;
+  page?: number;
+  limit?: number;
+}
+
 export interface AdminWalletPack {
   id: string;
   code: string;
@@ -4254,6 +4300,58 @@ class AdminApi {
       return { success: true, ...response.data };
     } catch {
       return { success: false };
+    }
+  };
+
+  public getTrackingPurchases = async (
+    filters?: AdminTrackingPurchaseFilters,
+  ): Promise<ApiResponse<AdminTrackingPurchase[]>> => {
+    try {
+      const response = await this.client.get('/tracking-packs/admin/purchases', {
+        params: filters,
+      });
+      const payload = response.data;
+      return {
+        success: payload?.success !== false,
+        data: Array.isArray(payload?.data) ? payload.data : [],
+        total: payload?.total,
+        page: payload?.page,
+        limit: payload?.limit,
+        totalPages: payload?.totalPages,
+      };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message ||
+          'Failed to fetch tracking purchases',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public getTrackingPurchasesSummary = async (
+    filters?: Omit<AdminTrackingPurchaseFilters, 'page' | 'limit'>,
+  ): Promise<ApiResponse<AdminTrackingPurchaseSummary>> => {
+    try {
+      const response = await this.client.get(
+        '/tracking-packs/admin/purchases/summary',
+        { params: filters },
+      );
+      return {
+        success: response.data?.success !== false,
+        data: response.data?.data,
+      };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message ||
+          'Failed to fetch tracking purchase summary',
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
   };
 
