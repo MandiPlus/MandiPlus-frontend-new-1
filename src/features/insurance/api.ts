@@ -77,6 +77,10 @@ export interface InsuranceForm {
   quantity: number;
   rate: number;
   amount: number;
+  premiumAmount?: number;
+  insurancePremiumPerLakh?: number;
+  insurancePremiumRateVersion?: number;
+  premiumPricedUserId?: string | null;
   vehicleNumber?: string;
   truckNumber?: string;
   weighmentSlipNote?: string;

@@ -46,6 +46,8 @@ interface User {
   channelPartnerProfileId?: string | null;
   channelPartnerStatus?: "PENDING" | "ACTIVE" | "SUSPENDED" | null;
   channelPartnerCode?: string | null;
+  insurancePremiumPerLakh?: number;
+  insurancePremiumRateVersion?: number;
 }
 
 export interface AdminLedgerUser extends User {
@@ -393,6 +395,20 @@ export interface AdminUpdateUserPayload {
   identity?: UserIdentity;
   billingType?: "BULK" | "PER_POLICY" | null;
   unionMember?: string | null;
+}
+
+export interface UpdateUserInsurancePremiumPayload {
+  premiumPerLakh: number;
+  reason: string;
+  expectedVersion?: number;
+}
+
+export interface UserInsurancePremiumUpdate {
+  id: string;
+  canonicalUserId: string;
+  insurancePremiumPerLakh: number;
+  insurancePremiumPercentage: number;
+  insurancePremiumRateVersion: number;
 }
 
 export interface InsuranceForm {
@@ -2014,6 +2030,27 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || "Failed to update user",
+        error: error.message,
+      };
+    }
+  };
+
+  public updateUserInsurancePremium = async (
+    userId: string,
+    payload: UpdateUserInsurancePremiumPayload,
+  ): Promise<ApiResponse<UserInsurancePremiumUpdate>> => {
+    try {
+      const response = await this.client.patch(
+        `/users/admin/${userId}/insurance-premium`,
+        payload,
+      );
+      return response.data as ApiResponse<UserInsurancePremiumUpdate>;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to update insurance premium rate",
         error: error.message,
       };
     }
