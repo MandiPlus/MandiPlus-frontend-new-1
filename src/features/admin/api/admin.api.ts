@@ -911,6 +911,33 @@ export interface GrantTrackingPlanPayload {
   note?: string;
 }
 
+export interface AdminTrackingUsageRow {
+  userId: string;
+  customerName: string;
+  mobileNumber: string;
+  secondaryMobileNumber: string | null;
+  state: string | null;
+  identity: string | null;
+  visitCount: number;
+  lastVisitedAt: string | null;
+  viewsUsed: number;
+  viewsRemaining: number;
+  lastVehicleNumber: string | null;
+  lastTrackedAt: string | null;
+  packActive: boolean;
+  packExpiresAt: string | null;
+}
+
+export interface AdminTrackingUsageSummary {
+  interestedCustomers: number;
+  totalScreenOpens: number;
+  trackingViewsUsed: number;
+  exhaustedCustomers: number;
+  activePackCustomers: number;
+  usageDate: string;
+  dailyLimit: number;
+}
+
 export interface AdminTrackingPurchaseFilters {
   search?: string;
   status?: TrackingPurchaseStatus;
@@ -4384,6 +4411,41 @@ class AdminApi {
         message:
           axiosError.response?.data?.message ||
           'Failed to fetch tracking purchase summary',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public getTrackingUsage = async (filters?: {
+    search?: string;
+    date?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<
+    ApiResponse<AdminTrackingUsageRow[]> & {
+      summary?: AdminTrackingUsageSummary;
+    }
+  > => {
+    try {
+      const response = await this.client.get('/tracking-packs/admin/usage', {
+        params: filters,
+      });
+      return {
+        success: response.data?.success !== false,
+        data: Array.isArray(response.data?.data) ? response.data.data : [],
+        summary: response.data?.summary,
+        total: response.data?.total,
+        page: response.data?.page,
+        limit: response.data?.limit,
+        totalPages: response.data?.totalPages,
+      };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message ||
+          'Failed to fetch tracking usage',
         error: error instanceof Error ? error.message : String(error),
       };
     }
