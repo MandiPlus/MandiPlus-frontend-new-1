@@ -256,7 +256,6 @@ export type PublicClaimDocumentType =
 export interface PublicClaimDocumentUploadLink {
   claimNumber: string;
   vehicleNumber: string;
-  customerName: string;
   expiresAt: string;
   canUpload: boolean;
   documents: Record<
