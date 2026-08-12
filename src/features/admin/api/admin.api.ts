@@ -1511,7 +1511,8 @@ export type ClaimNotificationType =
   | "report_generated"
   | "sent_to_tata"
   | "bank_details_request"
-  | "completed";
+  | "completed"
+  | "document_uploaded_admin";
 
 export type ClaimNotificationDeliveryStatus =
   | "processing"

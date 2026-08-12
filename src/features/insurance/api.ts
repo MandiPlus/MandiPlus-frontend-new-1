@@ -249,6 +249,24 @@ export interface PublicClaimCaptureLink {
   }>;
 }
 
+export type PublicClaimDocumentType =
+  | "lorryReceipt"
+  | "damageCertificate";
+
+export interface PublicClaimDocumentUploadLink {
+  claimNumber: string;
+  vehicleNumber: string;
+  customerName: string;
+  expiresAt: string;
+  canUpload: boolean;
+  documents: Record<
+    PublicClaimDocumentType,
+    {
+      received: boolean;
+    }
+  >;
+}
+
 export interface ClaimEligibleVehicle {
   vehicleNumber: string;
   invoiceId: string;
@@ -854,6 +872,30 @@ export const getPublicClaimCaptureLink = async (
     { cache: "no-store" },
   );
   return readPublicClaimResponse<PublicClaimCaptureLink>(response);
+};
+
+export const getPublicClaimDocumentUploadLink = async (
+  token: string,
+): Promise<PublicClaimDocumentUploadLink> => {
+  const response = await fetch(
+    `${API_BASE_URL}/claim-requests/public-documents/${encodeURIComponent(token)}`,
+    { cache: "no-store" },
+  );
+  return readPublicClaimResponse<PublicClaimDocumentUploadLink>(response);
+};
+
+export const uploadPublicClaimDocument = async (
+  token: string,
+  documentType: PublicClaimDocumentType,
+  file: File,
+): Promise<PublicClaimDocumentUploadLink> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(
+    `${API_BASE_URL}/claim-requests/public-documents/${encodeURIComponent(token)}/${documentType}`,
+    { method: "POST", body: formData },
+  );
+  return readPublicClaimResponse<PublicClaimDocumentUploadLink>(response);
 };
 
 export const getPublicClaimEvidenceUploadTarget = async (

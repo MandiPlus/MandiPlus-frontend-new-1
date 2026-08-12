@@ -40,6 +40,7 @@ const notificationLabels: Record<ClaimNotificationLog['notificationType'], strin
   sent_to_tata: 'Sent to TATA',
   bank_details_request: 'Bank details request',
   completed: 'Claim completed',
+  document_uploaded_admin: 'Document uploaded · admin alert',
 };
 
 function ReminderConfirmation({
