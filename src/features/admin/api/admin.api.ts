@@ -1322,6 +1322,7 @@ export interface ClaimRequest {
   caseNumber: string;
   officialClaimNumber?: string | null;
   tataClaimNumber?: string | null;
+  documentsSentToTataAt?: string | null;
   mandiplusClaimNumber?: string | null;
   handledBy?: 'TATA' | 'MandiPlus' | string | null;
   status: ClaimStatus;
@@ -1503,9 +1504,68 @@ export interface ClaimActivity {
   createdAt: string;
 }
 
+export type ClaimNotificationType =
+  | "claim_initiated"
+  | "document_reminder"
+  | "surveyor_assigned"
+  | "report_generated"
+  | "sent_to_tata"
+  | "bank_details_request"
+  | "completed";
+
+export type ClaimNotificationDeliveryStatus =
+  | "processing"
+  | "accepted"
+  | "delivered"
+  | "read"
+  | "failed"
+  | "skipped"
+  | "unknown";
+
+export interface ClaimNotificationLog {
+  id: string;
+  tenantId: string;
+  claimId: string;
+  notificationType: ClaimNotificationType;
+  channel: "whatsapp";
+  recipientPhone?: string | null;
+  dedupeKey: string;
+  templateName?: string | null;
+  payload: Record<string, unknown>;
+  status: ClaimNotificationDeliveryStatus;
+  errorMessage?: string | null;
+  providerMessageId?: string | null;
+  attemptCount?: number;
+  lastAttemptAt?: string | null;
+  nextAttemptAt?: string | null;
+  sentAt?: string | null;
+  deliveredAt?: string | null;
+  readAt?: string | null;
+  failedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type ClaimDocumentReminderReason =
+  | "claim_not_found"
+  | "claim_closed"
+  | "no_missing_documents"
+  | "reminder_sent_recently"
+  | "manual_reminder_cooldown"
+  | "reminder_limit_reached"
+  | "claim_too_new"
+  | "notifications_disabled"
+  | "send_failed";
+
+export interface ClaimDocumentReminderResult {
+  sent: boolean;
+  reason?: ClaimDocumentReminderReason;
+}
+
 export interface UpdateClaimDto {
   officialClaimNumber?: string | null;
   tataClaimNumber?: string | null;
+  documentsSentToTataAt?: string | null;
   handledBy?: 'TATA' | 'MandiPlus' | string | null;
   description?: string | null;
   status?: ClaimStatus;
@@ -5104,6 +5164,71 @@ class AdminApi {
           "Failed to fetch claim activity",
         ),
         error: error.message,
+      };
+    }
+  };
+
+  public getClaimNotifications = async (
+    id: string,
+  ): Promise<ApiResponse<ClaimNotificationLog[]>> => {
+    try {
+      const response = await this.client.get<
+        ClaimNotificationLog[] | ApiResponse<ClaimNotificationLog[]>
+      >(
+        `/claim-requests/${id}/notifications`,
+      );
+      const payload = Array.isArray(response.data)
+        ? response.data
+        : response.data.data || [];
+
+      return {
+        success: true,
+        data: payload,
+      };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to fetch claim notification history",
+        ),
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public sendClaimDocumentReminder = async (
+    id: string,
+  ): Promise<ApiResponse<ClaimDocumentReminderResult>> => {
+    try {
+      const response = await this.client.post<
+        ClaimDocumentReminderResult | ApiResponse<ClaimDocumentReminderResult>
+      >(
+        `/claim-requests/${id}/notifications/document-reminder`,
+      );
+      const payload = "sent" in response.data
+        ? response.data
+        : response.data.data || { sent: false };
+      const result: ClaimDocumentReminderResult = {
+        sent: Boolean(payload?.sent),
+        reason: payload?.reason,
+      };
+
+      return {
+        success: result.sent,
+        data: result,
+        message: result.sent
+          ? "WhatsApp document reminder sent"
+          : "WhatsApp document reminder was not sent",
+      };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to send WhatsApp document reminder",
+        ),
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   };

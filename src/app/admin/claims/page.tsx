@@ -12,6 +12,7 @@ import {
   adminApi,
 } from '@/features/admin/api/admin.api';
 import InvoicePicker from '@/features/admin/claims/InvoicePicker';
+import ClaimDocumentReminderPanel from '@/features/admin/claims/ClaimDocumentReminderPanel';
 import {
   EvidenceBadge,
   LocationLink,
@@ -55,6 +56,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Send,
   ShieldAlert,
   ShieldBan,
   ShieldCheck,
@@ -177,6 +179,19 @@ function toDateInputValue(value?: string | null): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function formatAdminTimestamp(value?: string | null): string {
+  if (!value) return 'Not recorded';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown time';
+  return date.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function isEngineSeizeClaim(claim: Pick<ClaimRequest, 'description' | 'engineSeizeEvidenceSubmissionId' | 'engineSeizeEvidenceSubmittedAt' | 'engineSeizeEvidencePhotos' | 'engineSeizeEvidenceVideos'>): boolean {
@@ -1758,6 +1773,7 @@ function FullViewClaimModal({
 
   const [form, setForm] = useState<UpdateClaimDto>({
     tataClaimNumber: claim.tataClaimNumber || '',
+    documentsSentToTataAt: claim.documentsSentToTataAt || null,
     handledBy: claim.handledBy || 'TATA',
     description: claim.description || 'Engine Seize',
     status: claim.status,
@@ -1797,6 +1813,9 @@ function FullViewClaimModal({
   const [maskLoading, setMaskLoading] = useState(false);
 
   const docs = documentEntries(claim);
+  const tataDispatchMarkedButUnsaved = Boolean(
+    form.documentsSentToTataAt && !claim.documentsSentToTataAt,
+  );
 
   useEffect(() => {
     let active = true;
@@ -2152,6 +2171,15 @@ function FullViewClaimModal({
                 </div>
               </div>
 
+              {currentIsEngineSeize && (
+                <ClaimDocumentReminderPanel
+                  claim={claim}
+                  claimNumber={shortenMandiPlusClaimNo(
+                    claim.officialClaimNumber || claim.caseNumber,
+                  )}
+                />
+              )}
+
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#4309ac]">
                   Captured Location
@@ -2212,6 +2240,78 @@ function FullViewClaimModal({
                       className={`${fieldClass} mt-1.5`}
                     />
                   </label>
+                </div>
+
+                <div
+                  className={`flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between ${
+                    form.documentsSentToTataAt
+                      ? 'border-emerald-200 bg-emerald-50/60'
+                      : 'border-slate-200 bg-slate-50/70'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`rounded-lg p-2 ${
+                        form.documentsSentToTataAt
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-white text-slate-500 shadow-sm ring-1 ring-slate-200'
+                      }`}
+                    >
+                      {form.documentsSentToTataAt ? (
+                        <CheckCircle2 className="h-4 w-4" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">
+                        Documents sent to TATA
+                      </p>
+                      <p className="mt-1 text-[11px] font-medium text-slate-500">
+                        {form.documentsSentToTataAt
+                          ? `${tataDispatchMarkedButUnsaved ? 'Ready to save' : 'Saved'} · ${formatAdminTimestamp(form.documentsSentToTataAt)}`
+                          : 'Mark this only after the claim documents have been handed to TATA.'}
+                      </p>
+                      {tataDispatchMarkedButUnsaved && (
+                        <p className="mt-1 text-[10px] font-bold text-emerald-700">
+                          Click Save Changes to trigger the customer WhatsApp update.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {!form.documentsSentToTataAt ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm((current) => ({
+                          ...current,
+                          documentsSentToTataAt: new Date().toISOString(),
+                        }))
+                      }
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-bold text-violet-700 shadow-sm transition hover:bg-violet-50"
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      Mark documents sent
+                    </button>
+                  ) : tataDispatchMarkedButUnsaved ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setForm((current) => ({
+                          ...current,
+                          documentsSentToTataAt: null,
+                        }))
+                      }
+                      className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-sm transition hover:bg-slate-100"
+                    >
+                      Undo
+                    </button>
+                  ) : (
+                    <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-emerald-700">
+                      Sent
+                    </span>
+                  )}
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-3">
@@ -2474,6 +2574,13 @@ function FullViewClaimModal({
           {/* TAB 3: OFFICIAL DOCUMENTS (DRAG & DROP) */}
           {activeTab === 'documents' && !currentIsEngineSeize && (
             <div className="space-y-6">
+              <ClaimDocumentReminderPanel
+                claim={claim}
+                claimNumber={shortenMandiPlusClaimNo(
+                  claim.officialClaimNumber || claim.caseNumber,
+                )}
+              />
+
               <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4 shadow-sm">
                 <div>
                   <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#4309ac]">Official Claim Documents</h3>
