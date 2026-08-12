@@ -96,9 +96,30 @@ const paymentStatusOptions: Array<{ value: ClaimPaymentStatus; label: string }> 
 const handledByOptions = ['TATA', 'MandiPlus'];
 
 const claimTableStickyHeadClasses = [
-  'sticky left-0 z-[33] w-14 min-w-[3.5rem] bg-[#f8fafc] text-center',
-  'sticky left-[3.5rem] z-[34] w-36 min-w-[9rem] bg-[#f8fafc]',
-  'sticky left-[12.5rem] z-[35] w-44 min-w-[11rem] bg-[#f8fafc] shadow-[4px_0_10px_-2px_rgba(15,23,42,0.14)]',
+  'sticky left-0 z-[33] w-14 min-w-[3.5rem] max-w-[3.5rem] bg-[#f8fafc] text-center',
+  'sticky left-[3.5rem] z-[34] w-[7rem] min-w-[7rem] max-w-[7rem] bg-[#f8fafc] px-2',
+  'sticky left-[10.5rem] z-[35] w-[8rem] min-w-[8rem] max-w-[8rem] bg-[#f8fafc] px-2 shadow-[4px_0_10px_-2px_rgba(15,23,42,0.14)]',
+] as const;
+
+const claimTableColumnWidths = [
+  '', // S.NO
+  '', // TATA CLAIM NO
+  '', // MANDIPLUS CLAIM NO
+  '', // INVOICE NO.
+  '', // CLAIM DATE
+  '', // VEHICLE NO.
+  '', // INSURED PARTY
+  'w-[8.5rem] min-w-[8.5rem] max-w-[8.5rem]', // INSURED PERSON ADDRESS
+  '', // OTHER PARTY
+  'w-[8.5rem] min-w-[8.5rem] max-w-[8.5rem]', // OTHER PARTY ADDRESS
+  '', // REASON FOR CLAIM
+  'w-[7.25rem] min-w-[7.25rem] max-w-[7.25rem] whitespace-nowrap', // INVOICE VALUE
+  'w-[6.5rem] min-w-[6.5rem] max-w-[6.5rem] whitespace-nowrap text-right', // SETTLED AMT
+  '', // DOCUMENTS
+  '', // SURVEYOR NAME
+  '', // SURVEYOR NUMBER
+  '', // CURRENT STATUS
+  '', // REMARKS
 ] as const;
 
 const fieldClass =
@@ -396,9 +417,9 @@ function getClaimRowToneClasses(status?: ClaimStatus | string | null): {
 
 function getClaimTableStickyShellClasses(): string[] {
   return [
-    'relative p-0 border-r border-slate-200 sticky left-0 z-[30] w-14 min-w-[3.5rem]',
-    'relative p-0 border-r border-slate-200 sticky left-[3.5rem] z-[31] w-36 min-w-[9rem]',
-    'relative p-0 border-r border-slate-200 sticky left-[12.5rem] z-[32] w-44 min-w-[11rem] shadow-[6px_0_14px_-4px_rgba(15,23,42,0.22)]',
+    'relative p-0 border-r border-slate-200 sticky left-0 z-[30] w-14 min-w-[3.5rem] max-w-[3.5rem]',
+    'relative p-0 border-r border-slate-200 sticky left-[3.5rem] z-[31] w-[7rem] min-w-[7rem] max-w-[7rem]',
+    'relative p-0 border-r border-slate-200 sticky left-[10.5rem] z-[32] w-[8rem] min-w-[8rem] max-w-[8rem] shadow-[6px_0_14px_-4px_rgba(15,23,42,0.22)]',
   ];
 }
 
@@ -406,22 +427,24 @@ function StickyTableCell({
   shellClassName,
   toneClassName,
   contentClassName = '',
+  compact = false,
   children,
 }: {
   shellClassName: string;
   toneClassName: string;
   contentClassName?: string;
+  compact?: boolean;
   children: ReactNode;
 }) {
   return (
     <td className={shellClassName}>
       <div className={`pointer-events-none absolute inset-0 ${toneClassName}`} aria-hidden="true" />
-      <div className={`relative px-3.5 py-3 ${contentClassName}`}>{children}</div>
+      <div className={`relative ${compact ? 'px-2' : 'px-3.5'} py-3 ${contentClassName}`}>{children}</div>
     </td>
   );
 }
 
-function PaymentProofCell({
+function PaymentProofUpload({
   claim,
   onUpdated,
 }: {
@@ -453,50 +476,48 @@ function PaymentProofCell({
   };
 
   return (
-    <td className="px-3.5 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-      <div className="flex items-center gap-1.5">
-        {claim.paymentProofUrl ? (
-          <>
-            <a
-              href={claim.paymentProofUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100"
-            >
-              <Eye className="h-3.5 w-3.5" />
-              View
-            </a>
-            <label
-              htmlFor={inputId}
-              className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
-            >
-              {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-              Replace
-            </label>
-          </>
-        ) : (
+    <div className="flex flex-wrap items-center gap-2">
+      {claim.paymentProofUrl ? (
+        <>
+          <a
+            href={claim.paymentProofUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            View
+          </a>
           <label
             htmlFor={inputId}
-            className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-emerald-700"
+            className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
           >
             {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-            Upload Proof
+            Replace
           </label>
-        )}
-        <input
-          id={inputId}
-          type="file"
-          accept="image/*,application/pdf"
-          className="hidden"
-          disabled={uploading}
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void handleUpload(file);
-            e.target.value = '';
-          }}
-        />
-      </div>
-    </td>
+        </>
+      ) : (
+        <label
+          htmlFor={inputId}
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-emerald-700"
+        >
+          {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+          Upload Proof
+        </label>
+      )}
+      <input
+        id={inputId}
+        type="file"
+        accept="image/*,application/pdf"
+        className="hidden"
+        disabled={uploading}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleUpload(file);
+          e.target.value = '';
+        }}
+      />
+    </div>
   );
 }
 
@@ -2272,6 +2293,16 @@ function FullViewClaimModal({
                   </label>
                 </div>
 
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                  <p className="text-xs font-bold text-slate-800">Payment Proof</p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Upload settlement receipt or bank transfer proof (image or PDF).
+                  </p>
+                  <div className="mt-3">
+                    <PaymentProofUpload claim={claim} onUpdated={onUpdated} />
+                  </div>
+                </div>
+
                 <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#4309ac]">Surveyors</h3>
@@ -2840,7 +2871,6 @@ export default function AdminClaimsPage() {
   const [showNewClaim, setShowNewClaim] = useState(false);
   const [showBlacklistVehicle, setShowBlacklistVehicle] = useState(false);
   const [showBlacklistedVehicles, setShowBlacklistedVehicles] = useState(false);
-  const [proofClaim, setProofClaim] = useState<ClaimRequest | null>(null);
   const [docsClaim, setDocsClaim] = useState<ClaimRequest | null>(null);
 
   // Confirm Modal state
@@ -2895,7 +2925,6 @@ export default function AdminClaimsPage() {
     setClaims((current) => current.map((c) => (c.id === updated.id ? updated : c)));
     setSelectedClaim((current) => (current?.id === updated.id ? updated : current));
     setDocsClaim((current) => (current?.id === updated.id ? updated : current));
-    setProofClaim((current) => (current?.id === updated.id ? updated : current));
   };
 
   const removeClaimRow = (claimId: string) => {
@@ -3135,7 +3164,7 @@ export default function AdminClaimsPage() {
           {/* Clean Executive Table View with Dynamic Scale & Clean Word Wrapping */}
           <div className="isolate overflow-x-auto">
             <div style={{ zoom: `${tableScale}%` }}>
-              <table className="w-full min-w-[3200px] border-separate border-spacing-0 text-left">
+              <table className="w-full min-w-[2200px] border-separate border-spacing-0 text-left">
                 <thead className="bg-[#f8fafc] text-slate-600 border-b border-slate-200">
                   <tr>
                     {[
@@ -3150,25 +3179,21 @@ export default function AdminClaimsPage() {
                       'OTHER PARTY',
                       'OTHER PARTY ADDRESS',
                       'REASON FOR CLAIM',
-                      'INVOICE / INSURED VALUE (RS.)',
-                      'SETTLED AMOUNT (RS.)',
-                      'PROOF',
+                      'INVOICE VALUE',
+                      'SETTLED AMT',
                       'DOCUMENTS',
                       'SURVEYOR NAME',
                       'SURVEYOR NUMBER',
-                      'HANDLED BY',
                       'CURRENT STATUS',
-                      'PAYMENT STATUS',
                       'REMARKS',
-                      'PAYMENT PROOF',
                     ].map((heading, index) => (
                       <th
                         key={heading}
                         className={`border-b border-slate-200/90 px-3.5 py-3.5 text-[11px] font-semibold uppercase tracking-wider text-slate-600 ${
                           index < claimTableStickyHeadClasses.length
                             ? claimTableStickyHeadClasses[index]
-                            : ''
-                        }`}
+                            : claimTableColumnWidths[index] || ''
+                        } ${index === 11 || index === 12 ? 'text-right whitespace-nowrap' : ''}`}
                       >
                         {heading}
                       </th>
@@ -3179,7 +3204,7 @@ export default function AdminClaimsPage() {
                   {loading ? (
                     Array.from({ length: 6 }).map((_, r) => (
                       <tr key={r}>
-                        {Array.from({ length: 22 }).map((__, c) => (
+                        {Array.from({ length: 18 }).map((__, c) => (
                           <td key={c} className="p-3">
                             <div className="h-4 animate-pulse rounded bg-slate-100" />
                           </td>
@@ -3188,14 +3213,13 @@ export default function AdminClaimsPage() {
                     ))
                   ) : claims.length === 0 ? (
                     <tr>
-                      <td colSpan={22} className="py-16 text-center text-xs font-semibold text-slate-500">
+                      <td colSpan={18} className="py-16 text-center text-xs font-semibold text-slate-500">
                         No claims found matching these filters.
                       </td>
                     </tr>
                   ) : (
                     claims.map((claim, idx) => {
                       const docs = documentEntries(claim);
-                      const proofCount = (claim.proofFiles?.length || 0) + (claim.evidencePhotos?.length || 0) + (claim.evidenceVideos?.length || 0);
                       const surveyorNameDisplay = formatTableSurveyorField(claim, 'name');
                       const surveyorContactDisplay = formatTableSurveyorField(claim, 'contact');
                       const rowTone = getClaimRowToneClasses(claim.status);
@@ -3220,8 +3244,9 @@ export default function AdminClaimsPage() {
                           <StickyTableCell
                             shellClassName={stickyShellClasses[1]}
                             toneClassName={rowTone.sticky}
+                            compact
                           >
-                            <span className="font-semibold text-slate-700 whitespace-nowrap">
+                            <span className="block font-semibold text-slate-700 whitespace-nowrap text-[11px]">
                               {claim.tataClaimNumber || '—'}
                             </span>
                           </StickyTableCell>
@@ -3230,7 +3255,8 @@ export default function AdminClaimsPage() {
                           <StickyTableCell
                             shellClassName={stickyShellClasses[2]}
                             toneClassName={rowTone.sticky}
-                            contentClassName="font-semibold text-violet-700 tracking-wide whitespace-nowrap"
+                            contentClassName="font-semibold text-violet-700 tracking-wide whitespace-nowrap text-[11px]"
+                            compact
                           >
                             {shortenMandiPlusClaimNo(claim.officialClaimNumber || claim.caseNumber)}
                           </StickyTableCell>
@@ -3256,7 +3282,7 @@ export default function AdminClaimsPage() {
                           </td>
 
                           {/* 7. Insured Person Address */}
-                          <td className="px-3.5 py-3 text-slate-500 min-w-[180px] max-w-[250px] whitespace-normal break-words [overflow-wrap:anywhere] font-normal leading-relaxed">
+                          <td className="px-2.5 py-3 text-slate-500 w-[8.5rem] min-w-[8.5rem] max-w-[8.5rem] whitespace-normal break-words [overflow-wrap:anywhere] font-normal leading-snug">
                             {getInsuredPersonAddress(claim)}
                           </td>
 
@@ -3266,7 +3292,7 @@ export default function AdminClaimsPage() {
                           </td>
 
                           {/* 9. Other Party Address */}
-                          <td className="px-3.5 py-3 text-slate-500 min-w-[180px] max-w-[250px] whitespace-normal break-words [overflow-wrap:anywhere] font-normal leading-relaxed">
+                          <td className="px-2.5 py-3 text-slate-500 w-[8.5rem] min-w-[8.5rem] max-w-[8.5rem] whitespace-normal break-words [overflow-wrap:anywhere] font-normal leading-snug">
                             {getOtherPartyAddress(claim)}
                           </td>
 
@@ -3276,29 +3302,18 @@ export default function AdminClaimsPage() {
                           </td>
 
                           {/* 12. Invoice / Insured Value */}
-                          <td className="px-3.5 py-3 text-right font-semibold text-slate-800">
+                          <td className="px-2 py-3 w-[7.25rem] min-w-[7.25rem] max-w-[7.25rem] text-right font-semibold text-slate-800 whitespace-nowrap">
                             {formatCurrency(claim.insuredValue ?? claim.invoice?.amount)}
                           </td>
 
                           {/* 13. SETTLED AMOUNT (read-only — edit via claim detail modal) */}
-                          <td className="px-3.5 py-3 text-right bg-blue-50/40 border-x border-blue-100/70 font-bold text-blue-900 whitespace-nowrap">
+                          <td className="px-2 py-3 w-[6.5rem] min-w-[6.5rem] max-w-[6.5rem] text-right bg-blue-50/40 border-x border-blue-100/70 font-bold text-blue-900 whitespace-nowrap">
                             {formatCurrency(
                               claim.approvedPayableAmount ?? claim.claimAmount,
                             )}
                           </td>
 
-                          {/* 14. Proof (Gallery Max 10) */}
-                          <td className="px-3.5 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => setProofClaim(claim)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200/80 bg-violet-50/70 px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-100/80"
-                            >
-                              <ImageIcon className="h-3.5 w-3.5 text-violet-600" />
-                              proof ({proofCount}/10)
-                            </button>
-                          </td>
-
-                          {/* 15. Documents */}
+                          {/* 14. Documents */}
                           <td className="px-3.5 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                             <button
                               onClick={() => setDocsClaim(claim)}
@@ -3333,12 +3348,7 @@ export default function AdminClaimsPage() {
                             </div>
                           </td>
 
-                          {/* 18. Handled By (read-only — edit via claim detail modal) */}
-                          <td className="px-3.5 py-3 font-semibold text-slate-700 whitespace-nowrap">
-                            {claim.handledBy || 'TATA'}
-                          </td>
-
-                          {/* 19. Current Status Dropdown */}
+                          {/* 18. Current Status Dropdown */}
                           <td className="px-3.5 py-3" onClick={(e) => e.stopPropagation()}>
                             <select
                               value={claim.status || ClaimStatus.PENDING}
@@ -3357,32 +3367,11 @@ export default function AdminClaimsPage() {
                             </select>
                           </td>
 
-                          {/* 21. Payment Status Dropdown */}
-                          <td className="px-3.5 py-3" onClick={(e) => e.stopPropagation()}>
-                            <select
-                              value={claim.paymentStatus || ClaimPaymentStatus.NOT_STARTED}
-                              onChange={(e) =>
-                                handleStatusChangeRequest(claim, 'paymentStatus', e.target.value)
-                              }
-                              className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold uppercase outline-none cursor-pointer ${getSelectStatusClasses(
-                                claim.paymentStatus || ClaimPaymentStatus.NOT_STARTED,
-                              )}`}
-                            >
-                              {paymentStatusOptions.map((opt) => (
-                                <option key={opt.value} value={opt.value} className="bg-white text-slate-800 font-medium">
-                                  {opt.label}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-
-                          {/* 22. Remarks */}
+                          {/* 21. Remarks */}
                           <td className="px-3.5 py-3 max-w-[280px] break-words text-slate-600 font-normal leading-relaxed">
                             {claim.remarks || '—'}
                           </td>
 
-                          {/* 23. Payment Proof */}
-                          <PaymentProofCell claim={claim} onUpdated={updateClaimRow} />
                         </tr>
                       );
                     })
@@ -3456,14 +3445,6 @@ export default function AdminClaimsPage() {
           newValue={confirmModal.newValue}
           onConfirm={executeStatusUpdate}
           onCancel={() => setConfirmModal(null)}
-        />
-      )}
-
-      {proofClaim && (
-        <ProofGalleryModal
-          claim={proofClaim}
-          onClose={() => setProofClaim(null)}
-          onUpdated={updateClaimRow}
         />
       )}
 
