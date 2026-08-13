@@ -677,6 +677,7 @@ export interface RegenerateInvoicePayload {
   truckNumber?: string;
   weighmentSlipNote?: string;
   insuredPartyPhone?: string;
+  blacklistOverrideToken?: string;
 }
 
 export interface InvoiceFilterParams {
@@ -939,6 +940,7 @@ export interface AdminCreateInvoicePayload {
   ownerName?: string;
   weighmentSlips?: File[];
   weighmentSlipUrls?: string[];
+  blacklistOverrideToken?: string;
 }
 
 export type ChannelPartnerStatus = "PENDING" | "ACTIVE" | "SUSPENDED";
@@ -2291,6 +2293,9 @@ class AdminApi {
       if (payload.driverSecondaryPhone)
         formData.append("driverSecondaryPhone", payload.driverSecondaryPhone);
       if (payload.ownerName) formData.append("ownerName", payload.ownerName);
+      if (payload.blacklistOverrideToken) {
+        formData.append("blacklistOverrideToken", payload.blacklistOverrideToken);
+      }
       payload.weighmentSlips?.forEach((file) => {
         formData.append("weighmentSlips", file);
       });
@@ -2320,6 +2325,7 @@ class AdminApi {
         success: false,
         message: error.response?.data?.message || "Failed to create invoice",
         error: error.message,
+        data: error.response?.data,
       };
     }
   };
@@ -3396,7 +3402,66 @@ class AdminApi {
         message:
           error.response?.data?.message || "Failed to regenerate invoice",
         error: error.message,
+        data: error.response?.data,
       };
+    }
+  };
+
+  public checkInvoiceBlacklistOverride = async (payload: {
+    vehicleNumber?: string;
+    invoiceId?: string;
+  }) => {
+    try {
+      const response = await this.client.post(
+        "/invoices/blacklist-override/check",
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.message || "Failed to check OTP requirement",
+      );
+    }
+  };
+
+  public requestInvoiceBlacklistOverrideOtp = async (payload: {
+    action: "create_invoice" | "edit_claim_invoice";
+    ownerMobile: string;
+    vehicleNumber?: string;
+    invoiceId?: string;
+    reason?: string;
+  }) => {
+    try {
+      const response = await this.client.post(
+        "/invoices/blacklist-override/request-otp",
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      const data = error.response?.data;
+      if (data?.code === 'BLACKLIST_OTP_MOBILE_UNAUTHORIZED') {
+        throw new Error(
+          'This mobile number is not authorized for owner approval. Please contact admin.',
+        );
+      }
+      throw new Error(
+        data?.message || "Failed to request owner OTP",
+      );
+    }
+  };
+
+  public verifyInvoiceBlacklistOverrideOtp = async (payload: {
+    requestId: string;
+    otp: string;
+  }) => {
+    try {
+      const response = await this.client.post(
+        "/invoices/blacklist-override/verify-otp",
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Invalid OTP");
     }
   };
 

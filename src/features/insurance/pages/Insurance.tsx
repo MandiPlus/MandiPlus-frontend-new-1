@@ -26,6 +26,8 @@ import {
     getVehicleRecentInvoiceStatus,
     getVerifiedSuppliers,
     hasStoredInsuranceAdminSession,
+    requestInvoiceBlacklistOverrideOtp,
+    verifyInvoiceBlacklistOverrideOtp,
     type SupplierPartyAssistProduct,
     type SupplierPartyAssistResponse,
     type SupplierPartyAssistTemplate,
@@ -52,6 +54,11 @@ import {
     resolveInsuranceInvoiceModeForSubmit,
 } from '../insuranceModeSubmit';
 import { resolveWeighmentSlipForSubmit } from '../weighmentSlipSubmit';
+import { BlacklistOverrideOtpModal } from '@/features/admin/components/BlacklistOverrideOtpModal';
+import {
+    isBlacklistOtpRequiredMessage,
+    parseBlacklistOtpRequiredError,
+} from '@/features/admin/blacklistOverride';
 
 // --- Types ---
 interface FormData {
@@ -360,6 +367,12 @@ const Insurance = () => {
     const [isLoadingAssists, setIsLoadingAssists] = useState(false);
     const [learningEvents, setLearningEvents] = useState<InsuranceLearningUiEvent[]>([]);
     const [isInsuranceAdminSession, setIsInsuranceAdminSession] = useState(false);
+    const [blacklistOtpOpen, setBlacklistOtpOpen] = useState(false);
+    const [blacklistOtpVehicleNumber, setBlacklistOtpVehicleNumber] = useState<string | undefined>();
+    const pendingSubmitRef = useRef<{
+        file: File | null;
+        overrides: Partial<FormData>;
+    } | null>(null);
     // React state updates can lag behind the last chat answer; keep the selected customerUserId
     // in a ref so submit always includes it when needed.
     const selectedCustomerUserIdRef = useRef<string>('');
@@ -779,6 +792,7 @@ const Insurance = () => {
     const submitInsuranceForm = async (
         fileArgument: File | null = null,
         formOverrides: Partial<FormData> = {},
+        blacklistOverrideToken?: string,
     ) => {
         if (isSubmitting) return;
         setIsSubmitting(true);
@@ -939,6 +953,10 @@ const Insurance = () => {
                 activeQuestionCount: activeQuestions.length,
             })));
 
+            if (blacklistOverrideToken) {
+                submitData.append('blacklistOverrideToken', blacklistOverrideToken);
+            }
+
             const invoice = await createInsuranceForm(submitData);
             const rawPdfUrl = invoice.pdfUrl || invoice.pdfURL;
             const isBotEmbed =
@@ -970,6 +988,26 @@ const Insurance = () => {
 
         } catch (err: any) {
             console.error(err);
+            const otpError = parseBlacklistOtpRequiredError(err);
+            const fallbackVehicle = String(
+                formOverrides.vehicleNumber || formData.vehicleNumber || '',
+            ).trim();
+            if (
+                otpError ||
+                isBlacklistOtpRequiredMessage(
+                    Array.isArray(err?.message) ? err.message.join(', ') : err?.message,
+                )
+            ) {
+                pendingSubmitRef.current = {
+                    file: fileArgument,
+                    overrides: formOverrides,
+                };
+                setBlacklistOtpVehicleNumber(otpError?.vehicleNumber || fallbackVehicle || undefined);
+                setBlacklistOtpOpen(true);
+                setIsSubmitting(false);
+                return;
+            }
+
             let errorMsg = 'Submission failed.';
             if (err.message) errorMsg = Array.isArray(err.message) ? err.message.join(', ') : err.message;
             setError(errorMsg);
@@ -1065,10 +1103,12 @@ const Insurance = () => {
         try {
             const truckFlagStatus = await getTruckFlagStatus(vehicleNumber);
             if (truckFlagStatus.isFlagged) {
-                return (
-                    truckFlagStatus.message ||
-                    'This vehicle has been flagged in system. Can not create invoice for this vehicle.'
-                );
+                setMessages(prev => [...prev, {
+                    text:
+                        truckFlagStatus.message ||
+                        'This vehicle is flagged. Owner OTP will be required when you submit the invoice.',
+                    sender: 'bot',
+                }]);
             }
 
             const recentInvoiceStatus = await getVehicleRecentInvoiceStatus(vehicleNumber);
@@ -2564,6 +2604,37 @@ const Insurance = () => {
                     )}
                 </div>
             )}
+
+            <BlacklistOverrideOtpModal
+                open={blacklistOtpOpen}
+                onClose={() => setBlacklistOtpOpen(false)}
+                action="create_invoice"
+                vehicleNumber={blacklistOtpVehicleNumber}
+                title="Verify Owner for Blacklisted Vehicle"
+                description="Enter the authorized owner mobile number. If it matches, you will receive an OTP to create this invoice."
+                requestOtp={async (input) => {
+                    const response = await requestInvoiceBlacklistOverrideOtp({
+                        action: input.action,
+                        ownerMobile: input.ownerMobile,
+                        vehicleNumber: input.vehicleNumber ?? undefined,
+                        invoiceId: input.invoiceId ?? undefined,
+                        reason: input.reason,
+                    });
+                    return response?.data ?? response;
+                }}
+                verifyOtp={async (input) => {
+                    const response = await verifyInvoiceBlacklistOverrideOtp(input);
+                    return response?.data ?? response;
+                }}
+                onVerified={async (overrideToken) => {
+                    const pending = pendingSubmitRef.current;
+                    await submitInsuranceForm(
+                        pending?.file ?? null,
+                        pending?.overrides ?? {},
+                        overrideToken,
+                    );
+                }}
+            />
         </div>
     );
 };
