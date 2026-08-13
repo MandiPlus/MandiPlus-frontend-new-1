@@ -1623,6 +1623,209 @@
   opacity: 0;
 }
 
+.requiredDocuments {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--mp-line);
+  border-radius: 18px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.requiredDocumentsHeader {
+  display: flex;
+  min-height: 26px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.requiredDocumentsTitle {
+  color: var(--mp-ink);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.documentCounter {
+  display: inline-flex;
+  min-height: 25px;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 9px;
+  color: #8b5d16;
+  background: #fff1ce;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.documentCounterComplete {
+  color: #256747;
+  background: #e6f5ec;
+}
+
+.requiredDocumentList {
+  display: grid;
+  gap: 8px;
+}
+
+.requiredDocumentItem {
+  display: grid;
+  min-height: 62px;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--mp-line);
+  border-radius: 14px;
+  padding: 9px;
+  background: white;
+}
+
+.requiredDocumentMissing {
+  border-color: #eadcb6;
+}
+
+.requiredDocumentStatus {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 11px;
+  color: #9a6718;
+  background: #fff3d7;
+}
+
+.requiredDocumentReceived .requiredDocumentStatus {
+  color: #28724e;
+  background: #e7f5ed;
+}
+
+.requiredDocumentCopy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.requiredDocumentCopy strong {
+  overflow: hidden;
+  color: var(--mp-ink);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.requiredDocumentCopy small {
+  overflow: hidden;
+  color: var(--mp-muted);
+  font-size: 9px;
+  font-weight: 750;
+  line-height: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.requiredDocumentAction,
+.accidentEvidenceAction {
+  position: relative;
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  overflow: hidden;
+  border: 1px solid var(--mp-navy);
+  border-radius: 11px;
+  padding: 0 10px;
+  color: white;
+  background: var(--mp-navy);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.requiredDocumentAction:focus-within,
+.accidentEvidenceAction:focus-within {
+  outline: 2px solid var(--mp-navy);
+  outline-offset: 2px;
+}
+
+.requiredDocumentReceived .requiredDocumentAction {
+  border-color: var(--mp-line);
+  color: var(--mp-navy);
+  background: var(--mp-soft);
+}
+
+.requiredDocumentAction input,
+.accidentEvidenceAction input {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.claimUploadDisabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.claimUploadDisabled input {
+  cursor: wait;
+}
+
+.accidentEvidence {
+  display: grid;
+  min-height: 58px;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  border: 1px dashed var(--mp-line);
+  border-radius: 15px;
+  padding: 9px 10px;
+  background: var(--mp-surface);
+}
+
+.accidentEvidenceIcon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 11px;
+  color: var(--mp-navy);
+  background: var(--mp-soft);
+}
+
+.accidentEvidenceCopy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.accidentEvidenceCopy strong {
+  color: var(--mp-ink);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 16px;
+}
+
+.accidentEvidenceCopy small {
+  overflow: hidden;
+  color: var(--mp-muted);
+  font-size: 9px;
+  font-weight: 750;
+  line-height: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accidentEvidenceAction {
+  border-color: var(--mp-line);
+  color: var(--mp-navy);
+  background: var(--mp-soft);
+}
+
 .timeline {
   display: grid;
   gap: 0;
@@ -1929,23 +2132,13 @@
 }
 
 .reviewDate {
-  position: relative;
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 4px;
   color: var(--mp-ink);
   justify-content: flex-end;
   font-size: 14px;
   font-weight: 900;
-}
-
-.reviewDate input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  cursor: pointer;
-  opacity: 0;
 }
 
 .invoicePreviewModal {

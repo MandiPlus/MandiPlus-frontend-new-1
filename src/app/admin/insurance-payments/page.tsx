@@ -23,6 +23,12 @@ import {
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import AsyncSearchableSelect from '@/features/admin/components/AsyncSearchableSelect';
 import { itemsData } from '@/features/insurance/productCatalog';
+import {
+  ALL_MANDI_FILTER_VALUES,
+  formatMandiFilterLabel,
+  MANDI_OPTION_GROUPS,
+  UNMAPPED_MANDI_VALUE,
+} from '@/features/insurance/mandiDirectory';
 
 const PAYMENT_STATUS_OPTIONS = [
   'PENDING',
@@ -373,6 +379,10 @@ export default function AdminInsurancePaymentsPage() {
   const [methodDropdownOpen, setMethodDropdownOpen] = useState(false);
   const methodDropdownRef = useRef<HTMLDivElement>(null);
   const [productName, setProductName] = useState('');
+  const [mandiNameFilter, setMandiNameFilter] = useState<Set<string>>(() => new Set());
+  const [committedMandiNameKey, setCommittedMandiNameKey] = useState('');
+  const [mandiDropdownOpen, setMandiDropdownOpen] = useState(false);
+  const mandiDropdownRef = useRef<HTMLDivElement>(null);
   const [reportPeriod, setReportPeriod] =
     useState<(typeof REPORT_PERIOD_OPTIONS)[number]['value']>('daily');
   const [exportReportType, setExportReportType] =
@@ -437,6 +447,23 @@ export default function AdminInsurancePaymentsPage() {
   const [summaryStats, setSummaryStats] = useState({ totalPremium: 0, totalPaid: 0, totalPending: 0, paidToday: 0, paidFromWallet: 0 });
 
   const paymentMethodFilterKey = Array.from(paymentMethodFilter).sort().join(',');
+  // Commit mandi selection only when the dropdown closes so checkbox clicks stay
+  // instant and we fire one query after the user finishes multi-selecting.
+  useEffect(() => {
+    if (mandiDropdownOpen) return;
+    const nextKey = Array.from(mandiNameFilter).sort().join(',');
+    if (nextKey === committedMandiNameKey) return;
+    setCommittedMandiNameKey(nextKey);
+    setCurrentPage(1);
+  }, [mandiDropdownOpen, mandiNameFilter, committedMandiNameKey]);
+
+  const mandiNameParam = useMemo(() => {
+    if (!committedMandiNameKey) return undefined;
+    const values = committedMandiNameKey.split(',').filter(Boolean);
+    if (values.length === 0) return undefined;
+    if (values.length === ALL_MANDI_FILTER_VALUES.length) return undefined;
+    return committedMandiNameKey;
+  }, [committedMandiNameKey]);
   const paymentMethodParams = useMemo(() => {
     if (paymentMethodFilter.size === 0) return {};
     if (paymentMethodFilter.size === PAYMENT_METHOD_OPTIONS.length) return {};
@@ -477,6 +504,7 @@ export default function AdminInsurancePaymentsPage() {
         paymentStatus: effectivePaymentStatus || undefined,
         ...paymentMethodParams,
         productName: productName || undefined,
+        mandiName: mandiNameParam,
         invoiceNumber: debouncedInvoiceNumberQuery.trim() || undefined,
         buyerQuery: debouncedBuyerQuery.trim() || undefined,
         supplierQuery: debouncedSupplierQuery.trim() || undefined,
@@ -490,7 +518,7 @@ export default function AdminInsurancePaymentsPage() {
       }
       return response;
     },
-    [fromDate, effectiveToDate, effectivePaymentStatus, paymentMethodParams, productName, debouncedInvoiceNumberQuery, debouncedBuyerQuery, debouncedSupplierQuery, debouncedUtrQuery, selectedUserId],
+    [fromDate, effectiveToDate, effectivePaymentStatus, paymentMethodParams, productName, mandiNameParam, debouncedInvoiceNumberQuery, debouncedBuyerQuery, debouncedSupplierQuery, debouncedUtrQuery, selectedUserId],
   );
 
   const fetchRows = useCallback(async () => {
@@ -501,6 +529,7 @@ export default function AdminInsurancePaymentsPage() {
         fromDate: normalizeDateForApi(fromDate),
         toDate: normalizeDateForApi(effectiveToDate),
         productName: productName || undefined,
+        mandiName: mandiNameParam,
         paymentStatus: effectivePaymentStatus || undefined,
         ...paymentMethodParams,
         invoiceNumber: debouncedInvoiceNumberQuery.trim() || undefined,
@@ -534,7 +563,7 @@ export default function AdminInsurancePaymentsPage() {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchPage, currentPage, fromDate, toDate, productName, paymentStatus, paymentMethodFilterKey, debouncedInvoiceNumberQuery, debouncedBuyerQuery, debouncedSupplierQuery, debouncedUtrQuery, selectedUserId, debouncedOverdueDays, debouncedMinAmount]);
+  }, [fetchPage, currentPage, fromDate, toDate, productName, committedMandiNameKey, paymentStatus, paymentMethodFilterKey, debouncedInvoiceNumberQuery, debouncedBuyerQuery, debouncedSupplierQuery, debouncedUtrQuery, selectedUserId, debouncedOverdueDays, debouncedMinAmount]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -548,6 +577,9 @@ export default function AdminInsurancePaymentsPage() {
     const handleClickOutside = (e: MouseEvent) => {
       if (methodDropdownRef.current && !methodDropdownRef.current.contains(e.target as Node)) {
         setMethodDropdownOpen(false);
+      }
+      if (mandiDropdownRef.current && !mandiDropdownRef.current.contains(e.target as Node)) {
+        setMandiDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -636,6 +668,7 @@ export default function AdminInsurancePaymentsPage() {
     effectivePaymentStatus,
     paymentMethodFilterKey,
     productName,
+    committedMandiNameKey,
     debouncedInvoiceNumberQuery,
     debouncedBuyerQuery,
     debouncedSupplierQuery,
@@ -723,6 +756,7 @@ export default function AdminInsurancePaymentsPage() {
         paymentStatus: effectivePaymentStatus || undefined,
         ...paymentMethodParams,
         productName: productName || undefined,
+        mandiName: mandiNameParam,
         invoiceNumber: debouncedInvoiceNumberQuery.trim() || undefined,
         buyerQuery: debouncedBuyerQuery.trim() || undefined,
         supplierQuery: debouncedSupplierQuery.trim() || undefined,
@@ -1033,6 +1067,7 @@ export default function AdminInsurancePaymentsPage() {
         paymentStatus: effectivePaymentStatus || undefined,
         ...paymentMethodParams,
         productName: productName || undefined,
+        mandiName: mandiNameParam,
         invoiceNumber: invoiceNumberQuery.trim() || undefined,
         buyerQuery: buyerQuery.trim() || undefined,
         supplierQuery: supplierQuery.trim() || undefined,
@@ -1057,6 +1092,7 @@ export default function AdminInsurancePaymentsPage() {
         paymentStatus: effectivePaymentStatus || undefined,
         ...paymentMethodParams,
         productName: productName || undefined,
+        mandiName: mandiNameParam,
         invoiceNumber: invoiceNumberQuery.trim() || undefined,
         buyerQuery: buyerQuery.trim() || undefined,
         supplierQuery: supplierQuery.trim() || undefined,
@@ -1080,6 +1116,7 @@ export default function AdminInsurancePaymentsPage() {
         paymentStatus: paymentStatus || undefined,
         ...paymentMethodParams,
         productName: productName || undefined,
+        mandiName: mandiNameParam,
         invoiceNumber: invoiceNumberQuery.trim() || undefined,
         buyerQuery: buyerQuery.trim() || undefined,
         supplierQuery: supplierQuery.trim() || undefined,
@@ -1333,6 +1370,138 @@ export default function AdminInsurancePaymentsPage() {
                 </option>
               ))}
             </select>
+            <div className="relative" ref={mandiDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setMandiDropdownOpen((open) => !open)}
+                title="Filter by mandi (origin supplier address or destination bill-to). Select a state to include all of its mandis."
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm bg-white flex items-center gap-2 min-w-[160px] max-w-[240px]"
+              >
+                <span className="truncate">{formatMandiFilterLabel(mandiNameFilter)}</span>
+                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {mandiDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-72 max-h-80 overflow-y-auto bg-white border border-gray-200 rounded-md shadow-lg py-1 text-gray-900">
+                  <label className="flex items-center px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm font-medium border-b border-gray-100 sticky top-0 bg-white">
+                    <input
+                      type="checkbox"
+                      className="mr-2"
+                      checked={
+                        mandiNameFilter.size === 0 ||
+                        mandiNameFilter.size === ALL_MANDI_FILTER_VALUES.length
+                      }
+                      onChange={() => {
+                        setMandiNameFilter(new Set());
+                      }}
+                    />
+                    All Mandis
+                  </label>
+                  {MANDI_OPTION_GROUPS.map((group) => {
+                    const groupValues = group.options.map((option) => option.value);
+                    const selectedInGroup = groupValues.filter((value) =>
+                      mandiNameFilter.has(value),
+                    ).length;
+                    const allInGroupSelected =
+                      groupValues.length > 0 && selectedInGroup === groupValues.length;
+                    const someInGroupSelected =
+                      selectedInGroup > 0 && selectedInGroup < groupValues.length;
+
+                    return (
+                      <div key={group.state} className="border-b border-gray-100 last:border-b-0">
+                        <label className="flex items-center px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm font-semibold bg-gray-50/80">
+                          <input
+                            type="checkbox"
+                            className="mr-2"
+                            checked={allInGroupSelected}
+                            ref={(el) => {
+                              if (el) el.indeterminate = someInGroupSelected;
+                            }}
+                            onChange={() => {
+                              setMandiNameFilter((prev) => {
+                                const next = new Set(prev);
+                                if (allInGroupSelected) {
+                                  groupValues.forEach((value) => next.delete(value));
+                                } else {
+                                  groupValues.forEach((value) => next.add(value));
+                                }
+                                if (next.size === ALL_MANDI_FILTER_VALUES.length) {
+                                  return new Set();
+                                }
+                                return next;
+                              });
+                            }}
+                          />
+                          <span className="flex-1">{group.state}</span>
+                          <span className="text-xs font-normal text-gray-500">
+                            {selectedInGroup}/{groupValues.length}
+                          </span>
+                        </label>
+                        {group.options.map((option) => (
+                          <label
+                            key={option.value}
+                            className="flex items-center pl-7 pr-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm"
+                          >
+                            <input
+                              type="checkbox"
+                              className="mr-2"
+                              checked={mandiNameFilter.has(option.value)}
+                              onChange={() => {
+                                setMandiNameFilter((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(option.value)) {
+                                    next.delete(option.value);
+                                  } else {
+                                    next.add(option.value);
+                                  }
+                                  if (next.size === ALL_MANDI_FILTER_VALUES.length) {
+                                    return new Set();
+                                  }
+                                  return next;
+                                });
+                              }}
+                            />
+                            {option.label}
+                          </label>
+                        ))}
+                      </div>
+                    );
+                  })}
+                  <label className="flex items-center px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm border-t border-gray-100">
+                    <input
+                      type="checkbox"
+                      className="mr-2"
+                      checked={mandiNameFilter.has(UNMAPPED_MANDI_VALUE)}
+                      onChange={() => {
+                        setMandiNameFilter((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(UNMAPPED_MANDI_VALUE)) {
+                            next.delete(UNMAPPED_MANDI_VALUE);
+                          } else {
+                            next.add(UNMAPPED_MANDI_VALUE);
+                          }
+                          if (next.size === ALL_MANDI_FILTER_VALUES.length) {
+                            return new Set();
+                          }
+                          return next;
+                        });
+                      }}
+                    />
+                    Other / Unmapped Address
+                  </label>
+                  <div className="sticky bottom-0 border-t border-gray-100 bg-white px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => setMandiDropdownOpen(false)}
+                      className="w-full rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             <AsyncSearchableSelect
               label=""
               value={selectedUserId}
@@ -1422,6 +1591,8 @@ export default function AdminInsurancePaymentsPage() {
                 setPaymentStatus('');
                 setPaymentMethodFilter(new Set());
                 setProductName('');
+                setMandiNameFilter(new Set());
+                setCommittedMandiNameKey('');
                 setInvoiceNumberQuery('');
                 setBuyerQuery('');
                 setSupplierQuery('');
@@ -2216,7 +2387,7 @@ export default function AdminInsurancePaymentsPage() {
               <img
                 src={summaryImagePreview.imageUrl}
                 alt={`Payment summary for ${summaryImagePreview.invoiceLabel}`}
-                className="mx-auto h-auto max-h-[68vh] max-w-full bg-white object-contain shadow-sm"
+                className="mx-auto block h-auto w-full max-w-full bg-white shadow-sm"
               />
             </div>
 

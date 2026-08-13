@@ -2,12 +2,13 @@
 
 import React from "react";
 import Link from "next/link";
+import { COMPANY_INFO } from "@/features/landing/landingData";
 
 const sections = [
   {
     id: "intro",
     title: null,
-    content: `MandiPlus (ENP Farms PVT LTD) is committed to protecting the privacy of every individual who visits our website and have taken reasonable steps to protect your Personal Information and/or Sensitive Personal Data or Information.`,
+    content: `MandiPlus, owned and operated by ENP FARMS PRIVATE LIMITED, is committed to protecting the privacy of every individual who visits our website and has taken reasonable steps to protect your Personal Information and/or Sensitive Personal Data or Information.`,
   },
   {
     id: "covers",
@@ -163,6 +164,19 @@ const PrivacyPolicyPage = () => {
             </div>
           ))}
         </div>
+
+        <footer className="mt-4 rounded-3xl border border-[#e0d7fc]/50 bg-white p-5 shadow-sm">
+          <p className="text-sm leading-relaxed text-slate-600">
+            MandiPlus is owned and operated by{" "}
+            <strong className="font-semibold text-slate-800">
+              {COMPANY_INFO.parent}
+            </strong>
+            .
+          </p>
+          <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
+            © 2026 ENP FARMS PRIVATE LIMITED. All rights reserved.
+          </p>
+        </footer>
       </div>
     </div>
   );

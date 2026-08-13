@@ -46,6 +46,8 @@ interface User {
   channelPartnerProfileId?: string | null;
   channelPartnerStatus?: "PENDING" | "ACTIVE" | "SUSPENDED" | null;
   channelPartnerCode?: string | null;
+  insurancePremiumPerLakh?: number;
+  insurancePremiumRateVersion?: number;
 }
 
 export interface AdminLedgerUser extends User {
@@ -395,6 +397,21 @@ export interface AdminUpdateUserPayload {
   unionMember?: string | null;
 }
 
+export interface UpdateUserInsurancePremiumPayload {
+  premiumPerLakh: number;
+  reason: string;
+  expectedVersion?: number;
+}
+
+export interface UserInsurancePremiumUpdate {
+  userId: string;
+  canonicalUserId: string;
+  insurancePremiumPerLakh: number;
+  insurancePremiumPercentage: number;
+  insurancePremiumRateVersion: number;
+  changed: boolean;
+}
+
 export interface InsuranceForm {
   _id: string;
   id?: string; // Handle both _id (mongoose) and id (typeorm) depending on backend
@@ -627,6 +644,7 @@ export interface SalesAnalyticsPayload {
   lapsedCustomers: Array<{
     id: string;
     name: string;
+    commodity: string;
     state: string;
     lastSaleDate: string;
     daysInactive: number;
@@ -634,12 +652,31 @@ export interface SalesAnalyticsPayload {
     lapseThresholdDays: number;
     lifetimeLoads: number;
     lifetimeVehicles: number;
-    lastVehicle?: string | null;
     lifetimePremium: number;
+    totalPremiumAmount: number;
     monthlyPremiumAtRisk: number;
     risk: string;
     riskScore: number;
   }>;
+  lapsedCommoditySummary: Array<{
+    commodity: string;
+    stoppedPairs: number;
+    customers: number;
+    monthlyPremiumAtRisk: number;
+  }>;
+  lapsedTotals: {
+    stoppedPairs: number;
+    customers: number;
+    monthlyPremiumAtRisk: number;
+    totalPremium: number;
+  };
+  lapsedPagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+  commodityFilter: string | null;
   quality: Array<{
     key: string;
     label: string;
@@ -802,6 +839,113 @@ export interface AppPaymentsSummary {
   totalRows: number;
   totalPaid: number;
   paidToday: number;
+}
+
+export type TrackingPurchaseStatus = 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'FAILED';
+export type TrackingPaymentMethod =
+  | 'PHONEPE'
+  | 'CASH'
+  | 'UPI'
+  | 'BANK_TRANSFER'
+  | 'CARD'
+  | 'OTHER';
+export type TrackingPurchaseSource = 'APP' | 'ADMIN';
+
+export interface AdminTrackingPurchase {
+  id: string;
+  userId: string;
+  customerName: string;
+  mobileNumber: string;
+  secondaryMobileNumber: string | null;
+  state: string | null;
+  identity: string | null;
+  packId: string;
+  packCode: string;
+  packLabel: string;
+  amountPaid: number;
+  listPriceAmount: number;
+  merchantOrderId: string;
+  phonepeOrderId: string | null;
+  phonepeUtr: string | null;
+  paymentMethod: TrackingPaymentMethod;
+  paymentReference: string | null;
+  purchaseSource: TrackingPurchaseSource;
+  activatedBy: string | null;
+  adminNote: string | null;
+  status: TrackingPurchaseStatus;
+  paidAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  daysRemaining: number;
+}
+
+export interface AdminTrackingPurchaseSummary {
+  totalAttempts: number;
+  paidPurchases: number;
+  activeCustomers: number;
+  totalRevenue: number;
+  paidToday: number;
+  pendingPurchases: number;
+  failedPurchases: number;
+  expiredPurchases: number;
+  manualPurchases: number;
+}
+
+export interface AdminTrackingPlanCustomer {
+  id: string;
+  name: string;
+  mobileNumber: string;
+  secondaryMobileNumber: string | null;
+  state: string | null;
+  identity: string | null;
+  active: boolean;
+  expiresAt: string | null;
+}
+
+export interface GrantTrackingPlanPayload {
+  userId: string;
+  idempotencyKey: string;
+  paymentMethod: Exclude<TrackingPaymentMethod, 'PHONEPE'>;
+  amountPaid: number;
+  paymentReference?: string;
+  note?: string;
+}
+
+export interface AdminTrackingUsageRow {
+  userId: string;
+  customerName: string;
+  mobileNumber: string;
+  secondaryMobileNumber: string | null;
+  state: string | null;
+  identity: string | null;
+  visitCount: number;
+  lastVisitedAt: string | null;
+  viewsUsed: number;
+  viewsRemaining: number;
+  lastVehicleNumber: string | null;
+  lastTrackedAt: string | null;
+  packActive: boolean;
+  packExpiresAt: string | null;
+}
+
+export interface AdminTrackingUsageSummary {
+  interestedCustomers: number;
+  totalScreenOpens: number;
+  trackingViewsUsed: number;
+  exhaustedCustomers: number;
+  activePackCustomers: number;
+  usageDate: string;
+  dailyLimit: number;
+}
+
+export interface AdminTrackingPurchaseFilters {
+  search?: string;
+  status?: TrackingPurchaseStatus;
+  fromDate?: string;
+  toDate?: string;
+  page?: number;
+  limit?: number;
 }
 
 export interface AdminWalletPack {
@@ -1180,6 +1324,7 @@ export interface ClaimRequest {
   caseNumber: string;
   officialClaimNumber?: string | null;
   tataClaimNumber?: string | null;
+  documentsSentToTataAt?: string | null;
   mandiplusClaimNumber?: string | null;
   handledBy?: 'TATA' | 'MandiPlus' | string | null;
   status: ClaimStatus;
@@ -1361,9 +1506,69 @@ export interface ClaimActivity {
   createdAt: string;
 }
 
+export type ClaimNotificationType =
+  | "claim_initiated"
+  | "document_reminder"
+  | "surveyor_assigned"
+  | "report_generated"
+  | "sent_to_tata"
+  | "bank_details_request"
+  | "completed"
+  | "document_uploaded_admin";
+
+export type ClaimNotificationDeliveryStatus =
+  | "processing"
+  | "accepted"
+  | "delivered"
+  | "read"
+  | "failed"
+  | "skipped"
+  | "unknown";
+
+export interface ClaimNotificationLog {
+  id: string;
+  tenantId: string;
+  claimId: string;
+  notificationType: ClaimNotificationType;
+  channel: "whatsapp";
+  recipientPhone?: string | null;
+  dedupeKey: string;
+  templateName?: string | null;
+  payload: Record<string, unknown>;
+  status: ClaimNotificationDeliveryStatus;
+  errorMessage?: string | null;
+  providerMessageId?: string | null;
+  attemptCount?: number;
+  lastAttemptAt?: string | null;
+  nextAttemptAt?: string | null;
+  sentAt?: string | null;
+  deliveredAt?: string | null;
+  readAt?: string | null;
+  failedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type ClaimDocumentReminderReason =
+  | "claim_not_found"
+  | "claim_closed"
+  | "no_missing_documents"
+  | "reminder_sent_recently"
+  | "manual_reminder_cooldown"
+  | "reminder_limit_reached"
+  | "claim_too_new"
+  | "notifications_disabled"
+  | "send_failed";
+
+export interface ClaimDocumentReminderResult {
+  sent: boolean;
+  reason?: ClaimDocumentReminderReason;
+}
+
 export interface UpdateClaimDto {
   officialClaimNumber?: string | null;
   tataClaimNumber?: string | null;
+  documentsSentToTataAt?: string | null;
   handledBy?: 'TATA' | 'MandiPlus' | string | null;
   description?: string | null;
   status?: ClaimStatus;
@@ -1996,6 +2201,34 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || "Failed to update user",
+        error: error.message,
+      };
+    }
+  };
+
+  public updateUserInsurancePremium = async (
+    userId: string,
+    payload: UpdateUserInsurancePremiumPayload,
+  ): Promise<ApiResponse<UserInsurancePremiumUpdate>> => {
+    try {
+      const response = await this.client.patch(
+        `/users/admin/${userId}/insurance-premium`,
+        payload,
+      );
+      const data: unknown = response.data;
+      if (data && typeof data === "object" && "success" in data) {
+        return data as ApiResponse<UserInsurancePremiumUpdate>;
+      }
+      return {
+        success: true,
+        data: data as UserInsurancePremiumUpdate,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to update insurance premium rate",
         error: error.message,
       };
     }
@@ -4013,6 +4246,7 @@ class AdminApi {
     excludePaymentMethod?: string;
     paymentMethods?: string;
     productName?: string;
+    mandiName?: string; // single name or comma-separated multi-select
     invoiceNumber?: string;
     insuredPersonQuery?: string;
     buyerQuery?: string;
@@ -4077,6 +4311,7 @@ class AdminApi {
     toDate?: string;
     dateFilterField?: "invoiceDate" | "createdAt";
     productName?: string;
+    mandiName?: string; // single name or comma-separated multi-select
     paymentStatus?: string;
     paymentMethod?: string;
     excludePaymentMethod?: string;
@@ -4255,6 +4490,140 @@ class AdminApi {
     }
   };
 
+  public getTrackingPurchases = async (
+    filters?: AdminTrackingPurchaseFilters,
+  ): Promise<ApiResponse<AdminTrackingPurchase[]>> => {
+    try {
+      const response = await this.client.get('/tracking-packs/admin/purchases', {
+        params: filters,
+      });
+      const payload = response.data;
+      return {
+        success: payload?.success !== false,
+        data: Array.isArray(payload?.data) ? payload.data : [],
+        total: payload?.total,
+        page: payload?.page,
+        limit: payload?.limit,
+        totalPages: payload?.totalPages,
+      };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message ||
+          'Failed to fetch tracking purchases',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public getTrackingPurchasesSummary = async (
+    filters?: Omit<AdminTrackingPurchaseFilters, 'page' | 'limit'>,
+  ): Promise<ApiResponse<AdminTrackingPurchaseSummary>> => {
+    try {
+      const response = await this.client.get(
+        '/tracking-packs/admin/purchases/summary',
+        { params: filters },
+      );
+      return {
+        success: response.data?.success !== false,
+        data: response.data?.data,
+      };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message ||
+          'Failed to fetch tracking purchase summary',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public getTrackingUsage = async (filters?: {
+    search?: string;
+    date?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<
+    ApiResponse<AdminTrackingUsageRow[]> & {
+      summary?: AdminTrackingUsageSummary;
+    }
+  > => {
+    try {
+      const response = await this.client.get('/tracking-packs/admin/usage', {
+        params: filters,
+      });
+      return {
+        success: response.data?.success !== false,
+        data: Array.isArray(response.data?.data) ? response.data.data : [],
+        summary: response.data?.summary,
+        total: response.data?.total,
+        page: response.data?.page,
+        limit: response.data?.limit,
+        totalPages: response.data?.totalPages,
+      };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message ||
+          'Failed to fetch tracking usage',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public searchTrackingPlanCustomers = async (
+    query: string,
+    limit: number = 10,
+  ): Promise<ApiResponse<AdminTrackingPlanCustomer[]>> => {
+    try {
+      const response = await this.client.get(
+        '/tracking-packs/admin/customers/search',
+        { params: { q: query, limit } },
+      );
+      return {
+        success: response.data?.success !== false,
+        data: Array.isArray(response.data?.data) ? response.data.data : [],
+      };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message || 'Failed to search customers',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public grantTrackingPlan = async (
+    payload: GrantTrackingPlanPayload,
+  ): Promise<ApiResponse<AdminTrackingPurchase>> => {
+    try {
+      const response = await this.client.post(
+        '/tracking-packs/admin/grants',
+        payload,
+      );
+      return {
+        success: response.data?.success !== false,
+        data: response.data?.data,
+      };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message || 'Failed to activate plan',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
   public exportInsurancePayments = async (filters?: {
     fromDate?: string;
     toDate?: string;
@@ -4264,6 +4633,7 @@ class AdminApi {
     excludePaymentMethod?: string;
     paymentMethods?: string;
     productName?: string;
+    mandiName?: string; // single name or comma-separated multi-select
     invoiceNumber?: string;
     insuredPersonQuery?: string;
     buyerQuery?: string;
@@ -4499,6 +4869,17 @@ class AdminApi {
         error: error.message,
       };
     }
+  };
+
+  public exportClaimsToExcel = async (
+    filters?: FilterClaimRequestsDto,
+  ): Promise<Blob> => {
+    const response = await this.client.get("/claim-requests/admin/export", {
+      params: filters,
+      responseType: "blob",
+    });
+
+    return response.data;
   };
 
   public getClaimsSummary = async (): Promise<ApiResponse<ClaimsSummary>> => {
@@ -4853,6 +5234,71 @@ class AdminApi {
     }
   };
 
+  public getClaimNotifications = async (
+    id: string,
+  ): Promise<ApiResponse<ClaimNotificationLog[]>> => {
+    try {
+      const response = await this.client.get<
+        ClaimNotificationLog[] | ApiResponse<ClaimNotificationLog[]>
+      >(
+        `/claim-requests/${id}/notifications`,
+      );
+      const payload = Array.isArray(response.data)
+        ? response.data
+        : response.data.data || [];
+
+      return {
+        success: true,
+        data: payload,
+      };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to fetch claim notification history",
+        ),
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public sendClaimDocumentReminder = async (
+    id: string,
+  ): Promise<ApiResponse<ClaimDocumentReminderResult>> => {
+    try {
+      const response = await this.client.post<
+        ClaimDocumentReminderResult | ApiResponse<ClaimDocumentReminderResult>
+      >(
+        `/claim-requests/${id}/notifications/document-reminder`,
+      );
+      const payload = "sent" in response.data
+        ? response.data
+        : response.data.data || { sent: false };
+      const result: ClaimDocumentReminderResult = {
+        sent: Boolean(payload?.sent),
+        reason: payload?.reason,
+      };
+
+      return {
+        success: result.sent,
+        data: result,
+        message: result.sent
+          ? "WhatsApp document reminder sent"
+          : "WhatsApp document reminder was not sent",
+      };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to send WhatsApp document reminder",
+        ),
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
   /**
    * Update claim status
    * Actions: Assign Surveyor | Approve | Reject | Settle
@@ -5067,10 +5513,25 @@ class AdminApi {
   public getSalesAnalytics = async (
     from: string,
     to: string,
+    options?: {
+      commodity?: string | null;
+      page?: number;
+      pageSize?: number;
+      search?: string | null;
+    },
   ): Promise<SalesAnalyticsPayload> => {
     const response = await this.client.get<SalesAnalyticsPayload>(
       "/admin/sales-analytics",
-      { params: { from, to } },
+      {
+        params: {
+          from,
+          to,
+          ...(options?.commodity ? { commodity: options.commodity } : {}),
+          ...(options?.page ? { page: options.page } : {}),
+          ...(options?.pageSize ? { pageSize: options.pageSize } : {}),
+          ...(options?.search ? { search: options.search } : {}),
+        },
+      },
     );
     return response.data;
   };
@@ -5078,11 +5539,39 @@ class AdminApi {
   public exportSalesAnalytics = async (
     from: string,
     to: string,
+    commodity?: string | null,
   ): Promise<Blob> => {
     const response = await this.client.get("/admin/sales-analytics/export", {
-      params: { from, to },
+      params: {
+        from,
+        to,
+        ...(commodity ? { commodity } : {}),
+      },
       responseType: "blob",
     });
+    return response.data;
+  };
+
+  public exportStoppedVehicles = async (
+    from: string,
+    to: string,
+    options?: {
+      commodity?: string | null;
+      search?: string | null;
+    },
+  ): Promise<Blob> => {
+    const response = await this.client.get(
+      "/admin/sales-analytics/export-stopped",
+      {
+        params: {
+          from,
+          to,
+          ...(options?.commodity ? { commodity: options.commodity } : {}),
+          ...(options?.search ? { search: options.search } : {}),
+        },
+        responseType: "blob",
+      },
+    );
     return response.data;
   };
 

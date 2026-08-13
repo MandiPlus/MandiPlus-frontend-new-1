@@ -1,143 +1,144 @@
-"use client";
-
-import Link from "next/link";
-import { ArrowRight, Download } from "lucide-react";
+import Image from "next/image";
+import {
+  ChartNoAxesCombined,
+  Landmark,
+  ShieldCheck,
+  Store,
+  Truck,
+  WalletCards,
+  Wheat,
+} from "lucide-react";
 import SiteChrome from "@/features/landing/SiteChrome";
+import { SiteFooter } from "@/features/landing/LandingPage";
+import styles from "@/features/landing/LandingPage.module.css";
 
-const PLAY_STORE_URL =
-  "https://play.google.com/store/apps/details?id=com.mandiplus.customer";
-
-const productGroups = [
+const PRODUCT_GROUPS = [
   {
-    id: "risk-insurance",
-    title: "Risk & Insurance",
+    category: "Risk & Insurance",
     products: [
       {
         name: "Transit Risk Insurance",
-        summary:
-          "Cover for delays, accidents, or spoilage when perishable goods move across states.",
+        description:
+          "Delay, accident ya spoilage ke risk se perishable maal ko cover.",
+        icon: ShieldCheck,
       },
     ],
   },
   {
-    id: "fintech",
-    title: "Financial",
+    category: "Financial",
     products: [
       {
         name: "NBFC Credit",
-        summary: "Credit lines matched to mandi auction cash flow.",
+        description: "Mandi auction ke cash flow ke hisaab se credit line.",
+        icon: Landmark,
       },
       {
         name: "Working Capital",
-        summary: "Short-term credit to buy inventory without payment delays.",
+        description: "Inventory kharido. Payment ka wait mat karo.",
+        icon: WalletCards,
       },
     ],
   },
   {
-    id: "logistics-tech",
-    title: "Logistics & Tech",
+    category: "Logistics & Tech",
     products: [
       {
         name: "Logistics Management",
-        summary: "Truck sourcing and shipment tracking across India.",
+        description: "Truck source karo. Shipment live track karo.",
+        icon: Truck,
+      },
+      {
+        name: "Prevention Harvesting Technology",
+        description: "Crop loss prevent karo. Harvesting better plan karo.",
+        icon: Wheat,
+      },
+      {
+        name: "Marketplace",
+        description: "Verified buyers aur sellers se seedha trade.",
+        icon: Store,
       },
       {
         name: "Market Insights",
-        summary: "Price and supply signals across APMC mandis.",
+        description: "APMC prices aur supply signals, ek nazar mein.",
+        icon: ChartNoAxesCombined,
       },
     ],
   },
-];
+] as const;
 
 const ProductsPage = () => {
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#f6f6f8] text-[#1a1a1f]">
-      <div className="mx-auto max-w-6xl px-4 pb-4 pt-5 sm:px-6 lg:px-8">
-        <SiteChrome active="products" />
-      </div>
+    <main className={styles.site}>
+      <section className={styles.productPageHero}>
+        <div className={styles.container}>
+          <SiteChrome active="products" />
 
-      <section className="px-4 pb-10 pt-8 sm:px-6 sm:pt-12 lg:px-8">
-        <div className="mx-auto max-w-2xl">
-          <h1 className="text-4xl font-semibold tracking-tight text-[#1a1a1f] sm:text-5xl">
-            Our products
-          </h1>
-          <p className="mt-3 text-base font-medium leading-7 text-[#6b6b76]">
-            Digital tools for mandi traders — insurance, credit, logistics. Not
-            groceries or commodities.
-          </p>
-        </div>
-      </section>
-
-      <section className="px-4 pb-10 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-6xl space-y-4">
-          {productGroups.map((group) => (
-            <div
-              key={group.id}
-              id={group.id}
-              className="rounded-[1.5rem] border border-[#ececf2] bg-white px-6 py-7 sm:px-8"
-            >
-              <h2 className="text-lg font-semibold text-[#1a1a1f]">
-                {group.title}
-              </h2>
-              <div className="mt-4 divide-y divide-[#ececf2]">
-                {group.products.map((product) => (
-                  <article
-                    key={product.name}
-                    className="grid gap-1 py-4 md:grid-cols-[0.9fr_1.3fr] md:gap-8"
-                  >
-                    <h3 className="text-sm font-semibold text-[#1a1a1f]">
-                      {product.name}
-                    </h3>
-                    <p className="text-sm font-medium leading-6 text-[#6b6b76]">
-                      {product.summary}
-                    </p>
-                  </article>
-                ))}
-              </div>
+          <div className={styles.productHeroGrid}>
+            <div className={styles.productHeroCopy}>
+              <p className={styles.productEyebrow}>Our products</p>
+              <h1 className={styles.productPageTitle}>
+                Everything your <span>mandi trade needs.</span>
+              </h1>
+              <p className={styles.productPageLead}>
+                Risk cover, finance, logistics and market access—
+                <span>all in one place.</span>
+              </p>
             </div>
-          ))}
-        </div>
-      </section>
 
-      <section className="px-4 pb-16 sm:px-6 lg:px-8">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <a
-            href={PLAY_STORE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex w-fit items-center gap-2 rounded-full bg-[#1a1a1f] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#7c6ee6]"
-          >
-            <Download className="h-4 w-4" />
-            Download the app
-          </a>
-          <Link
-            href="/"
-            className="inline-flex w-fit items-center gap-2 text-sm font-medium text-[#6b6b76] hover:text-[#1a1a1f]"
-          >
-            Home
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-      </section>
-
-      <footer className="bg-[#17171c] text-white">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
-          <p className="text-sm font-semibold">
-            Mandi<span className="text-[#b5a9ff]">Plus</span>
-          </p>
-          <div className="flex flex-wrap gap-5 text-sm font-medium text-white/55">
-            <Link href="/support" className="hover:text-white">
-              Support
-            </Link>
-            <Link href="/privacy-policy" className="hover:text-white">
-              Privacy
-            </Link>
-            <Link href="/terms-and-conditions" className="hover:text-white">
-              Terms
-            </Link>
+            <div className={styles.productHeroVisual}>
+              <Image
+                src="/images/products/mandi-products-hero-v2.webp"
+                alt="A mandi trader using his phone beside produce crates and a goods truck"
+                fill
+                priority
+                sizes="(max-width: 800px) 100vw, 58vw"
+                className={styles.productHeroImage}
+              />
+            </div>
           </div>
         </div>
-      </footer>
+      </section>
+
+      <section className={styles.productCatalog} aria-labelledby="products-heading">
+        <div className={styles.container}>
+          <header className={styles.productCatalogHeader}>
+            <p className={styles.productEyebrow}>One connected mandi network</p>
+            <h2 id="products-heading" className={styles.productCatalogTitle}>
+              Explore our products
+            </h2>
+          </header>
+
+          <div className={styles.productGroups}>
+            {PRODUCT_GROUPS.map((group) => (
+              <section key={group.category} className={styles.productGroup}>
+                <h3 className={styles.productGroupTitle}>{group.category}</h3>
+
+                <div className={styles.productListRows}>
+                  {group.products.map((product) => {
+                    const Icon = product.icon;
+
+                    return (
+                      <article key={product.name} className={styles.productItemRow}>
+                        <span className={styles.productItemIcon} aria-hidden="true">
+                          <Icon size={25} strokeWidth={1.65} />
+                        </span>
+                        <div>
+                          <h4 className={styles.productItemName}>{product.name}</h4>
+                          <p className={styles.productItemDescription}>
+                            {product.description}
+                          </p>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <SiteFooter />
     </main>
   );
 };

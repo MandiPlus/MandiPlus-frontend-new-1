@@ -11,7 +11,8 @@ import {
     XMarkIcon,
     TrashIcon,
     ArrowPathIcon,
-    MapPinIcon
+    MapPinIcon,
+    CalculatorIcon,
 } from '@heroicons/react/24/outline';
 import Cropper, { ReactCropperElement } from 'react-cropper';
 
@@ -39,6 +40,7 @@ import {
 } from '../api';
 import { useAuth } from "@/features/auth/context/AuthContext";
 import AssistPanel from '../components/AssistPanel';
+import RateCalculator from '../components/RateCalculator';
 import LookupDropdown, {
     type LookupDropdownOption,
 } from '../components/LookupDropdown';
@@ -338,6 +340,7 @@ const Insurance = () => {
     const invoiceModeRef = useRef<string>('');
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
     const [inputValue, setInputValue] = useState<string>('');
+    const [isRateCalculatorOpen, setIsRateCalculatorOpen] = useState(false);
     const [language, setLanguage] = useState<'en' | 'hi' | null>(null);
     const [messages, setMessages] = useState<Message[]>([
         { text: questions[0].text.en, sender: 'bot' },
@@ -1896,11 +1899,21 @@ const Insurance = () => {
     };
 
     const currentQuestion = activeQuestions[currentQuestionIndex] || activeQuestions[activeQuestions.length - 1];
+
+    useEffect(() => {
+        if (currentQuestion.field !== 'rate') {
+            setIsRateCalculatorOpen(false);
+        }
+    }, [currentQuestion.field]);
+
     const isFileInput = currentQuestion.type === 'file';
     const isSelectInput = currentQuestion.type === 'select';
     const isInvoiceDateInput = currentQuestion.type === 'date';
     const isSupplierLookupQuestion = currentQuestion.field === 'supplierName';
     const isBuyerLookupQuestion = currentQuestion.field === 'buyerName';
+    const canUseRateCalculator =
+        currentQuestion.field === 'rate' &&
+        (isInsuranceAdminSession || ['AGENT', 'INTERNAL_TEAM'].includes(identity));
     const canSkipCurrentQuestion =
         currentQuestion.optional &&
         (currentQuestion.field === 'driverPhone' ||
@@ -2543,7 +2556,20 @@ const Insurance = () => {
                             )}
                         </div>
                     ) : (
-                        <form onSubmit={handleSubmit} className="flex items-center gap-3">
+                        <>
+                            {canUseRateCalculator && isRateCalculatorOpen && (
+                                <RateCalculator
+                                    initialValue={inputValue}
+                                    language={language}
+                                    onClose={() => setIsRateCalculatorOpen(false)}
+                                    onApply={(value) => {
+                                        setInputValue(value);
+                                        setIsRateCalculatorOpen(false);
+                                        setError('');
+                                    }}
+                                />
+                            )}
+                            <form onSubmit={handleSubmit} className="flex items-center gap-3">
                             {canSkipCurrentQuestion && (
                                 <button
                                     type="button"
@@ -2569,6 +2595,7 @@ const Insurance = () => {
                                     className={`w-full rounded-full px-5 py-3 text-[15px] focus:outline-none focus:ring-2 focus:ring-[#25D366]/20 bg-white text-black border-2 transition-all duration-200 ${editingMessageIndex !== null ? 'border-[#128C7E]' : 'border-gray-300 focus:border-[#25D366]'}`}
                                     disabled={isSubmitting}
                                     step={currentQuestion.step}
+                                    inputMode={currentQuestion.type === 'number' ? 'decimal' : undefined}
                                     onFocus={() => {
                                         setTimeout(() => {
                                             messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -2581,6 +2608,24 @@ const Insurance = () => {
                                     </div>
                                 )}
                             </div>
+                            {canUseRateCalculator && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        textInputRef.current?.blur();
+                                        setIsRateCalculatorOpen((current) => !current);
+                                    }}
+                                    aria-label={language === 'hi' ? 'रेट कैलकुलेटर खोलें' : 'Open rate calculator'}
+                                    aria-expanded={isRateCalculatorOpen}
+                                    className={`grid min-h-12 min-w-12 place-items-center rounded-full border shadow-sm transition-colors ${
+                                        isRateCalculatorOpen
+                                            ? 'border-slate-900 bg-slate-900 text-white'
+                                            : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    <CalculatorIcon className="size-5" />
+                                </button>
+                            )}
                             <button
                                 type="submit"
                                 disabled={isSubmitting || !inputValue.trim()}
@@ -2595,7 +2640,8 @@ const Insurance = () => {
                                     <ArrowUpIcon className="h-5 w-5 text-white" />
                                 )}
                             </button>
-                        </form>
+                            </form>
+                        </>
                     )}
                     {!isFileInput && (
                         <p className="text-xs text-gray-500 mt-2 text-center">

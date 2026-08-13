@@ -1217,7 +1217,7 @@ function ReviewTab({
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Insurance</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <DraftField label="Insured Party Phone" value={editDraft?.insured_party_phone || ''} onChange={(v) => handleDraftChange('insured_party_phone', v)} placeholder="10-digit mobile" disabled={selectedCollection.status !== 'pending'} />
-              <DraftField label="Premium Amount (0.2%)" value={effectiveAmount ? (Number(effectiveAmount) * 0.002).toFixed(2) : ''} onChange={() => {}} disabled={true} />
+              <DraftField label="Premium Amount (user rate)" value="Calculated on creation" onChange={() => {}} disabled={true} />
             </div>
           </div>
         </div>
@@ -1310,7 +1310,6 @@ function ReviewTab({
 function InvoicePreviewCard({ draft }: { draft: AiDraft }) {
   const normalizedDraft = normalizeApprovalDraft(draft);
   const previewAmount = getCalculatedAmount(normalizedDraft) || 0;
-  const insuranceAmount = previewAmount ? (previewAmount * 0.002).toFixed(2) : '0.00';
   const insuredName =
     normalizedDraft.invoice_type === 'BUYER_INVOICE'
       ? normalizedDraft.buyer_name || '-'
@@ -1402,8 +1401,8 @@ function InvoicePreviewCard({ draft }: { draft: AiDraft }) {
             <p className="text-base font-bold text-gray-900">Rs. {Number(previewAmount || 0).toFixed(2)}</p>
           </div>
           <div className="border border-gray-300 rounded p-3 text-center">
-            <p className="text-[10px] text-gray-500 mb-0.5">Insurance Amount (0.2%)</p>
-            <p className="text-sm font-semibold text-gray-900">Rs. {insuranceAmount}</p>
+            <p className="text-[10px] text-gray-500 mb-0.5">Insurance Amount (user rate)</p>
+            <p className="text-sm font-semibold text-gray-900">Calculated on creation</p>
           </div>
         </div>
       </div>

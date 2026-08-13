@@ -676,22 +676,15 @@ function SuccessContent() {
               </button>
             </div>
             <p className={styles.editHint}>
-              Naam, address, date, place of supply change kar sakte ho. Quantity /
+              Naam, address aur place of supply change kar sakte ho. Quantity /
               rate / amount locked hain.
             </p>
             <div className={styles.editFields}>
               <label>
                 <span>Invoice date</span>
-                <input
-                  type="date"
-                  value={editForm.invoiceDate}
-                  onChange={(event) =>
-                    setEditForm((current) => ({
-                      ...current,
-                      invoiceDate: event.target.value,
-                    }))
-                  }
-                />
+                <div className={styles.editDateValue}>
+                  {formatInvoiceDate(editForm.invoiceDate)}
+                </div>
               </label>
               <label>
                 <span>Loading vala</span>
@@ -1000,6 +993,12 @@ function formatPaidAt(date: Date) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+function formatInvoiceDate(value: string) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return value;
+  return `${match[3]}/${match[2]}/${match[1]}`;
 }
 
 function formatPaymentMoney(value: number) {

@@ -1,10 +1,19 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
 
 import { useAuth } from "@/features/auth/context/AuthContext";
 import CustomerCreateInsurancePage from "@/features/customer-app/CustomerCreateInsurancePage";
+import {
+  resolveInsuranceCreationAudience,
+} from "@/features/insurance/creationAccessPolicy";
+import {
+  hasStoredInsuranceAdminActorSession,
+  hasStoredInsuranceAdminSession,
+} from "@/features/insurance/api";
+import DesktopRequiredNotice from "@/shared/components/DesktopRequiredNotice";
+import { isIOSSafariUserAgent } from "@/shared/device/desktopCreationAccess";
+import { useDesktopCreationAccess } from "@/shared/hooks/useDesktopCreationAccess";
 
 const LegacyInsurance = dynamic(
   () => import("@/features/insurance/pages/Insurance"),
@@ -16,27 +25,9 @@ const LegacyInsuranceIOS = dynamic(
   { ssr: false },
 );
 
-function isInternalInsuranceUser(user: Record<string, unknown> | null) {
-  const identity = String(user?.identity || "").trim().toUpperCase();
-  const role = String(user?.role || "").trim().toUpperCase();
-  return identity === "INTERNAL_TEAM" || role === "ADMIN";
-}
-
 export default function InsurancePage() {
   const { user, loading } = useAuth();
-  const [deviceReady, setDeviceReady] = useState(false);
-  const [isIOSSafari, setIsIOSSafari] = useState(false);
-
-  useEffect(() => {
-    const userAgent = window.navigator.userAgent;
-    const isIOSDevice =
-      /iPad|iPhone|iPod/.test(userAgent) &&
-      !(window as typeof window & { MSStream?: unknown }).MSStream;
-    const isSafari = /^((?!chrome|android).)*safari/i.test(userAgent);
-
-    setIsIOSSafari(isIOSDevice && isSafari);
-    setDeviceReady(true);
-  }, []);
+  const desktopAccess = useDesktopCreationAccess();
 
   if (loading) {
     return (
@@ -48,11 +39,18 @@ export default function InsurancePage() {
     );
   }
 
-  if (!isInternalInsuranceUser(user)) {
+  const hasDirectAdminSession = hasStoredInsuranceAdminSession();
+  const audience = resolveInsuranceCreationAudience({
+    user,
+    hasDirectAdminSession,
+    hasAdminActorSession: hasStoredInsuranceAdminActorSession(),
+  });
+
+  if (!audience.isPrivilegedActor) {
     return <CustomerCreateInsurancePage />;
   }
 
-  if (!deviceReady) {
+  if (!desktopAccess.ready) {
     return (
       <div
         className="fixed inset-0 bg-[#efeae2]"
@@ -61,6 +59,23 @@ export default function InsurancePage() {
       />
     );
   }
+
+  if (!desktopAccess.allowed && !audience.canCreateOnMobile) {
+    return (
+      <DesktopRequiredNotice
+        returnHref={hasDirectAdminSession ? "/admin/insurance-forms" : "/home"}
+        returnLabel={hasDirectAdminSession ? "Go to admin invoices" : "Back to home"}
+      />
+    );
+  }
+
+  if (!audience.usesInternalFlow) {
+    return <CustomerCreateInsurancePage />;
+  }
+
+  const isIOSSafari =
+    typeof window !== "undefined" &&
+    isIOSSafariUserAgent(window.navigator.userAgent);
 
   return isIOSSafari ? <LegacyInsuranceIOS /> : <LegacyInsurance />;
 }

@@ -35,13 +35,20 @@ export const getStoredInsuranceAdminToken = (): string | null => {
   if (sessionStorage.getItem("impersonationActive") === "1") return null;
 
   const token = localStorage.getItem("adminToken");
+  return getEligibleInsuranceAdminToken(token);
+};
+
+const getEligibleInsuranceAdminToken = (
+  token: string | null,
+): string | null => {
   if (!token) return null;
 
   const claims = decodeJwtClaims(token);
   if (!claims?.exp || claims.exp * 1000 <= Date.now()) return null;
-  if (claims.role === "admin") return token;
+  const role = String(claims.role || "").toLowerCase();
+  if (role === "admin") return token;
   if (
-    claims.role === "limited_admin" &&
+    role === "limited_admin" &&
     Array.isArray(claims.sections) &&
     claims.sections.includes("insurance-forms")
   ) {
@@ -52,6 +59,22 @@ export const getStoredInsuranceAdminToken = (): string | null => {
 
 export const hasStoredInsuranceAdminSession = (): boolean =>
   Boolean(getStoredInsuranceAdminToken());
+
+export const getStoredInsuranceAdminActorToken = (): string | null => {
+  if (typeof window === "undefined") return null;
+
+  const isImpersonating =
+    sessionStorage.getItem("impersonationActive") === "1";
+  const token = isImpersonating
+    ? sessionStorage.getItem("impersonationAdminToken") ||
+      localStorage.getItem("adminToken")
+    : localStorage.getItem("adminToken");
+
+  return getEligibleInsuranceAdminToken(token);
+};
+
+export const hasStoredInsuranceAdminActorSession = (): boolean =>
+  Boolean(getStoredInsuranceAdminActorToken());
 
 const getInsuranceRequestToken = (): string | null => {
   return getStoredInsuranceAdminToken() || getStoredAuthToken();
@@ -77,6 +100,10 @@ export interface InsuranceForm {
   quantity: number;
   rate: number;
   amount: number;
+  premiumAmount?: number;
+  insurancePremiumPerLakh?: number;
+  insurancePremiumRateVersion?: number;
+  premiumPricedUserId?: string | null;
   vehicleNumber?: string;
   truckNumber?: string;
   weighmentSlipNote?: string;
@@ -220,6 +247,23 @@ export interface PublicClaimCaptureLink {
     kind: "video";
     capturedAt: string;
   }>;
+}
+
+export type PublicClaimDocumentType =
+  | "lorryReceipt"
+  | "damageCertificate";
+
+export interface PublicClaimDocumentUploadLink {
+  claimNumber: string;
+  vehicleNumber: string;
+  expiresAt: string;
+  canUpload: boolean;
+  documents: Record<
+    PublicClaimDocumentType,
+    {
+      received: boolean;
+    }
+  >;
 }
 
 export interface ClaimEligibleVehicle {
@@ -903,6 +947,30 @@ export const getPublicClaimCaptureLink = async (
     { cache: "no-store" },
   );
   return readPublicClaimResponse<PublicClaimCaptureLink>(response);
+};
+
+export const getPublicClaimDocumentUploadLink = async (
+  token: string,
+): Promise<PublicClaimDocumentUploadLink> => {
+  const response = await fetch(
+    `${API_BASE_URL}/claim-requests/public-documents/${encodeURIComponent(token)}`,
+    { cache: "no-store" },
+  );
+  return readPublicClaimResponse<PublicClaimDocumentUploadLink>(response);
+};
+
+export const uploadPublicClaimDocument = async (
+  token: string,
+  documentType: PublicClaimDocumentType,
+  file: File,
+): Promise<PublicClaimDocumentUploadLink> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(
+    `${API_BASE_URL}/claim-requests/public-documents/${encodeURIComponent(token)}/${documentType}`,
+    { method: "POST", body: formData },
+  );
+  return readPublicClaimResponse<PublicClaimDocumentUploadLink>(response);
 };
 
 export const getPublicClaimEvidenceUploadTarget = async (
