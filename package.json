@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test:customer-insurance-contract": "node scripts/test-customer-insurance-contract.mjs",
     "test:insurance-slip": "node --no-warnings scripts/test-insurance-slip-submit.mjs",
-    "test:desktop-creation-access": "node --no-warnings scripts/test-desktop-creation-access.mjs"
+    "test:desktop-creation-access": "node --no-warnings scripts/test-desktop-creation-access.mjs",
+    "test:wallet-catalog": "node --test --experimental-strip-types src/features/customer/wallet-catalog.test.mjs"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.9",

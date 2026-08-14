@@ -4,16 +4,33 @@ import {
   getCustomerWalletTopupStatus,
   type CustomerPaymentStatusInvoice,
 } from '@/features/customer/api';
+import { CustomerAppShell } from '@/features/customer-app/CustomerAppShell';
+import walletStyles from '@/features/customer-app/customer-app.module.css';
 import {
   clearCustomerInvoicePaymentAttempt,
   readCustomerInvoicePaymentAttempt,
   writeCustomerInvoicePaymentAttempt,
 } from '@/features/customer-app/payment-attempt';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Clock3,
+  LoaderCircle,
+  RefreshCw,
+  XCircle,
+} from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
 const CUSTOMER_PAYMENT_STATUS_ATTEMPTS = 6;
 const CUSTOMER_PAYMENT_STATUS_INTERVAL_MS = 1_500;
+
+const money = (value: number) =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
 
 function customerInvoiceSuccessUrl({
   invoices,
@@ -81,13 +98,22 @@ function PendingContent() {
   const [checking, setChecking] = useState(Boolean(merchantOrderId));
   const [status, setStatus] = useState<'pending' | 'success' | 'failed'>('pending');
   const [message, setMessage] = useState('');
+  const [checkCycle, setCheckCycle] = useState(0);
+  const [walletReceipt, setWalletReceipt] = useState<{
+    creditAmount: number;
+    walletBalance: number;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
     const checkStatus = async () => {
-      if (!merchantOrderId) return;
+      if (!merchantOrderId) {
+        setChecking(false);
+        setMessage('Payment reference nahi mila. Wallet kholkar balance check karein.');
+        return;
+      }
       setChecking(true);
       const invoicePaymentAttempt = isWalletTopup
         ? null
@@ -122,6 +148,12 @@ function PendingContent() {
           const failed = ['FAILED', 'CANCELLED', 'EXPIRED', 'DECLINED'].includes(state);
 
           if (result.paid) {
+            if (isWalletTopup && 'walletCreditAmount' in result) {
+              setWalletReceipt({
+                creditAmount: Number(result.walletCreditAmount || 0),
+                walletBalance: Number(result.walletBalance || 0),
+              });
+            }
             if (shouldReturnToInvoice) {
               const paidInvoices =
                 !isWalletTopup && 'invoices' in result
@@ -245,6 +277,7 @@ function PendingContent() {
     };
   }, [
     invoiceId,
+    checkCycle,
     isCustomerInvoiceReturn,
     isWalletTopup,
     merchantOrderId,
@@ -253,6 +286,110 @@ function PendingContent() {
 
   const isSuccess = status === 'success';
   const isFailed = status === 'failed';
+
+  if (isWalletTopup) {
+    const StatusIcon = checking
+      ? LoaderCircle
+      : isSuccess
+        ? CheckCircle2
+        : isFailed
+          ? XCircle
+          : Clock3;
+    const statusTitle = checking
+      ? 'Payment check ho raha hai'
+      : isSuccess
+        ? 'Credit added'
+        : isFailed
+          ? 'Payment failed'
+          : 'Confirmation pending';
+
+    return (
+      <CustomerAppShell activeTab="pay" showBottomNav={false}>
+        <header className={walletStyles.secondaryHeader}>
+          <button
+            type="button"
+            className={walletStyles.secondaryBack}
+            onClick={() => router.push('/customer/wallet')}
+            aria-label="Back to wallet"
+          >
+            <ArrowLeft size={24} strokeWidth={2.4} />
+          </button>
+          <h1 className={walletStyles.secondaryHeading}>Wallet payment</h1>
+          <span />
+        </header>
+
+        <main className={walletStyles.walletReturnBody}>
+          <section
+            className={`${walletStyles.walletReturnCard} ${
+              isSuccess
+                ? walletStyles.walletReturnSuccess
+                : isFailed
+                  ? walletStyles.walletReturnFailed
+                  : walletStyles.walletReturnPending
+            }`}
+            aria-live="polite"
+          >
+            <span className={walletStyles.walletReturnIcon} aria-hidden="true">
+              <StatusIcon
+                className={checking ? walletStyles.walletSpinner : undefined}
+                size={31}
+              />
+            </span>
+            <small>MandiPlus Credit</small>
+            <h2>{statusTitle}</h2>
+            <p>
+              {message ||
+                'Payment confirmation ka wait ho raha hai. Wallet balance confirmation ke baad update hoga.'}
+            </p>
+
+            {isSuccess && walletReceipt ? (
+              <div className={walletStyles.walletReturnReceipt}>
+                {walletReceipt.creditAmount > 0 ? (
+                  <div>
+                    <span>Credit added</span>
+                    <strong>+{money(walletReceipt.creditAmount)}</strong>
+                  </div>
+                ) : null}
+                {walletReceipt.walletBalance > 0 ? (
+                  <div>
+                    <span>Available credit</span>
+                    <strong>{money(walletReceipt.walletBalance)}</strong>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {merchantOrderId ? (
+              <div className={walletStyles.walletReturnReference}>
+                <span>Payment reference</span>
+                <strong>{merchantOrderId}</strong>
+              </div>
+            ) : null}
+          </section>
+
+          <div className={walletStyles.walletReturnActions}>
+            {!checking && !isSuccess && !isFailed ? (
+              <button
+                type="button"
+                className={walletStyles.walletReturnSecondary}
+                onClick={() => setCheckCycle((current) => current + 1)}
+              >
+                <RefreshCw size={18} />
+                Check again
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className={walletStyles.walletReturnPrimary}
+              onClick={() => router.push('/customer/wallet')}
+            >
+              Back to wallet
+            </button>
+          </div>
+        </main>
+      </CustomerAppShell>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#efeae2] flex items-center justify-center p-4">
