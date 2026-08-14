@@ -980,6 +980,29 @@
   white-space: nowrap;
 }
 
+.insuranceHeader {
+  grid-template-columns: 44px minmax(0, 1fr) minmax(44px, auto);
+}
+
+.headerTextAction {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: flex-end;
+  border: 0;
+  padding: 0 4px 0 10px;
+  color: var(--mp-navy);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.headerTextAction:disabled {
+  opacity: 0.42;
+}
+
 .secondaryAction {
   display: grid;
   width: 46px;
@@ -1771,6 +1794,30 @@
   display: none;
 }
 
+.reviewFileAdd {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  flex: 0 0 58px;
+  place-content: center;
+  justify-items: center;
+  gap: 1px;
+  border: 1px dashed #9aa5b5;
+  border-radius: 12px;
+  color: var(--mp-muted);
+  background: transparent;
+  font: inherit;
+}
+
+.reviewFileAdd span {
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.reviewFileAdd:disabled {
+  opacity: 0.45;
+}
+
 .reviewFileThumb,
 .singleReviewFile {
   position: relative;
@@ -1845,6 +1892,230 @@
   font-weight: 900;
   line-height: 14px;
   text-align: center;
+}
+
+.reviewFileThumb .reviewFileStatus {
+  position: absolute;
+  z-index: 3;
+  top: 3px;
+  right: 3px;
+  display: grid;
+  width: 21px;
+  height: 21px;
+  place-items: center;
+  border: 2px solid var(--mp-surface);
+  border-radius: 50%;
+  color: white;
+  background: var(--mp-navy);
+  font-style: normal;
+}
+
+.reviewFileThumb .reviewFileStatusFailed {
+  background: #b6554b;
+}
+
+.invoiceOverviewHeading {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+}
+
+.invoiceOverviewHeading h2 {
+  margin: 0;
+  color: var(--mp-ink);
+  font-size: 22px;
+  font-weight: 950;
+  letter-spacing: -0.3px;
+}
+
+.invoiceReceiptCard,
+.invoiceOverviewTotals {
+  overflow: hidden;
+  border: 1px solid var(--mp-line);
+  border-radius: 18px;
+  background: var(--mp-surface);
+}
+
+.invoiceReceiptHeader {
+  display: grid;
+  min-height: 46px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--mp-line);
+  color: var(--mp-muted);
+  background: var(--mp-soft);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.25px;
+  text-transform: uppercase;
+}
+
+.invoiceReceiptHeader span:last-child {
+  text-align: right;
+}
+
+.invoiceReceiptList {
+  display: grid;
+}
+
+.invoiceReceiptRow {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  align-items: stretch;
+}
+
+.invoiceReceiptRow + .invoiceReceiptRow {
+  border-top: 1px solid var(--mp-line);
+}
+
+.invoiceReceiptOpen {
+  display: grid;
+  min-width: 0;
+  min-height: 108px;
+  grid-template-columns: minmax(0, 1fr) minmax(112px, auto) 20px;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  padding: 14px 5px 14px 14px;
+  color: var(--mp-ink);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+}
+
+.invoiceReceiptParty,
+.invoiceReceiptAmounts {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.invoiceReceiptParty strong {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invoiceReceiptParty > span,
+.invoiceReceiptAmounts small {
+  overflow: hidden;
+  color: var(--mp-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invoiceReceiptParty small {
+  color: #a8731f;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.invoiceReceiptAmounts {
+  justify-items: end;
+  text-align: right;
+}
+
+.invoiceReceiptAmounts strong {
+  font-size: 17px;
+  font-weight: 950;
+  letter-spacing: -0.2px;
+}
+
+.invoiceReceiptAmounts > span {
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.invoiceReceiptOpen > svg {
+  color: var(--mp-muted);
+}
+
+.invoiceReceiptDelete {
+  display: grid;
+  width: 42px;
+  min-height: 100%;
+  place-items: center;
+  border: 0;
+  color: #b6554b;
+  background: transparent;
+}
+
+.invoiceOverviewTotals {
+  display: grid;
+}
+
+.invoiceOverviewTotals > div {
+  display: flex;
+  min-height: 62px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 15px;
+}
+
+.invoiceOverviewTotals span {
+  color: var(--mp-muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.invoiceOverviewTotals strong {
+  font-size: 15px;
+  font-weight: 950;
+  text-align: right;
+}
+
+.invoiceOverviewTotals .invoiceOverviewPayable {
+  border-top: 1px solid var(--mp-line);
+  background: var(--mp-soft);
+}
+
+.invoiceOverviewTotals .invoiceOverviewPayable span {
+  color: var(--mp-ink);
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.invoiceOverviewTotals .invoiceOverviewPayable strong {
+  color: var(--mp-navy);
+  font-size: 21px;
+}
+
+.reviewSessionActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.reviewSessionActions > button {
+  display: flex;
+  min-height: 45px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--mp-line);
+  border-radius: 13px;
+  color: var(--mp-navy);
+  background: var(--mp-surface);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.reviewSessionActions > .reviewDeleteAction {
+  color: #b6554b;
+}
+
+.reviewSessionActions > button:only-child {
+  grid-column: 1 / -1;
 }
 
 .reviewProductRow {
@@ -2638,6 +2909,106 @@
   padding: 18px 18px max(28px, env(safe-area-inset-bottom));
   border-radius: 20px 20px 0 0;
   background: var(--mp-canvas);
+}
+
+.invoiceDraftsSheet {
+  position: relative;
+  display: grid;
+  width: min(100%, 480px);
+  max-height: min(72dvh, 620px);
+  gap: 12px;
+  overflow: hidden;
+  border-radius: 20px 20px 0 0;
+  padding: 16px 16px max(24px, env(safe-area-inset-bottom));
+  background: var(--mp-canvas);
+}
+
+.invoiceDraftsHeader {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.invoiceDraftsHeader h2 {
+  margin: 0;
+  color: var(--mp-ink);
+  font-size: 20px;
+  font-weight: 950;
+}
+
+.invoiceDraftsHeader button {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  color: var(--mp-ink);
+  background: var(--mp-soft);
+}
+
+.invoiceDraftsList {
+  display: grid;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.invoiceDraftItem {
+  display: grid;
+  min-height: 68px;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  align-items: stretch;
+  border: 1px solid var(--mp-line);
+  border-radius: 16px;
+  background: var(--mp-surface);
+}
+
+.invoiceDraftOpen {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 4px;
+  border: 0;
+  padding: 10px 14px;
+  color: var(--mp-ink);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+}
+
+.invoiceDraftOpen strong {
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.invoiceDraftOpen span {
+  color: var(--mp-muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.invoiceDraftDelete {
+  display: grid;
+  width: 48px;
+  place-items: center;
+  border: 0;
+  color: #b6554b;
+  background: transparent;
+}
+
+.invoiceDraftDelete:disabled {
+  opacity: 0.5;
+}
+
+.invoiceDraftsEmpty {
+  display: grid;
+  min-height: 120px;
+  place-items: center;
+  color: var(--mp-muted);
+  font-size: 13px;
+  font-weight: 850;
 }
 
 .sourceHandle {
