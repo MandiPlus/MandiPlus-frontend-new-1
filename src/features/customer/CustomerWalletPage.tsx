@@ -4,15 +4,20 @@ import {
   ArrowDownLeft,
   ArrowLeft,
   ArrowUpRight,
-  Check,
+  CheckCircle2,
   ChevronRight,
   ClipboardList,
+  Landmark,
   LoaderCircle,
   Plus,
+  RefreshCw,
   Search,
+  TicketPercent,
+  WalletCards,
+  X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CustomerAppShell } from "@/features/customer-app/CustomerAppShell";
 import styles from "@/features/customer-app/customer-app.module.css";
@@ -28,42 +33,14 @@ import {
   type WalletStatementItem,
   type WalletSummary,
 } from "./api";
+import {
+  defaultWalletPackCode,
+  fallbackWalletPacks,
+  reconcileWalletCreditPacks,
+} from "./wallet-catalog";
 
-type WalletView = "home" | "add" | "transactions";
+type WalletView = "home" | "add" | "confirm" | "transactions";
 type WalletOwnership = "loading" | "owned" | "unowned" | "error";
-
-const fallbackWalletPacks: WalletCreditPack[] = [
-  {
-    id: "limit_50_lakh",
-    code: "limit_50_lakh",
-    label: "50 Lakhs",
-    creditAmount: 5_000_000,
-    priceAmount: 10_000,
-    sortOrder: 1,
-    isActive: true,
-  },
-  {
-    id: "limit_1_cr",
-    code: "limit_1_cr",
-    label: "1 Cr",
-    creditAmount: 10_000_000,
-    priceAmount: 20_000,
-    badge: "Popular",
-    sortOrder: 2,
-    isActive: true,
-  },
-  {
-    id: "limit_2_cr",
-    code: "limit_2_cr",
-    label: "2 Cr",
-    creditAmount: 20_000_000,
-    priceAmount: 40_000,
-    sortOrder: 3,
-    isActive: true,
-  },
-];
-
-const defaultWalletPackId = "limit_1_cr";
 
 const money = (value: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -119,10 +96,13 @@ export default function CustomerWalletPage() {
   const [packs, setPacks] = useState<WalletCreditPack[]>(() => [
     ...fallbackWalletPacks,
   ]);
-  const [selectedPackId, setSelectedPackId] = useState(defaultWalletPackId);
-  const [couponCode, setCouponCode] = useState("");
+  const [selectedPackId, setSelectedPackId] = useState(defaultWalletPackCode);
   const [quote, setQuote] = useState<WalletCouponQuote | null>(null);
   const [couponNotice, setCouponNotice] = useState("");
+  const [applyingCoupon, setApplyingCoupon] = useState(false);
+  const [offersOpen, setOffersOpen] = useState(false);
+  const offersDialogRef = useRef<HTMLElement | null>(null);
+  const offersTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
@@ -153,16 +133,18 @@ export default function CustomerWalletPage() {
       setStatement(statementResult.value);
     }
     if (packsResult.status === "fulfilled") {
-      const activePacks = packsResult.value
-        .filter((pack) => pack.isActive)
-        .sort((a, b) => a.sortOrder - b.sortOrder);
+      const activePacks = reconcileWalletCreditPacks(
+        packsResult.value.packs,
+        packsResult.value.catalogVersion,
+      );
       setPacks(activePacks);
       setSelectedPackId((current) =>
-        activePacks.some((pack) => pack.id === current)
-          ? current
-          : activePacks.find((pack) => pack.code === defaultWalletPackId)?.id ||
-            activePacks[0]?.id ||
-            "",
+        activePacks.find(
+          (pack) => pack.id === current || pack.code === current,
+        )?.id ||
+        activePacks.find((pack) => pack.code === defaultWalletPackCode)?.id ||
+        activePacks[0]?.id ||
+        "",
       );
     }
     if (invoicesResult.status === "fulfilled") {
@@ -192,42 +174,72 @@ export default function CustomerWalletPage() {
   }, [loadWallet]);
 
   useEffect(() => {
-    const normalizedCode = couponCode.trim().toUpperCase();
-    if (!normalizedCode) {
-      setQuote(null);
-      setCouponNotice("");
-      return;
-    }
-    if (!selectedPackId || normalizedCode.length < 3) return;
-
-    let cancelled = false;
-    const timer = window.setTimeout(async () => {
-      try {
-        const nextQuote = await quoteCustomerWalletCoupon(
-          selectedPackId,
-          normalizedCode,
-        );
-        if (!cancelled) {
-          setQuote(nextQuote);
-          setCouponNotice(`You save ${money(nextQuote.discountAmount)}`);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setQuote(null);
-          setCouponNotice(errorText(error, "Coupon valid nahi hai."));
-        }
+    if (!offersOpen) return;
+    const dialog = offersDialogRef.current;
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const previousOverflow = document.body.style.overflow;
+    const focusableElements = () =>
+      Array.from(
+        dialog?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) || [],
+      ).filter((element) => element.getClientRects().length > 0);
+    const handleDialogKeys = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOffersOpen(false);
+        return;
       }
-    }, 550);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
+      if (event.key !== "Tab") return;
+      const focusable = focusableElements();
+      if (!focusable.length) {
+        event.preventDefault();
+        dialog?.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-  }, [couponCode, selectedPackId]);
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleDialogKeys);
+    const focusFrame = window.requestAnimationFrame(() => {
+      focusableElements()[0]?.focus();
+    });
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleDialogKeys);
+      previouslyFocused?.focus();
+    };
+  }, [offersOpen]);
 
   const selectedPack = useMemo(
     () => packs.find((pack) => pack.id === selectedPackId) || null,
     [packs, selectedPackId],
+  );
+  const recommendedPack = useMemo(
+    () =>
+      packs.find((pack) => pack.code === defaultWalletPackCode) ||
+      packs[0] ||
+      null,
+    [packs],
+  );
+  const otherPacks = useMemo(
+    () =>
+      recommendedPack
+        ? packs.filter((pack) => pack.id !== recommendedPack.id)
+        : packs,
+    [packs, recommendedPack],
   );
 
   const totalUsed = Number(wallet?.usedBalance || 0);
@@ -250,6 +262,11 @@ export default function CustomerWalletPage() {
   const goBack = () => {
     if (view === "home") {
       router.push("/home");
+      return;
+    }
+    if (view === "confirm") {
+      setView("add");
+      setNotice("");
       return;
     }
     setView("home");
@@ -275,14 +292,44 @@ export default function CustomerWalletPage() {
     }
   };
 
+  const applySuggestedCoupon = async () => {
+    if (!selectedPackId || applyingCoupon) return;
+    setApplyingCoupon(true);
+    setQuote(null);
+    setCouponNotice("");
+    try {
+      const nextQuote = await quoteCustomerWalletCoupon(
+        selectedPackId,
+        "MANDI500",
+      );
+      setQuote(nextQuote);
+      setCouponNotice(`You save ${money(nextQuote.discountAmount)}`);
+      setOffersOpen(false);
+    } catch (error) {
+      setCouponNotice(errorText(error, "Coupon valid nahi hai."));
+    } finally {
+      setApplyingCoupon(false);
+    }
+  };
+
+  const openPackDetails = (pack: WalletCreditPack) => {
+    setSelectedPackId(pack.id);
+    setQuote(null);
+    setCouponNotice("");
+    setNotice("");
+    setView("confirm");
+  };
+
   const heading =
     view === "home"
       ? walletOwnership === "unowned"
         ? "Credit pack chunein"
         : "Mera wallet"
       : view === "add"
-        ? "Add money"
-        : "All transactions";
+        ? "Credit pack chunein"
+        : view === "confirm"
+          ? "Confirm pack"
+          : "All transactions";
 
   return (
     <CustomerAppShell activeTab="pay" showBottomNav={false}>
@@ -305,6 +352,24 @@ export default function CustomerWalletPage() {
             <div className={`${styles.walletCreditCard} ${styles.skeleton}`}>
               Wallet
             </div>
+          ) : walletOwnership === "error" ? (
+            <section className={styles.walletLoadError} role="alert">
+              <span aria-hidden="true">
+                <WalletCards size={25} />
+              </span>
+              <div>
+                <strong>Wallet load nahi hua</strong>
+                <p>Internet check karke dobara try karein.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadWallet()}
+                disabled={loading}
+              >
+                <RefreshCw size={17} />
+                Retry
+              </button>
+            </section>
           ) : hasActiveWallet ? (
             <>
               <section className={styles.walletCreditCard}>
@@ -356,68 +421,117 @@ export default function CustomerWalletPage() {
       ) : null}
 
       {showPackPicker ? (
-        <>
-          <main className={styles.walletPackBody}>
-            <div className={styles.walletPackList}>
-              {packs.map((pack) => {
-                const selected = pack.id === selectedPackId;
-                return (
-                  <button
-                    key={pack.id}
-                    type="button"
-                    className={`${styles.walletPackCard} ${
-                      selected ? styles.walletPackCardSelected : ""
-                    }`}
-                    onClick={() => {
-                      setSelectedPackId(pack.id);
-                      setQuote(null);
-                      setCouponNotice("");
-                    }}
-                  >
-                    <span>
-                      <small>CREDIT</small>
-                      <strong>{pack.label}</strong>
-                    </span>
-                    {pack.badge ? (
-                      <em className={styles.walletPackBadge}>{pack.badge}</em>
-                    ) : null}
-                    <b>{money(pack.priceAmount)}</b>
-                    <i className={styles.walletRadio}>
-                      {selected ? <Check size={17} strokeWidth={3} /> : null}
-                    </i>
-                  </button>
-                );
-              })}
-            </div>
-
-            {!loading && packs.length === 0 ? (
-              <div className={styles.emptyState}>
-                No credit packs available.
-              </div>
-            ) : null}
-
-            <section className={styles.walletCouponArea}>
-              <p>₹500 off · Use MANDI500</p>
-              <input
-                value={couponCode}
-                onChange={(event) =>
-                  setCouponCode(event.target.value.toUpperCase())
-                }
-                placeholder="Enter coupon"
-                autoCapitalize="characters"
-                aria-label="Coupon code"
+        <main className={styles.walletPackBody}>
+          {recommendedPack ? (
+            <section className={styles.walletPackSection}>
+              <h2>Recommended</h2>
+              <WalletPackCard
+                pack={recommendedPack}
+                featured
+                onClick={() => openPackDetails(recommendedPack)}
               />
-              {couponNotice ? (
-                <small className={quote ? styles.walletCouponSuccess : ""}>
-                  {couponNotice}
-                </small>
+            </section>
+          ) : null}
+
+          {packs.length ? (
+            <section className={styles.walletPackSection}>
+              <h2>Other packs</h2>
+              <div className={styles.walletPackList}>
+                {otherPacks.map((pack) => (
+                  <WalletPackCard
+                    key={pack.id}
+                    pack={pack}
+                    onClick={() => openPackDetails(pack)}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {!loading && packs.length === 0 ? (
+            <div className={styles.emptyState}>
+              No credit packs available.
+            </div>
+          ) : null}
+
+          {notice ? <p className={styles.walletError}>{notice}</p> : null}
+        </main>
+      ) : null}
+
+      {view === "confirm" && selectedPack ? (
+        <>
+          <main className={styles.walletPackDetailBody}>
+            <section className={styles.walletPackReviewCard}>
+              <div className={styles.walletPackSummary}>
+                <div>
+                  <span>Credit</span>
+                  <strong>{creditLabel(selectedPack.label)}</strong>
+                </div>
+                <i aria-hidden="true" />
+                <div>
+                  <span>Amount</span>
+                  <strong>{money(quote?.finalPrice ?? selectedPack.priceAmount)}</strong>
+                </div>
+              </div>
+
+              <div className={styles.walletBalancePreview}>
+                <WalletBalanceRow label="Current credit" value={money(availableBalance)} />
+                <i aria-hidden="true" />
+                <WalletBalanceRow
+                  label="New available credit"
+                  value={money(availableBalance + Number(selectedPack.creditAmount || 0))}
+                  strong
+                />
+              </div>
+            </section>
+
+            <section className={styles.walletCouponCard}>
+              <div className={styles.walletCouponHeader}>
+                <h2>Offers &amp; coupons</h2>
+                <button
+                  ref={offersTriggerRef}
+                  type="button"
+                  onClick={() => setOffersOpen(true)}
+                  aria-haspopup="dialog"
+                  aria-expanded={offersOpen}
+                >
+                  View all <ChevronRight size={18} />
+                </button>
+              </div>
+              {quote ? (
+                <div
+                  className={styles.walletCouponApplied}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <CheckCircle2 size={21} />
+                  <div>
+                    <strong>{quote.code} applied</strong>
+                    <small>You save {money(quote.discountAmount)}</small>
+                  </div>
+                </div>
               ) : null}
             </section>
 
+            {selectedPack.priceAmount > 100_000 ? (
+              <section className={styles.walletHighValueHint}>
+                <Landmark size={21} />
+                <p>Available payment methods may depend on your bank.</p>
+              </section>
+            ) : null}
+
             {notice ? <p className={styles.walletError}>{notice}</p> : null}
           </main>
-
           <div className={styles.walletPayDock}>
+            {quote ? (
+              <div className={styles.walletDiscountSummary}>
+                <span>Payable amount</span>
+                <p>
+                  <s>{money(quote.originalPrice)}</s>
+                  <strong>{money(quote.finalPrice)}</strong>
+                </p>
+              </div>
+            ) : null}
             <button
               type="button"
               onClick={() => void startTopup()}
@@ -425,17 +539,70 @@ export default function CustomerWalletPage() {
             >
               {paying ? (
                 <LoaderCircle className={styles.walletSpinner} size={22} />
-              ) : quote && selectedPack ? (
-                <>
-                  Pay <s>{money(selectedPack.priceAmount)}</s>{" "}
-                  {money(quote.finalPrice)}
-                </>
               ) : (
-                `Pay ${money(selectedPack?.priceAmount || 0)}`
+                `Pay ${money(quote?.finalPrice ?? selectedPack.priceAmount)} securely`
               )}
               {!paying ? <ChevronRight size={23} /> : null}
             </button>
+            <small>Continue securely with PhonePe</small>
           </div>
+          {offersOpen ? (
+            <div className={styles.walletOffersOverlay} role="presentation">
+              <button
+                type="button"
+                className={styles.walletOffersBackdrop}
+                onClick={() => setOffersOpen(false)}
+                aria-label="Close offers"
+              />
+              <section
+                ref={offersDialogRef}
+                className={styles.walletOffersSheet}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="wallet-offers-title"
+                tabIndex={-1}
+              >
+                <i className={styles.walletOffersHandle} aria-hidden="true" />
+                <div className={styles.walletOffersHeader}>
+                  <h2 id="wallet-offers-title">Available offers</h2>
+                  <button
+                    type="button"
+                    onClick={() => setOffersOpen(false)}
+                    aria-label="Close offers"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                <div className={styles.walletOfferItem}>
+                  <span><TicketPercent size={23} /></span>
+                  <div>
+                    <strong>Save ₹500 on your credit pack</strong>
+                    <small>Use code MANDI500</small>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={quote?.code === "MANDI500" || applyingCoupon}
+                    onClick={() => void applySuggestedCoupon()}
+                  >
+                    {quote?.code === "MANDI500"
+                      ? "Applied"
+                      : applyingCoupon
+                        ? "Applying…"
+                        : "Apply"}
+                  </button>
+                </div>
+                {couponNotice && !quote ? (
+                  <p
+                    className={styles.walletCouponError}
+                    role="alert"
+                    aria-live="assertive"
+                  >
+                    {couponNotice}
+                  </p>
+                ) : null}
+              </section>
+            </div>
+          ) : null}
         </>
       ) : null}
 
@@ -485,6 +652,56 @@ export default function CustomerWalletPage() {
       ) : null}
     </CustomerAppShell>
   );
+}
+
+function WalletPackCard({
+  pack,
+  featured = false,
+  onClick,
+}: {
+  pack: WalletCreditPack;
+  featured?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`${styles.walletPackCard} ${
+        featured ? styles.walletPackCardFeatured : ""
+      }`}
+      onClick={onClick}
+      aria-label={`${creditLabel(pack.label)}, ${money(pack.priceAmount)}, view details`}
+    >
+      <span>
+        <small>CREDIT</small>
+        <strong>{creditLabel(pack.label)}</strong>
+      </span>
+      <b>{money(pack.priceAmount)}</b>
+      <ChevronRight size={22} />
+    </button>
+  );
+}
+
+function WalletBalanceRow({
+  label,
+  value,
+  strong = false,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+}) {
+  return (
+    <div className={strong ? styles.walletBalancePreviewStrong : ""}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function creditLabel(label: string) {
+  const normalized = String(label || "").trim();
+  return normalized.startsWith("₹") ? normalized : `₹${normalized}`;
 }
 
 function hasWalletOwnership(wallet: WalletSummary | null) {

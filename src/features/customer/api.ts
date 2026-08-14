@@ -39,6 +39,11 @@ export interface WalletCreditPack {
   isActive: boolean;
 }
 
+export interface WalletCreditPackCatalog {
+  packs: WalletCreditPack[];
+  catalogVersion?: number;
+}
+
 export interface WalletCouponQuote {
   couponId: string;
   code: string;
@@ -255,14 +260,19 @@ export async function getMyWalletStatement(): Promise<WalletStatementItem[]> {
   }
 }
 
-export async function getCustomerWalletPacks(): Promise<WalletCreditPack[]> {
+export async function getCustomerWalletPacks(): Promise<WalletCreditPackCatalog> {
   try {
     const response = await withAuthRetry(() =>
       axios.get(`${API_BASE_URL}/wallet-offers/customer/packs`, {
         headers: getAuthHeader(),
       }),
     );
-    return Array.isArray(response.data?.packs) ? response.data.packs : [];
+    return {
+      packs: Array.isArray(response.data?.packs) ? response.data.packs : [],
+      catalogVersion: Number.isFinite(Number(response.data?.catalogVersion))
+        ? Number(response.data.catalogVersion)
+        : undefined,
+    };
   } catch (error) {
     const err = error as AxiosError;
     handleUnauthorized(err);
