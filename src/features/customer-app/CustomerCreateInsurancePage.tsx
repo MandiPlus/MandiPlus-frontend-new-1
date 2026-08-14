@@ -12,13 +12,17 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Camera,
+  CheckCircle2,
   ChevronDown,
+  ChevronRight,
+  CircleAlert,
   FileText,
   FolderOpen,
   ImagePlus,
   LoaderCircle,
   MicOff,
   Phone,
+  Plus,
   RefreshCw,
   Trash2,
   Truck,
@@ -59,6 +63,17 @@ import {
 import { CustomerAppShell } from "./CustomerAppShell";
 import { canonicalizeCommodityLabel } from "./commodity-normalization";
 import { CustomerQuestionnaireVoiceSession } from "./customer-live-transcription";
+import {
+  deleteCustomerInvoiceDraft,
+  listCustomerInvoiceDrafts,
+  saveCustomerInvoiceDraft,
+  type StoredCustomerInvoiceDraft,
+} from "./invoice-drafts";
+import {
+  assertUsableCustomerInvoiceExtraction,
+  isExtractionAbort,
+  withSingleExtractionRetry,
+} from "./invoice-extraction-recovery";
 import listeningFaceAnimation from "./listening-face.json";
 import {
   clearCustomerInvoicePaymentAttempt,
@@ -73,6 +88,9 @@ import styles from "./customer-app.module.css";
 
 type Stage = "capture" | "review" | "creating";
 type ExtractionState = "idle" | "optimizing" | "reading" | "ready" | "failed";
+type InvoiceExtractionStatus = "reading" | "ready" | "failed";
+type ReviewView = "overview" | "detail";
+type DraftSaveState = "idle" | "saving";
 type MissingDetailKey =
   | "supplierName"
   | "supplierAddress"
@@ -100,9 +118,10 @@ type QuestionLabelMap = Partial<
   Record<"en" | "hi" | "kn" | "mr" | "ta" | "te", string>
 > & { en: string };
 
-type EagerExtraction = {
+type InvoiceExtractionTask = {
   key: string;
-  promise: Promise<PromiseSettledResult<Record<string, unknown>>[]>;
+  generation: number;
+  controller: AbortController;
 };
 
 const DEFAULT_TENDER_COCONUT_PRICING: CustomerAppPricing["tenderCoconut"] = {
@@ -449,7 +468,8 @@ export default function CustomerCreateInsurancePage() {
       : 200;
   const cameraRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
-  const eagerExtractionRef = useRef<EagerExtraction | null>(null);
+  const extractionTasksRef = useRef<Map<string, InvoiceExtractionTask>>(new Map());
+  const extractionGenerationRef = useRef(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recorderStreamRef = useRef<MediaStream | null>(null);
   const questionAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -475,6 +495,13 @@ export default function CustomerCreateInsurancePage() {
   const [extractionState, setExtractionState] =
     useState<ExtractionState>("idle");
   const [files, setFiles] = useState<File[]>([]);
+  const filesRef = useRef(files);
+  const [fileKeys, setFileKeys] = useState<string[]>([]);
+  const fileKeysRef = useRef(fileKeys);
+  const [invoiceStatuses, setInvoiceStatuses] = useState<
+    InvoiceExtractionStatus[]
+  >([]);
+  const invoiceStatusesRef = useRef(invoiceStatuses);
   const [draft, setDraft] = useState<CustomerInvoiceDraft>(() =>
     emptyDraft(user),
   );
@@ -482,6 +509,7 @@ export default function CustomerCreateInsurancePage() {
   const [batchDrafts, setBatchDrafts] = useState<CustomerInvoiceDraft[]>([]);
   const batchDraftsRef = useRef(batchDrafts);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
+  const [reviewView, setReviewView] = useState<ReviewView>("detail");
   const [sourceOpen, setSourceOpen] = useState(false);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [zoomedFileIndex, setZoomedFileIndex] = useState<number | null>(null);
@@ -504,10 +532,19 @@ export default function CustomerCreateInsurancePage() {
     Record<string, VoiceAnswerState>
   >({});
   const [amountBreakdownOpen, setAmountBreakdownOpen] = useState(true);
+  const [storedDrafts, setStoredDrafts] = useState<StoredCustomerInvoiceDraft[]>([]);
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [draftsLoading, setDraftsLoading] = useState(false);
+  const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
+  const [activeStoredDraftId, setActiveStoredDraftId] = useState<string | null>(null);
+  const [draftSaveState, setDraftSaveState] = useState<DraftSaveState>("idle");
 
   draftRef.current = draft;
   batchDraftsRef.current = batchDrafts;
   activeFileIndexRef.current = activeFileIndex;
+  filesRef.current = files;
+  fileKeysRef.current = fileKeys;
+  invoiceStatusesRef.current = invoiceStatuses;
 
   const isTenderCoconut = isTenderCoconutProduct(draft.product);
   const identityLocksMode = /^(BUYER|SUPPLIER)$/.test(
@@ -551,14 +588,33 @@ export default function CustomerCreateInsurancePage() {
           )
           .toFixed(2),
       ),
+    [paymentDrafts, premiumPerLakh, pricing],
+  );
+  const totalInvoiceValue = useMemo(
+    () =>
+      Number(
+        paymentDrafts
+          .reduce(
+            (sum, paymentDraft) =>
+              sum + resolveInvoiceAmountBreakdown(paymentDraft, pricing).totalAmount,
+            0,
+          )
+          .toFixed(2),
+      ),
     [paymentDrafts, pricing],
   );
+  const readingInvoiceCount = invoiceStatuses.filter(
+    (status) => status === "reading",
+  ).length;
   const pendingVoiceAnswers = Object.values(voiceAnswers).filter(
     (state) => state === "processing",
   ).length;
   const firstIncompleteInvoiceIndex = paymentDrafts.findIndex((item) =>
     Boolean(validateDraft(item)),
   );
+  const incompleteInvoiceCount = paymentDrafts.filter((item) =>
+    Boolean(validateDraft(item)),
+  ).length;
   const validationIssue =
     firstIncompleteInvoiceIndex >= 0
       ? validateDraft(paymentDrafts[firstIncompleteInvoiceIndex])
@@ -723,20 +779,32 @@ export default function CustomerCreateInsurancePage() {
     setStage("review");
   }, []);
 
+  const abortAllInvoiceExtractions = useCallback(() => {
+    extractionGenerationRef.current += 1;
+    extractionTasksRef.current.forEach((task) => task.controller.abort());
+    extractionTasksRef.current.clear();
+  }, []);
+
   const restartInsuranceCapture = useCallback(() => {
+    abortAllInvoiceExtractions();
     questionnaireCaptureGenerationRef.current += 1;
     paymentStatusGenerationRef.current += 1;
     paymentStatusCheckingRef.current = false;
     paymentAttemptRef.current = null;
     clearCustomerInvoicePaymentAttempt();
-    eagerExtractionRef.current = null;
     setPaymentStatusChecking(false);
     setPaymentRetryPromptOpen(false);
     setFiles([]);
+    filesRef.current = [];
+    setFileKeys([]);
+    fileKeysRef.current = [];
+    setInvoiceStatuses([]);
+    invoiceStatusesRef.current = [];
     const nextDraft = emptyDraft(user);
     batchDraftsRef.current = [];
     setBatchDrafts([]);
     setActiveFileIndex(0);
+    setReviewView("detail");
     setDraft(nextDraft);
     setExtractionState("idle");
     setNotice("");
@@ -745,8 +813,10 @@ export default function CustomerCreateInsurancePage() {
     setMissingIndex(0);
     setMissingOpen(false);
     setVoiceAnswers({});
+    setActiveStoredDraftId(null);
+    setDraftSaveState("idle");
     setStage("capture");
-  }, [user]);
+  }, [abortAllInvoiceExtractions, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -794,8 +864,12 @@ export default function CustomerCreateInsurancePage() {
     }));
     batchDraftsRef.current = restoredDrafts;
     setBatchDrafts(restoredDrafts);
+    const restoredStatuses = restoredDrafts.map(() => "ready" as const);
+    invoiceStatusesRef.current = restoredStatuses;
+    setInvoiceStatuses(restoredStatuses);
     setActiveFileIndex(0);
     setDraft(restoredDrafts[0]);
+    setReviewView(restoredDrafts.length > 1 ? "overview" : "detail");
     setStage("review");
     void checkReturningPayment();
   }, [checkReturningPayment, user?.id]);
@@ -849,49 +923,112 @@ export default function CustomerCreateInsurancePage() {
         recorderRef.current.stop();
       }
       stopQuestionnaireVoiceSession();
+      abortAllInvoiceExtractions();
       recorderStreamRef.current?.getTracks().forEach((track) => track.stop());
       questionAudioRef.current?.pause();
     },
-    [stopQuestionnaireVoiceSession],
+    [abortAllInvoiceExtractions, stopQuestionnaireVoiceSession],
   );
 
-  const queueDocumentExtraction = useCallback((nextFiles: File[]) => {
-    if (!nextFiles.length) {
-      eagerExtractionRef.current = null;
-      return null;
+  const commitInvoiceStatuses = (next: InvoiceExtractionStatus[]) => {
+    invoiceStatusesRef.current = next;
+    setInvoiceStatuses(next);
+    if (next.some((status) => status === "reading")) {
+      setExtractionState("reading");
+    } else if (next.some((status) => status === "ready")) {
+      setExtractionState("ready");
+    } else {
+      setExtractionState(next.length ? "failed" : "idle");
     }
-    const key = fileSetKey(nextFiles);
-    if (eagerExtractionRef.current?.key === key) {
-      return eagerExtractionRef.current.promise;
-    }
-    const previousDrafts = batchDraftsRef.current;
-    const promise = Promise.allSettled(
-      nextFiles.map((file, index) =>
-        extractCustomerInvoice(
+  };
+
+  const setInvoiceStatus = (key: string, status: InvoiceExtractionStatus) => {
+    const index = fileKeysRef.current.indexOf(key);
+    if (index < 0) return;
+    const next = [...invoiceStatusesRef.current];
+    next[index] = status;
+    commitInvoiceStatuses(next);
+  };
+
+  const runInvoiceExtraction = (
+    file: File,
+    key: string,
+    startingDraft: CustomerInvoiceDraft,
+  ) => {
+    if (extractionTasksRef.current.has(key)) return;
+    const generation = extractionGenerationRef.current;
+    const controller = new AbortController();
+    extractionTasksRef.current.set(key, { key, generation, controller });
+
+    void withSingleExtractionRetry(
+      async () => {
+        if (
+          controller.signal.aborted ||
+          extractionGenerationRef.current !== generation
+        ) {
+          throw new DOMException("Extraction cancelled", "AbortError");
+        }
+        const response = await extractCustomerInvoice(
           [file],
-          previousDrafts[index]?.product || draftRef.current.product,
-        ),
-      ),
-    );
-    eagerExtractionRef.current = { key, promise };
-    setExtractionState("reading");
-    void promise
-      .then((results) => {
-        if (eagerExtractionRef.current?.key === key) {
-          setExtractionState(
-            results.some((result) => result.status === "fulfilled")
-              ? "ready"
-              : "failed",
-          );
+          startingDraft.product || draftRef.current.product,
+          controller.signal,
+        );
+        assertUsableCustomerInvoiceExtraction(response);
+        return response;
+      },
+      {
+        delayMs: 250,
+        shouldRetry: (error) =>
+          !isExtractionAbort(error) &&
+          !controller.signal.aborted &&
+          extractionGenerationRef.current === generation,
+      },
+    )
+      .then((response) => {
+        if (
+          controller.signal.aborted ||
+          extractionGenerationRef.current !== generation
+        ) {
+          return;
+        }
+        const index = fileKeysRef.current.indexOf(key);
+        if (index < 0) return;
+        const currentDraft = batchDraftsRef.current[index] || startingDraft;
+        const extractedDraft = mergeInvoiceDraftUserEdits(
+          startingDraft,
+          currentDraft,
+          applyExtraction(startingDraft, response, user),
+        );
+        const nextDrafts = [...batchDraftsRef.current];
+        nextDrafts[index] = extractedDraft;
+        batchDraftsRef.current = nextDrafts;
+        setBatchDrafts(nextDrafts);
+        if (fileKeysRef.current[activeFileIndexRef.current] === key) {
+          draftRef.current = extractedDraft;
+          setDraft(extractedDraft);
+        }
+        setInvoiceStatus(key, "ready");
+      })
+      .catch((error) => {
+        if (
+          isExtractionAbort(error) ||
+          controller.signal.aborted ||
+          extractionGenerationRef.current !== generation
+        ) {
+          return;
+        }
+        setInvoiceStatus(key, "failed");
+        if (fileKeysRef.current.length === 1) {
+          setNotice("Details fetch nahi hui. Manually add karein.");
         }
       })
-      .catch(() => {
-        if (eagerExtractionRef.current?.key === key) {
-          setExtractionState("failed");
+      .finally(() => {
+        const currentTask = extractionTasksRef.current.get(key);
+        if (currentTask?.controller === controller) {
+          extractionTasksRef.current.delete(key);
         }
       });
-    return promise;
-  }, []);
+  };
 
   const update = (field: keyof CustomerInvoiceDraft, value: string) => {
     setDraft((current) => {
@@ -940,57 +1077,148 @@ export default function CustomerCreateInsurancePage() {
     setSourceOpen(false);
     setNotice("");
     setExtractionState("optimizing");
+    const generation = extractionGenerationRef.current;
     try {
       const optimized = await Promise.all(
         selected.map((file) => optimizeImageForOcr(file)),
       );
-      const nextFiles = [...files, ...optimized].slice(0, 8);
-      setFiles(nextFiles);
-      const task = queueDocumentExtraction(nextFiles);
-      if (task) {
-        const extractionKey = fileSetKey(nextFiles);
-        void task.then((results) => {
-          if (eagerExtractionRef.current?.key !== extractionKey) return;
-          setStage("review");
-          applyExtractionResults(results);
-        });
+      if (extractionGenerationRef.current !== generation) return;
+      const existingFiles = filesRef.current;
+      const existingIdentities = new Set(existingFiles.map(fileIdentity));
+      const uniqueFiles = optimized.filter((file) => {
+        const identity = fileIdentity(file);
+        if (existingIdentities.has(identity)) return false;
+        existingIdentities.add(identity);
+        return true;
+      });
+      const appendFiles = uniqueFiles.slice(0, Math.max(0, 8 - existingFiles.length));
+      if (!appendFiles.length) {
+        setExtractionState(
+          invoiceStatusesRef.current.some((status) => status === "reading")
+            ? "reading"
+            : invoiceStatusesRef.current.length
+              ? "ready"
+              : "idle",
+        );
+        setNotice(
+          existingFiles.length >= 8
+            ? "Maximum 8 invoices add kar sakte hain."
+            : "Yeh invoice pehle se added hai.",
+        );
+        return;
       }
-    } catch {
-      const nextFiles = [...files, ...selected].slice(0, 8);
-      setFiles(nextFiles);
-      const task = queueDocumentExtraction(nextFiles);
-      if (task) {
-        const extractionKey = fileSetKey(nextFiles);
-        void task.then((results) => {
-          if (eagerExtractionRef.current?.key !== extractionKey) return;
-          setStage("review");
-          applyExtractionResults(results);
-        });
+
+      const existingDrafts = batchDraftsRef.current.length
+        ? [...batchDraftsRef.current]
+        : existingFiles.length
+          ? [draftRef.current]
+          : [];
+      if (existingDrafts[activeFileIndexRef.current]) {
+        existingDrafts[activeFileIndexRef.current] = draftRef.current;
       }
+      const startingDrafts = appendFiles.map((_, index) =>
+        existingDrafts.length || index > 0
+          ? freshBatchDraft(draftRef.current)
+          : draftRef.current,
+      );
+      const appendKeys = appendFiles.map(fileIdentity);
+      const nextFiles = [...existingFiles, ...appendFiles];
+      const nextKeys = [...fileKeysRef.current, ...appendKeys];
+      const nextDrafts = [...existingDrafts, ...startingDrafts];
+      const nextStatuses = [
+        ...invoiceStatusesRef.current,
+        ...appendFiles.map(() => "reading" as const),
+      ];
+
+      filesRef.current = nextFiles;
+      setFiles(nextFiles);
+      fileKeysRef.current = nextKeys;
+      setFileKeys(nextKeys);
+      batchDraftsRef.current = nextDrafts;
+      setBatchDrafts(nextDrafts);
+      commitInvoiceStatuses(nextStatuses);
+      if (!existingFiles.length) {
+        activeFileIndexRef.current = 0;
+        setActiveFileIndex(0);
+        draftRef.current = nextDrafts[0];
+        setDraft(nextDrafts[0]);
+      }
+      setReviewView(nextFiles.length > 1 ? "overview" : "detail");
+      setStage("review");
+      if (optimized.length > appendFiles.length) {
+        setNotice("Kuch invoices duplicate ya limit ke baad the, isliye add nahi hue.");
+      }
+      appendFiles.forEach((file, index) => {
+        runInvoiceExtraction(file, appendKeys[index], startingDrafts[index]);
+      });
+    } catch (error) {
+      if (extractionGenerationRef.current !== generation) return;
+      setExtractionState(filesRef.current.length ? "ready" : "idle");
+      setNotice(readableError(error, "Invoices add nahi hue. Dobara try karein."));
     }
   };
 
-  const removeFirstFile = () => {
-    const nextFiles = files.slice(1);
-    const nextDrafts = paymentDrafts.slice(1);
+  const removeInvoiceFromSession = (index: number) => {
+    if (!filesRef.current[index]) return;
+    if (!window.confirm("Remove this invoice?")) return;
+
+    const key = fileKeysRef.current[index];
+    extractionTasksRef.current.get(key)?.controller.abort();
+    extractionTasksRef.current.delete(key);
+    const currentDrafts = batchDraftsRef.current.length
+      ? [...batchDraftsRef.current]
+      : [draftRef.current];
+    if (currentDrafts[activeFileIndexRef.current]) {
+      currentDrafts[activeFileIndexRef.current] = draftRef.current;
+    }
+    const nextFiles = filesRef.current.filter((_, itemIndex) => itemIndex !== index);
+    const nextKeys = fileKeysRef.current.filter((_, itemIndex) => itemIndex !== index);
+    const nextDrafts = currentDrafts.filter((_, itemIndex) => itemIndex !== index);
+    const nextStatuses = invoiceStatusesRef.current.filter(
+      (_, itemIndex) => itemIndex !== index,
+    );
+    if (!nextFiles.length) {
+      restartInsuranceCapture();
+      return;
+    }
+
+    const previousActiveIndex = activeFileIndexRef.current;
+    const nextActiveIndex =
+      previousActiveIndex === index
+        ? Math.min(index, nextFiles.length - 1)
+        : previousActiveIndex > index
+          ? previousActiveIndex - 1
+          : previousActiveIndex;
+    filesRef.current = nextFiles;
     setFiles(nextFiles);
+    fileKeysRef.current = nextKeys;
+    setFileKeys(nextKeys);
     batchDraftsRef.current = nextDrafts;
     setBatchDrafts(nextDrafts);
-    setActiveFileIndex(0);
-    if (nextDrafts[0]) setDraft(nextDrafts[0]);
+    commitInvoiceStatuses(nextStatuses);
+    activeFileIndexRef.current = nextActiveIndex;
+    setActiveFileIndex(nextActiveIndex);
+    draftRef.current = nextDrafts[nextActiveIndex];
+    setDraft(nextDrafts[nextActiveIndex]);
+    if (nextFiles.length === 1) setReviewView("detail");
+    setMissingOpen(false);
+    setVoiceAnswers({});
     setNotice("");
-    queueDocumentExtraction(nextFiles);
-    if (!nextFiles.length) setExtractionState("idle");
   };
 
-  const openMissingDetails = (nextDraft: CustomerInvoiceDraft) => {
+  const removeFirstFile = () => removeInvoiceFromSession(0);
+
+  const openMissingDetails = (
+    nextDraft: CustomerInvoiceDraft,
+    invoiceIndex = activeFileIndexRef.current,
+  ) => {
     const preparedDraft = finalizeInvoicePartyDefaults(nextDraft, user);
     if (preparedDraft !== nextDraft) {
       setDraft(preparedDraft);
       setBatchDrafts((current) => {
         if (!current.length) return current;
         const next = [...current];
-        next[activeFileIndex] = preparedDraft;
+        next[invoiceIndex] = preparedDraft;
         batchDraftsRef.current = next;
         return next;
       });
@@ -1006,45 +1234,6 @@ export default function CustomerCreateInsurancePage() {
     if (nextKeys.length) {
       setQuestionnaireSession((current) => current + 1);
     }
-  };
-
-  const applyExtractionResults = (
-    results: PromiseSettledResult<Record<string, unknown>>[],
-  ) => {
-    const previousDrafts = batchDraftsRef.current;
-    const nextDrafts = results.map((result, index) => {
-      const baseDraft =
-        previousDrafts[index] ||
-        (index === activeFileIndex
-          ? draftRef.current
-          : freshBatchDraft(draftRef.current));
-      return result.status === "fulfilled"
-        ? applyExtraction(baseDraft, result.value, user)
-        : baseDraft;
-    });
-    if (!nextDrafts.length) {
-      setExtractionState("failed");
-      setNotice(
-        "Details scan nahi ho paaye. Aap manually details bhar sakte hain.",
-      );
-      return;
-    }
-    const firstFailedIndex = results.findIndex(
-      (result) => result.status === "rejected",
-    );
-    batchDraftsRef.current = nextDrafts;
-    setBatchDrafts(nextDrafts);
-    setActiveFileIndex(0);
-    setDraft(nextDrafts[0]);
-    openMissingDetails(nextDrafts[0]);
-    setNotice(
-      firstFailedIndex >= 0
-        ? `Invoice ${firstFailedIndex + 1} scan nahi ho paaya. Details manually add karein.`
-        : "",
-    );
-    setExtractionState(
-      firstFailedIndex === 0 && results.length === 1 ? "failed" : "ready",
-    );
   };
 
   const advanceMissingDetails = () => {
@@ -1388,14 +1577,17 @@ export default function CustomerCreateInsurancePage() {
     );
     if (invalidDraftIndex >= 0) {
       const invalidDraft = paymentDrafts[invalidDraftIndex];
+      activeFileIndexRef.current = invalidDraftIndex;
       setActiveFileIndex(invalidDraftIndex);
+      draftRef.current = invalidDraft;
       setDraft(invalidDraft);
+      setReviewView("detail");
       setNotice(
         paymentDrafts.length > 1
           ? `Invoice ${invalidDraftIndex + 1}: ${validateDraft(invalidDraft)}`
           : validateDraft(invalidDraft),
       );
-      openMissingDetails(invalidDraft);
+      openMissingDetails(invalidDraft, invalidDraftIndex);
       return;
     }
     if (!user?.id) {
@@ -1655,11 +1847,19 @@ export default function CustomerCreateInsurancePage() {
 
   const selectReviewDraft = (index: number) => {
     const nextDraft = paymentDrafts[index];
-    if (!nextDraft || index === activeFileIndex) return;
+    if (!nextDraft) return;
+    if (batchDraftsRef.current[activeFileIndexRef.current]) {
+      const committedDrafts = [...batchDraftsRef.current];
+      committedDrafts[activeFileIndexRef.current] = draftRef.current;
+      batchDraftsRef.current = committedDrafts;
+      setBatchDrafts(committedDrafts);
+    }
+    activeFileIndexRef.current = index;
     setActiveFileIndex(index);
+    draftRef.current = nextDraft;
     setDraft(nextDraft);
+    setReviewView("detail");
     setNotice("");
-    openMissingDetails(nextDraft);
   };
 
   const retryIncompleteInvoice = () => {
@@ -1670,21 +1870,145 @@ export default function CustomerCreateInsurancePage() {
     const incompleteDraft = paymentDrafts[firstIncompleteInvoiceIndex];
     if (!incompleteDraft) return;
     if (firstIncompleteInvoiceIndex !== activeFileIndex) {
+      activeFileIndexRef.current = firstIncompleteInvoiceIndex;
       setActiveFileIndex(firstIncompleteInvoiceIndex);
+      draftRef.current = incompleteDraft;
       setDraft(incompleteDraft);
     }
+    setReviewView("detail");
     setNotice(
       paymentDrafts.length > 1
         ? `Invoice ${firstIncompleteInvoiceIndex + 1}: ${validateDraft(incompleteDraft)}`
         : validateDraft(incompleteDraft),
     );
-    openMissingDetails(incompleteDraft);
+    openMissingDetails(incompleteDraft, firstIncompleteInvoiceIndex);
+  };
+
+  const invoiceDraftUserId = String(user?.id || "anonymous");
+
+  const openStoredDrafts = async () => {
+    setDraftsOpen(true);
+    setDraftsLoading(true);
+    try {
+      setStoredDrafts(await listCustomerInvoiceDrafts(invoiceDraftUserId));
+    } catch (error) {
+      setNotice(readableError(error, "Drafts load nahi hue."));
+    } finally {
+      setDraftsLoading(false);
+    }
+  };
+
+  const saveCurrentDraft = async () => {
+    if (
+      draftSaveState === "saving" ||
+      extractionState === "optimizing" ||
+      readingInvoiceCount > 0 ||
+      !files.length
+    ) {
+      return;
+    }
+    setDraftSaveState("saving");
+    setNotice("");
+    try {
+      const saved = await saveCustomerInvoiceDraft({
+        id: activeStoredDraftId,
+        userId: invoiceDraftUserId,
+        files,
+        items: paymentDrafts.map((item, index) => ({
+          key:
+            fileKeys[index] ||
+            (files[index] ? fileIdentity(files[index]) : `invoice-${index}`),
+          uploadIndex: index,
+          form: item,
+          status:
+            invoiceStatuses[index] === "failed" ? "failed" : "ready",
+          ...(invoiceStatuses[index] === "failed"
+            ? { error: "Could not read" }
+            : {}),
+        })),
+        activeItemKey: fileKeys[activeFileIndex] || null,
+        reviewView,
+      });
+      setStoredDrafts((current) => [
+        saved,
+        ...current.filter((item) => item.id !== saved.id),
+      ]);
+      abortAllInvoiceExtractions();
+      router.push("/home");
+    } catch (error) {
+      setDraftSaveState("idle");
+      setNotice(readableError(error, "Draft save nahi hua. Dobara try karein."));
+    }
+  };
+
+  const resumeStoredDraft = (stored: StoredCustomerInvoiceDraft) => {
+    abortAllInvoiceExtractions();
+    const itemByUploadIndex = new Map(
+      stored.items.map((item) => [item.uploadIndex, item]),
+    );
+    const restoredFiles = stored.files.slice(0, 8);
+    const restoredDrafts = restoredFiles.map(
+      (_, index) => itemByUploadIndex.get(index)?.form || emptyDraft(user),
+    );
+    const restoredKeys = restoredFiles.map(
+      (file, index) => itemByUploadIndex.get(index)?.key || fileIdentity(file),
+    );
+    const restoredStatuses = restoredFiles.map((_, index) =>
+      itemByUploadIndex.get(index)?.status === "failed"
+        ? ("failed" as const)
+        : ("ready" as const),
+    );
+    const activeIndex = Math.max(
+      0,
+      restoredKeys.findIndex((key) => key === stored.activeItemKey),
+    );
+    filesRef.current = restoredFiles;
+    setFiles(restoredFiles);
+    fileKeysRef.current = restoredKeys;
+    setFileKeys(restoredKeys);
+    batchDraftsRef.current = restoredDrafts;
+    setBatchDrafts(restoredDrafts);
+    invoiceStatusesRef.current = restoredStatuses;
+    setInvoiceStatuses(restoredStatuses);
+    activeFileIndexRef.current = activeIndex;
+    setActiveFileIndex(activeIndex);
+    draftRef.current = restoredDrafts[activeIndex];
+    setDraft(restoredDrafts[activeIndex]);
+    setExtractionState(
+      restoredStatuses.some((status) => status === "ready") ? "ready" : "failed",
+    );
+    setReviewView(
+      restoredFiles.length > 1 && stored.reviewView === "overview"
+        ? "overview"
+        : "detail",
+    );
+    setActiveStoredDraftId(stored.id);
+    setDraftSaveState("idle");
+    setDraftsOpen(false);
+    setNotice("");
+    setStage("review");
+  };
+
+  const removeStoredDraft = async (stored: StoredCustomerInvoiceDraft) => {
+    if (!window.confirm("Delete this draft?")) return;
+    setDeletingDraftId(stored.id);
+    try {
+      await deleteCustomerInvoiceDraft(stored.id);
+      setStoredDrafts((current) =>
+        current.filter((item) => item.id !== stored.id),
+      );
+      if (activeStoredDraftId === stored.id) setActiveStoredDraftId(null);
+    } catch (error) {
+      setNotice(readableError(error, "Draft delete nahi hua."));
+    } finally {
+      setDeletingDraftId(null);
+    }
   };
 
   if (stage === "capture") {
     return (
       <CustomerAppShell activeTab="create" showBottomNav={false}>
-        <header className={styles.secondaryHeader}>
+        <header className={`${styles.secondaryHeader} ${styles.insuranceHeader}`}>
           <button
             type="button"
             className={styles.secondaryBack}
@@ -1694,7 +2018,13 @@ export default function CustomerCreateInsurancePage() {
             <ArrowLeft size={24} strokeWidth={2.4} />
           </button>
           <h1 className={styles.secondaryHeading}>Insurance banao</h1>
-          <span />
+          <button
+            type="button"
+            className={styles.headerTextAction}
+            onClick={() => void openStoredDrafts()}
+          >
+            Drafts
+          </button>
         </header>
 
         <main className={styles.quickCreateBody}>
@@ -1826,13 +2156,78 @@ export default function CustomerCreateInsurancePage() {
             </div>
           </div>
         ) : null}
+
+        {draftsOpen ? (
+          <div className={styles.sourceModal}>
+            <button
+              type="button"
+              className={styles.sourceBackdrop}
+              onClick={() => setDraftsOpen(false)}
+              aria-label="Close drafts"
+            />
+            <section
+              className={styles.invoiceDraftsSheet}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="invoice-drafts-title"
+            >
+              <div className={styles.invoiceDraftsHeader}>
+                <h2 id="invoice-drafts-title">Drafts</h2>
+                <button
+                  type="button"
+                  onClick={() => setDraftsOpen(false)}
+                  aria-label="Close drafts"
+                >
+                  <X size={21} />
+                </button>
+              </div>
+              {draftsLoading ? (
+                <div className={styles.invoiceDraftsEmpty} role="status">
+                  <LoaderCircle className="animate-spin" size={22} />
+                </div>
+              ) : storedDrafts.length ? (
+                <div className={styles.invoiceDraftsList}>
+                  {storedDrafts.map((stored) => (
+                    <div className={styles.invoiceDraftItem} key={stored.id}>
+                      <button
+                        type="button"
+                        className={styles.invoiceDraftOpen}
+                        onClick={() => resumeStoredDraft(stored)}
+                      >
+                        <strong>
+                          {stored.files.length} {stored.files.length === 1 ? "invoice" : "invoices"}
+                        </strong>
+                        <span>{formatDraftSavedAt(stored.savedAt)}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.invoiceDraftDelete}
+                        onClick={() => void removeStoredDraft(stored)}
+                        disabled={deletingDraftId === stored.id}
+                        aria-label="Delete draft"
+                      >
+                        {deletingDraftId === stored.id ? (
+                          <LoaderCircle className="animate-spin" size={18} />
+                        ) : (
+                          <Trash2 size={18} />
+                        )}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={styles.invoiceDraftsEmpty}>No drafts</div>
+              )}
+            </section>
+          </div>
+        ) : null}
       </CustomerAppShell>
     );
   }
 
   return (
     <CustomerAppShell activeTab="create" showBottomNav={false}>
-      <header className={styles.secondaryHeader}>
+      <header className={`${styles.secondaryHeader} ${styles.insuranceHeader}`}>
         <button
           type="button"
           className={styles.secondaryBack}
@@ -1842,8 +2237,27 @@ export default function CustomerCreateInsurancePage() {
         >
           <ArrowLeft size={24} strokeWidth={2.4} />
         </button>
-        <h1 className={styles.secondaryHeading}>Details check karein</h1>
-        <span />
+        <h1 className={styles.secondaryHeading}>
+          {reviewView === "overview" ? "Review & pay" : "Details check karein"}
+        </h1>
+        <button
+          type="button"
+          className={styles.headerTextAction}
+          onClick={() => void saveCurrentDraft()}
+          disabled={
+            stage === "creating" ||
+            draftSaveState === "saving" ||
+            extractionState === "optimizing" ||
+            readingInvoiceCount > 0 ||
+            !files.length
+          }
+        >
+          {draftSaveState === "saving" ? (
+            <LoaderCircle className="animate-spin" size={18} />
+          ) : (
+            "Save Draft"
+          )}
+        </button>
       </header>
 
       <main className={`${styles.pageBody} ${styles.reviewBody}`}>
@@ -1854,7 +2268,7 @@ export default function CustomerCreateInsurancePage() {
           </div>
         ) : null}
 
-        {files.length > 1 ? (
+        {files.length ? (
           <div className={styles.reviewFileStrip} aria-label="Uploaded invoices">
             {files.map((file, index) => (
               <div
@@ -1900,11 +2314,111 @@ export default function CustomerCreateInsurancePage() {
                   </span>
                 )}
                 <small>{index + 1}</small>
+                <i
+                  className={`${styles.reviewFileStatus} ${
+                    invoiceStatuses[index] === "failed"
+                      ? styles.reviewFileStatusFailed
+                      : ""
+                  }`}
+                  aria-label={
+                    invoiceStatuses[index] === "reading"
+                      ? `Invoice ${index + 1} reading`
+                      : invoiceStatuses[index] === "failed"
+                        ? `Invoice ${index + 1} could not be read`
+                        : `Invoice ${index + 1} ready`
+                  }
+                >
+                  {invoiceStatuses[index] === "reading" ? (
+                    <LoaderCircle className="animate-spin" size={14} />
+                  ) : invoiceStatuses[index] === "failed" ? (
+                    <CircleAlert size={14} />
+                  ) : (
+                    <CheckCircle2 size={14} />
+                  )}
+                </i>
               </div>
             ))}
+            {files.length < 8 ? (
+              <button
+                type="button"
+                className={styles.reviewFileAdd}
+                onClick={() => setSourceOpen(true)}
+                disabled={stage === "creating" || extractionState === "optimizing"}
+              >
+                <Plus size={22} />
+                <span>Add</span>
+              </button>
+            ) : null}
           </div>
         ) : null}
 
+        {reviewView === "overview" && paymentDrafts.length > 1 ? (
+          <>
+            <div className={styles.invoiceOverviewHeading}>
+              <h2>{paymentDrafts.length} invoices</h2>
+            </div>
+            <section className={styles.invoiceReceiptCard}>
+              <div className={styles.invoiceReceiptHeader}>
+                <span>Invoice</span>
+                <span>Qty · Rate · Premium</span>
+              </div>
+              <div className={styles.invoiceReceiptList}>
+                {paymentDrafts.map((item, index) => {
+                  const itemTotal = resolveInvoiceAmountBreakdown(item, pricing).totalAmount;
+                  const status = invoiceStatuses[index];
+                  return (
+                    <div className={styles.invoiceReceiptRow} key={fileKeys[index] || index}>
+                      <button
+                        type="button"
+                        className={styles.invoiceReceiptOpen}
+                        onClick={() => selectReviewDraft(index)}
+                      >
+                        <span className={styles.invoiceReceiptParty}>
+                          <strong>{item.vehicleNumber || `Invoice ${index + 1}`}</strong>
+                          <span>{item.buyerName || item.supplierName || "Insured party missing"}</span>
+                          {status === "reading" ? <small>Reading…</small> : null}
+                          {status === "failed" ? <small>Could not read</small> : null}
+                        </span>
+                        <span className={styles.invoiceReceiptAmounts}>
+                          <strong>
+                            {itemTotal > 0
+                              ? money(customerInvoicePremium(item, pricing, premiumPerLakh))
+                              : "—"}
+                          </strong>
+                          <span>
+                            {Number(item.quantity) > 0 ? item.quantity : "—"} × {Number(item.rate) > 0 ? money(Number(item.rate)) : "—"}
+                          </span>
+                          <small>Value {itemTotal > 0 ? money(itemTotal) : "—"}</small>
+                        </span>
+                        <ChevronRight size={21} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.invoiceReceiptDelete}
+                        onClick={() => removeInvoiceFromSession(index)}
+                        disabled={stage === "creating"}
+                        aria-label={`Remove invoice ${index + 1}`}
+                      >
+                        <Trash2 size={17} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+            <section className={styles.invoiceOverviewTotals}>
+              <div>
+                <span>Total invoice value</span>
+                <strong>{money(totalInvoiceValue)}</strong>
+              </div>
+              <div className={styles.invoiceOverviewPayable}>
+                <span>Premium payable</span>
+                <strong>{payableMoney(payablePremium)}</strong>
+              </div>
+            </section>
+          </>
+        ) : (
+          <>
         <section className={styles.reviewTopCard}>
           <div className={styles.reviewProductRow}>
             <div className={styles.reviewProduct}>
@@ -2182,6 +2696,26 @@ export default function CustomerCreateInsurancePage() {
           ) : null}
         </section>
 
+        <div className={styles.reviewSessionActions}>
+          {files.length > 1 ? (
+            <button type="button" onClick={() => setReviewView("overview")}>
+              Back to overview
+            </button>
+          ) : null}
+          {files.length ? (
+            <button
+              type="button"
+              className={styles.reviewDeleteAction}
+              onClick={() => removeInvoiceFromSession(activeFileIndex)}
+            >
+              <Trash2 size={17} />
+              Delete invoice
+            </button>
+          ) : null}
+        </div>
+          </>
+        )}
+
         {notice ? <div className={styles.notice}>{notice}</div> : null}
       </main>
 
@@ -2193,27 +2727,83 @@ export default function CustomerCreateInsurancePage() {
           disabled={
             stage === "creating" ||
             paymentStatusChecking ||
+            extractionState === "optimizing" ||
             extractionState === "reading" ||
             pendingVoiceAnswers > 0
           }
         >
           {stage === "creating" ||
           paymentStatusChecking ||
+          extractionState === "optimizing" ||
           extractionState === "reading" ||
           pendingVoiceAnswers > 0 ? (
             <LoaderCircle className="animate-spin" size={19} />
           ) : null}
           {paymentStatusChecking
             ? "Payment check ho raha hai"
-            : extractionState === "reading"
+            : extractionState === "optimizing"
+              ? "Invoices taiyar ho rahe hain"
+              : extractionState === "reading"
               ? "Parchi padh rahe hain"
               : pendingVoiceAnswers > 0
                 ? "Details save ho rahi hain"
                 : validationIssue
-                  ? "Dobara try karein"
+                  ? `Fix ${incompleteInvoiceCount} ${
+                      incompleteInvoiceCount === 1 ? "invoice" : "invoices"
+                    }`
                   : `Pay ${payableMoney(payablePremium)}`}
         </button>
       </div>
+
+      <input
+        ref={cameraRef}
+        hidden
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={(event) => void selectFiles(event)}
+      />
+      <input
+        ref={uploadRef}
+        hidden
+        type="file"
+        accept="image/*,application/pdf"
+        multiple
+        onChange={(event) => void selectFiles(event)}
+      />
+      {sourceOpen ? (
+        <div className={styles.sourceModal}>
+          <button
+            type="button"
+            className={styles.sourceBackdrop}
+            onClick={() => setSourceOpen(false)}
+            aria-label="Close"
+          />
+          <div className={styles.sourceSheet}>
+            <div className={styles.sourceHandle} />
+            <button
+              type="button"
+              className={styles.sourceOption}
+              onClick={() => cameraRef.current?.click()}
+            >
+              <span>
+                <Camera size={25} />
+              </span>
+              Photo kheenchein
+            </button>
+            <button
+              type="button"
+              className={styles.sourceOption}
+              onClick={() => uploadRef.current?.click()}
+            >
+              <span>
+                <FolderOpen size={25} />
+              </span>
+              Gallery
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {zoomedFileIndex !== null && previewUrls[zoomedFileIndex] ? (
         <div
@@ -2928,6 +3518,22 @@ function freshBatchDraft(template: CustomerInvoiceDraft) {
   };
 }
 
+function mergeInvoiceDraftUserEdits(
+  startingDraft: CustomerInvoiceDraft,
+  currentDraft: CustomerInvoiceDraft,
+  extractedDraft: CustomerInvoiceDraft,
+) {
+  const next = { ...extractedDraft };
+  (Object.keys(currentDraft) as Array<keyof CustomerInvoiceDraft>).forEach(
+    (field) => {
+      if (currentDraft[field] !== startingDraft[field]) {
+        Object.assign(next, { [field]: currentDraft[field] });
+      }
+    },
+  );
+  return next;
+}
+
 function questionnaireAnswerKey(
   invoiceIndex: number,
   key: MissingDetailKey,
@@ -3066,10 +3672,8 @@ function audioExtension(type: string) {
   return "webm";
 }
 
-function fileSetKey(files: File[]) {
-  return files
-    .map((file) => `${file.name}:${file.size}:${file.lastModified}`)
-    .join("|");
+function fileIdentity(file: File) {
+  return `${file.name}:${file.size}:${file.lastModified}:${file.type}`;
 }
 
 function jpegName(name: string) {
@@ -3111,6 +3715,17 @@ function phoneInput(value: string) {
 
 function tonnage(value: unknown) {
   return String(value || "").match(/\b(25|30)\b/)?.[1] || "";
+}
+
+function formatDraftSavedAt(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function shortDate(value: string) {
