@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { adminApi } from '../api/admin.api';
+import { persistAdminAccountMobile } from '../adminAccountMobile';
 import {
     AdminAccessProfile,
     AdminSection,
@@ -70,8 +71,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
     };
 
+    const applyAccessProfile = (profile: AdminAccessProfile | null) => {
+        setAccessProfile(profile);
+        persistAdminAccountMobile(profile?.account?.mobileNumber);
+    };
+
     const clearAdminAuthState = () => {
         localStorage.removeItem('adminToken');
+        persistAdminAccountMobile(null);
         adminApi.clearAuthToken();
         setIsAuthenticated(false);
         setAccessProfile(null);
@@ -121,7 +128,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
             localStorage.setItem('adminToken', token);
             adminApi.setAuthToken(token);
-            setAccessProfile(profile);
+            applyAccessProfile(profile);
             setIsAuthenticated(true);
             setLoading(false);
         };
@@ -178,7 +185,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
                 if (!profile) {
                     throw new Error('Admin access profile not available');
                 }
-                setAccessProfile(profile);
+                applyAccessProfile(profile);
                 setIsAuthenticated(true);
                 setShowSessionWarning(false);
                 setWarningShownForToken(null);

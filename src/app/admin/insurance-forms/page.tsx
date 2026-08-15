@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef, Fragment, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
+import { useAuth } from '@/features/auth/context/AuthContext';
 import { formatCurrency, formatDateOnly, formatTimeOnly } from '@/features/admin/utils/format';
 import { AdminLedgerUser, adminApi, InvoiceFilterParams, RegenerateInvoicePayload } from '@/features/admin/api/admin.api';
 import { toast } from 'react-toastify';
@@ -20,8 +21,9 @@ import {
 } from '@/features/admin/blacklistOverride';
 import PartyCombobox, { type PartyComboboxOption } from '@/features/admin/components/PartyCombobox';
 import { getHsnForProduct, itemsData } from '@/features/insurance/productCatalog';
-import { getVehicleRecentInvoiceStatus, getSupplierHistoricalParties, getBuyerHistoricalSuppliers } from '@/features/insurance/api';
+import { getVehicleRecentInvoiceStatus, getSupplierHistoricalParties, getBuyerHistoricalSuppliers, isInsuranceImpersonationActive } from '@/features/insurance/api';
 import type { HistoricalPartyOption } from '@/features/insurance/api';
+import { resolveInsuranceCreationAudience } from '@/features/insurance/creationAccessPolicy';
 import DesktopRequiredNotice from '@/shared/components/DesktopRequiredNotice';
 import { useDesktopCreationAccess } from '@/shared/hooks/useDesktopCreationAccess';
 
@@ -446,8 +448,17 @@ const EXPORTABLE_INVOICE_COLUMNS = [
 
 export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFormsPageProps) {
     const router = useRouter();
-    const { isAuthenticated } = useAdmin();
+    const { user } = useAuth();
+    const { isAuthenticated, accessProfile } = useAdmin();
     const desktopCreationAccess = useDesktopCreationAccess();
+    const audience = resolveInsuranceCreationAudience({
+        user,
+        hasDirectAdminSession: true,
+        hasAdminActorSession: isInsuranceImpersonationActive(),
+        adminMobileNumber: accessProfile?.account?.mobileNumber,
+    });
+    const canCreateOnThisDevice =
+        desktopCreationAccess.allowed || audience.canCreateOnMobile;
 
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [insuranceOverrides, setInsuranceOverrides] = useState<
@@ -1059,7 +1070,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
 
     const openCreateInvoiceModal = () => {
         if (!desktopCreationAccess.ready) return;
-        if (!desktopCreationAccess.allowed) {
+        if (!canCreateOnThisDevice) {
             setCreateInvoiceBlockedNoticeOpen(true);
             return;
         }
@@ -1319,7 +1330,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     };
 
     const handleCreateInvoiceSubmit = async () => {
-        if (!desktopCreationAccess.ready || !desktopCreationAccess.allowed) {
+        if (!desktopCreationAccess.ready || !canCreateOnThisDevice) {
             setCreateInvoiceOpen(false);
             setCreateInvoiceBlockedNoticeOpen(true);
             return;
@@ -2120,7 +2131,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     useEffect(() => {
         if (
             desktopCreationAccess.ready &&
-            !desktopCreationAccess.allowed &&
+            !canCreateOnThisDevice &&
             createInvoiceOpen &&
             !createInvoiceSubmitting
         ) {
@@ -2128,9 +2139,9 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
             setCreateInvoiceBlockedNoticeOpen(true);
         }
     }, [
+        canCreateOnThisDevice,
         createInvoiceOpen,
         createInvoiceSubmitting,
-        desktopCreationAccess.allowed,
         desktopCreationAccess.ready,
     ]);
 
@@ -2601,17 +2612,17 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                 onClick={openCreateInvoiceModal}
                                 disabled={loading || !desktopCreationAccess.ready}
                                 className={`px-3 sm:px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto ${
-                                    desktopCreationAccess.ready && !desktopCreationAccess.allowed
+                                    desktopCreationAccess.ready && !canCreateOnThisDevice
                                         ? 'border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
                                         : 'bg-slate-800 text-white hover:bg-slate-900'
                                 }`}
                             >
-                                {desktopCreationAccess.ready && !desktopCreationAccess.allowed ? (
+                                {desktopCreationAccess.ready && !canCreateOnThisDevice ? (
                                     <Monitor className="w-4 h-4" />
                                 ) : (
                                     <FileText className="w-4 h-4" />
                                 )}
-                                {desktopCreationAccess.ready && !desktopCreationAccess.allowed
+                                {desktopCreationAccess.ready && !canCreateOnThisDevice
                                     ? 'Create Invoice · Desktop only'
                                     : 'Create Invoice'}
                             </button>
