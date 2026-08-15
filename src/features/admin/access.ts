@@ -78,6 +78,7 @@ export type AdminAccessProfile = {
     username: string;
     status: string;
     isSuperAdmin?: boolean;
+    mobileNumber?: string | null;
   };
 };
 

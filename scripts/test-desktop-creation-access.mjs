@@ -144,23 +144,29 @@ assert.deepEqual(
   },
 );
 
-for (const mobileNumber of ["+91 87892 50356", "89046 28742"]) {
-  const allowedUser = { identity: "INTERNAL_TEAM", mobileNumber };
-  assert.equal(isAllowedInternalMobileInvoiceCreator(allowedUser), true);
-  assert.deepEqual(
-    resolveInsuranceCreationAudience({
-      user: allowedUser,
-      hasDirectAdminSession: false,
-      hasAdminActorSession: false,
-    }),
-    {
-      isPrivilegedActor: true,
-      usesInternalFlow: true,
-      canCreateOnMobile: true,
-    },
-  );
-}
+const allowedUser = { identity: "INTERNAL_TEAM", mobileNumber: "89046 28742" };
+assert.equal(isAllowedInternalMobileInvoiceCreator(allowedUser), true);
+assert.deepEqual(
+  resolveInsuranceCreationAudience({
+    user: allowedUser,
+    hasDirectAdminSession: false,
+    hasAdminActorSession: false,
+  }),
+  {
+    isPrivilegedActor: true,
+    usesInternalFlow: true,
+    canCreateOnMobile: true,
+  },
+);
 
+assert.equal(
+  isAllowedInternalMobileInvoiceCreator({
+    identity: "INTERNAL_TEAM",
+    phone: "+91 87892 50356",
+  }),
+  false,
+  "8789250356 is no longer allowed to create invoices from phone.",
+);
 assert.equal(
   isAllowedInternalMobileInvoiceCreator({
     identity: "INTERNAL_TEAM",
@@ -171,14 +177,35 @@ assert.equal(
 assert.equal(
   isAllowedInternalMobileInvoiceCreator({
     identity: "CUSTOMER",
-    phone: "+91 87892 50356",
+    phone: "+91 89046 28742",
   }),
   false,
   "The mobile exception applies only to internal-team identities.",
 );
 assert.equal(
   resolveInsuranceCreationAudience({
-    user: { identity: "INTERNAL_TEAM", phone: "+91 87892 50356" },
+    user: { identity: "INTERNAL_TEAM", phone: "+91 89046 28742" },
+    hasDirectAdminSession: true,
+    hasAdminActorSession: false,
+  }).canCreateOnMobile,
+  true,
+  "A leftover admin token must not block an allowlisted internal-team user.",
+);
+
+assert.equal(
+  resolveInsuranceCreationAudience({
+    user: null,
+    hasDirectAdminSession: true,
+    hasAdminActorSession: false,
+    adminMobileNumber: "+91 89046 28742",
+  }).canCreateOnMobile,
+  true,
+  "An allowlisted admin account mobile can create invoices from phone.",
+);
+
+assert.equal(
+  resolveInsuranceCreationAudience({
+    user: { identity: "INTERNAL_TEAM", phone: "+91 89046 28742" },
     hasDirectAdminSession: false,
     hasAdminActorSession: true,
   }).canCreateOnMobile,

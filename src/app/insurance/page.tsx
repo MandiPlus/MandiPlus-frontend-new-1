@@ -4,12 +4,13 @@ import dynamic from "next/dynamic";
 
 import { useAuth } from "@/features/auth/context/AuthContext";
 import CustomerCreateInsurancePage from "@/features/customer-app/CustomerCreateInsurancePage";
+import { getPersistedAdminAccountMobile } from "@/features/admin/adminAccountMobile";
 import {
   resolveInsuranceCreationAudience,
 } from "@/features/insurance/creationAccessPolicy";
 import {
-  hasStoredInsuranceAdminActorSession,
   hasStoredInsuranceAdminSession,
+  isInsuranceImpersonationActive,
 } from "@/features/insurance/api";
 import DesktopRequiredNotice from "@/shared/components/DesktopRequiredNotice";
 import { isIOSSafariUserAgent } from "@/shared/device/desktopCreationAccess";
@@ -43,7 +44,8 @@ export default function InsurancePage() {
   const audience = resolveInsuranceCreationAudience({
     user,
     hasDirectAdminSession,
-    hasAdminActorSession: hasStoredInsuranceAdminActorSession(),
+    hasAdminActorSession: isInsuranceImpersonationActive(),
+    adminMobileNumber: getPersistedAdminAccountMobile(),
   });
 
   if (!audience.isPrivilegedActor) {

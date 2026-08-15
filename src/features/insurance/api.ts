@@ -76,6 +76,11 @@ export const getStoredInsuranceAdminActorToken = (): string | null => {
 export const hasStoredInsuranceAdminActorSession = (): boolean =>
   Boolean(getStoredInsuranceAdminActorToken());
 
+export const isInsuranceImpersonationActive = (): boolean => {
+  if (typeof window === "undefined") return false;
+  return sessionStorage.getItem("impersonationActive") === "1";
+};
+
 const getInsuranceRequestToken = (): string | null => {
   return getStoredInsuranceAdminToken() || getStoredAuthToken();
 };
