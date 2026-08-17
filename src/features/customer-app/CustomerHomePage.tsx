@@ -129,11 +129,11 @@ function HomeContent({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
           <Link
             href="/customer/wallet"
             className={styles.promoCard}
-            aria-label="Open wallet limit offer"
+            aria-label="Unlock 1 crore wallet limit for 20,000 rupees"
           >
             <Image
-              src="/customer-app/adbanner.webp"
-              alt="Mandi Plus wallet offer"
+              src="/customer-app/wallet-limit-offer-v2.webp"
+              alt="Unlock ₹1 crore wallet limit—pay ₹20,000 only"
               width={1578}
               height={996}
               sizes="(max-width: 1023px) 100vw, 444px"
