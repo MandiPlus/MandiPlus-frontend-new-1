@@ -47,6 +47,18 @@ export function isInternalInsuranceUser(
   return identity === "INTERNAL_TEAM" || role === "ADMIN";
 }
 
+export function canUseInternalRateCalculator(
+  user: Record<string, unknown> | null,
+  hasDirectAdminSession: boolean,
+): boolean {
+  const identity = String(user?.identity || "").trim().toUpperCase();
+  return (
+    hasDirectAdminSession ||
+    isInternalInsuranceUser(user) ||
+    identity === "AGENT"
+  );
+}
+
 export function resolveInsuranceCreationAudience({
   user,
   hasDirectAdminSession,

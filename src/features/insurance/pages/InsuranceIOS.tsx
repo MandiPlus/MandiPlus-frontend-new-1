@@ -50,6 +50,7 @@ import {
 } from '../learningContext';
 import { itemsData } from '../productCatalog';
 import { resolveWeighmentSlipForSubmit } from '../weighmentSlipSubmit';
+import { canUseInternalRateCalculator } from '../creationAccessPolicy';
 import { BlacklistOverrideOtpModal } from '@/features/admin/components/BlacklistOverrideOtpModal';
 import {
     isBlacklistOtpRequiredMessage,
@@ -1927,7 +1928,7 @@ const InsuranceIOS = () => {
     const isBuyerLookupQuestion = currentQuestion.field === 'buyerName';
     const canUseRateCalculator =
         currentQuestion.field === 'rate' &&
-        (isInsuranceAdminSession || ['AGENT', 'INTERNAL_TEAM'].includes(identity));
+        canUseInternalRateCalculator(user, isInsuranceAdminSession);
     const isCashMode = String(formData.notes || '').toLowerCase() === 'cash';
     const canSkipCurrentQuestion =
         currentQuestion.optional &&

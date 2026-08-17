@@ -7,6 +7,7 @@ import {
   isIOSSafariUserAgent,
 } from "../src/shared/device/desktopCreationAccess.ts";
 import {
+  canUseInternalRateCalculator,
   isAllowedInternalMobileInvoiceCreator,
   resolveInsuranceCreationAudience,
 } from "../src/features/insurance/creationAccessPolicy.ts";
@@ -102,6 +103,33 @@ assert.deepEqual(
     usesInternalFlow: false,
     canCreateOnMobile: false,
   },
+);
+
+assert.equal(
+  canUseInternalRateCalculator(
+    { identity: "CUSTOMER", role: "ADMIN" },
+    false,
+  ),
+  true,
+  "An authenticated admin role must see the internal rate calculator.",
+);
+assert.equal(
+  canUseInternalRateCalculator({ identity: "INTERNAL_TEAM" }, false),
+  true,
+);
+assert.equal(
+  canUseInternalRateCalculator({ identity: "AGENT" }, false),
+  true,
+);
+assert.equal(
+  canUseInternalRateCalculator({ identity: "CUSTOMER" }, false),
+  false,
+  "Customers must not receive the internal rate calculator.",
+);
+assert.equal(
+  canUseInternalRateCalculator({ identity: "CUSTOMER" }, true),
+  true,
+  "A direct admin session must retain calculator access.",
 );
 
 assert.deepEqual(

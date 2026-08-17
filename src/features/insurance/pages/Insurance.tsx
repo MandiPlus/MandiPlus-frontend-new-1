@@ -56,6 +56,7 @@ import {
     resolveInsuranceInvoiceModeForSubmit,
 } from '../insuranceModeSubmit';
 import { resolveWeighmentSlipForSubmit } from '../weighmentSlipSubmit';
+import { canUseInternalRateCalculator } from '../creationAccessPolicy';
 import { BlacklistOverrideOtpModal } from '@/features/admin/components/BlacklistOverrideOtpModal';
 import {
     isBlacklistOtpRequiredMessage,
@@ -1913,7 +1914,7 @@ const Insurance = () => {
     const isBuyerLookupQuestion = currentQuestion.field === 'buyerName';
     const canUseRateCalculator =
         currentQuestion.field === 'rate' &&
-        (isInsuranceAdminSession || ['AGENT', 'INTERNAL_TEAM'].includes(identity));
+        canUseInternalRateCalculator(user, isInsuranceAdminSession);
     const canSkipCurrentQuestion =
         currentQuestion.optional &&
         (currentQuestion.field === 'driverPhone' ||
@@ -2566,6 +2567,9 @@ const Insurance = () => {
                                         setInputValue(value);
                                         setIsRateCalculatorOpen(false);
                                         setError('');
+                                        requestAnimationFrame(() => {
+                                            textInputRef.current?.focus({ preventScroll: true });
+                                        });
                                     }}
                                 />
                             )}

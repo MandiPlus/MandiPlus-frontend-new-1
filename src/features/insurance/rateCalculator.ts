@@ -2,6 +2,23 @@ export const CALCULATOR_OPERATORS = ['+', '-', '×', '÷'] as const;
 
 export type CalculatorOperator = (typeof CALCULATOR_OPERATORS)[number];
 
+export type CalculatorCommand =
+    | { type: 'input'; value: string }
+    | { type: 'backspace' }
+    | { type: 'clear' }
+    | { type: 'equals' }
+    | { type: 'apply' }
+    | { type: 'close' };
+
+export interface CalculatorKeyboardInput {
+    key: string;
+    code?: string;
+    altKey?: boolean;
+    ctrlKey?: boolean;
+    metaKey?: boolean;
+    isComposing?: boolean;
+}
+
 const isOperator = (value: string): value is CalculatorOperator =>
     CALCULATOR_OPERATORS.includes(value as CalculatorOperator);
 
@@ -106,3 +123,67 @@ export const evaluateCalculatorExpression = (
 
 export const formatCalculatorResult = (value: number): string =>
     String(Number(value.toFixed(2)));
+
+export const reduceCalculatorExpression = (
+    expression: string,
+    command: CalculatorCommand,
+): string => {
+    if (command.type === 'clear') return '';
+    if (command.type === 'backspace') return expression.slice(0, -1);
+    if (command.type === 'input') {
+        return appendCalculatorInput(expression, command.value);
+    }
+    if (command.type === 'equals') {
+        const result = evaluateCalculatorExpression(expression);
+        return result === null ? expression : formatCalculatorResult(result);
+    }
+    return expression;
+};
+
+/**
+ * Converts physical keyboard and numpad keys to the same commands used by the
+ * on-screen calculator. Modified shortcuts are ignored so browser/system
+ * commands such as Cmd+C keep working normally.
+ */
+export const getCalculatorCommandFromKeyboard = (
+    input: CalculatorKeyboardInput,
+): CalculatorCommand | null => {
+    if (
+        input.isComposing ||
+        input.altKey ||
+        input.ctrlKey ||
+        input.metaKey
+    ) {
+        return null;
+    }
+
+    if (/^\d$/.test(input.key)) {
+        return { type: 'input', value: input.key };
+    }
+
+    if (input.key === '.' || input.code === 'NumpadDecimal') {
+        return { type: 'input', value: '.' };
+    }
+
+    if (input.key === '+' || input.key === '-') {
+        return { type: 'input', value: input.key };
+    }
+
+    if (input.key === '*' || input.key === 'x' || input.key === 'X') {
+        return { type: 'input', value: '×' };
+    }
+
+    if (input.key === '/') {
+        return { type: 'input', value: '÷' };
+    }
+
+    if (input.key === 'Backspace') return { type: 'backspace' };
+    if (input.key === 'Delete' || input.key === 'c' || input.key === 'C') {
+        return { type: 'clear' };
+    }
+    if (input.key === '=') return { type: 'equals' };
+    if (input.key === 'Enter') return { type: 'apply' };
+    if (input.key === 'Escape') return { type: 'close' };
+
+    return null;
+};
