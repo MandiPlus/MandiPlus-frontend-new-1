@@ -66,7 +66,7 @@ export default function FleetGoogleMap({ vehicles, onVehicleSelect, className }:
   const truckIcon = useMemo(() => {
     if (!isLoaded || typeof window === 'undefined' || !window.google?.maps) return undefined;
     return {
-      url: '/images/truck-marker.svg',
+      url: '/customer-app/tracking/truck-marker.png',
       scaledSize: new window.google.maps.Size(48, 48),
       anchor: new window.google.maps.Point(24, 24),
     };

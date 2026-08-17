@@ -317,9 +317,9 @@ function createRouteState(
         startDistance + Math.min(5_000, predictionSeconds * speedMps),
       )
     : startDistance;
-  const startPoint = canSimulate
-    ? pointAtDistance(metrics, startDistance)
-    : current || pointAtDistance(metrics, startDistance);
+  // Tower/GPS fixes can land beside the carriageway. Keep the raw coordinate
+  // for data and external-map links, but render the truck on the road route.
+  const startPoint = pointAtDistance(metrics, startDistance);
 
   return {
     metrics,
@@ -362,7 +362,7 @@ function createTruckOverlay(
       const element = document.createElement('div');
       element.className = `tracking-truck-overlay${isOnline ? ' is-online' : ''}`;
       element.innerHTML =
-        '<span class="tracking-truck-pulse"></span><img src="/images/truck-marker.svg" alt="" />';
+        '<span class="tracking-truck-pulse"></span><img src="/customer-app/tracking/truck-marker.png" alt="" />';
       this.element = element;
       this.element.dataset.lat = this.position.lat.toFixed(6);
       this.element.dataset.lng = this.position.lng.toFixed(6);

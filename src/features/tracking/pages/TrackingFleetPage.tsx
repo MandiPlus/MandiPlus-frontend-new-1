@@ -1,731 +1,668 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import Image from 'next/image';
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
+  ChevronDown,
   ChevronRight,
   Clock3,
+  ExternalLink,
   Headphones,
-  RefreshCw,
-  Search,
+  HelpCircle,
+  MapPinned,
   Share2,
+  TicketPercent,
   Truck,
+  WalletCards,
+  X,
 } from 'lucide-react';
 
-import ProtectedRoute from '@/features/auth/components/ProtectedRoute';
-import { getStoredAuthToken } from '@/features/auth/api';
-import {
-  getLiveTrackingTrips,
-  getLocalTrackingMotionScenario,
-  getTrackingRoute,
-  LiveTrackingTrip,
-  LocationPoint,
-  trackVehicle,
-  TrackingData,
-  TrackingRoute,
-} from '@/features/tracking/api';
 import FleetGoogleMap, { type FleetMapItem } from '@/components/maps/FleetGoogleMap';
+import { useAuth } from '@/features/auth/context/AuthContext';
+import { CustomerAppShell } from '@/features/customer-app/CustomerAppShell';
+import { useCustomerAppData } from '@/features/customer-app/useCustomerAppData';
+import type { CustomerInvoice } from '@/features/customer-app/utils';
+import {
+  consumeFastagView,
+  createTrackingPackCheckout,
+  getLiveTrackingTrips,
+  getTrackingPackStatus,
+  getTrackingPacksMe,
+  getTrackingRoute,
+  type LiveTrackingTrip,
+  type LocationPoint,
+  trackVehicle,
+  type TrackingData,
+  type TrackingPackEntitlement,
+  type TrackingPackPurchase,
+  type TrackingRoute,
+} from '@/features/tracking/api';
+import styles from './tracking-app.module.css';
 
 const TripGoogleMap = dynamic(() => import('@/components/maps/TripGoogleMap'), {
   ssr: false,
-  loading: () => <MapLoading label="Loading location…" />,
+  loading: () => <MapLoading label="Live location aa rahi hai..." />,
 });
 
 const REFRESH_INTERVAL_MS = 60_000;
-const FLEET_HYDRATION_LIMIT = 24;
-const FLEET_HYDRATION_WORKERS = 6;
-const TRACKING_SNAPSHOT_TTL_MS = 5 * 60_000;
+const RECENT_TRIPS_PAGE_SIZE = 10;
+const FASTAG_VIEWS_TOTAL = 3;
+const PAYMENT_ATTEMPTS = 6;
+const PAYMENT_INTERVAL_MS = 1_500;
+const PAYMENT_SESSION_KEY = 'mandiplus:tracking-pack-pending';
+const TERMINAL_PAYMENT_STATES = new Set(['FAILED', 'CANCELLED', 'EXPIRED', 'DECLINED']);
 
-type TrackingCache = Record<string, TrackingData>;
-type TrackingSnapshot = {
-  trips: LiveTrackingTrip[];
-  tracking: TrackingCache;
-  savedAt: number;
+type Mode = 'overview' | 'detail' | 'packs';
+type PaymentPhase = 'confirming' | 'pending' | 'failed' | null;
+
+type RecentTrip = {
+  id: string;
+  vehicleNumber: string;
+  route: string;
+  date: string;
+  invoiceNumber: string;
+  sourceName: string;
+  destinationName: string;
+  origin: LocationPoint | null;
+  destination: LocationPoint | null;
 };
 
-let trackingSnapshot: TrackingSnapshot | null = null;
-let trackingSnapshotOwner = '';
-let liveTripsRequest: {
-  owner: string;
-  promise: Promise<LiveTrackingTrip[]>;
-} | null = null;
-
-function ensureTrackingOwner() {
-  const owner = getStoredAuthToken() || '';
-  if (owner !== trackingSnapshotOwner) {
-    trackingSnapshotOwner = owner;
-    trackingSnapshot = null;
-    liveTripsRequest = null;
-  }
-  return owner;
-}
-
-function fetchLiveTripsOnce() {
-  const owner = ensureTrackingOwner();
-  if (!liveTripsRequest || liveTripsRequest.owner !== owner) {
-    const promise = getLiveTrackingTrips();
-    liveTripsRequest = { owner, promise };
-    void promise.then(
-      () => {
-        if (liveTripsRequest?.promise === promise) liveTripsRequest = null;
-      },
-      () => {
-        if (liveTripsRequest?.promise === promise) liveTripsRequest = null;
-      },
-    );
-  }
-  return liveTripsRequest.promise;
-}
-
-function vehicleKey(value?: string | null) {
-  return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-}
-
-function isCoord(value?: LocationPoint | null): value is LocationPoint {
-  return Boolean(
-    value &&
-      Number.isFinite(Number(value.lat)) &&
-      Number.isFinite(Number(value.lng)),
-  );
-}
-
-function trackingFromTrip(trip: LiveTrackingTrip): TrackingData | null {
-  const location = trip.lastLocation;
-  if (!isCoord(location as LocationPoint | null)) return null;
-  return {
-    vehicleNumber: trip.vehicleNumber,
-    tripId: trip.tripId || undefined,
-    tripStatus: trip.status,
-    status: 'online',
-    eta: trip.eta || undefined,
-    location: {
-      lat: Number(location?.lat),
-      lng: Number(location?.lng),
-      address: location?.address || undefined,
-      timeRecorded: location?.timeRecorded || undefined,
-      distanceRemained:
-        location?.distanceRemained == null
-          ? undefined
-          : Number(location.distanceRemained),
-      timeRemained:
-        location?.timeRemained == null
-          ? undefined
-          : Number(location.timeRemained),
-      distanceTravel: location?.distanceTravel ?? undefined,
-      totalDistance: location?.totalDistance ?? undefined,
-    },
-  };
-}
-
-function seedTrackingFromTrips(trips: LiveTrackingTrip[]) {
-  return trips.reduce<TrackingCache>((cache, trip) => {
-    const tracking = trackingFromTrip(trip);
-    if (tracking) cache[vehicleKey(trip.vehicleNumber)] = tracking;
-    return cache;
-  }, {});
-}
-
-function shortPlace(value?: string | null) {
-  const text = String(value || '').trim();
-  if (!text) return '';
-  return text.split(',').map((part) => part.trim()).filter(Boolean).slice(0, 2).join(', ');
-}
-
-function relativeTime(value?: string | null) {
-  if (!value) return 'Waiting for GPS';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'GPS time unavailable';
-  const minutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60_000));
-  if (minutes < 1) return 'Updated now';
-  if (minutes < 60) return `Updated ${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `Updated ${hours} hr ago`;
-  return `Updated ${date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`;
-}
-
-function parseEtaDate(value: string) {
-  const text = value.trim();
-  const slashDate = text.match(
-    /^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})(?:,\s*)?(\d{1,2})?:?(\d{2})?(?::\d{2})?\s*(am|pm)?/i,
-  );
-
-  if (slashDate) {
-    const day = Number(slashDate[1]);
-    const month = Number(slashDate[2]) - 1;
-    const year = Number(slashDate[3].length === 2 ? `20${slashDate[3]}` : slashDate[3]);
-    let hour = Number(slashDate[4] || 0);
-    const minute = Number(slashDate[5] || 0);
-    const meridiem = slashDate[6]?.toLowerCase();
-
-    if (meridiem === 'pm' && hour < 12) hour += 12;
-    if (meridiem === 'am' && hour === 12) hour = 0;
-
-    const date = new Date(year, month, day, hour, minute);
-    return Number.isNaN(date.getTime()) ? null : date;
-  }
-
-  const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function ordinalDay(day: number) {
-  if (day > 10 && day < 20) return `${day}th`;
-  const suffix = day % 10 === 1 ? 'st' : day % 10 === 2 ? 'nd' : day % 10 === 3 ? 'rd' : 'th';
-  return `${day}${suffix}`;
-}
-
-function formatEtaValue(value: string) {
-  const parsed = parseEtaDate(value);
-  if (!parsed) return value;
-
-  const day = parsed.getDate();
-  const month = parsed.toLocaleString('en-IN', { month: 'long' });
-  const time = parsed.toLocaleString('en-IN', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
-
-  return `${ordinalDay(day)} ${month}, ${time}`;
-}
-
-function formatEta(tracking?: TrackingData | null, trip?: LiveTrackingTrip | null) {
-  const remaining = String(tracking?.location?.timeRemained || '').trim();
-  if (remaining) return formatEtaValue(remaining);
-
-  const eta = String(tracking?.eta || trip?.eta || '').trim();
-  if (eta) return formatEtaValue(eta);
-
-  return null;
-}
-
-function motionStatus(tracking?: TrackingData | null) {
-  switch (tracking?.motion?.state) {
-    case 'ARRIVED':
-      return { label: 'Destination reached', active: false };
-    case 'AT_START':
-    case 'MOVEMENT_CANDIDATE':
-      return { label: 'Trip not started', active: false };
-    case 'HOLDING':
-      return { label: 'Waiting for checkpoint', active: false };
-    case 'MOVING':
-      return { label: 'On the way', active: Boolean(tracking.motion.canSimulate) };
-    default:
-      return {
-        label: tracking?.status === 'online' ? 'Live location' : 'Last location',
-        active: false,
-      };
-  }
-}
-
-function numberFromDistance(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  const match = String(value || '').match(/[\d.]+/);
-  if (!match) return null;
-  const parsed = Number(match[0]);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function tripProgress(tracking?: TrackingData | null) {
-  const travelled = numberFromDistance(tracking?.location?.distanceTravel);
-  const total = numberFromDistance(tracking?.location?.totalDistance);
-  const remaining = numberFromDistance(tracking?.location?.distanceRemained);
-  const effectiveTotal = total ?? (travelled !== null && remaining !== null ? travelled + remaining : null);
-  let percent: number | null = null;
-
-  if (travelled !== null && effectiveTotal !== null && effectiveTotal > 0) {
-    percent = Math.min(100, Math.max(0, Math.round((travelled / effectiveTotal) * 100)));
-  } else if (remaining !== null && effectiveTotal !== null && effectiveTotal > 0) {
-    percent = Math.min(100, Math.max(0, Math.round(((effectiveTotal - remaining) / effectiveTotal) * 100)));
-  }
-
-  const isOnline = tracking?.status === 'online';
-  return {
-    percentLabel: percent !== null ? `${percent}%` : isOnline ? 'Live' : '0%',
-    visualPercent: percent ?? (isOnline ? 18 : 0),
-  };
-}
-
-function MapLoading({ label }: { label: string }) {
-  return (
-    <div className="flex h-full w-full items-center justify-center bg-[#eef3fa]">
-      <div className="flex items-center gap-2 text-xs font-semibold text-[#7b8176]">
-        <RefreshCw className="h-4 w-4 animate-spin text-[#203044]" />
-        {label}
-      </div>
-    </div>
-  );
-}
-
 export default function TrackingFleetPage() {
-  const searchParams = useSearchParams();
-  const localScenario = searchParams.get('localScenario');
-  const localTestEnabled =
-    process.env.NEXT_PUBLIC_TRACKING_LOCAL_TEST_MODE === 'true';
+  const data = useCustomerAppData();
 
-  if (localTestEnabled && localScenario) {
-    return <TrackingMotionLab scenario={localScenario} />;
-  }
-
-  return <AuthenticatedTrackingFleetPage />;
+  return (
+    <CustomerAppShell activeTab="tracking" partnerActive={data.partnerActive}>
+      <TrackingApp data={data} />
+    </CustomerAppShell>
+  );
 }
 
-function AuthenticatedTrackingFleetPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+function TrackingApp({ data }: { data: ReturnType<typeof useCustomerAppData> }) {
+  const { user } = useAuth();
+  const [mode, setMode] = useState<Mode>('overview');
   const [trips, setTrips] = useState<LiveTrackingTrip[]>([]);
-  const [trackingCache, setTrackingCache] = useState<TrackingCache>({});
-  const [selectedTrip, setSelectedTrip] = useState<LiveTrackingTrip | null>(null);
-  const [selectedTracking, setSelectedTracking] = useState<TrackingData | null>(null);
-  const [selectedRoute, setSelectedRoute] = useState<TrackingRoute | null>(null);
   const [loadingTrips, setLoadingTrips] = useState(true);
+  const [tripsError, setTripsError] = useState<string | null>(null);
+  const [selectedTrip, setSelectedTrip] = useState<LiveTrackingTrip | null>(null);
+  const [tracking, setTracking] = useState<TrackingData | null>(null);
+  const [route, setRoute] = useState<TrackingRoute | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
-  const [query, setQuery] = useState('');
+  const [sheetExpanded, setSheetExpanded] = useState(false);
+  const [recentVisibleCount, setRecentVisibleCount] = useState(RECENT_TRIPS_PAGE_SIZE);
+  const [packEntitlement, setPackEntitlement] = useState<TrackingPackEntitlement | null>(null);
+  const [packPurchases, setPackPurchases] = useState<TrackingPackPurchase[]>([]);
+  const [packViewsRemaining, setPackViewsRemaining] = useState<number | null>(null);
+  const [packsLoading, setPacksLoading] = useState(false);
+  const [paywallVehicle, setPaywallVehicle] = useState('');
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [pendingCheckoutId, setPendingCheckoutId] = useState('');
+  const [paymentPhase, setPaymentPhase] = useState<PaymentPhase>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
   const detailRequestRef = useRef(0);
-  const preselectedVehicleRef = useRef(false);
-  const hydrationRequestedRef = useRef(new Set<string>());
-  const trackingCacheRef = useRef<TrackingCache>({});
+  const paymentGenerationRef = useRef(0);
+  const paymentPollingRef = useRef(false);
 
-  const applySnapshot = useCallback((snapshot: TrackingSnapshot) => {
-    setTrips(snapshot.trips);
-    setTrackingCache(snapshot.tracking);
-    trackingCacheRef.current = snapshot.tracking;
+  const loadPacks = useCallback(async (surfaceError = false) => {
+    setPacksLoading(true);
+    try {
+      const payload = await getTrackingPacksMe();
+      setPackEntitlement(payload.entitlement || null);
+      setPackPurchases(payload.purchases || []);
+      setPackViewsRemaining(payload.fastagViewsRemaining);
+      return payload;
+    } catch (error) {
+      if (surfaceError) setDetailError(readableError(error, 'Unable to load Tracking Packs'));
+      return null;
+    } finally {
+      setPacksLoading(false);
+    }
   }, []);
 
-  const loadTrips = useCallback(async (force = false) => {
-    ensureTrackingOwner();
-    const freshSnapshot =
-      trackingSnapshot &&
-      Date.now() - trackingSnapshot.savedAt < TRACKING_SNAPSHOT_TTL_MS
-        ? trackingSnapshot
-        : null;
-
-    if (freshSnapshot && !force) {
-      applySnapshot(freshSnapshot);
-      setLoadingTrips(false);
-    } else {
-      setLoadingTrips(true);
-    }
-    setError(null);
-    hydrationRequestedRef.current.clear();
+  const loadTrips = useCallback(async (silent = false) => {
+    if (!silent) setLoadingTrips(true);
+    setTripsError(null);
     try {
-      const nextTrips = await fetchLiveTripsOnce();
-      const nextSnapshot: TrackingSnapshot = {
-        trips: nextTrips,
-        tracking: {
-          ...(freshSnapshot?.tracking || {}),
-          ...seedTrackingFromTrips(nextTrips),
-        },
-        savedAt: Date.now(),
-      };
-      trackingSnapshot = nextSnapshot;
-      applySnapshot(nextSnapshot);
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Unable to load live trips');
-      if (!freshSnapshot) {
-        setTrips([]);
-        setTrackingCache({});
-        trackingCacheRef.current = {};
-      }
+      setTrips(await getLiveTrackingTrips());
+    } catch (error) {
+      setTripsError(readableError(error, 'Live trips load nahi ho payi.'));
+      if (!silent) setTrips([]);
     } finally {
-      setLoadingTrips(false);
+      if (!silent) setLoadingTrips(false);
     }
-  }, [applySnapshot]);
+  }, []);
 
   useEffect(() => {
-    // Start downloading the detail map while the overview and vehicle API load.
-    void import('@/components/maps/TripGoogleMap');
     void loadTrips();
-  }, [loadTrips]);
+    void loadPacks();
+  }, [loadPacks, loadTrips]);
 
   useEffect(() => {
-    if (!trips.length) return;
-    let cancelled = false;
-    const queue = trips
-      .filter((trip) => !hydrationRequestedRef.current.has(vehicleKey(trip.vehicleNumber)))
-      .slice(0, FLEET_HYDRATION_LIMIT);
-    queue.forEach((trip) => hydrationRequestedRef.current.add(vehicleKey(trip.vehicleNumber)));
+    if (mode !== 'overview') return;
+    const interval = window.setInterval(() => void loadTrips(true), REFRESH_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [loadTrips, mode]);
 
-    let animationFrame = 0;
-    let pendingUpdates: TrackingCache = {};
+  const openVehicle = useCallback(async (
+    trip: LiveTrackingTrip,
+    options?: { silent?: boolean; skipAccessCheck?: boolean },
+  ) => {
+    const vehicleNumber = vehicleKey(trip.vehicleNumber);
+    if (!vehicleNumber) return;
 
-    const commitTracking = (key: string, value: TrackingData) => {
-      pendingUpdates[key] = value;
-      if (animationFrame) return;
-      animationFrame = window.requestAnimationFrame(() => {
-        const updates = pendingUpdates;
-        pendingUpdates = {};
-        animationFrame = 0;
-        setTrackingCache((previous) => {
-          const next = { ...previous, ...updates };
-          trackingCacheRef.current = next;
-          trackingSnapshot = {
-            trips,
-            tracking: next,
-            savedAt: Date.now(),
-          };
-          return next;
-        });
-      });
-    };
-
-    const worker = async () => {
-      while (!cancelled && queue.length) {
-        const trip = queue.shift();
-        if (!trip) return;
-        try {
-          const response = await trackVehicle(trip.vehicleNumber);
-          if (cancelled) return;
-          commitTracking(vehicleKey(trip.vehicleNumber), response.data);
-        } catch {
-          // Keep the trip visible even when its latest GPS point is unavailable.
+    if (trip.locationSource === 'fastag' && !options?.skipAccessCheck) {
+      let packActive = Boolean(packEntitlement?.active || trip.fastagPackActive);
+      let viewsRemaining = packViewsRemaining ?? trip.fastagViewsRemaining ?? null;
+      if (!packActive && viewsRemaining === null) {
+        const packs = await loadPacks();
+        if (!packs) {
+          setTripsError('Couldn’t check your tracking access. Please try again.');
+          return;
         }
+        packActive = Boolean(packs.entitlement?.active);
+        viewsRemaining = packs.fastagViewsRemaining;
       }
-    };
+      if (!packActive && Number(viewsRemaining || 0) <= 0) {
+        setPaywallVehicle(vehicleNumber);
+        setPaymentError(null);
+        setPaymentPhase(null);
+        return;
+      }
+    }
 
-    void Promise.all(
-      Array.from({ length: FLEET_HYDRATION_WORKERS }, () => worker()),
-    );
-    return () => {
-      cancelled = true;
-      if (animationFrame) window.cancelAnimationFrame(animationFrame);
-    };
-  }, [trips]);
-
-  const openTrip = useCallback(async (trip: LiveTrackingTrip, silent = false) => {
     const requestId = detailRequestRef.current + 1;
     detailRequestRef.current = requestId;
     setSelectedTrip(trip);
+    setSheetExpanded(false);
     setDetailError(null);
-    const cached = trackingCacheRef.current[vehicleKey(trip.vehicleNumber)] ?? null;
-    if (cached) setSelectedTracking(cached);
-    if (!silent) setLoadingDetail(true);
-
-    const [trackingResult, routeResult] = await Promise.allSettled([
-      trackVehicle(trip.vehicleNumber),
-      getTrackingRoute(trip.vehicleNumber),
-    ]);
-    if (requestId !== detailRequestRef.current) return;
-
-    if (trackingResult.status === 'fulfilled') {
-      setSelectedTracking(trackingResult.value.data);
-      setTrackingCache((previous) => {
-        const next = { ...previous, [vehicleKey(trip.vehicleNumber)]: trackingResult.value.data };
-        trackingCacheRef.current = next;
-        return next;
-      });
-    } else if (!cached) {
-      setSelectedTracking(null);
-      setDetailError(
-        (trackingResult.reason as { message?: string })?.message || 'Live location unavailable',
-      );
+    if (!options?.silent) {
+      setMode('detail');
+      setLoadingDetail(true);
+      setTracking(trackingFromTrip(trip));
+      setRoute(null);
     }
 
-    if (routeResult.status === 'fulfilled') setSelectedRoute(routeResult.value);
-    else if (!silent) setSelectedRoute(null);
-    if (!silent) setLoadingDetail(false);
+    try {
+      let nextTracking: TrackingData;
+      if (trip.locationSource === 'fastag') {
+        const view = await consumeFastagView(vehicleNumber);
+        if (view.unlocked === false) {
+          if (requestId !== detailRequestRef.current) return;
+          setMode('overview');
+          setTracking(null);
+          setRoute(null);
+          setPaywallVehicle(vehicleNumber);
+          return;
+        }
+        nextTracking = view.tracking || (await trackVehicle(vehicleNumber)).data;
+        nextTracking = {
+          ...nextTracking,
+          fastagUnlocked: view.unlocked ?? nextTracking.fastagUnlocked,
+          fastagViewsRemaining: view.viewsRemaining ?? nextTracking.fastagViewsRemaining,
+        };
+        if (typeof nextTracking.fastagViewsRemaining === 'number') {
+          setPackViewsRemaining(nextTracking.fastagViewsRemaining);
+        }
+      } else {
+        nextTracking = (await trackVehicle(vehicleNumber)).data;
+        if (nextTracking.locationSource === 'fastag') {
+          const view = await consumeFastagView(vehicleNumber);
+          if (view.unlocked === false) {
+            if (requestId !== detailRequestRef.current) return;
+            setMode('overview');
+            setTracking(null);
+            setRoute(null);
+            setPaywallVehicle(vehicleNumber);
+            return;
+          }
+          nextTracking = {
+            ...(view.tracking || nextTracking),
+            fastagUnlocked: view.unlocked ?? nextTracking.fastagUnlocked,
+            fastagViewsRemaining: view.viewsRemaining ?? nextTracking.fastagViewsRemaining,
+          };
+        }
+      }
+
+      if (requestId !== detailRequestRef.current) return;
+      setTracking(nextTracking);
+      setSelectedTrip((current) => current || trip);
+      setMode('detail');
+
+      if (nextTracking.status === 'online') {
+        try {
+          const nextRoute = await getTrackingRoute(vehicleNumber);
+          if (requestId === detailRequestRef.current) setRoute(nextRoute);
+        } catch {
+          if (requestId === detailRequestRef.current) setRoute(null);
+        }
+      }
+    } catch (error) {
+      if (requestId !== detailRequestRef.current) return;
+      setDetailError(readableError(error, 'Vehicle ki location nahi mil payi.'));
+    } finally {
+      if (!options?.silent && requestId === detailRequestRef.current) setLoadingDetail(false);
+    }
+  }, [loadPacks, packEntitlement?.active, packViewsRemaining]);
+
+  useEffect(() => {
+    if (mode !== 'detail' || !selectedTrip || tracking?.locationSource === 'fastag') return;
+    const interval = window.setInterval(
+      () => void openVehicle(selectedTrip, { silent: true, skipAccessCheck: true }),
+      REFRESH_INTERVAL_MS,
+    );
+    return () => window.clearInterval(interval);
+  }, [mode, openVehicle, selectedTrip, tracking?.locationSource]);
+
+  const confirmPayment = useCallback(async (
+    merchantOrderId: string,
+    options?: { settle?: boolean; vehicleNumber?: string },
+  ) => {
+    if (!merchantOrderId || paymentPollingRef.current) return false;
+    const generation = ++paymentGenerationRef.current;
+    const attempts = options?.settle ? PAYMENT_ATTEMPTS : 2;
+    paymentPollingRef.current = true;
+    setPaymentPhase('confirming');
+    setPaymentError(null);
+
+    try {
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        if (generation !== paymentGenerationRef.current) return false;
+        try {
+          const status = await getTrackingPackStatus(merchantOrderId);
+          const state = String(status.state || '').toUpperCase();
+          if (status.paid) {
+            window.sessionStorage.removeItem(PAYMENT_SESSION_KEY);
+            setPendingCheckoutId('');
+            setPaymentPhase(null);
+            setPaymentError(null);
+            setPaywallVehicle('');
+            await loadPacks();
+            const unlockedVehicle = options?.vehicleNumber || paywallVehicle;
+            if (unlockedVehicle) {
+              const match = trips.find((item) => vehicleKey(item.vehicleNumber) === vehicleKey(unlockedVehicle));
+              if (match) void openVehicle(match, { skipAccessCheck: true });
+            }
+            return true;
+          }
+          if (TERMINAL_PAYMENT_STATES.has(state)) {
+            setPaymentPhase('failed');
+            setPaymentError('Payment wasn’t completed. Please try again.');
+            return false;
+          }
+        } catch {
+          // PhonePe status can be briefly unavailable while returning from checkout.
+        }
+        if (attempt < attempts - 1) await wait(PAYMENT_INTERVAL_MS);
+      }
+      setPaymentPhase(options?.settle ? 'pending' : 'failed');
+      setPaymentError(options?.settle ? null : 'Payment wasn’t completed. Please try again.');
+      return false;
+    } finally {
+      if (generation === paymentGenerationRef.current) paymentPollingRef.current = false;
+    }
+  }, [loadPacks, openVehicle, paywallVehicle, trips]);
+
+  useEffect(() => {
+    const raw = window.sessionStorage.getItem(PAYMENT_SESSION_KEY);
+    if (!raw) return;
+    try {
+      const pending = JSON.parse(raw) as { merchantOrderId?: string; vehicleNumber?: string };
+      if (!pending.merchantOrderId) return;
+      setPendingCheckoutId(pending.merchantOrderId);
+      if (pending.vehicleNumber) setPaywallVehicle(pending.vehicleNumber);
+      void confirmPayment(pending.merchantOrderId, {
+        settle: true,
+        vehicleNumber: pending.vehicleNumber,
+      });
+    } catch {
+      window.sessionStorage.removeItem(PAYMENT_SESSION_KEY);
+    }
+  }, [confirmPayment]);
+
+  const purchasePack = useCallback(async () => {
+    if (checkoutLoading) return;
+    setCheckoutLoading(true);
+    setPaymentError(null);
+    setPaymentPhase(null);
+    try {
+      const checkout = await createTrackingPackCheckout();
+      const merchantOrderId = checkout.merchantOrderId || checkout.merchantTransactionId;
+      setPendingCheckoutId(merchantOrderId);
+      window.sessionStorage.setItem(PAYMENT_SESSION_KEY, JSON.stringify({
+        merchantOrderId,
+        vehicleNumber: paywallVehicle || null,
+      }));
+      if (!checkout.redirectUrl) throw new Error('PhonePe checkout URL was not returned.');
+      window.location.assign(checkout.redirectUrl);
+    } catch (error) {
+      setPaymentPhase('failed');
+      setPaymentError(readableError(error, 'PhonePe is unavailable right now. Please try again shortly.'));
+      setCheckoutLoading(false);
+    }
+  }, [checkoutLoading, paywallVehicle]);
+
+  const goBack = useCallback(() => {
+    detailRequestRef.current += 1;
+    setMode('overview');
+    setSelectedTrip(null);
+    setTracking(null);
+    setRoute(null);
+    setDetailError(null);
+    setSheetExpanded(false);
   }, []);
 
-  useEffect(() => {
-    const requestedVehicle = vehicleKey(searchParams.get('vehicle') || searchParams.get('v'));
-    if (!requestedVehicle || preselectedVehicleRef.current || !trips.length) return;
-    const match = trips.find((trip) => vehicleKey(trip.vehicleNumber) === requestedVehicle);
-    if (!match) return;
-    preselectedVehicleRef.current = true;
-    void openTrip(match);
-  }, [openTrip, searchParams, trips]);
+  const fleetMapItems = useMemo<FleetMapItem[]>(() => trips.flatMap((trip) => {
+    const mayShowFastag = trip.locationSource !== 'fastag' || Boolean(packEntitlement?.active || trip.fastagPackActive);
+    const current = coordFromUnknown(trip.lastLocation);
+    if (!mayShowFastag || !current) return [];
+    return [{
+      id: trip.id,
+      vehicleNumber: trip.vehicleNumber,
+      current,
+      isOnline: Boolean(trip.lastLocation),
+    }];
+  }), [packEntitlement?.active, trips]);
 
-  useEffect(() => {
-    if (!selectedTrip) return;
-    const interval = window.setInterval(() => void openTrip(selectedTrip, true), REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(interval);
-  }, [openTrip, selectedTrip]);
-
-  const filteredTrips = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return trips;
-    return trips.filter((trip) =>
-      [trip.vehicleNumber, trip.route, trip.sourceName, trip.destinationName, trip.product, trip.invoiceNumber]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(normalizedQuery)),
-    );
-  }, [query, trips]);
-
-  const fleetMapItems = useMemo<FleetMapItem[]>(() => {
-    return trips.flatMap((trip) => {
-      const tracking = trackingCache[vehicleKey(trip.vehicleNumber)];
-      if (!isCoord(tracking?.location)) return [];
-      return [{
-        id: trip.id,
-        vehicleNumber: trip.vehicleNumber,
-        current: { lat: tracking.location.lat, lng: tracking.location.lng },
-        isOnline: tracking.status === 'online',
-      }];
-    });
-  }, [trackingCache, trips]);
-
-  const mapCenter = useMemo<LocationPoint>(() => {
-    if (isCoord(selectedTracking?.location)) return selectedTracking.location;
-    if (isCoord(selectedTracking?.destination)) return selectedTracking.destination;
-    return { lat: 22.9734, lng: 78.6569 };
-  }, [selectedTracking]);
-
-  const progress = tripProgress(selectedTracking);
-  const sourceName = shortPlace(selectedTracking?.originLabel || selectedTrip?.sourceName) || 'Route start';
-  const destinationName = shortPlace(selectedTracking?.destinationLabel || selectedTrip?.destinationName) || 'Route end';
-  const currentName = shortPlace(selectedTracking?.location?.address) || 'Live location';
-
-  const goBack = () => {
-    if (selectedTrip) {
-      detailRequestRef.current += 1;
-      setSelectedTrip(null);
-      setSelectedTracking(null);
-      setSelectedRoute(null);
-      setDetailError(null);
-      return;
-    }
-    if (window.history.length > 1) router.back();
-    else router.push('/home');
-  };
+  const recentTrips = useMemo(() => buildRecentTrips(data.invoices, trips), [data.invoices, trips]);
+  const visibleRecentTrips = recentTrips.slice(0, recentVisibleCount);
+  const packPrice = tracking?.trackingPack?.priceInr ?? packEntitlement?.priceInr ?? 99;
+  const packListPrice = tracking?.trackingPack?.listPriceInr ?? packEntitlement?.listPriceInr ?? 199;
+  const paymentBusy = checkoutLoading || paymentPhase === 'confirming';
 
   return (
-    <ProtectedRoute>
-      <main
-        className="min-h-screen bg-[#f5f6fb] pb-8 text-[#171914]"
-        style={{ fontFamily: 'Poppins, sans-serif' }}
-      >
-        <header className="border-b border-[#e7ebf3] bg-white px-5 py-4">
-          <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <button
-                type="button"
-                onClick={goBack}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[#e7ebf3] bg-white text-[#203044] transition active:scale-95"
-                aria-label={selectedTrip ? 'Back to vehicles' : 'Go back'}
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </button>
-              <div className="min-w-0">
-                <h1 className="truncate text-xl font-black text-[#171914]">
-                  {selectedTrip ? selectedTrip.vehicleNumber : 'Track Vehicle'}
-                </h1>
-                <p className="mt-0.5 truncate text-xs font-semibold text-[#7b8176]">
-                  {selectedTrip ? relativeTime(selectedTracking?.location?.timeRecorded) : `${trips.length} live vehicles`}
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => selectedTrip ? void openTrip(selectedTrip) : void loadTrips(true)}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[#e7ebf3] bg-[#f8f9fd] text-[#203044] transition active:scale-95"
-              aria-label="Refresh tracking"
-            >
-              <RefreshCw className={`h-4 w-4 ${loadingTrips || loadingDetail ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        </header>
+    <div className={styles.root}>
+      <TrackingHeader
+        nested={mode !== 'overview'}
+        title={mode === 'packs' ? 'Tracking Packs' : 'Track Vehicle'}
+        userName={user?.name}
+        walletBalance={data.wallet?.availableBalance}
+        onBack={goBack}
+      />
 
-        {selectedTrip ? (
-          <TripDetail
-            trip={selectedTrip}
-            tracking={selectedTracking}
-            route={selectedRoute}
-            loading={loadingDetail}
-            error={detailError}
-            center={mapCenter}
-            currentName={currentName}
-            sourceName={sourceName}
-            destinationName={destinationName}
-            progress={progress}
-          />
-        ) : (
-          <section className="mx-auto flex max-w-3xl flex-col gap-4 px-5 py-5">
-            {error ? (
-              <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#f2d7d2] bg-[#fff7f5] px-4 py-3 text-sm font-semibold text-[#a63f35]">
-                <span>Could not load vehicles</span>
-                <button type="button" onClick={() => void loadTrips()} className="font-black">Retry</button>
-              </div>
-            ) : null}
+      {mode === 'overview' ? (
+        <Overview
+          trips={trips}
+          fleetMapItems={fleetMapItems}
+          loading={loadingTrips}
+          error={tripsError}
+          recentTrips={visibleRecentTrips}
+          canViewMore={visibleRecentTrips.length < recentTrips.length}
+          onTrip={(trip) => void openVehicle(trip)}
+          onMapVehicle={(item) => {
+            const match = trips.find((trip) => trip.id === item.id);
+            if (match) void openVehicle(match);
+          }}
+          onPacks={() => {
+            setDetailError(null);
+            setMode('packs');
+            void loadPacks(true);
+          }}
+          onRecent={(trip) => {
+            detailRequestRef.current += 1;
+            setSelectedTrip(null);
+            setTracking(trackingFromRecentTrip(trip));
+            setRoute({
+              provider: 'recent_trip_snapshot',
+              points: [trip.origin, trip.destination].filter((point): point is LocationPoint => Boolean(point)),
+            });
+            setSheetExpanded(false);
+            setDetailError(null);
+            setMode('detail');
+          }}
+          onViewMore={() => setRecentVisibleCount((count) => count + RECENT_TRIPS_PAGE_SIZE)}
+        />
+      ) : null}
 
-            <div className="relative h-[340px] overflow-hidden rounded-[24px] border border-[#e7ebf3] bg-[#eef3fa] shadow-[0_10px_24px_rgba(32,48,68,0.06)] sm:h-[420px]">
-              <FleetGoogleMap
-                vehicles={fleetMapItems}
-                onVehicleSelect={(item) => {
-                  const match = trips.find((trip) => trip.id === item.id);
-                  if (match) void openTrip(match);
-                }}
-              />
-              {!fleetMapItems.length ? (
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <div className="flex items-center gap-2 rounded-full border border-[#e7ebf3] bg-white/92 px-4 py-2 text-xs font-semibold text-[#7b8176] shadow-sm backdrop-blur">
-                    {loadingTrips ? (
-                      <RefreshCw className="h-4 w-4 animate-spin text-[#203044]" />
-                    ) : null}
-                    {loadingTrips ? 'Loading vehicles…' : 'Waiting for GPS…'}
-                  </div>
-                </div>
-              ) : null}
-              <div className="pointer-events-none absolute left-4 top-4 rounded-full border border-[#e7ebf3] bg-white/95 px-3 py-2 text-xs font-black text-[#203044] shadow-sm">
-                {loadingTrips ? 'Updating…' : `${trips.length} live`}
-              </div>
-            </div>
+      {mode === 'detail' ? (
+        <Detail
+          tracking={tracking}
+          route={route}
+          loading={loadingDetail}
+          error={detailError}
+          sheetExpanded={sheetExpanded}
+          onToggleSheet={() => setSheetExpanded((value) => !value)}
+        />
+      ) : null}
 
-            <div className="flex h-12 items-center gap-3 rounded-2xl border border-[#e7ebf3] bg-white px-4 shadow-sm focus-within:ring-2 focus-within:ring-[#cbd5e1]">
-              <Search className="h-4 w-4 shrink-0 text-[#7b8176]" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search vehicle"
-                className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#171914] outline-none placeholder:text-[#a8b0bd]"
-              />
-            </div>
+      {mode === 'packs' ? (
+        <Packs
+          loading={packsLoading}
+          checkoutLoading={checkoutLoading}
+          purchases={packPurchases}
+          price={packPrice}
+          error={detailError}
+          onBuy={() => void purchasePack()}
+        />
+      ) : null}
 
-            <div className="overflow-hidden rounded-[22px] border border-[#e7ebf3] bg-white">
-              {loadingTrips ? (
-                <VehicleListSkeleton />
-              ) : filteredTrips.length ? (
-                filteredTrips.map((trip, index) => (
-                  <VehicleRow
-                    key={trip.id}
-                    trip={trip}
-                    tracking={trackingCache[vehicleKey(trip.vehicleNumber)]}
-                    onClick={() => void openTrip(trip)}
-                    last={index === filteredTrips.length - 1}
-                  />
-                ))
-              ) : (
-                <div className="px-4 py-8 text-center">
-                  <Truck className="mx-auto h-6 w-6 text-[#203044]" />
-                  <p className="mt-3 text-sm font-black text-[#171914]">
-                    {trips.length ? 'No vehicle found' : 'No live vehicles'}
-                  </p>
-                </div>
-              )}
-            </div>
-          </section>
-        )}
-      </main>
-    </ProtectedRoute>
-  );
-}
-
-function VehicleRow({
-  trip,
-  tracking,
-  onClick,
-  last,
-}: {
-  trip: LiveTrackingTrip;
-  tracking?: TrackingData;
-  onClick: () => void;
-  last: boolean;
-}) {
-  const location = shortPlace(tracking?.location?.address || trip.lastLocation?.address);
-  const route = trip.route || [trip.sourceName, trip.destinationName].filter(Boolean).join(' → ');
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex min-h-[72px] w-full items-center gap-3 px-4 py-3 text-left transition active:bg-[#f8f9fd] ${last ? '' : 'border-b border-[#e7ebf3]'}`}
-    >
-      <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#eef3fa] text-[#203044]">
-        <Truck className="h-5 w-5" />
-        <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-white bg-[#22a66b]" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-black text-[#171914]">{trip.vehicleNumber}</p>
-          <span className="rounded-full bg-[#eef3fa] px-2 py-0.5 text-[10px] font-black text-[#203044]">Live</span>
-        </div>
-        <p className="mt-1 truncate text-xs font-semibold text-[#7b8176]">
-          {location || route || relativeTime(trip.updatedAt)}
-        </p>
-      </div>
-      <ChevronRight className="h-4 w-4 shrink-0 text-[#9aa4b2]" />
-    </button>
-  );
-}
-
-function VehicleListSkeleton() {
-  return (
-    <div className="divide-y divide-[#e7ebf3]">
-      {[0, 1, 2].map((item) => (
-        <div key={item} className="flex h-[72px] animate-pulse items-center gap-3 px-4">
-          <div className="h-11 w-11 rounded-2xl bg-[#eef3fa]" />
-          <div className="flex-1 space-y-2">
-            <div className="h-3 w-28 rounded bg-[#e1e6ef]" />
-            <div className="h-2.5 w-2/3 rounded bg-[#eef1f6]" />
-          </div>
-        </div>
-      ))}
+      {paywallVehicle ? (
+        <Paywall
+          price={packPrice}
+          listPrice={packListPrice}
+          busy={paymentBusy}
+          phase={paymentPhase}
+          error={paymentError}
+          onClose={() => {
+            if (!paymentBusy) setPaywallVehicle('');
+          }}
+          onBuy={() => {
+            if (pendingCheckoutId && paymentPhase === 'pending') {
+              void confirmPayment(pendingCheckoutId, { settle: true, vehicleNumber: paywallVehicle });
+            } else {
+              void purchasePack();
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }
 
-function TripDetail({
-  trip,
+function TrackingHeader({
+  nested,
+  title,
+  userName,
+  walletBalance,
+  onBack,
+}: {
+  nested: boolean;
+  title: string;
+  userName?: string | null;
+  walletBalance?: number;
+  onBack: () => void;
+}) {
+  if (nested) {
+    return (
+      <header className={styles.secondaryHeader}>
+        <button type="button" className={styles.backButton} onClick={onBack} aria-label="Back to tracking">
+          <ArrowLeft size={22} />
+        </button>
+        <h1>{title}</h1>
+      </header>
+    );
+  }
+
+  return (
+    <header className={styles.header}>
+      <Link href="/profile" className={styles.avatar} aria-label="Open profile">
+        {initials(userName)}
+      </Link>
+      <h1>{title}</h1>
+      <Link href="/customer/wallet" className={styles.walletPill} aria-label="Open wallet">
+        <WalletCards size={17} />
+        <span>{shortMoney(walletBalance)}</span>
+      </Link>
+      <Link href="/support" className={styles.helpButton} aria-label="Get help">
+        <HelpCircle size={21} />
+      </Link>
+    </header>
+  );
+}
+
+function Overview({
+  trips,
+  fleetMapItems,
+  loading,
+  error,
+  recentTrips,
+  canViewMore,
+  onTrip,
+  onMapVehicle,
+  onPacks,
+  onRecent,
+  onViewMore,
+}: {
+  trips: LiveTrackingTrip[];
+  fleetMapItems: FleetMapItem[];
+  loading: boolean;
+  error: string | null;
+  recentTrips: RecentTrip[];
+  canViewMore: boolean;
+  onTrip: (trip: LiveTrackingTrip) => void;
+  onMapVehicle: (vehicle: FleetMapItem) => void;
+  onPacks: () => void;
+  onRecent: (trip: RecentTrip) => void;
+  onViewMore: () => void;
+}) {
+  return (
+    <main className={styles.overview}>
+      <div className={styles.fleetMap}>
+        {loading && !fleetMapItems.length ? (
+          <MapLoading label="Live trips dhoondh rahe hain..." />
+        ) : (
+          <FleetGoogleMap vehicles={fleetMapItems} onVehicleSelect={onMapVehicle} />
+        )}
+      </div>
+
+      {error ? <div className={styles.errorBox}>{error}</div> : null}
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2>Live vehicles</h2>
+          <button type="button" onClick={onPacks}>Tracking Packs</button>
+        </div>
+        {loading ? (
+          <div className={styles.loadingPanel}><Spinner /><span>Live trips dhoondh rahe hain...</span></div>
+        ) : trips.length ? (
+          <div className={styles.listCard}>
+            {trips.map((trip) => {
+              const canShowFastag = trip.locationSource !== 'fastag' || trip.fastagPackActive;
+              const location = canShowFastag ? shortPlace(trip.lastLocation?.address) : '';
+              const route = trip.route || [trip.sourceName, trip.destinationName].filter(Boolean).join(' to ');
+              return (
+                <button key={trip.id} type="button" className={styles.tripRow} onClick={() => onTrip(trip)}>
+                  <span className={styles.rowIcon}><Truck size={20} /></span>
+                  <span className={styles.rowBody}>
+                    <strong>{trip.vehicleNumber}</strong>
+                    {location || route ? <small>{location || route}</small> : null}
+                  </span>
+                  <ChevronRight size={18} />
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className={styles.emptyCard}>Koi live trip nahi</div>
+        )}
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}><h2>Recent trips</h2></div>
+        {recentTrips.length ? (
+          <div className={styles.listCard}>
+            {recentTrips.map((trip) => (
+              <button key={trip.id} type="button" className={styles.recentRow} onClick={() => onRecent(trip)}>
+                <span className={styles.rowIcon}><Truck size={20} /></span>
+                <span className={styles.rowBody}>
+                  <strong>{trip.vehicleNumber}</strong>
+                  <span>{trip.route || 'Route details unavailable'}</span>
+                  <small>{trip.date || 'Recent trip'}</small>
+                </span>
+                <ChevronRight size={18} />
+              </button>
+            ))}
+            {canViewMore ? (
+              <button type="button" className={styles.viewMore} onClick={onViewMore}>
+                View more <ChevronDown size={17} />
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div className={styles.emptyCard}>No recent trips</div>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function Detail({
   tracking,
   route,
   loading,
   error,
-  center,
-  currentName,
-  sourceName,
-  destinationName,
-  progress,
+  sheetExpanded,
+  onToggleSheet,
 }: {
-  trip: LiveTrackingTrip;
   tracking: TrackingData | null;
   route: TrackingRoute | null;
   loading: boolean;
   error: string | null;
-  center: LocationPoint;
-  currentName: string;
-  sourceName: string;
-  destinationName: string;
-  progress: ReturnType<typeof tripProgress>;
+  sheetExpanded: boolean;
+  onToggleSheet: () => void;
 }) {
-  const isOnline = tracking?.status === 'online';
-  const motion = motionStatus(tracking);
-  const eta = formatEta(tracking, trip);
-  const headline = isOnline ? `${currentName} → ${destinationName}` : currentName;
+  const sheetScrollRef = useRef<HTMLDivElement>(null);
+  const expandedFromScrollRef = useRef(false);
+  const current = isCoord(tracking?.location) ? tracking.location : null;
+  const origin = isCoord(tracking?.origin) ? tracking.origin : null;
+  const destination = isCoord(tracking?.destination) ? tracking.destination : null;
+  const center = current || destination || origin || { lat: 22.9734, lng: 78.6569 };
+  const sourceName = shortPlace(tracking?.originLabel) || 'Route shuru';
+  const destinationName = shortPlace(tracking?.destinationLabel) || 'Route khatam';
+  const currentName = sanitizePlacePrefix(shortPlace(tracking?.location?.address)) ||
+    (tracking?.status === 'online' ? 'live location' : sourceName);
+  const isFastag = tracking?.locationSource === 'fastag';
+  const isActiveLiveTrip = isActiveLiveTracking(tracking);
+  const progress = tripProgress(tracking);
+  const motionState = tracking?.motion?.state;
+  const statusLabel = motionState === 'ARRIVED'
+    ? 'Destination pahunch gaya'
+    : motionState === 'MOVING' || isActiveLiveTrip
+      ? 'Raaste mein hai'
+      : motionState === 'MOVEMENT_CANDIDATE'
+        ? 'Movement confirm ho rahi hai'
+        : motionState === 'AT_START'
+          ? 'Trip abhi start nahi hui'
+          : null;
+  const headline = trackingHeadline(tracking, currentName, destinationName, isFastag);
+  const subline = trackingSubline(tracking);
+  const showConsent = isFastag && !isAllowedConsentStatus(tracking?.consentStatus);
+  const mapsUrl = current ? `https://www.google.com/maps/search/?api=1&query=${current.lat},${current.lng}` : '';
 
-  const shareTrip = async () => {
-    const url = tracking?.shareUrl || window.location.href;
-    if (navigator.share) {
-      await navigator.share({ title: trip.vehicleNumber, url }).catch(() => undefined);
-      return;
-    }
-    await navigator.clipboard?.writeText(url);
-  };
+  useEffect(() => {
+    if (sheetExpanded) return;
+    expandedFromScrollRef.current = false;
+    if (sheetScrollRef.current) sheetScrollRef.current.scrollTop = 0;
+  }, [sheetExpanded, tracking?.vehicleNumber]);
 
   return (
-    <section className="mx-auto flex max-w-3xl flex-col gap-4 px-5 py-5">
-      {error ? (
-        <div className="rounded-2xl border border-[#f2d7d2] bg-[#fff7f5] px-4 py-3 text-sm font-semibold text-[#a63f35]">
-          {error}
-        </div>
-      ) : null}
-
-      <div className="relative h-[390px] overflow-hidden rounded-[24px] border border-[#e7ebf3] bg-[#eef3fa] shadow-[0_10px_24px_rgba(32,48,68,0.06)] sm:h-[520px]">
+    <main className={styles.detail}>
+      <div className={styles.detailMap}>
         <TripGoogleMap
           center={center}
-          current={isCoord(tracking?.location) ? tracking.location : null}
-          source={isCoord(tracking?.origin) ? tracking.origin : null}
-          destination={isCoord(tracking?.destination) ? tracking.destination : null}
+          current={current}
+          source={origin}
+          destination={destination}
           routePoints={route?.points || []}
           currentLabel={currentName}
           sourceLabel={sourceName}
           destinationLabel={destinationName}
           zoom={16}
-          followMode={isOnline}
+          followMode={tracking?.status === 'online'}
           lastGpsRecordedAt={tracking?.location?.timeRecorded || null}
-          isOnline={isOnline}
+          isOnline={tracking?.status === 'online'}
           routeDistanceMeters={route?.distanceMeters ?? null}
           routeDurationSeconds={route?.durationSeconds ?? null}
           canSimulate={Boolean(tracking?.motion?.canSimulate)}
@@ -733,201 +670,475 @@ function TripDetail({
           predictionValidUntil={tracking?.motion?.predictionValidUntil ?? null}
           motionState={tracking?.motion?.state ?? null}
         />
-        {loading && !tracking ? (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="flex items-center gap-2 rounded-full border border-[#e7ebf3] bg-white/92 px-4 py-2 text-xs font-semibold text-[#7b8176] shadow-sm backdrop-blur">
-              <RefreshCw className="h-4 w-4 animate-spin text-[#203044]" />
-              Loading location…
-            </div>
-          </div>
-        ) : null}
-        <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-full border border-[#e7ebf3] bg-white/95 px-3 py-2 text-xs font-black text-[#203044] shadow-sm">
-          <span className={`h-2 w-2 rounded-full ${motion.active ? 'animate-pulse bg-[#22a66b]' : 'bg-[#c88d37]'}`} />
-          {motion.label}
-        </div>
+        {loading && !tracking ? <div className={styles.mapOverlay}><Spinner /> Live location aa rahi hai...</div> : null}
       </div>
 
-      <div className="rounded-[24px] border border-[#e7ebf3] bg-white p-5 shadow-[0_10px_24px_rgba(32,48,68,0.06)]">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h2 className="text-2xl font-black text-[#171914]">{trip.vehicleNumber}</h2>
-            <p className="mt-2 truncate text-sm font-semibold text-[#7b8176]">{headline}</p>
-          </div>
-          <p className="shrink-0 rounded-full bg-[#eef3fa] px-3 py-1.5 text-xs font-black text-[#203044]">
-            {motion.active ? 'Moving' : 'Stationary'}
-          </p>
-        </div>
+      {error ? <div className={styles.detailError}>{error}</div> : null}
 
-        <div className="mt-5 grid grid-cols-[1fr_auto_1fr] gap-4 border-y border-[#e7ebf3] py-4">
-          <RoutePoint label="From" value={sourceName} />
-          <div className="w-px bg-[#e7ebf3]" />
-          <RoutePoint label="To" value={destinationName} />
-        </div>
-
-        <div className="mt-4 rounded-[20px] border border-[#e7ebf3] px-3.5 py-[13px]">
-          {eta ? (
-            <div className="flex min-w-0 items-center gap-2.5">
-              <Clock3 className="h-6 w-6 shrink-0 text-[#203044]" strokeWidth={2.2} />
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-extrabold leading-[15px] text-[#7b8176]">Pahunchne ka time</p>
-                <p className="mt-0.5 truncate text-sm font-black leading-[19px] text-[#171914]">
-                  {eta}
-                </p>
-              </div>
-            </div>
-          ) : null}
-
-          <div className={eta ? 'mt-3 border-t border-[#e7ebf3] pt-3' : ''}>
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-extrabold leading-[15px] text-[#7b8176]">Trip ki progress</p>
-              <p className="text-sm font-black leading-[18px] text-[#203044]">{progress.percentLabel}</p>
-            </div>
-            <div className="mt-2 h-[9px] overflow-hidden rounded-full bg-[#eef3fa]">
-              <div
-                className="h-full min-w-2 rounded-full bg-[#203044] transition-[width] duration-500"
-                style={{ width: `${progress.visualPercent}%` }}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <a
-            href={`https://wa.me/919900186757?text=${encodeURIComponent(`Hi MandiPlus, I need help tracking ${trip.vehicleNumber}.`)}`}
-            target="_blank"
-            rel="noreferrer"
-            className="flex min-h-11 items-center justify-center gap-2 rounded-full border border-[#d7deea] bg-white px-4 text-sm font-black text-[#203044]"
-          >
-            <Headphones className="h-4 w-4" />
-            Help
-          </a>
+      {tracking ? (
+        <section className={`${styles.tripSheet} ${sheetExpanded ? styles.tripSheetExpanded : ''}`}>
           <button
             type="button"
-            onClick={() => void shareTrip()}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-[#203044] px-4 text-sm font-black text-white"
+            className={styles.sheetHandleButton}
+            onClick={onToggleSheet}
+            aria-label={sheetExpanded ? 'Details neeche karein' : 'Details upar karein'}
+            aria-controls="tracking-trip-details"
+            aria-expanded={sheetExpanded}
           >
-            <Share2 className="h-4 w-4" />
-            Share
+            <span />
           </button>
-        </div>
-      </div>
-    </section>
-  );
-}
+          <div
+            id="tracking-trip-details"
+            ref={sheetScrollRef}
+            className={styles.sheetScroll}
+            role="region"
+            aria-label={`${tracking.vehicleNumber} trip details`}
+            tabIndex={0}
+            onScroll={(event) => {
+              if (
+                sheetExpanded ||
+                expandedFromScrollRef.current ||
+                event.currentTarget.scrollTop <= 2
+              ) return;
 
-function TrackingMotionLab({ scenario }: { scenario: string }) {
-  const router = useRouter();
-  const [fixture, setFixture] = useState<Awaited<ReturnType<typeof getLocalTrackingMotionScenario>> | null>(null);
-  const [error, setError] = useState<string | null>(null);
+              expandedFromScrollRef.current = true;
+              onToggleSheet();
+            }}
+          >
+            {isFastag ? (
+              <>
+                {showConsent ? <DriverConsentPrompt /> : null}
+                <div className={styles.fastagTopRow}>
+                  <h2>{tracking.vehicleNumber}</h2>
+                  <span>
+                    {tracking.trackingPack?.active
+                      ? 'FastTag'
+                      : typeof tracking.fastagViewsRemaining === 'number'
+                        ? `FastTag · ${tracking.fastagViewsRemaining}/${FASTAG_VIEWS_TOTAL}`
+                        : 'FastTag'}
+                  </span>
+                </div>
+                <p className={styles.fastagPlace}>{headline}</p>
+                {mapsUrl ? <GoogleMapsAction href={mapsUrl} fastag /> : null}
+                <RouteSummary source={sourceName} destination={destinationName} compact />
+              </>
+            ) : (
+              <>
+                {statusLabel ? <div className={styles.statusPill}><Truck size={14} />{statusLabel}</div> : null}
+                <h2 className={styles.tripTitle}>{tracking.vehicleNumber}</h2>
+                <p className={styles.tripHeadline}>{headline}</p>
+                {subline ? <p className={styles.tripSubline}>{subline}</p> : null}
+                {mapsUrl ? <GoogleMapsAction href={mapsUrl} /> : null}
+                <RouteSummary source={sourceName} destination={destinationName} />
+                <div className={styles.progressPanel}>
+                  {progress.remainingTime ? (
+                    <div className={styles.etaBlock}>
+                      <Clock3 size={24} />
+                      <span><small>Pahunchne ka time</small><strong>{progress.remainingTime}</strong></span>
+                    </div>
+                  ) : null}
+                  <div className={styles.progressBlock}>
+                    <div><small>Trip ki progress</small><strong>{progress.percentLabel}</strong></div>
+                    <span className={styles.progressTrack}>
+                      <span style={{ width: `${progress.visualPercent}%` }} />
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
 
-  useEffect(() => {
-    let cancelled = false;
-    setFixture(null);
-    setError(null);
-    void getLocalTrackingMotionScenario(scenario)
-      .then((next) => {
-        if (!cancelled) setFixture(next);
-      })
-      .catch((nextError) => {
-        if (!cancelled) {
-          setError(nextError instanceof Error ? nextError.message : 'Scenario unavailable');
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [scenario]);
-
-  const tracking = fixture?.tracking || null;
-  const trip: LiveTrackingTrip | null = tracking
-    ? {
-        id: tracking.tripId || scenario,
-        tripId: tracking.tripId,
-        vehicleNumber: tracking.vehicleNumber,
-        status: tracking.tripStatus || 'ACTIVE',
-        sourceName: tracking.originLabel,
-        destinationName: tracking.destinationLabel,
-        eta: tracking.eta,
-      }
-    : null;
-
-  return (
-    <main
-      className="min-h-screen bg-[#f5f6fb] pb-8 text-[#171914]"
-      data-testid="tracking-motion-lab"
-      style={{ fontFamily: 'Poppins, sans-serif' }}
-    >
-      <section className="mx-auto max-w-3xl px-5 pt-5">
-        <div className="rounded-[22px] border border-[#e7ebf3] bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.1em] text-[#7b8176]">Local motion lab</p>
-              <h1 className="mt-1 text-xl font-black">Tracking simulation gate</h1>
-            </div>
-            {tracking?.motion ? (
-              <div className="text-right" data-testid="motion-evidence">
-                <p className="text-sm font-black">{tracking.motion.state}</p>
-                <p className="text-xs text-[#7b8176]">{tracking.motion.reason}</p>
-                <p className="text-xs text-[#7b8176]">
-                  {tracking.motion.checkpointCount} accepted · {tracking.motion.rejectedCheckpointCount || 0} rejected
-                </p>
-              </div>
-            ) : null}
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {(fixture?.scenarios || [
-              'at-start',
-              'moving',
-              'origin-exit',
-              'stale',
-              'impossible-jump',
-              'arrived',
-            ]).map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => router.replace(`/tracking?localScenario=${value}`)}
-                className={`rounded-full px-3 py-2 text-xs font-black ${
-                  value === scenario
-                    ? 'bg-[#203044] text-white'
-                    : 'border border-[#d7deea] bg-white text-[#203044]'
-                }`}
+            <div className={styles.sheetActions}>
+              <a
+                href={`https://wa.me/919900186757?text=${encodeURIComponent(`Hi MandiPlus, I need help tracking vehicle ${tracking.vehicleNumber}.`)}`}
+                target="_blank"
+                rel="noreferrer"
+                className={styles.supportAction}
               >
-                {value}
-              </button>
-            ))}
+                <Headphones size={18} /> Humse baat karein
+              </a>
+              {tracking.shareUrl && !isFastag ? <ShareAction tracking={tracking} /> : null}
+            </div>
           </div>
-        </div>
-      </section>
-
-      {error ? (
-        <div className="mx-auto mt-4 max-w-3xl px-5 text-sm font-semibold text-red-700">{error}</div>
+        </section>
       ) : null}
-      {!fixture || !trip ? (
-        <div className="mx-auto mt-5 max-w-3xl px-5"><MapLoading label="Loading scenario…" /></div>
-      ) : (
-        <TripDetail
-          trip={trip}
-          tracking={fixture.tracking}
-          route={fixture.route}
-          loading={false}
-          error={null}
-          center={fixture.tracking.location || fixture.tracking.origin || { lat: 22.9734, lng: 78.6569 }}
-          currentName={shortPlace(fixture.tracking.location?.address) || 'Current checkpoint'}
-          sourceName={shortPlace(fixture.tracking.originLabel) || 'Route start'}
-          destinationName={shortPlace(fixture.tracking.destinationLabel) || 'Route end'}
-          progress={tripProgress(fixture.tracking)}
-        />
-      )}
     </main>
   );
 }
 
-function RoutePoint({ label, value }: { label: string; value: string }) {
+function DriverConsentPrompt() {
   return (
-    <div className="min-w-0">
-      <p className="text-[10px] font-black uppercase tracking-[0.1em] text-[#7b8176]">{label}</p>
-      <p className="mt-2 line-clamp-2 text-sm font-black text-[#171914]">{value}</p>
+    <div className={styles.consentPrompt}>
+      <div className={styles.consentIllustration}>
+        <Image src="/customer-app/tracking/driver-live-location-consent.webp" alt="" fill sizes="116px" />
+      </div>
+      <strong>Driver se live location on karwayein</strong>
     </div>
   );
+}
+
+function GoogleMapsAction({ href, fastag = false }: { href: string; fastag?: boolean }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className={styles.mapsAction}>
+      <MapPinned size={21} />
+      <span>{fastag ? 'Google Maps mein last FastTag location dekhein' : 'Google Maps mein current location dekhein'}</span>
+      <ExternalLink size={17} />
+    </a>
+  );
+}
+
+function RouteSummary({ source, destination, compact = false }: { source: string; destination: string; compact?: boolean }) {
+  return (
+    <div className={`${styles.routeSummary} ${compact ? styles.routeSummaryCompact : ''}`}>
+      <span><small>From</small><strong>{source}</strong></span>
+      <i />
+      <span><small>To</small><strong>{destination}</strong></span>
+    </div>
+  );
+}
+
+function ShareAction({ tracking }: { tracking: TrackingData }) {
+  const share = async () => {
+    const url = tracking.shareUrl || window.location.href;
+    if (navigator.share) {
+      await navigator.share({ title: tracking.vehicleNumber, url }).catch(() => undefined);
+    } else {
+      await navigator.clipboard?.writeText(url);
+    }
+  };
+  return (
+    <button type="button" className={styles.shareAction} onClick={() => void share()}>
+      <Share2 size={18} /> Live link share karein
+    </button>
+  );
+}
+
+function Packs({
+  loading,
+  checkoutLoading,
+  purchases,
+  price,
+  error,
+  onBuy,
+}: {
+  loading: boolean;
+  checkoutLoading: boolean;
+  purchases: TrackingPackPurchase[];
+  price: number;
+  error: string | null;
+  onBuy: () => void;
+}) {
+  return (
+    <main className={styles.packsPage}>
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}><h2>Tracking Packs</h2></div>
+        <button type="button" className={styles.packBuyButton} disabled={checkoutLoading} onClick={onBuy}>
+          {checkoutLoading ? <Spinner /> : <><TicketPercent size={18} /> Buy Tracking Pack · ₹{price}</>}
+        </button>
+        {loading ? (
+          <div className={styles.loadingPanel}><Spinner /></div>
+        ) : purchases.length ? (
+          <div className={styles.listCard}>
+            {purchases.map((purchase) => (
+              <div key={purchase.id} className={styles.purchaseRow}>
+                <strong>{purchase.packLabel}</strong>
+                <span>Amount paid: ₹{purchase.amountPaid}{purchase.listPriceAmount > purchase.amountPaid ? ` (₹${purchase.listPriceAmount})` : ''}</span>
+                <span>Paid on: {formatDateTime(purchase.paidAt)}</span>
+                <span>Valid until: {formatDateTime(purchase.expiresAt)}</span>
+                <span>PhonePe UTR: {purchase.phonepeUtr || '—'}</span>
+                <span>{purchase.status}</span>
+              </div>
+            ))}
+          </div>
+        ) : <p className={styles.packsEmpty}>No Tracking Pack purchases yet</p>}
+        {error ? <div className={styles.errorBox}>{error}</div> : null}
+      </section>
+    </main>
+  );
+}
+
+function Paywall({
+  price,
+  listPrice,
+  busy,
+  phase,
+  error,
+  onClose,
+  onBuy,
+}: {
+  price: number;
+  listPrice: number;
+  busy: boolean;
+  phase: PaymentPhase;
+  error: string | null;
+  onClose: () => void;
+  onBuy: () => void;
+}) {
+  return (
+    <div className={styles.paywallBackdrop} role="presentation" onMouseDown={(event) => {
+      if (event.currentTarget === event.target && !busy) onClose();
+    }}>
+      <section className={styles.paywall} role="dialog" aria-modal="true" aria-labelledby="tracking-pack-title">
+        <div className={styles.closeRow}>
+          <button type="button" onClick={onClose} disabled={busy} aria-label="Close"><X size={22} /></button>
+        </div>
+        <div className={styles.paywallHero}>
+          <Image src="/customer-app/tracking/fastag-tracking-pack-hero.webp" alt="FastTag vehicle tracking" fill sizes="(max-width: 480px) 88vw, 420px" priority />
+        </div>
+        <span className={styles.promoBadge}>Promo</span>
+        <h2 id="tracking-pack-title">Track every FastTag vehicle</h2>
+        <p>Unlimited FastTag tracking for 30 days.</p>
+        <div className={styles.priceRow}>
+          <del>₹{listPrice}</del><strong>₹{price}</strong><span>/ month</span>
+        </div>
+        <small className={styles.startsToday}>30 days from today</small>
+        {phase === 'pending' ? <p className={styles.paymentMessage}>Confirming your payment…</p> : null}
+        {error ? <p className={styles.paymentError}>{error}</p> : null}
+        <button type="button" className={styles.paywallCta} disabled={busy} onClick={onBuy}>
+          {busy ? <Spinner /> : phase === 'pending' ? 'Check payment' : `Pay ₹${price} with PhonePe`}
+        </button>
+      </section>
+    </div>
+  );
+}
+
+function MapLoading({ label }: { label: string }) {
+  return <div className={styles.mapLoading}><Spinner /><span>{label}</span></div>;
+}
+
+function Spinner() {
+  return <span className={styles.spinner} aria-hidden="true" />;
+}
+
+function trackingFromTrip(trip: LiveTrackingTrip): TrackingData {
+  const location = coordFromUnknown(trip.lastLocation);
+  return {
+    vehicleNumber: trip.vehicleNumber,
+    tripId: trip.tripId || undefined,
+    tripStatus: trip.status,
+    status: location ? 'online' : 'unknown',
+    eta: trip.eta || undefined,
+    location: location ? {
+      ...location,
+      address: trip.lastLocation?.address || undefined,
+      timeRecorded: trip.lastLocation?.timeRecorded || undefined,
+      distanceRemained: numberOrUndefined(trip.lastLocation?.distanceRemained),
+      timeRemained: numberOrUndefined(trip.lastLocation?.timeRemained),
+      distanceTravel: trip.lastLocation?.distanceTravel ?? undefined,
+      totalDistance: trip.lastLocation?.totalDistance ?? undefined,
+    } : undefined,
+    origin: coordFromUnknown(trip.origin) || undefined,
+    destination: coordFromUnknown(trip.destination) || undefined,
+    originLabel: trip.sourceName || undefined,
+    destinationLabel: trip.destinationName || undefined,
+    locationSource: trip.locationSource || null,
+    fastagViewsRemaining: trip.fastagViewsRemaining,
+    fastagUnlocked: trip.locationSource === 'fastag' ? Boolean(trip.fastagPackActive) : undefined,
+  };
+}
+
+function buildRecentTrips(invoices: CustomerInvoice[], liveTrips: LiveTrackingTrip[]): RecentTrip[] {
+  const liveVehicles = new Set(liveTrips.map((trip) => vehicleKey(trip.vehicleNumber)));
+  const seen = new Set<string>();
+  return invoices.flatMap((invoice) => {
+    const vehicleNumber = vehicleKey(invoice.vehicleNumber || invoice.truckNumber);
+    if (!vehicleNumber || liveVehicles.has(vehicleNumber) || seen.has(vehicleNumber)) return [];
+    seen.add(vehicleNumber);
+    const rawInvoice = invoice as unknown as Record<string, unknown>;
+    const sourceName = shortPlace(firstReadableAddress(invoice.supplierAddress) || String(rawInvoice.sourceName || ''));
+    const destinationName = shortPlace(
+      firstReadableAddress(invoice.shipToAddress) ||
+      firstReadableAddress(invoice.billToAddress) ||
+      String(rawInvoice.destinationName || invoice.billToName || ''),
+    );
+    return [{
+      id: invoice.id || `${vehicleNumber}-${invoice.invoiceNumber}`,
+      vehicleNumber,
+      route: [sourceName, destinationName].filter(Boolean).join(' to '),
+      date: formatDate(invoice.invoiceDate || invoice.createdAt),
+      invoiceNumber: invoice.invoiceNumber,
+      sourceName,
+      destinationName,
+      origin: extractRouteCoord(rawInvoice, 'source'),
+      destination: extractRouteCoord(rawInvoice, 'destination'),
+    }];
+  });
+}
+
+function trackingFromRecentTrip(trip: RecentTrip): TrackingData {
+  return {
+    vehicleNumber: trip.vehicleNumber,
+    status: 'offline',
+    tripStatus: 'ended',
+    location: trip.destination ? { ...trip.destination, address: trip.destinationName, distanceRemained: 0 } : undefined,
+    origin: trip.origin || undefined,
+    destination: trip.destination || undefined,
+    originLabel: trip.sourceName,
+    destinationLabel: trip.destinationName,
+    message: trip.date
+      ? `Trip ended. Invoice ${trip.invoiceNumber} · ${trip.date}`
+      : `Trip ended. Invoice ${trip.invoiceNumber}`,
+  };
+}
+
+function extractRouteCoord(raw: Record<string, unknown>, side: 'source' | 'destination') {
+  const sideKeys = side === 'source' ? ['source', 'origin', 'src', 'pickup', 'from'] : ['destination', 'dest', 'drop', 'to'];
+  for (const key of sideKeys) {
+    const direct = coordFromUnknown(raw[key]) || coordFromUnknown(raw[`${key}Coord`]) || coordFromUnknown(raw[`${key}Coordinates`]);
+    if (direct) return direct;
+  }
+  for (const key of sideKeys) {
+    const lat = raw[`${key}Lat`] ?? raw[`${key}Latitude`] ?? raw[`${key}_lat`];
+    const lng = raw[`${key}Lng`] ?? raw[`${key}Longitude`] ?? raw[`${key}_lng`];
+    const coord = coordFromUnknown({ lat, lng });
+    if (coord) return coord;
+  }
+  return null;
+}
+
+function coordFromUnknown(value: unknown): LocationPoint | null {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    return coordFromUnknown({ lat: value[0], lng: value[1] }) || coordFromUnknown({ lat: value[1], lng: value[0] });
+  }
+  if (typeof value === 'object') {
+    const source = value as Record<string, unknown>;
+    const lat = Number(source.lat ?? source.latitude);
+    const lng = Number(source.lng ?? source.lon ?? source.long ?? source.longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return { lat, lng };
+    return coordFromUnknown(source.loc) || coordFromUnknown(source.coordinates);
+  }
+  const match = String(value).match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
+  return match ? coordFromUnknown({ lat: Number(match[1]), lng: Number(match[2]) }) : null;
+}
+
+function isCoord(value?: LocationPoint | null): value is LocationPoint {
+  return Boolean(value && Number.isFinite(Number(value.lat)) && Number.isFinite(Number(value.lng)));
+}
+
+function tripProgress(tracking: TrackingData | null) {
+  const traveled = numberFromDistance(tracking?.location?.distanceTravel);
+  const total = numberFromDistance(tracking?.location?.totalDistance);
+  const remaining = numberFromDistance(tracking?.location?.distanceRemained);
+  const effectiveTotal = total ?? (traveled !== null && remaining !== null ? traveled + remaining : null);
+  const percent = traveled !== null && effectiveTotal !== null && effectiveTotal > 0
+    ? Math.min(100, Math.max(0, Math.round((traveled / effectiveTotal) * 100)))
+    : remaining !== null && effectiveTotal !== null && effectiveTotal > 0
+      ? Math.min(100, Math.max(0, Math.round(((effectiveTotal - remaining) / effectiveTotal) * 100)))
+      : null;
+  return {
+    visualPercent: percent ?? (tracking?.status === 'online' ? 18 : 0),
+    percentLabel: percent !== null ? `${percent}%` : tracking?.status === 'online' ? 'Live' : '0%',
+    remainingTime: formatEta(String(tracking?.location?.timeRemained || tracking?.eta || '')),
+  };
+}
+
+function trackingHeadline(tracking: TrackingData | null, current: string, destination: string, fastag: boolean) {
+  if (!tracking) return 'Route dekhne ke liye vehicle number dalein';
+  if (fastag) {
+    if (current && destination) return `${current} · ${destination} ki taraf`;
+    return current || 'Last toll yahan dikha';
+  }
+  if (tracking.status === 'online') {
+    if (current && destination) return `${current} ke paas, ${destination} ki taraf`;
+    return current ? `${current} ke paas` : 'Truck apne route par chal raha hai';
+  }
+  if (tracking.status === 'offline') return current ? `${current} ke paas` : 'Tracking abhi paused hai';
+  return current ? `${current} ke paas` : 'Tracking abhi shuru nahi hui';
+}
+
+function trackingSubline(tracking: TrackingData | null) {
+  if (!tracking) return 'Recent truck chunein ya vehicle number dalein.';
+  if (tracking.status === 'online') return '';
+  return tracking.message || 'Live tracking shuru hote hi yahan update milega.';
+}
+
+function isAllowedConsentStatus(value?: string | null) {
+  const status = String(value || '').toLowerCase();
+  return ['allow', 'approve', 'granted', 'accepted', 'true', 'yes'].some((item) => status.includes(item));
+}
+
+function isActiveLiveTracking(tracking: TrackingData | null) {
+  const tripStatus = String(tracking?.tripStatus || '').toUpperCase();
+  return Boolean(
+    tracking?.status === 'online' &&
+      tracking.locationSource === 'live' &&
+      (tripStatus === 'ACTIVE' || tripStatus === 'IN_PROGRESS'),
+  );
+}
+
+function numberFromDistance(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const match = String(value || '').match(/[\d.]+/);
+  if (!match) return null;
+  const number = Number(match[0]);
+  return Number.isFinite(number) ? number : null;
+}
+
+function numberOrUndefined(value: unknown) {
+  const number = numberFromDistance(value);
+  return number === null ? undefined : number;
+}
+
+function formatEta(value: string) {
+  const text = value.trim();
+  if (!text) return null;
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text;
+  const day = date.getDate();
+  const suffix = day > 10 && day < 20 ? 'th' : day % 10 === 1 ? 'st' : day % 10 === 2 ? 'nd' : day % 10 === 3 ? 'rd' : 'th';
+  return `${day}${suffix} ${date.toLocaleString('en-IN', { month: 'long' })}, ${date.toLocaleString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true })}`;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'long' });
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function firstReadableAddress(value: unknown) {
+  return Array.isArray(value)
+    ? value.map((part) => String(part || '').trim()).filter(Boolean).join(', ')
+    : String(value || '').trim();
+}
+
+function shortPlace(value?: string | null) {
+  const parts = String(value || '').split(',').map((part) => part.trim()).filter(Boolean);
+  return parts.length <= 2 ? parts.join(', ') : parts.slice(0, 2).join(', ');
+}
+
+function sanitizePlacePrefix(value: string) {
+  return value.replace(/^(?:in|near)\s+/i, '').trim();
+}
+
+function vehicleKey(value?: string | null) {
+  return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function readableError(error: unknown, fallback: string) {
+  if (error && typeof error === 'object') {
+    const candidate = error as { message?: string; response?: { data?: { message?: string } } };
+    return candidate.response?.data?.message || candidate.message || fallback;
+  }
+  return typeof error === 'string' ? error : fallback;
+}
+
+function initials(name?: string | null) {
+  return String(name || 'Mandi Plus').trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
+}
+
+function shortMoney(value?: number) {
+  const amount = Number(value || 0);
+  if (amount >= 100_000) return `₹${(amount / 100_000).toFixed(amount >= 1_000_000 ? 0 : 1)}L`;
+  if (amount >= 1_000) return `₹${(amount / 1_000).toFixed(amount >= 10_000 ? 0 : 1)}K`;
+  return `₹${Math.round(amount)}`;
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }

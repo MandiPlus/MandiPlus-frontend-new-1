@@ -107,6 +107,10 @@ export interface TrackingData {
   session?: TruckSessionInfo;
   motion?: TrackingMotionDecision | null;
   locationSource?: "live" | "fastag" | null;
+  fastagUpdatedAt?: string | null;
+  fastagViewsRemaining?: number;
+  fastagUnlocked?: boolean;
+  trackingPack?: TrackingPackEntitlement | null;
   // Allow backend to send extra fields without breaking the UI
   [key: string]: any;
 }
@@ -133,6 +137,74 @@ export interface LiveTrackingTrip {
     distanceTravel?: number | null;
     totalDistance?: number | null;
   } | null;
+  origin?: LocationPoint | null;
+  destination?: LocationPoint | null;
+  locationSource?: "live" | "fastag" | null;
+  fastagViewsRemaining?: number;
+  fastagPackActive?: boolean;
+}
+
+export interface TrackingPackEntitlement {
+  active: boolean;
+  expiresAt: string | null;
+  priceInr: number;
+  listPriceInr: number;
+  promoActive: boolean;
+  badge: string | null;
+  packLabel: string | null;
+}
+
+export interface TrackingPackPurchase {
+  id: string;
+  packCode: string;
+  packLabel: string;
+  amountPaid: number;
+  listPriceAmount: number;
+  phonepeUtr: string | null;
+  merchantOrderId: string;
+  status: string;
+  paidAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface TrackingPackMeResponse {
+  success: boolean;
+  entitlement: TrackingPackEntitlement | null;
+  purchases: TrackingPackPurchase[];
+  fastagViewsRemaining: number;
+}
+
+export interface TrackingPackCheckoutResponse {
+  success: boolean;
+  totalPaymentAmount: number;
+  merchantTransactionId: string;
+  merchantOrderId?: string;
+  redirectUrl?: string;
+  packId?: string;
+  packLabel?: string;
+  expireAt?: number | string | null;
+}
+
+export interface TrackingPackStatusResponse {
+  success: boolean;
+  merchantTransactionId: string;
+  state?: string | null;
+  paid: boolean;
+  amount: number;
+  packId?: string;
+  packLabel?: string;
+  phonepeUtr?: string | null;
+  expiresAt?: string | null;
+  status?: string;
+}
+
+export interface FastagViewResponse {
+  success?: boolean;
+  unlocked?: boolean;
+  viewsRemaining?: number;
+  packActive?: boolean;
+  tracking?: TrackingData;
 }
 
 export interface TrackingRoute {
@@ -248,6 +320,16 @@ export const trackVehicle = async (
           raw.locationSource === 'live' || raw.locationSource === 'fastag'
             ? raw.locationSource
             : null,
+        fastagUpdatedAt: raw.fastagUpdatedAt ?? null,
+        fastagViewsRemaining:
+          typeof raw.fastagViewsRemaining === 'number'
+            ? raw.fastagViewsRemaining
+            : undefined,
+        fastagUnlocked:
+          typeof raw.fastagUnlocked === 'boolean'
+            ? raw.fastagUnlocked
+            : undefined,
+        trackingPack: raw.trackingPack ?? null,
       },
       message: raw.message,
     };
@@ -279,7 +361,12 @@ export const getLiveTrackingTrips = async (): Promise<LiveTrackingTrip[]> => {
       `${API_BASE_URL}/trucks/track/live-trips`,
       { headers: token ? { Authorization: `Bearer ${token}` } : {} },
     );
-    return Array.isArray(response.data) ? response.data : [];
+    const payload = response.data as LiveTrackingTrip[] | { data?: LiveTrackingTrip[] };
+    return Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : [];
   } catch (error) {
     const err = error as AxiosError<ApiError | any>;
     throw new Error(
@@ -288,6 +375,48 @@ export const getLiveTrackingTrips = async (): Promise<LiveTrackingTrip[]> => {
         "Unable to load live trips",
     );
   }
+};
+
+export const consumeFastagView = async (
+  vehicleNumber: string,
+): Promise<FastagViewResponse> => {
+  const token = typeof window !== "undefined" ? getStoredAuthToken() : null;
+  const response = await axios.post<FastagViewResponse>(
+    `${API_BASE_URL}/trucks/track/${encodeURIComponent(vehicleNumber)}/fastag-view`,
+    {},
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  return response.data;
+};
+
+export const getTrackingPacksMe = async (): Promise<TrackingPackMeResponse> => {
+  const token = typeof window !== "undefined" ? getStoredAuthToken() : null;
+  const response = await axios.get<TrackingPackMeResponse>(
+    `${API_BASE_URL}/tracking-packs/me`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  return response.data;
+};
+
+export const createTrackingPackCheckout = async (): Promise<TrackingPackCheckoutResponse> => {
+  const token = typeof window !== "undefined" ? getStoredAuthToken() : null;
+  const response = await axios.post<TrackingPackCheckoutResponse>(
+    `${API_BASE_URL}/payment/customer/tracking-pack`,
+    {},
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  return response.data;
+};
+
+export const getTrackingPackStatus = async (
+  merchantOrderId: string,
+): Promise<TrackingPackStatusResponse> => {
+  const token = typeof window !== "undefined" ? getStoredAuthToken() : null;
+  const response = await axios.get<TrackingPackStatusResponse>(
+    `${API_BASE_URL}/payment/customer/tracking-pack/${encodeURIComponent(merchantOrderId)}/status`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  return response.data;
 };
 
 export const getTrackingRoute = async (
