@@ -241,7 +241,24 @@ export function AdminProvider({ children }: { children: ReactNode }) {
             );
         }
 
-        return Boolean(accessProfile?.allowedSections?.includes(section));
+        if (section === 'crm') {
+            return Boolean(
+                accessProfile?.isFullAdmin ||
+                accessProfile?.allowedSections?.includes('crm') ||
+                accessProfile?.allowedSections?.includes('insurance-payments') ||
+                accessProfile?.allowedSections?.includes('ledger'),
+            );
+        }
+
+        if (section === 'account-deletion') {
+            return Boolean(
+                accessProfile?.isFullAdmin ||
+                accessProfile?.allowedSections?.includes('account-deletion') ||
+                accessProfile?.allowedSections?.includes('users'),
+            );
+        }
+
+        return Boolean(accessProfile?.isFullAdmin || accessProfile?.allowedSections?.includes(section));
     };
 
     return (
