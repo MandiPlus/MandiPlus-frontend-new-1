@@ -5849,12 +5849,76 @@ class AdminApi {
     }
   };
 
+  public getCrmData = async (params?: {
+    search?: string;
+    productName?: string;
+    mandiName?: string;
+    fromDate?: string;
+    toDate?: string;
+    tab?: 'daily' | 'payment' | 'all';
+    page?: number;
+    limit?: number;
+  }) => {
+    try {
+      const response = await this.client.get('/crm/admin/data', { params });
+      return response.data;
+    } catch (error: any) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(error, 'Failed to fetch CRM data'),
+        records: [],
+        totalRecords: 0,
+        totalPages: 1,
+        page: 1,
+        limit: 20,
+        summary: {
+          totalDues: 0,
+          personsWithDuesCount: 0,
+          totalPendingInvoices: 0,
+          totalDailyPersons: 0,
+          totalVehicles: 0,
+          totalCalledCount: 0,
+        },
+      };
+    }
+  };
+
   public getCrmCallLogs = async () => {
     try {
       const response = await this.client.get('/crm/admin/call-logs');
       return response.data;
     } catch (error: any) {
       return { success: false, message: this.getAxiosErrorMessage(error, 'Failed to get CRM call logs'), data: [] };
+    }
+  };
+
+  public setCrmCallStatus = async (payload: {
+    insuredPersonKey: string;
+    insuredPersonName: string;
+    isCalled: boolean;
+    insuredPersonUserId?: string | null;
+    phone?: string | null;
+  }) => {
+    try {
+      const response = await this.client.post('/crm/admin/call-status', payload);
+      return response.data;
+    } catch (error: any) {
+      return { success: false, message: this.getAxiosErrorMessage(error, 'Failed to update call status') };
+    }
+  };
+
+  public updateCrmRemarks = async (payload: {
+    insuredPersonKey: string;
+    insuredPersonName: string;
+    remarks: string;
+    insuredPersonUserId?: string | null;
+    phone?: string | null;
+  }) => {
+    try {
+      const response = await this.client.post('/crm/admin/remarks', payload);
+      return response.data;
+    } catch (error: any) {
+      return { success: false, message: this.getAxiosErrorMessage(error, 'Failed to save note') };
     }
   };
 
@@ -5866,19 +5930,23 @@ class AdminApi {
     remarks?: string | null;
   }) => {
     try {
-      const response = await this.client.post('/crm/admin/call-log', payload);
+      const response = await this.client.post('/crm/admin/call-status', {
+        ...payload,
+        isCalled: true,
+      });
       return response.data;
     } catch (error: any) {
       return { success: false, message: this.getAxiosErrorMessage(error, 'Failed to log call') };
     }
   };
 
-  public updateCrmCallLogRemarks = async (insuredPersonKey: string, remarks: string) => {
+  public updateCrmCallLogRemarks = async (insuredPersonKey: string, remarks: string, name?: string) => {
     try {
-      const response = await this.client.patch(
-        `/crm/admin/call-log/${encodeURIComponent(insuredPersonKey)}/remarks`,
-        { remarks },
-      );
+      const response = await this.client.post('/crm/admin/remarks', {
+        insuredPersonKey,
+        insuredPersonName: name || 'Unknown',
+        remarks,
+      });
       return response.data;
     } catch (error: any) {
       return { success: false, message: this.getAxiosErrorMessage(error, 'Failed to update remarks') };

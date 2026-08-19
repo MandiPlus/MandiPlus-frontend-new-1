@@ -133,7 +133,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Channel Partners', href: '/admin/channel-partners', icon: UserGroupIcon, section: 'channel-partners' },
   { name: 'Sales Analytics', href: '/admin/analytics', icon: PresentationChartLineIcon, section: 'analytics' },
   { name: 'AI Reports', href: '/admin/reports', icon: SparklesIcon, section: 'reports' },
-  { name: 'CRM', href: '/admin/crm', icon: PhoneIcon, section: 'crm' },
+  { name: 'CRM', href: '/crm', icon: PhoneIcon, section: 'crm' },
 ];
 
 export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
@@ -220,6 +220,8 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/analytics': 'analytics',
   '/admin/impersonate': 'users',
   '/admin/crm': 'crm',
+  '/crm': 'crm',
+  '/crm/user': 'crm',
 };
 
 export function getSectionForAdminPath(pathname: string): AdminSection | null {
