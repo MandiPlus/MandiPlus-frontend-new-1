@@ -16,7 +16,6 @@ import {
   ChevronRight,
   Filter,
   X,
-  ExternalLink,
   Truck,
   ArrowRight,
 } from "lucide-react";
@@ -402,61 +401,44 @@ export default function StandaloneCrmPage() {
     <div className="min-h-screen bg-slate-50 text-gray-900 pb-16">
       <ToastContainer position="top-right" autoClose={3000} />
 
-      <header className="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#4309ac] to-[#6d28d9] flex items-center justify-center text-white font-bold shadow-md shadow-purple-200">
-              M+
+      {/* Clean Top Bar */}
+      <header className="sticky top-0 z-30 bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-[#4309ac] flex items-center justify-center text-white font-bold text-sm">
+              CRM
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold text-gray-900 tracking-tight">MandiPlus CRM</h1>
-                <span className="bg-purple-100 text-[#4309ac] text-xs font-semibold px-2 py-0.5 rounded-full">
-                  All Time Data
-                </span>
-              </div>
-              <p className="text-xs text-gray-500 hidden sm:block">
-                Daily vehicle followup calls &amp; payment collection
-              </p>
-            </div>
+            <h1 className="text-base font-bold text-gray-900">MandiPlus CRM</h1>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={fetchData}
-              disabled={loading}
-              className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm disabled:opacity-50 transition-all"
-            >
-              <RefreshCw className={"h-4 w-4 text-gray-500 " + (loading ? "animate-spin" : "")} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => router.push("/admin/dashboard")}
-              className="flex items-center gap-1 rounded-lg bg-gray-100 hover:bg-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition-colors"
-            >
-              Admin Dashboard <ExternalLink className="w-3 h-3 ml-0.5" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={fetchData}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-all"
+          >
+            <RefreshCw className={"h-3.5 w-3.5 " + (loading ? "animate-spin" : "")} />
+            Refresh
+          </button>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-5">
-        <div className="flex bg-gray-200/80 p-1 rounded-xl w-fit shadow-inner">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 space-y-4">
+        {/* Tabs */}
+        <div className="flex bg-gray-200/80 p-1 rounded-xl w-fit">
           <button
             type="button"
             onClick={() => setActiveTab("daily")}
-            className={"flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all " + (
+            className={"flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all " + (
               activeTab === "daily"
                 ? "bg-white text-[#4309ac] shadow-sm"
                 : "text-gray-600 hover:text-gray-900"
             )}
           >
-            <PhoneCall className="h-4 w-4" />
+            <PhoneCall className="h-3.5 w-3.5" />
             Daily Followups
             <span
-              className={"ml-1 text-xs px-2 py-0.5 rounded-full font-bold " + (
+              className={"ml-1 text-[11px] px-2 py-0.5 rounded-full font-bold " + (
                 activeTab === "daily" ? "bg-purple-100 text-[#4309ac]" : "bg-gray-300/80 text-gray-700"
               )}
             >
@@ -466,16 +448,16 @@ export default function StandaloneCrmPage() {
           <button
             type="button"
             onClick={() => setActiveTab("payment")}
-            className={"flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all " + (
+            className={"flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all " + (
               activeTab === "payment"
                 ? "bg-white text-red-600 shadow-sm"
                 : "text-gray-600 hover:text-gray-900"
             )}
           >
-            <IndianRupee className="h-4 w-4" />
+            <IndianRupee className="h-3.5 w-3.5" />
             Payment Followups
             <span
-              className={"ml-1 text-xs px-2 py-0.5 rounded-full font-bold " + (
+              className={"ml-1 text-[11px] px-2 py-0.5 rounded-full font-bold " + (
                 activeTab === "payment" ? "bg-red-100 text-red-700" : "bg-gray-300/80 text-gray-700"
               )}
             >
@@ -485,111 +467,89 @@ export default function StandaloneCrmPage() {
           </button>
         </div>
 
+        {/* Clean Stat Cards */}
         {activeTab === "payment" ? (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="rounded-2xl border border-red-200 bg-gradient-to-br from-red-50 to-red-100/50 p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-red-600 uppercase tracking-wider">
-                  Total Outstanding Dues (All Time)
-                </span>
-                <IndianRupee className="w-5 h-5 text-red-500" />
-              </div>
-              <p className="mt-2 text-2xl font-black text-red-700 tracking-tight">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-red-200 bg-red-50/60 p-4">
+              <span className="text-xs font-bold text-red-600 uppercase tracking-wide">
+                Total Outstanding Dues
+              </span>
+              <p className="mt-1 text-2xl font-black text-red-700">
                 {formatCurrency(summary.totalDues)}
               </p>
-              <p className="mt-1 text-xs text-red-600/80">Complete aggregate across all invoices</p>
             </div>
-            <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-amber-100/50 p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">
-                  Persons with Pending Dues
-                </span>
-                <Users className="w-5 h-5 text-amber-600" />
-              </div>
-              <p className="mt-2 text-2xl font-black text-amber-800">
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+              <span className="text-xs font-bold text-amber-700 uppercase tracking-wide">
+                Persons with Dues
+              </span>
+              <p className="mt-1 text-2xl font-black text-amber-800">
                 {summary.personsWithDuesCount}
               </p>
-              <p className="mt-1 text-xs text-amber-700/80">Insured persons with unpaid balance</p>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-slate-100 p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                  Total Pending Invoices
-                </span>
-                <TrendingDown className="w-5 h-5 text-slate-500" />
-              </div>
-              <p className="mt-2 text-2xl font-black text-slate-800">
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <span className="text-xs font-bold text-slate-600 uppercase tracking-wide">
+                Pending Invoices
+              </span>
+              <p className="mt-1 text-2xl font-black text-slate-800">
                 {summary.totalPendingInvoices}
               </p>
-              <p className="mt-1 text-xs text-slate-500">Unpaid / partially paid bills</p>
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50 to-purple-100/50 p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#4309ac] uppercase tracking-wider">
-                  Total Insured Persons
-                </span>
-                <Users className="w-5 h-5 text-[#4309ac]" />
-              </div>
-              <p className="mt-2 text-2xl font-black text-[#4309ac] tracking-tight">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-purple-200 bg-purple-50/60 p-4">
+              <span className="text-xs font-bold text-[#4309ac] uppercase tracking-wide">
+                Total Insured Persons
+              </span>
+              <p className="mt-1 text-2xl font-black text-[#4309ac]">
                 {summary.totalDailyPersons}
               </p>
-              <p className="mt-1 text-xs text-purple-700/80">All time insured party database</p>
             </div>
-            <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-blue-100/50 p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-blue-700 uppercase tracking-wider">
-                  Total Vehicles Loaded
-                </span>
-                <Truck className="w-5 h-5 text-blue-600" />
-              </div>
-              <p className="mt-2 text-2xl font-black text-blue-800">{summary.totalVehicles}</p>
-              <p className="mt-1 text-xs text-blue-600/80">Total insured trips &amp; invoices</p>
+            <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4">
+              <span className="text-xs font-bold text-blue-700 uppercase tracking-wide">
+                Total Vehicles Loaded
+              </span>
+              <p className="mt-1 text-2xl font-black text-blue-800">{summary.totalVehicles}</p>
             </div>
-            <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-emerald-100/50 p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
-                  Followup Calls Logged
-                </span>
-                <CheckCircle className="w-5 h-5 text-emerald-600" />
-              </div>
-              <p className="mt-2 text-2xl font-black text-emerald-800">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+              <span className="text-xs font-bold text-emerald-700 uppercase tracking-wide">
+                Followup Calls Logged
+              </span>
+              <p className="mt-1 text-2xl font-black text-emerald-800">
                 {summary.totalCalledCount}
               </p>
-              <p className="mt-1 text-xs text-emerald-600/80">Marked as called by team</p>
             </div>
           </div>
         )}
 
-        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm space-y-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[240px]">
+        {/* Filter Bar */}
+        <div className="rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm space-y-2">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="relative flex-1 min-w-[220px]">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search person name, mobile number, notes, place..."
+                placeholder="Search person name, mobile, notes..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-8 py-2 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-[#4309ac]/30 focus:border-[#4309ac] focus:outline-none transition-all placeholder:text-gray-400"
+                className="w-full pl-9 pr-8 py-1.5 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-[#4309ac]/30 focus:border-[#4309ac] focus:outline-none placeholder:text-gray-400"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-2.5 top-2.5 text-gray-400 hover:text-gray-600"
+                  className="absolute right-2.5 top-2 text-gray-400 hover:text-gray-600"
                 >
                   <X className="w-4 h-4" />
                 </button>
               )}
             </div>
 
-            <div className="min-w-[160px]">
+            <div className="min-w-[150px]">
               <select
                 value={productName}
                 onChange={(e) => setProductName(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 bg-white hover:border-gray-400 focus:outline-none"
+                className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 bg-white focus:outline-none"
               >
                 <option value="">All Commodities</option>
                 {productOptions.map((p) => (
@@ -602,21 +562,21 @@ export default function StandaloneCrmPage() {
 
             {MandiDropdown}
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <input
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="rounded-lg border border-gray-300 px-2.5 py-2 text-sm text-gray-700 bg-white"
-                title="From Date (Leave empty for All Time)"
+                className="rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-700 bg-white"
+                title="From Date (Optional)"
               />
               <span className="text-gray-400 text-xs">to</span>
               <input
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="rounded-lg border border-gray-300 px-2.5 py-2 text-sm text-gray-700 bg-white"
-                title="To Date"
+                className="rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-700 bg-white"
+                title="To Date (Optional)"
               />
             </div>
 
@@ -624,16 +584,16 @@ export default function StandaloneCrmPage() {
               <button
                 type="button"
                 onClick={resetFilters}
-                className="flex items-center gap-1 rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-600 transition-colors"
+                className="flex items-center gap-1 rounded-lg border border-gray-300 bg-gray-50 hover:bg-gray-100 px-2.5 py-1.5 text-xs font-semibold text-gray-600"
               >
-                <X className="w-3.5 h-3.5" /> Clear Filters
+                <X className="w-3.5 h-3.5" /> Clear
               </button>
             )}
           </div>
         </div>
 
         {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 flex items-center justify-between">
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 flex items-center justify-between">
             <span>{error}</span>
             <button
               type="button"
@@ -645,53 +605,54 @@ export default function StandaloneCrmPage() {
           </div>
         )}
 
-        <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between bg-slate-50/60">
+        {/* Data Table */}
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-slate-50/60">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-gray-800">
+              <span className="text-xs font-bold text-gray-800">
                 {activeTab === "daily" ? "Daily Vehicle Followups" : "Pending Payment Dues"}
               </span>
               <span className="text-xs text-gray-500 bg-gray-200/80 px-2 py-0.5 rounded-full font-medium">
-                {processedRecords.length} records matched
+                {processedRecords.length} records
               </span>
             </div>
             <span className="text-xs text-gray-400">
-              Showing page {currentPage} of {totalPages} (20 per page)
+              Page {currentPage} of {totalPages} (20 per page)
             </span>
           </div>
 
           {loading ? (
-            <div className="py-20 flex flex-col items-center justify-center text-gray-400 text-sm gap-2">
-              <RefreshCw className="w-6 h-6 animate-spin text-[#4309ac]" />
+            <div className="py-16 flex flex-col items-center justify-center text-gray-400 text-sm gap-2">
+              <RefreshCw className="w-5 h-5 animate-spin text-[#4309ac]" />
               <span>Loading CRM data...</span>
             </div>
           ) : paginatedRecords.length === 0 ? (
-            <div className="py-20 text-center text-gray-400 text-sm">
+            <div className="py-16 text-center text-gray-400 text-sm">
               No matching records found for the current filters.
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-100 text-sm">
                 <thead>
-                  <tr className="bg-gray-50/80 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                    <th className="px-4 py-3.5 w-12 text-center">#</th>
-                    <th className="px-4 py-3.5">Insured Person</th>
-                    <th className="px-4 py-3.5">Mobile Number</th>
+                  <tr className="bg-gray-50 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                    <th className="px-3.5 py-3 w-10 text-center">#</th>
+                    <th className="px-3.5 py-3">Insured Person</th>
+                    <th className="px-3.5 py-3">Mobile</th>
                     {activeTab === "daily" ? (
                       <>
-                        <th className="px-4 py-3.5 text-center">Vehicles</th>
-                        <th className="px-4 py-3.5">Commodity</th>
-                        <th className="px-4 py-3.5">Last Invoice</th>
-                        <th className="px-4 py-3.5">Call Followup</th>
-                        <th className="px-4 py-3.5">Remarks / Notes</th>
+                        <th className="px-3.5 py-3 text-center">Vehicles</th>
+                        <th className="px-3.5 py-3">Commodity</th>
+                        <th className="px-3.5 py-3">Last Invoice</th>
+                        <th className="px-3.5 py-3">Followup</th>
+                        <th className="px-3.5 py-3">Remarks</th>
                       </>
                     ) : (
                       <>
-                        <th className="px-4 py-3.5 text-right">Total Dues</th>
-                        <th className="px-4 py-3.5 text-center">Pending Bills</th>
-                        <th className="px-4 py-3.5">Commodity</th>
-                        <th className="px-4 py-3.5">Place / State</th>
-                        <th className="px-4 py-3.5 text-right">Action</th>
+                        <th className="px-3.5 py-3 text-right">Total Dues</th>
+                        <th className="px-3.5 py-3 text-center">Invoices</th>
+                        <th className="px-3.5 py-3">Commodity</th>
+                        <th className="px-3.5 py-3">Place</th>
+                        <th className="px-3.5 py-3 text-right">Action</th>
                       </>
                     )}
                   </tr>
@@ -710,18 +671,13 @@ export default function StandaloneCrmPage() {
                             person.isCalled ? "bg-emerald-50/25" : "hover:bg-slate-50/70"
                           )}
                         >
-                          <td className="px-4 py-3.5 text-center text-xs text-gray-400 font-mono">
+                          <td className="px-3.5 py-3 text-center text-xs text-gray-400 font-mono">
                             {rowNumber}
                           </td>
-                          <td className="px-4 py-3.5">
-                            <div className="font-semibold text-gray-900">{person.name}</div>
-                            {person.userId && (
-                              <span className="inline-block mt-0.5 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded">
-                                App User
-                              </span>
-                            )}
+                          <td className="px-3.5 py-3">
+                            <div className="font-semibold text-xs text-gray-900">{person.name}</div>
                           </td>
-                          <td className="px-4 py-3.5 font-mono text-xs">
+                          <td className="px-3.5 py-3 font-mono text-xs">
                             {person.phone ? (
                               <a
                                 href={"tel:" + person.phone}
@@ -734,46 +690,43 @@ export default function StandaloneCrmPage() {
                               <span className="text-gray-400">—</span>
                             )}
                           </td>
-                          <td className="px-4 py-3.5 text-center">
-                            <span className="inline-flex items-center justify-center rounded-full bg-purple-100 text-[#4309ac] text-xs font-bold px-2.5 py-0.5 min-w-[2rem]">
+                          <td className="px-3.5 py-3 text-center">
+                            <span className="inline-flex items-center justify-center rounded-full bg-purple-100 text-[#4309ac] text-xs font-bold px-2 py-0.5 min-w-[1.8rem]">
                               {person.totalInvoices}
                             </span>
                           </td>
-                          <td className="px-4 py-3.5 text-gray-600 text-xs">
+                          <td className="px-3.5 py-3 text-gray-600 text-xs">
                             {person.commodity || "—"}
                           </td>
-                          <td className="px-4 py-3.5 text-gray-500 text-xs">
+                          <td className="px-3.5 py-3 text-gray-500 text-xs">
                             {formatDate(person.latestInvoiceDate)}
                           </td>
-                          <td className="px-4 py-3.5">
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => toggleCallStatus(person)}
-                                disabled={isSaving}
-                                className={"flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50 " + (
-                                  person.isCalled
-                                    ? "border-emerald-300 bg-emerald-100 text-emerald-800 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
-                                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-400"
-                                )}
-                              >
-                                <Phone className="w-3 h-3" />
-                                {isSaving ? "..." : person.isCalled ? "Called ✓" : "Mark Called"}
-                              </button>
-                            </div>
-                            {person.isCalled && (
-                              <div className="mt-1 text-[11px] text-emerald-700">
-                                {person.calledByAdminName && ("by " + person.calledByAdminName)}
-                                {person.calledAt && (" • " + formatDate(person.calledAt))}
+                          <td className="px-3.5 py-3">
+                            <button
+                              type="button"
+                              onClick={() => toggleCallStatus(person)}
+                              disabled={isSaving}
+                              className={"flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-semibold transition-all disabled:opacity-50 " + (
+                                person.isCalled
+                                  ? "border-emerald-300 bg-emerald-100 text-emerald-800 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+                                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                              )}
+                            >
+                              <Phone className="w-3 h-3" />
+                              {isSaving ? "..." : person.isCalled ? "Called ✓" : "Mark Called"}
+                            </button>
+                            {person.isCalled && person.calledByAdminName && (
+                              <div className="mt-0.5 text-[10px] text-emerald-700">
+                                by {person.calledByAdminName}
                               </div>
                             )}
                           </td>
-                          <td className="px-4 py-3.5 min-w-[220px]">
+                          <td className="px-3.5 py-3 min-w-[200px]">
                             {isEditingNote ? (
-                              <div className="space-y-1.5">
+                              <div className="space-y-1">
                                 <textarea
                                   rows={2}
-                                  placeholder="Add followup remark..."
+                                  placeholder="Add remark..."
                                   value={noteDraft[person.key] ?? person.remarks ?? ""}
                                   onChange={(e) =>
                                     setNoteDraft((prev) => ({
@@ -781,35 +734,35 @@ export default function StandaloneCrmPage() {
                                       [person.key]: e.target.value,
                                     }))
                                   }
-                                  className="w-full rounded-lg border border-purple-300 p-2 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#4309ac]/30 resize-none bg-white"
+                                  className="w-full rounded-md border border-purple-300 p-1.5 text-xs text-gray-800 focus:outline-none resize-none bg-white"
                                 />
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1">
                                   <button
                                     type="button"
                                     onClick={() => saveRemarks(person)}
                                     disabled={isSaving}
-                                    className="rounded-md bg-[#4309ac] px-2.5 py-1 text-xs font-bold text-white hover:bg-[#4309ac]/90 disabled:opacity-50"
+                                    className="rounded bg-[#4309ac] px-2 py-0.5 text-xs font-bold text-white hover:bg-[#4309ac]/90 disabled:opacity-50"
                                   >
-                                    {isSaving ? "Saving..." : "Save"}
+                                    {isSaving ? "..." : "Save"}
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => setEditingNoteKey(null)}
-                                    className="rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600 hover:bg-gray-200"
+                                    className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-200"
                                   >
                                     Cancel
                                   </button>
                                 </div>
                               </div>
                             ) : (
-                              <div className="flex items-start justify-between gap-2 group">
+                              <div className="flex items-start justify-between gap-1 group">
                                 <div className="text-xs text-gray-700">
                                   {person.remarks ? (
-                                    <span className="font-medium bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-2 py-1 inline-block">
+                                    <span className="bg-amber-50 border border-amber-200 text-amber-900 rounded px-1.5 py-0.5 inline-block text-[11px]">
                                       {person.remarks}
                                     </span>
                                   ) : (
-                                    <span className="text-gray-400 italic">No remark</span>
+                                    <span className="text-gray-400 italic text-[11px]">No remark</span>
                                   )}
                                 </div>
                                 <button
@@ -823,10 +776,10 @@ export default function StandaloneCrmPage() {
                                       }));
                                     }
                                   }}
-                                  className="shrink-0 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors"
+                                  className="shrink-0 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
                                   title="Edit remark"
                                 >
-                                  <MessageSquare className="w-3.5 h-3.5" />
+                                  <MessageSquare className="w-3 h-3" />
                                 </button>
                               </div>
                             )}
@@ -841,19 +794,14 @@ export default function StandaloneCrmPage() {
                         className="hover:bg-red-50/30 transition-colors cursor-pointer"
                         onClick={() => openUserDetail(person)}
                       >
-                        <td className="px-4 py-3.5 text-center text-xs text-gray-400 font-mono">
+                        <td className="px-3.5 py-3 text-center text-xs text-gray-400 font-mono">
                           {rowNumber}
                         </td>
-                        <td className="px-4 py-3.5">
-                          <div className="font-semibold text-gray-900">{person.name}</div>
-                          {person.userId && (
-                            <span className="inline-block mt-0.5 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded">
-                              App User
-                            </span>
-                          )}
+                        <td className="px-3.5 py-3">
+                          <div className="font-semibold text-xs text-gray-900">{person.name}</div>
                         </td>
                         <td
-                          className="px-4 py-3.5 font-mono text-xs"
+                          className="px-3.5 py-3 font-mono text-xs"
                           onClick={(e) => e.stopPropagation()}
                         >
                           {person.phone ? (
@@ -868,27 +816,27 @@ export default function StandaloneCrmPage() {
                             <span className="text-gray-400">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-3.5 text-right">
-                          <span className="text-base font-black text-red-600">
+                        <td className="px-3.5 py-3 text-right">
+                          <span className="text-sm font-black text-red-600">
                             {formatCurrency(person.pendingAmount)}
                           </span>
                         </td>
-                        <td className="px-4 py-3.5 text-center">
-                          <span className="inline-flex items-center justify-center rounded-full bg-red-100 text-red-700 text-xs font-bold px-2.5 py-0.5">
+                        <td className="px-3.5 py-3 text-center">
+                          <span className="inline-flex items-center justify-center rounded-full bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5">
                             {person.pendingInvoices}
                           </span>
                         </td>
-                        <td className="px-4 py-3.5 text-gray-600 text-xs">
+                        <td className="px-3.5 py-3 text-gray-600 text-xs">
                           {person.commodity || "—"}
                         </td>
-                        <td className="px-4 py-3.5 text-gray-600 text-xs">
+                        <td className="px-3.5 py-3 text-gray-600 text-xs">
                           {person.place || "—"}
                         </td>
-                        <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-3.5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                           <button
                             type="button"
                             onClick={() => openUserDetail(person)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-[#4309ac] hover:bg-[#4309ac]/90 text-white px-3 py-1.5 text-xs font-bold shadow-sm transition-all"
+                            className="inline-flex items-center gap-1 rounded-md bg-[#4309ac] hover:bg-[#4309ac]/90 text-white px-2.5 py-1 text-xs font-bold shadow-sm transition-all"
                           >
                             Collect <ArrowRight className="w-3 h-3" />
                           </button>
@@ -902,39 +850,38 @@ export default function StandaloneCrmPage() {
           )}
 
           {!loading && processedRecords.length > 0 && (
-            <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50/80 flex flex-wrap items-center justify-between gap-3">
+            <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs text-gray-600">
-                Showing{" "}
-                <span className="font-bold">{(currentPage - 1) * PAGE_SIZE + 1}</span> to{" "}
+                Showing <span className="font-bold">{(currentPage - 1) * PAGE_SIZE + 1}</span> to{" "}
                 <span className="font-bold">
                   {Math.min(currentPage * PAGE_SIZE, processedRecords.length)}
                 </span>{" "}
                 of <span className="font-bold">{processedRecords.length}</span> records
               </div>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
                   disabled={currentPage <= 1}
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-gray-300 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <ChevronLeft className="w-4 h-4" /> Previous
+                  <ChevronLeft className="w-3.5 h-3.5" /> Prev
                 </button>
 
-                <div className="flex items-center gap-1 px-2">
-                  <span className="text-xs font-bold text-gray-800">{currentPage}</span>
-                  <span className="text-xs text-gray-400">/</span>
-                  <span className="text-xs text-gray-600">{totalPages}</span>
+                <div className="flex items-center gap-1 px-2 text-xs">
+                  <span className="font-bold text-gray-800">{currentPage}</span>
+                  <span className="text-gray-400">/</span>
+                  <span className="text-gray-600">{totalPages}</span>
                 </div>
 
                 <button
                   type="button"
                   disabled={currentPage >= totalPages}
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-md border border-gray-300 bg-white text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  Next <ChevronRight className="w-4 h-4" />
+                  Next <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
