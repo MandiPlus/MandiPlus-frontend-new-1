@@ -5855,6 +5855,7 @@ class AdminApi {
     mandiName?: string;
     fromDate?: string;
     toDate?: string;
+    logDate?: string;
     tab?: 'daily' | 'payment' | 'all';
     page?: number;
     limit?: number;
@@ -5883,9 +5884,9 @@ class AdminApi {
     }
   };
 
-  public getCrmCallLogs = async () => {
+  public getCrmCallLogs = async (logDate?: string) => {
     try {
-      const response = await this.client.get('/crm/admin/call-logs');
+      const response = await this.client.get('/crm/admin/call-logs', { params: { logDate } });
       return response.data;
     } catch (error: any) {
       return { success: false, message: this.getAxiosErrorMessage(error, 'Failed to get CRM call logs'), data: [] };
@@ -5896,6 +5897,7 @@ class AdminApi {
     insuredPersonKey: string;
     insuredPersonName: string;
     isCalled: boolean;
+    logDate?: string | null;
     insuredPersonUserId?: string | null;
     phone?: string | null;
   }) => {
@@ -5911,6 +5913,7 @@ class AdminApi {
     insuredPersonKey: string;
     insuredPersonName: string;
     remarks: string;
+    logDate?: string | null;
     insuredPersonUserId?: string | null;
     phone?: string | null;
   }) => {

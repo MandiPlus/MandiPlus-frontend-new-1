@@ -18,6 +18,7 @@ import {
   X,
   Truck,
   ArrowRight,
+  Calendar,
 } from "lucide-react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -53,6 +54,14 @@ type CrmPersonRecord = {
   pendingInvoiceIds: string[];
 };
 
+function getTodayDateStr(): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+}
+
 function formatCurrency(value: number) {
   return "₹" + Number(value || 0).toLocaleString("en-IN", {
     minimumFractionDigits: 0,
@@ -64,6 +73,13 @@ function formatDate(value?: string | null) {
   if (!value) return "—";
   const d = new Date(value);
   if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatDisplayDate(dateStr: string) {
+  if (!dateStr) return "Today";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
   return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
@@ -102,6 +118,8 @@ export default function StandaloneCrmPage() {
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({});
   const [savingActionKey, setSavingActionKey] = useState<string | null>(null);
 
+  const activeDayDate = useMemo(() => fromDate || getTodayDateStr(), [fromDate]);
+
   useEffect(() => {
     if (mandiDropdownOpen) return;
     const key = Array.from(mandiNameFilter).sort().join(",");
@@ -129,10 +147,12 @@ export default function StandaloneCrmPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError("");
+    const targetLogDate = fromDate || getTodayDateStr();
     try {
       const res = await adminApi.getCrmData({
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
+        logDate: targetLogDate,
         productName: productName || undefined,
         mandiName: mandiParam,
         limit: 10000,
@@ -225,6 +245,7 @@ export default function StandaloneCrmPage() {
         insuredPersonUserId: person.userId,
         phone: person.phone,
         isCalled: nextStatus,
+        logDate: activeDayDate,
       });
 
       if (res.success && res.data) {
@@ -240,7 +261,7 @@ export default function StandaloneCrmPage() {
               : r,
           ),
         );
-        toast.success(nextStatus ? ("Marked " + person.name + " as Called") : "Unmarked call status");
+        toast.success(nextStatus ? ("Marked " + person.name + " as Called for " + formatDisplayDate(activeDayDate)) : "Unmarked call status");
       }
     } catch {
       toast.error("Failed to update call status");
@@ -259,6 +280,7 @@ export default function StandaloneCrmPage() {
         insuredPersonUserId: person.userId,
         phone: person.phone,
         remarks: text,
+        logDate: activeDayDate,
       });
 
       if (res.success) {
@@ -266,7 +288,7 @@ export default function StandaloneCrmPage() {
           prev.map((r) => (r.key === person.key ? { ...r, remarks: text } : r)),
         );
         setEditingNoteKey(null);
-        toast.success("Remark saved");
+        toast.success("Remark saved for " + formatDisplayDate(activeDayDate));
       }
     } catch {
       toast.error("Failed to save note");
@@ -411,15 +433,21 @@ export default function StandaloneCrmPage() {
             <h1 className="text-base font-bold text-gray-900">MandiPlus CRM</h1>
           </div>
 
-          <button
-            type="button"
-            onClick={fetchData}
-            disabled={loading}
-            className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-all"
-          >
-            <RefreshCw className={"h-3.5 w-3.5 " + (loading ? "animate-spin" : "")} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-1.5 text-xs text-gray-500 font-medium bg-gray-100 px-2.5 py-1 rounded-md">
+              <Calendar className="w-3.5 h-3.5 text-[#4309ac]" />
+              <span>Log Date: <strong className="text-gray-800">{formatDisplayDate(activeDayDate)}</strong></span>
+            </div>
+            <button
+              type="button"
+              onClick={fetchData}
+              disabled={loading}
+              className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-all"
+            >
+              <RefreshCw className={"h-3.5 w-3.5 " + (loading ? "animate-spin" : "")} />
+              Refresh
+            </button>
+          </div>
         </div>
       </header>
 
@@ -513,7 +541,7 @@ export default function StandaloneCrmPage() {
             </div>
             <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
               <span className="text-xs font-bold text-emerald-700 uppercase tracking-wide">
-                Followup Calls Logged
+                Calls Logged ({formatDisplayDate(activeDayDate)})
               </span>
               <p className="mt-1 text-2xl font-black text-emerald-800">
                 {summary.totalCalledCount}
@@ -568,7 +596,7 @@ export default function StandaloneCrmPage() {
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
                 className="rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-700 bg-white"
-                title="From Date (Optional)"
+                title="Date for followups / remarks (Leave blank for Today)"
               />
               <span className="text-gray-400 text-xs">to</span>
               <input
@@ -615,6 +643,11 @@ export default function StandaloneCrmPage() {
               <span className="text-xs text-gray-500 bg-gray-200/80 px-2 py-0.5 rounded-full font-medium">
                 {processedRecords.length} records
               </span>
+              {activeTab === "daily" && (
+                <span className="text-[11px] text-[#4309ac] bg-purple-50 border border-purple-200 px-2 py-0.5 rounded font-semibold">
+                  Date: {formatDisplayDate(activeDayDate)}
+                </span>
+              )}
             </div>
             <span className="text-xs text-gray-400">
               Page {currentPage} of {totalPages} (20 per page)
@@ -644,7 +677,7 @@ export default function StandaloneCrmPage() {
                         <th className="px-3.5 py-3">Commodity</th>
                         <th className="px-3.5 py-3">Last Invoice</th>
                         <th className="px-3.5 py-3">Followup</th>
-                        <th className="px-3.5 py-3">Remarks</th>
+                        <th className="px-3.5 py-3">Remarks ({formatDisplayDate(activeDayDate)})</th>
                       </>
                     ) : (
                       <>
@@ -691,7 +724,7 @@ export default function StandaloneCrmPage() {
                             )}
                           </td>
                           <td className="px-3.5 py-3 text-center">
-                            <span className="inline-flex items-center justify-center rounded-full bg-purple-100 text-[#4309ac] text-xs font-bold px-2 py-0.5 min-w-[1.8rem]">
+                            <span className="inline-flex items-center justify-center rounded-full bg-purple-100 text-[#4309ac] text-xs font-bold px-2.5 py-0.5 min-w-[1.8rem]">
                               {person.totalInvoices}
                             </span>
                           </td>
@@ -726,7 +759,7 @@ export default function StandaloneCrmPage() {
                               <div className="space-y-1">
                                 <textarea
                                   rows={2}
-                                  placeholder="Add remark..."
+                                  placeholder={"Add remark for " + formatDisplayDate(activeDayDate) + "..."}
                                   value={noteDraft[person.key] ?? person.remarks ?? ""}
                                   onChange={(e) =>
                                     setNoteDraft((prev) => ({
@@ -779,7 +812,7 @@ export default function StandaloneCrmPage() {
                                   className="shrink-0 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
                                   title="Edit remark"
                                 >
-                                  <MessageSquare className="w-3 h-3" />
+                                  <MessageSquare className="w-3.5 h-3.5" />
                                 </button>
                               </div>
                             )}
