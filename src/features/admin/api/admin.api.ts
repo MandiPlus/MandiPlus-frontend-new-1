@@ -725,6 +725,7 @@ export interface RegenerateInvoicePayload {
   truckNumber?: string;
   weighmentSlipNote?: string;
   insuredPartyPhone?: string;
+  blacklistOverrideToken?: string;
 }
 
 export interface InvoiceFilterParams {
@@ -926,6 +927,33 @@ export interface GrantTrackingPlanPayload {
   note?: string;
 }
 
+export interface AdminTrackingUsageRow {
+  userId: string;
+  customerName: string;
+  mobileNumber: string;
+  secondaryMobileNumber: string | null;
+  state: string | null;
+  identity: string | null;
+  visitCount: number;
+  lastVisitedAt: string | null;
+  viewsUsed: number;
+  viewsRemaining: number;
+  lastVehicleNumber: string | null;
+  lastTrackedAt: string | null;
+  packActive: boolean;
+  packExpiresAt: string | null;
+}
+
+export interface AdminTrackingUsageSummary {
+  interestedCustomers: number;
+  totalScreenOpens: number;
+  trackingViewsUsed: number;
+  exhaustedCustomers: number;
+  activePackCustomers: number;
+  usageDate: string;
+  dailyLimit: number;
+}
+
 export interface AdminTrackingPurchaseFilters {
   search?: string;
   status?: TrackingPurchaseStatus;
@@ -1080,6 +1108,7 @@ export interface AdminCreateInvoicePayload {
   ownerName?: string;
   weighmentSlips?: File[];
   weighmentSlipUrls?: string[];
+  blacklistOverrideToken?: string;
 }
 
 export type ChannelPartnerStatus = "PENDING" | "ACTIVE" | "SUSPENDED";
@@ -1319,6 +1348,7 @@ export interface ClaimRequest {
   caseNumber: string;
   officialClaimNumber?: string | null;
   tataClaimNumber?: string | null;
+  documentsSentToTataAt?: string | null;
   mandiplusClaimNumber?: string | null;
   handledBy?: 'TATA' | 'MandiPlus' | string | null;
   status: ClaimStatus;
@@ -1500,9 +1530,69 @@ export interface ClaimActivity {
   createdAt: string;
 }
 
+export type ClaimNotificationType =
+  | "claim_initiated"
+  | "document_reminder"
+  | "surveyor_assigned"
+  | "report_generated"
+  | "sent_to_tata"
+  | "bank_details_request"
+  | "completed"
+  | "document_uploaded_admin";
+
+export type ClaimNotificationDeliveryStatus =
+  | "processing"
+  | "accepted"
+  | "delivered"
+  | "read"
+  | "failed"
+  | "skipped"
+  | "unknown";
+
+export interface ClaimNotificationLog {
+  id: string;
+  tenantId: string;
+  claimId: string;
+  notificationType: ClaimNotificationType;
+  channel: "whatsapp";
+  recipientPhone?: string | null;
+  dedupeKey: string;
+  templateName?: string | null;
+  payload: Record<string, unknown>;
+  status: ClaimNotificationDeliveryStatus;
+  errorMessage?: string | null;
+  providerMessageId?: string | null;
+  attemptCount?: number;
+  lastAttemptAt?: string | null;
+  nextAttemptAt?: string | null;
+  sentAt?: string | null;
+  deliveredAt?: string | null;
+  readAt?: string | null;
+  failedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type ClaimDocumentReminderReason =
+  | "claim_not_found"
+  | "claim_closed"
+  | "no_missing_documents"
+  | "reminder_sent_recently"
+  | "manual_reminder_cooldown"
+  | "reminder_limit_reached"
+  | "claim_too_new"
+  | "notifications_disabled"
+  | "send_failed";
+
+export interface ClaimDocumentReminderResult {
+  sent: boolean;
+  reason?: ClaimDocumentReminderReason;
+}
+
 export interface UpdateClaimDto {
   officialClaimNumber?: string | null;
   tataClaimNumber?: string | null;
+  documentsSentToTataAt?: string | null;
   handledBy?: 'TATA' | 'MandiPlus' | string | null;
   description?: string | null;
   status?: ClaimStatus;
@@ -2460,6 +2550,9 @@ class AdminApi {
       if (payload.driverSecondaryPhone)
         formData.append("driverSecondaryPhone", payload.driverSecondaryPhone);
       if (payload.ownerName) formData.append("ownerName", payload.ownerName);
+      if (payload.blacklistOverrideToken) {
+        formData.append("blacklistOverrideToken", payload.blacklistOverrideToken);
+      }
       payload.weighmentSlips?.forEach((file) => {
         formData.append("weighmentSlips", file);
       });
@@ -2489,6 +2582,7 @@ class AdminApi {
         success: false,
         message: error.response?.data?.message || "Failed to create invoice",
         error: error.message,
+        data: error.response?.data,
       };
     }
   };
@@ -3565,7 +3659,66 @@ class AdminApi {
         message:
           error.response?.data?.message || "Failed to regenerate invoice",
         error: error.message,
+        data: error.response?.data,
       };
+    }
+  };
+
+  public checkInvoiceBlacklistOverride = async (payload: {
+    vehicleNumber?: string;
+    invoiceId?: string;
+  }) => {
+    try {
+      const response = await this.client.post(
+        "/invoices/blacklist-override/check",
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(
+        error.response?.data?.message || "Failed to check OTP requirement",
+      );
+    }
+  };
+
+  public requestInvoiceBlacklistOverrideOtp = async (payload: {
+    action: "create_invoice" | "edit_claim_invoice";
+    ownerMobile: string;
+    vehicleNumber?: string;
+    invoiceId?: string;
+    reason?: string;
+  }) => {
+    try {
+      const response = await this.client.post(
+        "/invoices/blacklist-override/request-otp",
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      const data = error.response?.data;
+      if (data?.code === 'BLACKLIST_OTP_MOBILE_UNAUTHORIZED') {
+        throw new Error(
+          'This mobile number is not authorized for owner approval. Please contact admin.',
+        );
+      }
+      throw new Error(
+        data?.message || "Failed to request owner OTP",
+      );
+    }
+  };
+
+  public verifyInvoiceBlacklistOverrideOtp = async (payload: {
+    requestId: string;
+    otp: string;
+  }) => {
+    try {
+      const response = await this.client.post(
+        "/invoices/blacklist-override/verify-otp",
+        payload,
+      );
+      return response.data;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.message || "Invalid OTP");
     }
   };
 
@@ -4413,6 +4566,41 @@ class AdminApi {
     }
   };
 
+  public getTrackingUsage = async (filters?: {
+    search?: string;
+    date?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<
+    ApiResponse<AdminTrackingUsageRow[]> & {
+      summary?: AdminTrackingUsageSummary;
+    }
+  > => {
+    try {
+      const response = await this.client.get('/tracking-packs/admin/usage', {
+        params: filters,
+      });
+      return {
+        success: response.data?.success !== false,
+        data: Array.isArray(response.data?.data) ? response.data.data : [],
+        summary: response.data?.summary,
+        total: response.data?.total,
+        page: response.data?.page,
+        limit: response.data?.limit,
+        totalPages: response.data?.totalPages,
+      };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message ||
+          'Failed to fetch tracking usage',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
   public searchTrackingPlanCustomers = async (
     query: string,
     limit: number = 10,
@@ -5125,6 +5313,71 @@ class AdminApi {
           "Failed to fetch claim activity",
         ),
         error: error.message,
+      };
+    }
+  };
+
+  public getClaimNotifications = async (
+    id: string,
+  ): Promise<ApiResponse<ClaimNotificationLog[]>> => {
+    try {
+      const response = await this.client.get<
+        ClaimNotificationLog[] | ApiResponse<ClaimNotificationLog[]>
+      >(
+        `/claim-requests/${id}/notifications`,
+      );
+      const payload = Array.isArray(response.data)
+        ? response.data
+        : response.data.data || [];
+
+      return {
+        success: true,
+        data: payload,
+      };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to fetch claim notification history",
+        ),
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public sendClaimDocumentReminder = async (
+    id: string,
+  ): Promise<ApiResponse<ClaimDocumentReminderResult>> => {
+    try {
+      const response = await this.client.post<
+        ClaimDocumentReminderResult | ApiResponse<ClaimDocumentReminderResult>
+      >(
+        `/claim-requests/${id}/notifications/document-reminder`,
+      );
+      const payload = "sent" in response.data
+        ? response.data
+        : response.data.data || { sent: false };
+      const result: ClaimDocumentReminderResult = {
+        sent: Boolean(payload?.sent),
+        reason: payload?.reason,
+      };
+
+      return {
+        success: result.sent,
+        data: result,
+        message: result.sent
+          ? "WhatsApp document reminder sent"
+          : "WhatsApp document reminder was not sent",
+      };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to send WhatsApp document reminder",
+        ),
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   };

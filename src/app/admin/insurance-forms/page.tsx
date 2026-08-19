@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef, Fragment, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
+import { useAuth } from '@/features/auth/context/AuthContext';
 import { formatCurrency, formatDateOnly, formatTimeOnly } from '@/features/admin/utils/format';
 import { AdminLedgerUser, adminApi, InvoiceFilterParams, RegenerateInvoicePayload } from '@/features/admin/api/admin.api';
 import { toast } from 'react-toastify';
@@ -13,10 +14,16 @@ import { Menu, Transition } from '@headlessui/react';
 import { FileText, RefreshCw, Upload, Eye, CheckCircle, AlertCircle, X, XCircle, Pencil, ChevronDown, ChevronRight, MoreVertical, Link as LinkIcon, RotateCcw, Monitor } from 'lucide-react';
 
 import InsuranceUploadModal from '@/features/admin/components/InsuranceUploadModal';
+import { BlacklistOverrideOtpModal } from '@/features/admin/components/BlacklistOverrideOtpModal';
+import {
+    isBlacklistOtpRequiredMessage,
+    parseBlacklistOtpRequiredError,
+} from '@/features/admin/blacklistOverride';
 import PartyCombobox, { type PartyComboboxOption } from '@/features/admin/components/PartyCombobox';
 import { getHsnForProduct, itemsData } from '@/features/insurance/productCatalog';
-import { getVehicleRecentInvoiceStatus, getSupplierHistoricalParties, getBuyerHistoricalSuppliers } from '@/features/insurance/api';
+import { getVehicleRecentInvoiceStatus, getSupplierHistoricalParties, getBuyerHistoricalSuppliers, isInsuranceImpersonationActive } from '@/features/insurance/api';
 import type { HistoricalPartyOption } from '@/features/insurance/api';
+import { resolveInsuranceCreationAudience } from '@/features/insurance/creationAccessPolicy';
 import DesktopRequiredNotice from '@/shared/components/DesktopRequiredNotice';
 import { useDesktopCreationAccess } from '@/shared/hooks/useDesktopCreationAccess';
 
@@ -441,8 +448,17 @@ const EXPORTABLE_INVOICE_COLUMNS = [
 
 export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFormsPageProps) {
     const router = useRouter();
-    const { isAuthenticated } = useAdmin();
+    const { user } = useAuth();
+    const { isAuthenticated, accessProfile } = useAdmin();
     const desktopCreationAccess = useDesktopCreationAccess();
+    const audience = resolveInsuranceCreationAudience({
+        user,
+        hasDirectAdminSession: true,
+        hasAdminActorSession: isInsuranceImpersonationActive(),
+        adminMobileNumber: accessProfile?.account?.mobileNumber,
+    });
+    const canCreateOnThisDevice =
+        desktopCreationAccess.allowed || audience.canCreateOnMobile;
 
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [insuranceOverrides, setInsuranceOverrides] = useState<
@@ -491,6 +507,11 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     const [createInvoiceForm, setCreateInvoiceForm] = useState<AdminCreateInvoiceForm>(() => emptyAdminCreateInvoiceForm());
     const [createWeighmentFiles, setCreateWeighmentFiles] = useState<File[]>([]);
     const [createPurchaseBillFile, setCreatePurchaseBillFile] = useState<File | null>(null);
+    const [blacklistOtpOpen, setBlacklistOtpOpen] = useState(false);
+    const [blacklistOtpRetryKind, setBlacklistOtpRetryKind] = useState<'create' | 'regenerate' | null>(null);
+    const [blacklistOtpAction, setBlacklistOtpAction] = useState<'create_invoice' | 'edit_claim_invoice'>('edit_claim_invoice');
+    const [blacklistOtpVehicleNumber, setBlacklistOtpVehicleNumber] = useState<string | undefined>();
+    const [blacklistOtpInvoiceId, setBlacklistOtpInvoiceId] = useState<string | undefined>();
     const [documentExtractText, setDocumentExtractText] = useState('');
     const [skipCreateInvoiceOcr, setSkipCreateInvoiceOcr] = useState<boolean>(() => {
         if (typeof window === 'undefined') return false;
@@ -1049,7 +1070,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
 
     const openCreateInvoiceModal = () => {
         if (!desktopCreationAccess.ready) return;
-        if (!desktopCreationAccess.allowed) {
+        if (!canCreateOnThisDevice) {
             setCreateInvoiceBlockedNoticeOpen(true);
             return;
         }
@@ -1149,13 +1170,55 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         }
     };
 
-    const handleCreateInvoiceSubmit = async () => {
-        if (!desktopCreationAccess.ready || !desktopCreationAccess.allowed) {
-            setCreateInvoiceOpen(false);
-            setCreateInvoiceBlockedNoticeOpen(true);
-            return;
+
+    const openBlacklistOtpModal = (params: {
+        retryKind: 'create' | 'regenerate';
+        action: 'create_invoice' | 'edit_claim_invoice';
+        vehicleNumber?: string;
+        invoiceId?: string;
+    }) => {
+        setBlacklistOtpRetryKind(params.retryKind);
+        setBlacklistOtpAction(params.action);
+        setBlacklistOtpVehicleNumber(params.vehicleNumber);
+        setBlacklistOtpInvoiceId(params.invoiceId);
+        setBlacklistOtpOpen(true);
+    };
+
+    const resolveBlacklistOtpPrompt = (
+        source: unknown,
+        fallbackMessage?: string,
+        fallback?: {
+            retryKind: 'create' | 'regenerate';
+            action?: 'create_invoice' | 'edit_claim_invoice';
+            vehicleNumber?: string;
+            invoiceId?: string;
+        },
+    ) => {
+        const parsed = parseBlacklistOtpRequiredError(source);
+        if (parsed) {
+            openBlacklistOtpModal({
+                retryKind: fallback?.retryKind || 'regenerate',
+                action: parsed.action || fallback?.action || 'edit_claim_invoice',
+                vehicleNumber: parsed.vehicleNumber || fallback?.vehicleNumber,
+                invoiceId: parsed.invoiceId || fallback?.invoiceId,
+            });
+            return true;
         }
 
+        if (isBlacklistOtpRequiredMessage(fallbackMessage) && fallback) {
+            openBlacklistOtpModal({
+                retryKind: fallback.retryKind,
+                action: fallback.action || 'edit_claim_invoice',
+                vehicleNumber: fallback.vehicleNumber,
+                invoiceId: fallback.invoiceId,
+            });
+            return true;
+        }
+
+        return false;
+    };
+
+    const executeCreateInvoice = async (blacklistOverrideToken?: string) => {
         const insuredUser = selectedInsuredUser;
         if (!insuredUser) {
             toast.error('Select a registered verified insured party.');
@@ -1208,6 +1271,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
 
         setCreateInvoiceSubmitting(true);
         try {
+            const vehicleNumber = normalizeVehicleText(createInvoiceForm.vehicleNumber);
             const response = await adminApi.createAdminInvoice({
                 userId: insuredUser.id,
                 customerUserId: insuredUser.id,
@@ -1227,7 +1291,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                 quantity: qty,
                 rate,
                 amount,
-                vehicleNumber: normalizeVehicleText(createInvoiceForm.vehicleNumber),
+                vehicleNumber,
                 truckNumber: normalizeVehicleText(createInvoiceForm.truckNumber || createInvoiceForm.vehicleNumber),
                 ownerName: createInvoiceForm.ownerName.trim() || undefined,
                 insuredPartyPhone: normalizePhoneInput(createInvoiceForm.insuredPartyPhone),
@@ -1238,10 +1302,21 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                 weighmentSlipNote: createInvoiceForm.invoiceKind === 'cash' ? 'cash' : 'commission',
                 weighmentSlips: createWeighmentFiles,
                 sourceSurface: 'ADMIN',
+                blacklistOverrideToken,
             });
 
             if (!response.success) {
-                throw new Error(response.message || 'Failed to create invoice');
+                const message = typeof response.message === 'string'
+                    ? response.message
+                    : 'Failed to create invoice';
+                if (resolveBlacklistOtpPrompt(response.data || response, message, {
+                    retryKind: 'create',
+                    action: 'create_invoice',
+                    vehicleNumber,
+                })) {
+                    return;
+                }
+                throw new Error(message);
             }
 
             toast.success('Invoice created and sent to insured party.');
@@ -1252,6 +1327,16 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         } finally {
             setCreateInvoiceSubmitting(false);
         }
+    };
+
+    const handleCreateInvoiceSubmit = async () => {
+        if (!desktopCreationAccess.ready || !canCreateOnThisDevice) {
+            setCreateInvoiceOpen(false);
+            setCreateInvoiceBlockedNoticeOpen(true);
+            return;
+        }
+
+        await executeCreateInvoice();
     };
 
     const productOptions = useMemo(() => {
@@ -1718,13 +1803,37 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         });
     };
 
-    const handleRegenerate = async () => {
+    const executeRegenerate = async (blacklistOverrideToken?: string) => {
         if (!editingInvoice) return;
 
         const insuredUser = verifiedUsers.find((user) => user.id === editInsuredUserId) || null;
         if (!insuredUser) {
             toast.error('Select a registered verified user for the insured party before saving.');
             return;
+        }
+
+        const vehicleNumber = normalizeVehicleText(
+            String(formData.vehicleNumber || formData.truckNumber || ''),
+        );
+
+        if (!blacklistOverrideToken) {
+            try {
+                const response = await adminApi.checkInvoiceBlacklistOverride({
+                    invoiceId: editingInvoice.id,
+                });
+                const requirement = response?.data ?? response;
+                if (requirement?.requiresOtp) {
+                    openBlacklistOtpModal({
+                        retryKind: 'regenerate',
+                        action: 'edit_claim_invoice',
+                        vehicleNumber: requirement.vehicleNumber || vehicleNumber,
+                        invoiceId: editingInvoice.id,
+                    });
+                    return;
+                }
+            } catch (error) {
+                console.error('Failed to check claim invoice OTP requirement:', error);
+            }
         }
 
         setIsRegenerating(true);
@@ -1737,9 +1846,6 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
             const qty = Number(formData.quantity) || 0;
             const rate = Number(formData.rate) || 0;
             const computedAmount = qty * rate;
-            const vehicleNumber = normalizeVehicleText(
-                String(formData.vehicleNumber || formData.truckNumber || '')
-            );
             const invoiceType = editInvoiceKind === 'cash' ? 'BUYER_INVOICE' : 'SUPPLIER_INVOICE';
 
             const payload: RegenerateInvoicePayload = {
@@ -1773,11 +1879,23 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                 amount: computedAmount,
                 insuredPartyPhone:
                     formData.insuredPartyPhone || insuredUser.mobileNumber || undefined,
+                blacklistOverrideToken,
             };
 
             const regenerateResponse = await adminApi.regenerateInvoice(payload);
             if (!regenerateResponse.success) {
-                throw new Error(regenerateResponse.message || 'Failed to regenerate invoice');
+                const message = typeof regenerateResponse.message === 'string'
+                    ? regenerateResponse.message
+                    : 'Failed to regenerate invoice';
+                if (resolveBlacklistOtpPrompt(regenerateResponse.data || regenerateResponse, message, {
+                    retryKind: 'regenerate',
+                    action: 'edit_claim_invoice',
+                    vehicleNumber,
+                    invoiceId: editingInvoice.id,
+                })) {
+                    return;
+                }
+                throw new Error(message);
             }
 
             setPdfRefreshKeys((prev) => ({ ...prev, [editingInvoice.id]: Date.now() }));
@@ -1790,6 +1908,10 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         } finally {
             setIsRegenerating(false);
         }
+    };
+
+    const handleRegenerate = async () => {
+        await executeRegenerate();
     };
 
     const closeModal = () => {
@@ -2009,7 +2131,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     useEffect(() => {
         if (
             desktopCreationAccess.ready &&
-            !desktopCreationAccess.allowed &&
+            !canCreateOnThisDevice &&
             createInvoiceOpen &&
             !createInvoiceSubmitting
         ) {
@@ -2017,9 +2139,9 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
             setCreateInvoiceBlockedNoticeOpen(true);
         }
     }, [
+        canCreateOnThisDevice,
         createInvoiceOpen,
         createInvoiceSubmitting,
-        desktopCreationAccess.allowed,
         desktopCreationAccess.ready,
     ]);
 
@@ -2490,17 +2612,17 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                 onClick={openCreateInvoiceModal}
                                 disabled={loading || !desktopCreationAccess.ready}
                                 className={`px-3 sm:px-4 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto ${
-                                    desktopCreationAccess.ready && !desktopCreationAccess.allowed
+                                    desktopCreationAccess.ready && !canCreateOnThisDevice
                                         ? 'border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
                                         : 'bg-slate-800 text-white hover:bg-slate-900'
                                 }`}
                             >
-                                {desktopCreationAccess.ready && !desktopCreationAccess.allowed ? (
+                                {desktopCreationAccess.ready && !canCreateOnThisDevice ? (
                                     <Monitor className="w-4 h-4" />
                                 ) : (
                                     <FileText className="w-4 h-4" />
                                 )}
-                                {desktopCreationAccess.ready && !desktopCreationAccess.allowed
+                                {desktopCreationAccess.ready && !canCreateOnThisDevice
                                     ? 'Create Invoice · Desktop only'
                                     : 'Create Invoice'}
                             </button>
@@ -4108,6 +4230,45 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                     }}
                 />
             )}
+
+            <BlacklistOverrideOtpModal
+                open={blacklistOtpOpen}
+                onClose={() => setBlacklistOtpOpen(false)}
+                action={blacklistOtpAction}
+                vehicleNumber={blacklistOtpVehicleNumber}
+                invoiceId={blacklistOtpInvoiceId}
+                title={
+                    blacklistOtpAction === 'edit_claim_invoice'
+                        ? 'Verify Owner to Edit Claim Invoice'
+                        : 'Verify Owner for Blacklisted Vehicle'
+                }
+                description={
+                    blacklistOtpAction === 'edit_claim_invoice'
+                        ? 'Enter the authorized owner mobile number. If it matches, you will receive an OTP to confirm this edit.'
+                        : 'Enter the authorized owner mobile number. If it matches, you will receive an OTP to create this invoice.'
+                }
+                requestOtp={async (input) => {
+                    const response = await adminApi.requestInvoiceBlacklistOverrideOtp({
+                        action: input.action,
+                        ownerMobile: input.ownerMobile,
+                        vehicleNumber: input.vehicleNumber ?? undefined,
+                        invoiceId: input.invoiceId ?? undefined,
+                        reason: input.reason,
+                    });
+                    return response?.data ?? response;
+                }}
+                verifyOtp={async (input) => {
+                    const response = await adminApi.verifyInvoiceBlacklistOverrideOtp(input);
+                    return response?.data ?? response;
+                }}
+                onVerified={async (overrideToken) => {
+                    if (blacklistOtpRetryKind === 'create') {
+                        await executeCreateInvoice(overrideToken);
+                        return;
+                    }
+                    await executeRegenerate(overrideToken);
+                }}
+            />
         </div>
     );
 }

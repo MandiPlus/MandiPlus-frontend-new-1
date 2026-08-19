@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -43,6 +43,18 @@ export default function CustomerClaimsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
 
+  useEffect(() => {
+    const linkedClaimId = new URLSearchParams(window.location.search).get(
+      "claimId",
+    );
+    if (
+      linkedClaimId &&
+      data.claims.some((claim) => claim.id === linkedClaimId)
+    ) {
+      setExpanded(linkedClaimId);
+    }
+  }, [data.claims]);
+
   const insuredVehicles = useMemo(
     () =>
       [...new Set(data.invoices.map(invoiceVehicle).filter((value) => !value.includes("not added")))],
@@ -73,17 +85,29 @@ export default function CustomerClaimsPage() {
 
   const upload = async (
     claim: ClaimRequest,
-    type: "lorryReceipt" | "accidentPic",
+    type: "lorryReceipt" | "damageForm" | "accidentPic",
     file?: File,
   ) => {
     if (!file) return;
     const key = `${claim.id}:${type}`;
+    const replacing =
+      type === "lorryReceipt"
+        ? Boolean(claim.lorryReceipt)
+        : type === "damageForm"
+          ? Boolean(claim.claimFormUrl || claim.damageFormUrl)
+          : Boolean(claim.accidentPic);
     setUploading(key);
     setNotice("");
     try {
       await uploadClaimMedia(claim.id, type, file);
       await data.refresh(true);
-      setNotice(type === "lorryReceipt" ? "Lorry receipt uploaded." : "Proof photo uploaded.");
+      const documentName =
+        type === "lorryReceipt"
+          ? "Lorry receipt"
+          : type === "damageForm"
+            ? "Damage certificate"
+            : "Proof photo";
+      setNotice(`${documentName} ${replacing ? "replaced" : "uploaded"}.`);
     } catch (error) {
       setNotice(readableError(error, "Document upload nahi ho paya."));
     } finally {
@@ -190,6 +214,29 @@ export default function CustomerClaimsPage() {
             {data.claims.filter((claim) => !isClosedClaim(claim)).map((claim) => {
               const open = expanded === claim.id;
               const invoice = claim.invoice as CustomerInvoice | undefined;
+              const requiredDocuments = [
+                {
+                  type: "lorryReceipt" as const,
+                  label: "Lorry Receipt",
+                  received: Boolean(claim.lorryReceipt),
+                },
+                {
+                  type: "damageForm" as const,
+                  label: "Damage Certificate",
+                  received: Boolean(claim.claimFormUrl || claim.damageFormUrl),
+                },
+              ];
+              const missingDocuments = requiredDocuments.filter(
+                (document) => !document.received,
+              );
+              const receivedDocumentCount =
+                requiredDocuments.length - missingDocuments.length;
+              const documentsComplete = missingDocuments.length === 0;
+              const documentsCopy = documentsComplete
+                ? "Lorry receipt aur damage certificate received."
+                : missingDocuments.length === 1
+                  ? `${missingDocuments[0].label} upload karein.`
+                  : "Lorry receipt aur damage certificate upload karein.";
               return (
                 <article
                   key={claim.id}
@@ -231,12 +278,8 @@ export default function CustomerClaimsPage() {
                         />
                         <TimelineStep
                           title="Documents"
-                          copy={
-                            claim.lorryReceipt || claim.accidentPic
-                              ? "Uploaded documents review mein hain."
-                              : "Lorry receipt aur proof photo upload karein."
-                          }
-                          complete={Boolean(claim.lorryReceipt && claim.accidentPic)}
+                          copy={documentsCopy}
+                          complete={documentsComplete}
                         />
                         <TimelineStep
                           title="Review"
@@ -253,36 +296,135 @@ export default function CustomerClaimsPage() {
                           complete={isClosedClaim(claim)}
                         />
                       </div>
-                      <div className={styles.uploadRow}>
-                        <label className={styles.uploadButton}>
-                          {uploading === `${claim.id}:lorryReceipt` ? (
-                            <RefreshCw size={16} className="animate-spin" />
-                          ) : (
-                            <FileText size={16} />
-                          )}
-                          Lorry receipt
-                          <input
-                            type="file"
-                            accept="image/*,application/pdf"
-                            onChange={(event) => {
-                              void upload(claim, "lorryReceipt", event.target.files?.[0]);
-                              event.target.value = "";
-                            }}
-                          />
-                        </label>
-                        <label className={styles.uploadButton}>
+                      <section
+                        className={styles.requiredDocuments}
+                        aria-label="Required claim documents"
+                      >
+                        <div className={styles.requiredDocumentsHeader}>
+                          <span className={styles.requiredDocumentsTitle}>
+                            Required documents
+                          </span>
+                          <span
+                            className={`${styles.documentCounter} ${
+                              documentsComplete
+                                ? styles.documentCounterComplete
+                                : ""
+                            }`}
+                          >
+                            {receivedDocumentCount}/2 received
+                          </span>
+                        </div>
+
+                        <div className={styles.requiredDocumentList}>
+                          {requiredDocuments.map((document) => {
+                            const uploadKey = `${claim.id}:${document.type}`;
+                            const isUploading = uploading === uploadKey;
+
+                            return (
+                              <div
+                                key={document.type}
+                                className={`${styles.requiredDocumentItem} ${
+                                  document.received
+                                    ? styles.requiredDocumentReceived
+                                    : styles.requiredDocumentMissing
+                                }`}
+                              >
+                                <span className={styles.requiredDocumentStatus}>
+                                  {document.received ? (
+                                    <Check size={16} strokeWidth={3} />
+                                  ) : (
+                                    <FileText size={16} />
+                                  )}
+                                </span>
+                                <span className={styles.requiredDocumentCopy}>
+                                  <strong>{document.label}</strong>
+                                  <small>
+                                    {document.received
+                                      ? "Received · Replace anytime"
+                                      : "Missing · PDF or image"}
+                                  </small>
+                                </span>
+                                <label
+                                  className={`${styles.requiredDocumentAction} ${
+                                    uploading ? styles.claimUploadDisabled : ""
+                                  }`}
+                                  aria-busy={isUploading}
+                                >
+                                  {isUploading ? (
+                                    <RefreshCw size={14} className="animate-spin" />
+                                  ) : (
+                                    <Upload size={14} />
+                                  )}
+                                  {isUploading
+                                    ? "Sending"
+                                    : document.received
+                                      ? "Replace"
+                                      : "Upload"}
+                                  <input
+                                    type="file"
+                                    accept="image/*,application/pdf"
+                                    disabled={Boolean(uploading)}
+                                    aria-label={`${
+                                      document.received ? "Replace" : "Upload"
+                                    } ${document.label}`}
+                                    onChange={(event) => {
+                                      void upload(
+                                        claim,
+                                        document.type,
+                                        event.target.files?.[0],
+                                      );
+                                      event.target.value = "";
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </section>
+
+                      <div className={styles.accidentEvidence}>
+                        <span className={styles.accidentEvidenceIcon}>
+                          <Camera size={17} />
+                        </span>
+                        <span className={styles.accidentEvidenceCopy}>
+                          <strong>Proof photo</strong>
+                          <small>
+                            {claim.accidentPic
+                              ? "Received · Replace anytime"
+                              : "Optional accident evidence"}
+                          </small>
+                        </span>
+                        <label
+                          className={`${styles.accidentEvidenceAction} ${
+                            uploading ? styles.claimUploadDisabled : ""
+                          }`}
+                          aria-busy={uploading === `${claim.id}:accidentPic`}
+                        >
                           {uploading === `${claim.id}:accidentPic` ? (
-                            <RefreshCw size={16} className="animate-spin" />
+                            <RefreshCw size={14} className="animate-spin" />
                           ) : (
-                            <Camera size={16} />
+                            <Camera size={14} />
                           )}
-                          Proof photo
+                          {uploading === `${claim.id}:accidentPic`
+                            ? "Sending"
+                            : claim.accidentPic
+                              ? "Replace"
+                              : "Add photo"}
                           <input
                             type="file"
                             accept="image/*"
                             capture="environment"
+                            disabled={Boolean(uploading)}
+                            aria-label={`${
+                              claim.accidentPic ? "Replace" : "Add"
+                            } proof photo`}
                             onChange={(event) => {
-                              void upload(claim, "accidentPic", event.target.files?.[0]);
+                              void upload(
+                                claim,
+                                "accidentPic",
+                                event.target.files?.[0],
+                              );
                               event.target.value = "";
                             }}
                           />

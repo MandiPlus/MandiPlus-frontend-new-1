@@ -30,7 +30,7 @@ type ClaimStatus =
     | 'Approved'
     | 'Rejected'
     | 'Settled';
-type PaymentStatus = 'Paid' | 'Not Required' | 'Pending';
+type PaymentStatus = 'Paid' | 'Partial' | 'Not Required' | 'Pending';
 type TopProductsMetric = 'premium' | 'invoices';
 
 interface InvoiceRecord {
@@ -237,6 +237,7 @@ function buildInvoiceRecords(invoiceRows: RawInvoice[], claimByInvoiceId: Map<st
 function normalizePaymentStatus(raw: unknown): PaymentStatus {
     const v = String(raw || '').toUpperCase();
     if (v === 'PAID') return 'Paid';
+    if (v === 'PARTIAL') return 'Partial';
     if (v === 'NOT_REQUIRED') return 'Not Required';
     return 'Pending';
 }
@@ -254,6 +255,13 @@ function normalizeClaimStatus(raw: unknown): ClaimStatus {
 
 function isPendingClaimStatus(status: ClaimStatus) {
     return status === 'Pending' || status === 'In Progress' || status === 'Surveyor Assigned';
+}
+
+// Mirrors the backend's applyAdminPaymentVisibilityFilter (insurance-payments.service.ts):
+// an invoice counts toward premium totals once it's verified, or once money has moved,
+// so a paid-but-not-yet-verified invoice isn't invisible on the dashboard.
+function isPremiumEligible(r: InvoiceRecord) {
+    return r.invoiceStatus === 'Verified' || r.paymentStatus === 'Paid' || r.paymentStatus === 'Partial';
 }
 
 function ChartCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
@@ -484,7 +492,7 @@ export default function AnalyticsDashboardPage() {
         });
     }, [records, product, state]);
     const premiumEligibleRecords = useMemo(
-        () => filteredRecords.filter((r) => r.invoiceStatus === 'Verified'),
+        () => filteredRecords.filter((r) => isPremiumEligible(r)),
         [filteredRecords]
     );
     const comparisonFilteredRecords = useMemo(() => {
@@ -495,7 +503,7 @@ export default function AnalyticsDashboardPage() {
         });
     }, [comparisonRecords, product, state]);
     const comparisonPremiumEligibleRecords = useMemo(
-        () => comparisonFilteredRecords.filter((r) => r.invoiceStatus === 'Verified'),
+        () => comparisonFilteredRecords.filter((r) => isPremiumEligible(r)),
         [comparisonFilteredRecords]
     );
 

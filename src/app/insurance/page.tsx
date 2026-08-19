@@ -4,18 +4,25 @@ import dynamic from "next/dynamic";
 
 import { useAuth } from "@/features/auth/context/AuthContext";
 import CustomerCreateInsurancePage from "@/features/customer-app/CustomerCreateInsurancePage";
+import { getPersistedAdminAccountMobile } from "@/features/admin/adminAccountMobile";
 import {
   resolveInsuranceCreationAudience,
 } from "@/features/insurance/creationAccessPolicy";
 import {
-  hasStoredInsuranceAdminActorSession,
   hasStoredInsuranceAdminSession,
+  isInsuranceImpersonationActive,
 } from "@/features/insurance/api";
 import DesktopRequiredNotice from "@/shared/components/DesktopRequiredNotice";
+import { isIOSSafariUserAgent } from "@/shared/device/desktopCreationAccess";
 import { useDesktopCreationAccess } from "@/shared/hooks/useDesktopCreationAccess";
 
 const LegacyInsurance = dynamic(
   () => import("@/features/insurance/pages/Insurance"),
+  { ssr: false },
+);
+
+const LegacyInsuranceIOS = dynamic(
+  () => import("@/features/insurance/pages/InsuranceIOS"),
   { ssr: false },
 );
 
@@ -37,7 +44,8 @@ export default function InsurancePage() {
   const audience = resolveInsuranceCreationAudience({
     user,
     hasDirectAdminSession,
-    hasAdminActorSession: hasStoredInsuranceAdminActorSession(),
+    hasAdminActorSession: isInsuranceImpersonationActive(),
+    adminMobileNumber: getPersistedAdminAccountMobile(),
   });
 
   if (!audience.isPrivilegedActor) {
@@ -54,7 +62,7 @@ export default function InsurancePage() {
     );
   }
 
-  if (!desktopAccess.allowed) {
+  if (!desktopAccess.allowed && !audience.canCreateOnMobile) {
     return (
       <DesktopRequiredNotice
         returnHref={hasDirectAdminSession ? "/admin/insurance-forms" : "/home"}
@@ -67,5 +75,9 @@ export default function InsurancePage() {
     return <CustomerCreateInsurancePage />;
   }
 
-  return <LegacyInsurance />;
+  const isIOSSafari =
+    typeof window !== "undefined" &&
+    isIOSSafariUserAgent(window.navigator.userAgent);
+
+  return isIOSSafari ? <LegacyInsuranceIOS /> : <LegacyInsurance />;
 }

@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:customer-insurance-contract": "node scripts/test-customer-insurance-contract.mjs",
+    "test:customer-insurance-bulk-flow": "node --no-warnings scripts/test-customer-insurance-bulk-flow.mjs",
     "test:insurance-slip": "node --no-warnings scripts/test-insurance-slip-submit.mjs",
     "test:desktop-creation-access": "node --no-warnings scripts/test-desktop-creation-access.mjs",
     "test:rate-calculator": "node --no-warnings --test --experimental-strip-types src/features/insurance/rateCalculator.test.mjs",

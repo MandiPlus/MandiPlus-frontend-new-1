@@ -76,6 +76,11 @@ export const getStoredInsuranceAdminActorToken = (): string | null => {
 export const hasStoredInsuranceAdminActorSession = (): boolean =>
   Boolean(getStoredInsuranceAdminActorToken());
 
+export const isInsuranceImpersonationActive = (): boolean => {
+  if (typeof window === "undefined") return false;
+  return sessionStorage.getItem("impersonationActive") === "1";
+};
+
 const getInsuranceRequestToken = (): string | null => {
   return getStoredInsuranceAdminToken() || getStoredAuthToken();
 };
@@ -249,6 +254,23 @@ export interface PublicClaimCaptureLink {
   }>;
 }
 
+export type PublicClaimDocumentType =
+  | "lorryReceipt"
+  | "damageCertificate";
+
+export interface PublicClaimDocumentUploadLink {
+  claimNumber: string;
+  vehicleNumber: string;
+  expiresAt: string;
+  canUpload: boolean;
+  documents: Record<
+    PublicClaimDocumentType,
+    {
+      received: boolean;
+    }
+  >;
+}
+
 export interface ClaimEligibleVehicle {
   vehicleNumber: string;
   invoiceId: string;
@@ -406,9 +428,85 @@ export const createInsuranceForm = async (
     });
     return response.data;
   } catch (error) {
-    const err = error as AxiosError<ApiError>;
+    const err = error as AxiosError<ApiError & { code?: string }>;
     throw err.response?.data || { message: "Failed to create invoice" };
   }
+};
+
+export const checkInvoiceBlacklistOverride = async (payload: {
+  vehicleNumber?: string;
+  invoiceId?: string;
+}) => {
+  const token = getInsuranceRequestToken();
+  if (!token) {
+    throw new Error("Authentication required. Please log in.");
+  }
+
+  const response = await axios.post(
+    `${API_BASE_URL}/invoices/blacklist-override/check`,
+    payload,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  return response.data;
+};
+
+export const requestInvoiceBlacklistOverrideOtp = async (payload: {
+  action: "create_invoice" | "edit_claim_invoice";
+  ownerMobile: string;
+  vehicleNumber?: string;
+  invoiceId?: string;
+  reason?: string;
+}) => {
+  const token = getInsuranceRequestToken();
+  if (!token) {
+    throw new Error("Authentication required. Please log in.");
+  }
+
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/invoices/blacklist-override/request-otp`,
+      payload,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError<{ message?: string; code?: string }>;
+    if (err.response?.data?.code === 'BLACKLIST_OTP_MOBILE_UNAUTHORIZED') {
+      throw new Error(
+        'This mobile number is not authorized for owner approval. Please contact admin.',
+      );
+    }
+    throw new Error(err.response?.data?.message || 'Failed to request owner OTP');
+  }
+};
+
+export const verifyInvoiceBlacklistOverrideOtp = async (payload: {
+  requestId: string;
+  otp: string;
+}) => {
+  const token = getInsuranceRequestToken();
+  if (!token) {
+    throw new Error("Authentication required. Please log in.");
+  }
+
+  const response = await axios.post(
+    `${API_BASE_URL}/invoices/blacklist-override/verify-otp`,
+    payload,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+  );
+  return response.data;
 };
 
 export const getInvoiceCustomerAccounts = async (): Promise<
@@ -854,6 +952,30 @@ export const getPublicClaimCaptureLink = async (
     { cache: "no-store" },
   );
   return readPublicClaimResponse<PublicClaimCaptureLink>(response);
+};
+
+export const getPublicClaimDocumentUploadLink = async (
+  token: string,
+): Promise<PublicClaimDocumentUploadLink> => {
+  const response = await fetch(
+    `${API_BASE_URL}/claim-requests/public-documents/${encodeURIComponent(token)}`,
+    { cache: "no-store" },
+  );
+  return readPublicClaimResponse<PublicClaimDocumentUploadLink>(response);
+};
+
+export const uploadPublicClaimDocument = async (
+  token: string,
+  documentType: PublicClaimDocumentType,
+  file: File,
+): Promise<PublicClaimDocumentUploadLink> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(
+    `${API_BASE_URL}/claim-requests/public-documents/${encodeURIComponent(token)}/${documentType}`,
+    { method: "POST", body: formData },
+  );
+  return readPublicClaimResponse<PublicClaimDocumentUploadLink>(response);
 };
 
 export const getPublicClaimEvidenceUploadTarget = async (
