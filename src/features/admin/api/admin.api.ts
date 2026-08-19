@@ -5909,6 +5909,22 @@ class AdminApi {
     }
   };
 
+  public setCrmCallResponse = async (payload: {
+    insuredPersonKey: string;
+    insuredPersonName: string;
+    callResponse?: string | null;
+    logDate?: string | null;
+    insuredPersonUserId?: string | null;
+    phone?: string | null;
+  }) => {
+    try {
+      const response = await this.client.post('/crm/admin/call-response', payload);
+      return response.data;
+    } catch (error: any) {
+      return { success: false, message: this.getAxiosErrorMessage(error, 'Failed to update call response') };
+    }
+  };
+
   public updateCrmRemarks = async (payload: {
     insuredPersonKey: string;
     insuredPersonName: string;
@@ -5922,6 +5938,23 @@ class AdminApi {
       return response.data;
     } catch (error: any) {
       return { success: false, message: this.getAxiosErrorMessage(error, 'Failed to save note') };
+    }
+  };
+
+  public setCrmIssueReport = async (payload: {
+    insuredPersonKey: string;
+    insuredPersonName: string;
+    hasIssue: boolean;
+    issueDescription?: string | null;
+    logDate?: string | null;
+    insuredPersonUserId?: string | null;
+    phone?: string | null;
+  }) => {
+    try {
+      const response = await this.client.post('/crm/admin/issue', payload);
+      return response.data;
+    } catch (error: any) {
+      return { success: false, message: this.getAxiosErrorMessage(error, 'Failed to update issue report') };
     }
   };
 

@@ -19,6 +19,8 @@ import {
   Truck,
   ArrowRight,
   Calendar,
+  AlertTriangle,
+  HelpCircle,
 } from "lucide-react";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -34,6 +36,14 @@ import {
 
 type CrmTab = "daily" | "payment";
 
+export const CALL_RESPONSES = [
+  { value: "NOT_ANSWERED", label: "Call Not Received" },
+  { value: "LOADING_VEHICLE", label: "Loading (Gaadi Nikal Rahi Hai)" },
+  { value: "BUSY", label: "Busy" },
+  { value: "CALL_LATER", label: "Call Later" },
+  { value: "NOT_INTERESTED", label: "Not Interested" },
+] as const;
+
 type CrmPersonRecord = {
   key: string;
   name: string;
@@ -48,9 +58,12 @@ type CrmPersonRecord = {
   commodity: string;
   place: string;
   isCalled: boolean;
+  callResponse: string | null;
+  remarks: string | null;
+  hasIssue: boolean;
+  issueDescription: string | null;
   calledAt: string | null;
   calledByAdminName: string | null;
-  remarks: string | null;
   pendingInvoiceIds: string[];
 };
 
@@ -114,8 +127,14 @@ export default function StandaloneCrmPage() {
 
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Remarks editing
   const [editingNoteKey, setEditingNoteKey] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState<Record<string, string>>({});
+
+  // Issue modal / inline editing
+  const [editingIssueKey, setEditingIssueKey] = useState<string | null>(null);
+  const [issueDraft, setIssueDraft] = useState<Record<string, string>>({});
+
   const [savingActionKey, setSavingActionKey] = useState<string | null>(null);
 
   const activeDayDate = useMemo(() => fromDate || getTodayDateStr(), [fromDate]);
@@ -198,6 +217,7 @@ export default function StandaloneCrmPage() {
           r.name.toLowerCase().includes(q) ||
           r.phone.toLowerCase().includes(q) ||
           (r.remarks && r.remarks.toLowerCase().includes(q)) ||
+          (r.issueDescription && r.issueDescription.toLowerCase().includes(q)) ||
           (r.commodity && r.commodity.toLowerCase().includes(q)) ||
           (r.place && r.place.toLowerCase().includes(q)),
       );
@@ -261,10 +281,41 @@ export default function StandaloneCrmPage() {
               : r,
           ),
         );
-        toast.success(nextStatus ? ("Marked " + person.name + " as Called for " + formatDisplayDate(activeDayDate)) : "Unmarked call status");
+        toast.success(nextStatus ? ("Marked " + person.name + " as Called") : "Unmarked call status");
       }
     } catch {
       toast.error("Failed to update call status");
+    } finally {
+      setSavingActionKey(null);
+    }
+  }
+
+  async function updateResponse(person: CrmPersonRecord, responseValue: string) {
+    const val = responseValue || null;
+    setSavingActionKey(person.key);
+    try {
+      const res = await adminApi.setCrmCallResponse({
+        insuredPersonKey: person.key,
+        insuredPersonName: person.name,
+        insuredPersonUserId: person.userId,
+        phone: person.phone,
+        callResponse: val,
+        logDate: activeDayDate,
+      });
+
+      if (res.success && res.data) {
+        setAllRecords((prev) =>
+          prev.map((r) =>
+            r.key === person.key
+              ? { ...r, callResponse: res.data.callResponse }
+              : r,
+          ),
+        );
+        const label = CALL_RESPONSES.find((r) => r.value === val)?.label || "Cleared";
+        toast.success("Response saved: " + label);
+      }
+    } catch {
+      toast.error("Failed to update response");
     } finally {
       setSavingActionKey(null);
     }
@@ -288,10 +339,42 @@ export default function StandaloneCrmPage() {
           prev.map((r) => (r.key === person.key ? { ...r, remarks: text } : r)),
         );
         setEditingNoteKey(null);
-        toast.success("Remark saved for " + formatDisplayDate(activeDayDate));
+        toast.success("Remark saved");
       }
     } catch {
       toast.error("Failed to save note");
+    } finally {
+      setSavingActionKey(null);
+    }
+  }
+
+  async function saveIssue(person: CrmPersonRecord, hasIssue: boolean) {
+    const desc = hasIssue ? (issueDraft[person.key] ?? person.issueDescription ?? "").trim() : null;
+    setSavingActionKey(person.key);
+    try {
+      const res = await adminApi.setCrmIssueReport({
+        insuredPersonKey: person.key,
+        insuredPersonName: person.name,
+        insuredPersonUserId: person.userId,
+        phone: person.phone,
+        hasIssue,
+        issueDescription: desc,
+        logDate: activeDayDate,
+      });
+
+      if (res.success) {
+        setAllRecords((prev) =>
+          prev.map((r) =>
+            r.key === person.key
+              ? { ...r, hasIssue, issueDescription: desc }
+              : r,
+          ),
+        );
+        setEditingIssueKey(null);
+        toast.success(hasIssue ? "Problem recorded" : "Problem marked as resolved");
+      }
+    } catch {
+      toast.error("Failed to update issue");
     } finally {
       setSavingActionKey(null);
     }
@@ -557,7 +640,7 @@ export default function StandaloneCrmPage() {
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search person name, mobile, notes..."
+                placeholder="Search person name, mobile, notes, issues..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-8 py-1.5 rounded-lg border border-gray-300 text-sm focus:ring-2 focus:ring-[#4309ac]/30 focus:border-[#4309ac] focus:outline-none placeholder:text-gray-400"
@@ -668,16 +751,18 @@ export default function StandaloneCrmPage() {
               <table className="min-w-full divide-y divide-gray-100 text-sm">
                 <thead>
                   <tr className="bg-gray-50 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
-                    <th className="px-3.5 py-3 w-10 text-center">#</th>
-                    <th className="px-3.5 py-3">Insured Person</th>
-                    <th className="px-3.5 py-3">Mobile</th>
+                    <th className="px-3 py-3 w-10 text-center">#</th>
+                    <th className="px-3 py-3">Insured Person</th>
+                    <th className="px-3 py-3">Mobile</th>
                     {activeTab === "daily" ? (
                       <>
-                        <th className="px-3.5 py-3 text-center">Vehicles</th>
-                        <th className="px-3.5 py-3">Commodity</th>
-                        <th className="px-3.5 py-3">Last Invoice</th>
-                        <th className="px-3.5 py-3">Followup</th>
-                        <th className="px-3.5 py-3">Remarks ({formatDisplayDate(activeDayDate)})</th>
+                        <th className="px-3 py-3 text-center">Vehicles</th>
+                        <th className="px-3 py-3">Commodity</th>
+                        <th className="px-3 py-3">Last Invoice</th>
+                        <th className="px-3 py-3">Called?</th>
+                        <th className="px-3 py-3 min-w-[170px]">Response</th>
+                        <th className="px-3 py-3 min-w-[190px]">Any Problem Facing?</th>
+                        <th className="px-3 py-3 min-w-[170px]">Remarks</th>
                       </>
                     ) : (
                       <>
@@ -695,22 +780,27 @@ export default function StandaloneCrmPage() {
                     const rowNumber = (currentPage - 1) * PAGE_SIZE + index + 1;
                     const isSaving = savingActionKey === person.key;
                     const isEditingNote = editingNoteKey === person.key;
+                    const isEditingIssue = editingIssueKey === person.key;
 
                     if (activeTab === "daily") {
                       return (
                         <tr
                           key={person.key}
                           className={"transition-colors " + (
-                            person.isCalled ? "bg-emerald-50/25" : "hover:bg-slate-50/70"
+                            person.hasIssue
+                              ? "bg-amber-50/30"
+                              : person.isCalled
+                              ? "bg-emerald-50/25"
+                              : "hover:bg-slate-50/70"
                           )}
                         >
-                          <td className="px-3.5 py-3 text-center text-xs text-gray-400 font-mono">
+                          <td className="px-3 py-3 text-center text-xs text-gray-400 font-mono">
                             {rowNumber}
                           </td>
-                          <td className="px-3.5 py-3">
+                          <td className="px-3 py-3">
                             <div className="font-semibold text-xs text-gray-900">{person.name}</div>
                           </td>
-                          <td className="px-3.5 py-3 font-mono text-xs">
+                          <td className="px-3 py-3 font-mono text-xs">
                             {person.phone ? (
                               <a
                                 href={"tel:" + person.phone}
@@ -723,30 +813,32 @@ export default function StandaloneCrmPage() {
                               <span className="text-gray-400">—</span>
                             )}
                           </td>
-                          <td className="px-3.5 py-3 text-center">
-                            <span className="inline-flex items-center justify-center rounded-full bg-purple-100 text-[#4309ac] text-xs font-bold px-2.5 py-0.5 min-w-[1.8rem]">
+                          <td className="px-3 py-3 text-center">
+                            <span className="inline-flex items-center justify-center rounded-full bg-purple-100 text-[#4309ac] text-xs font-bold px-2 py-0.5 min-w-[1.8rem]">
                               {person.totalInvoices}
                             </span>
                           </td>
-                          <td className="px-3.5 py-3 text-gray-600 text-xs">
+                          <td className="px-3 py-3 text-gray-600 text-xs">
                             {person.commodity || "—"}
                           </td>
-                          <td className="px-3.5 py-3 text-gray-500 text-xs">
+                          <td className="px-3 py-3 text-gray-500 text-xs">
                             {formatDate(person.latestInvoiceDate)}
                           </td>
-                          <td className="px-3.5 py-3">
+
+                          {/* 1. Called Button */}
+                          <td className="px-3 py-3">
                             <button
                               type="button"
                               onClick={() => toggleCallStatus(person)}
                               disabled={isSaving}
-                              className={"flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-semibold transition-all disabled:opacity-50 " + (
+                              className={"flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-semibold transition-all disabled:opacity-50 " + (
                                 person.isCalled
                                   ? "border-emerald-300 bg-emerald-100 text-emerald-800 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
                                   : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
                               )}
                             >
                               <Phone className="w-3 h-3" />
-                              {isSaving ? "..." : person.isCalled ? "Called ✓" : "Mark Called"}
+                              {isSaving ? "..." : person.isCalled ? "Called ✓" : "Mark"}
                             </button>
                             {person.isCalled && person.calledByAdminName && (
                               <div className="mt-0.5 text-[10px] text-emerald-700">
@@ -754,12 +846,127 @@ export default function StandaloneCrmPage() {
                               </div>
                             )}
                           </td>
-                          <td className="px-3.5 py-3 min-w-[200px]">
+
+                          {/* 2. Response Dropdown */}
+                          <td className="px-3 py-3">
+                            <select
+                              value={person.callResponse || ""}
+                              onChange={(e) => updateResponse(person, e.target.value)}
+                              disabled={isSaving}
+                              className={"w-full rounded-md border px-2 py-1 text-xs font-medium focus:outline-none transition-all " + (
+                                person.callResponse
+                                  ? "border-blue-300 bg-blue-50/70 text-blue-900 font-semibold"
+                                  : "border-gray-300 bg-white text-gray-600"
+                              )}
+                            >
+                              <option value="">-- Select Response --</option>
+                              {CALL_RESPONSES.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+
+                          {/* 3. Problem Facing Column */}
+                          <td className="px-3 py-3">
+                            {isEditingIssue ? (
+                              <div className="space-y-1 bg-amber-50 border border-amber-300 rounded-md p-1.5">
+                                <div className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                  Describe Customer Problem:
+                                </div>
+                                <textarea
+                                  rows={2}
+                                  placeholder="e.g. Rate issue, Claim support, app issue..."
+                                  value={issueDraft[person.key] ?? person.issueDescription ?? ""}
+                                  onChange={(e) =>
+                                    setIssueDraft((prev) => ({
+                                      ...prev,
+                                      [person.key]: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full rounded border border-amber-300 p-1 text-xs text-gray-900 focus:outline-none bg-white resize-none"
+                                />
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => saveIssue(person, true)}
+                                    disabled={isSaving}
+                                    className="rounded bg-amber-600 px-2 py-0.5 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-50"
+                                  >
+                                    {isSaving ? "..." : "Save Problem"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingIssueKey(null)}
+                                    className="rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-700 hover:bg-gray-300"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : person.hasIssue ? (
+                              <div className="rounded-md border border-amber-300 bg-amber-50/90 p-1.5 text-xs text-amber-900 flex items-start justify-between gap-1 group">
+                                <div className="space-y-0.5">
+                                  <span className="inline-flex items-center gap-1 font-bold text-[11px] text-amber-800">
+                                    <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                    Problem Reported
+                                  </span>
+                                  <p className="text-[11px] text-amber-950 line-clamp-2">
+                                    {person.issueDescription || "Facing issue"}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingIssueKey(person.key);
+                                      setIssueDraft((prev) => ({
+                                        ...prev,
+                                        [person.key]: person.issueDescription ?? "",
+                                      }));
+                                    }}
+                                    className="p-0.5 text-amber-700 hover:text-amber-900 underline text-[10px] font-semibold"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => saveIssue(person, false)}
+                                    disabled={isSaving}
+                                    className="p-0.5 text-emerald-700 hover:text-emerald-900 text-[10px] font-semibold underline"
+                                    title="Mark problem as resolved"
+                                  >
+                                    Resolve
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingIssueKey(person.key);
+                                  setIssueDraft((prev) => ({
+                                    ...prev,
+                                    [person.key]: "",
+                                  }));
+                                }}
+                                className="flex items-center gap-1 rounded border border-gray-200 bg-gray-50/60 hover:bg-amber-50 hover:border-amber-300 px-2 py-1 text-xs text-gray-500 hover:text-amber-800 font-medium transition-all"
+                              >
+                                <AlertTriangle className="w-3 h-3 text-gray-400" />
+                                + Any Problem?
+                              </button>
+                            )}
+                          </td>
+
+                          {/* 4. Remarks Column */}
+                          <td className="px-3 py-3">
                             {isEditingNote ? (
                               <div className="space-y-1">
                                 <textarea
                                   rows={2}
-                                  placeholder={"Add remark for " + formatDisplayDate(activeDayDate) + "..."}
+                                  placeholder={"Remark for " + formatDisplayDate(activeDayDate) + "..."}
                                   value={noteDraft[person.key] ?? person.remarks ?? ""}
                                   onChange={(e) =>
                                     setNoteDraft((prev) => ({
