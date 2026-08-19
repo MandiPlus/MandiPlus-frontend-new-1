@@ -53,7 +53,10 @@ import {
     normalizeInsuranceInvoiceMode,
     resolveInsuranceInvoiceModeForSubmit,
 } from '../insuranceModeSubmit';
-import { resolveWeighmentSlipForSubmit } from '../weighmentSlipSubmit';
+import {
+    createCustomerWillUpdateLaterSlip,
+    resolveWeighmentSlipForSubmit,
+} from '../weighmentSlipSubmit';
 import { canUseInternalRateCalculator } from '../creationAccessPolicy';
 
 // --- Types ---
@@ -394,6 +397,9 @@ const Insurance = () => {
     };
 
     const identity = user?.identity || '';
+    const canDeferWeighmentSlip =
+        isInsuranceAdminSession ||
+        ['AGENT', 'INTERNAL_TEAM'].includes(identity);
     const shouldShowCustomerMappingQuestion = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
     const shouldAskCustomerPicker = ['AGENT', 'INTERNAL_TEAM'].includes(identity);
     const shouldRequireVerifiedParties =
@@ -1841,8 +1847,9 @@ const Insurance = () => {
         }
     };
 
-    const handleFileSubmit = async () => {
-        const selectedSlip = weightmentSlipRef.current || weightmentSlip;
+    const handleFileSubmit = async (fileOverride?: File) => {
+        const selectedSlip =
+            fileOverride || weightmentSlipRef.current || weightmentSlip;
         if (!selectedSlip) return;
 
         setMessages(prev => [...prev, {
@@ -1857,6 +1864,18 @@ const Insurance = () => {
         ]);
 
         goToNextQuestion(undefined, undefined, selectedSlip);
+    };
+
+    const handleCustomerWillUpdateLater = async () => {
+        try {
+            const placeholderSlip = await createCustomerWillUpdateLaterSlip();
+            updateWeightmentSlip(placeholderSlip);
+            setError('');
+            await handleFileSubmit(placeholderSlip);
+        } catch (placeholderError) {
+            console.error('Failed to create customer-update-later slip:', placeholderError);
+            setError('Could not prepare the customer update later slip. Please try again.');
+        }
     };
 
     const currentQuestion = activeQuestions[currentQuestionIndex] || activeQuestions[activeQuestions.length - 1];
@@ -2459,7 +2478,7 @@ const Insurance = () => {
                     )}
 
                     {isFileInput ? (
-                        <div className="flex justify-center w-full">
+                        <div className="flex w-full flex-col items-center gap-2">
                             {(!weightmentSlip || editingMessageIndex !== null) ? (
                                 <>
                                     <input
@@ -2483,6 +2502,19 @@ const Insurance = () => {
                                             {language === 'hi' ? 'अपलोड' : 'Upload'}
                                         </span>
                                     </button>
+                                    {canDeferWeighmentSlip && editingMessageIndex === null && (
+                                        <div className="flex flex-col items-center gap-1">
+                                            <p className="text-xs text-slate-500">Don&apos;t upload bill</p>
+                                            <button
+                                                type="button"
+                                                onClick={handleCustomerWillUpdateLater}
+                                                disabled={isSubmitting}
+                                                className="text-xs font-semibold text-slate-600 underline underline-offset-2 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                Customer will update later
+                                            </button>
+                                        </div>
+                                    )}
                                 </>
                             ) : (
                                 <div className="flex items-center gap-3 w-full">
@@ -2503,7 +2535,7 @@ const Insurance = () => {
                                         </button>
                                     </div>
                                     <button
-                                        onClick={handleFileSubmit}
+                                        onClick={() => void handleFileSubmit()}
                                         disabled={isSubmitting}
                                         className="bg-gradient-to-r from-[#25D366] to-[#20BA5A] p-3 rounded-full text-white hover:from-[#20BA5A] hover:to-[#1DA851] shadow-lg transition-all duration-200 active:scale-95 min-w-[48px] flex items-center justify-center disabled:opacity-50"
                                     >

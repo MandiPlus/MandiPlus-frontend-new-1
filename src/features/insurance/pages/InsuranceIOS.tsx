@@ -45,7 +45,10 @@ import {
     type InsuranceLearningUiEvent,
 } from '../learningContext';
 import { itemsData } from '../productCatalog';
-import { resolveWeighmentSlipForSubmit } from '../weighmentSlipSubmit';
+import {
+    createCustomerWillUpdateLaterSlip,
+    resolveWeighmentSlipForSubmit,
+} from '../weighmentSlipSubmit';
 
 // --- Types ---
 
@@ -376,6 +379,9 @@ const InsuranceIOS = () => {
     const [learningEvents, setLearningEvents] = useState<InsuranceLearningUiEvent[]>([]);
     const [isInsuranceAdminSession, setIsInsuranceAdminSession] = useState(false);
     const identity = user?.identity || '';
+    const canDeferWeighmentSlip =
+        isInsuranceAdminSession ||
+        ['AGENT', 'INTERNAL_TEAM'].includes(identity);
     // React state updates can lag behind the last chat answer; keep the selected customerUserId
     // in a ref so submit always includes it when needed.
     const selectedCustomerUserIdRef = useRef<string>('');
@@ -1851,8 +1857,9 @@ const InsuranceIOS = () => {
         }
     };
 
-    const handleFileSubmit = async () => {
-        const selectedSlip = weightmentSlipRef.current || weightmentSlip;
+    const handleFileSubmit = async (fileOverride?: File) => {
+        const selectedSlip =
+            fileOverride || weightmentSlipRef.current || weightmentSlip;
         if (!selectedSlip) return;
 
         setMessages(prev => [...prev, {
@@ -1867,6 +1874,18 @@ const InsuranceIOS = () => {
         ]);
 
         goToNextQuestion(undefined, undefined, selectedSlip);
+    };
+
+    const handleCustomerWillUpdateLater = async () => {
+        try {
+            const placeholderSlip = await createCustomerWillUpdateLaterSlip();
+            updateWeightmentSlip(placeholderSlip);
+            setError('');
+            await handleFileSubmit(placeholderSlip);
+        } catch (placeholderError) {
+            console.error('Failed to create customer-update-later slip:', placeholderError);
+            setError('Could not prepare the customer update later slip. Please try again.');
+        }
     };
 
     const currentQuestion = activeQuestions[currentQuestionIndex] || activeQuestions[activeQuestions.length - 1];
@@ -2417,7 +2436,7 @@ const InsuranceIOS = () => {
                     {error && <p className="text-red-500 text-xs mb-1 px-2">{error}</p>}
 
                     {isFileInput ? (
-                        <div className="flex justify-center w-full">
+                        <div className="flex w-full flex-col items-center gap-2">
                             {(!weightmentSlip || editingMessageIndex !== null) ? (
                                 <>
                                     <input
@@ -2438,6 +2457,19 @@ const InsuranceIOS = () => {
                                                 : (editingMessageIndex !== null ? 'Upload new slip' : 'Upload weightment slip')}
                                         </span>
                                     </button>
+                                    {canDeferWeighmentSlip && editingMessageIndex === null && (
+                                        <div className="flex flex-col items-center gap-1">
+                                            <p className="text-xs text-slate-500">Don&apos;t upload bill</p>
+                                            <button
+                                                type="button"
+                                                onClick={handleCustomerWillUpdateLater}
+                                                disabled={isSubmitting}
+                                                className="text-xs font-semibold text-slate-600 underline underline-offset-2 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                                            >
+                                                Customer will update later
+                                            </button>
+                                        </div>
+                                    )}
                                 </>
                             ) : (
                                 <div className="flex items-center gap-2 w-full">
@@ -2456,7 +2488,7 @@ const InsuranceIOS = () => {
                                         </button>
                                     </div>
                                     <button
-                                        onClick={handleFileSubmit}
+                                        onClick={() => void handleFileSubmit()}
                                         disabled={isSubmitting}
                                         className="bg-[#25D366] p-2.5 rounded-full text-white hover:bg-[#20bd5a] shadow-sm"
                                     >
