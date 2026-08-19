@@ -4,6 +4,17 @@ import axios, {
   AxiosRequestConfig,
   AxiosResponse,
 } from "axios";
+import type {
+  AccountDeletionRecoveryPayload,
+  AccountDeletionRequest,
+  AccountDeletionRequestListFilters,
+} from "@/features/account-deletion/api";
+
+export type {
+  AccountDeletionEvent,
+  AccountDeletionRequestStatus,
+} from "@/features/account-deletion/api";
+
 export interface ApiResponse<T> {
   success: boolean;
   message?: string;
@@ -816,6 +827,10 @@ export interface InsurancePaymentRow {
   productName?: string;
   buyer: string;
   insuredPerson: string;
+  insuredPersonUserId?: string | null;
+  insuredPersonCanonicalUserId?: string | null;
+  insuredPersonCanonicalName?: string | null;
+  insuredPersonCanonicalMobileNumber?: string | null;
   supplier?: string;
   premiumAmount: number;
   paymentAmount: number;
@@ -919,6 +934,15 @@ export interface AdminTrackingPurchaseFilters {
   page?: number;
   limit?: number;
 }
+
+export interface AdminAccountDeletionRequest extends AccountDeletionRequest {
+  customerName: string;
+  mobileNumber: string;
+  userId: string;
+}
+
+export type AdminAccountDeletionRequestFilters =
+  AccountDeletionRequestListFilters;
 
 export interface AdminWalletPack {
   id: string;
@@ -4436,6 +4460,65 @@ class AdminApi {
     }
   };
 
+  public getAccountDeletionRequests = async (
+    filters?: AdminAccountDeletionRequestFilters,
+  ): Promise<ApiResponse<AdminAccountDeletionRequest[]>> => {
+    try {
+      const response = await this.client.get('/admin/account-deletion/requests', {
+        params: filters,
+      });
+      const payload = response.data;
+      const data = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload?.data?.requests)
+          ? payload.data.requests
+          : [];
+
+      return {
+        success: payload?.success !== false,
+        data,
+        total: payload?.total ?? payload?.data?.total,
+        page: payload?.page ?? payload?.data?.page,
+        limit: payload?.limit ?? payload?.data?.limit,
+        totalPages: payload?.totalPages ?? payload?.data?.totalPages,
+      };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message ||
+          'Failed to fetch account deletion requests',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public recoverAccountDeletionRequest = async (
+    requestId: string,
+    payload: AccountDeletionRecoveryPayload = {},
+  ): Promise<ApiResponse<AdminAccountDeletionRequest>> => {
+    try {
+      const response = await this.client.post(
+        `/admin/account-deletion/requests/${encodeURIComponent(requestId)}/recover`,
+        payload,
+      );
+      return {
+        success: response.data?.success !== false,
+        data: response.data?.data ?? response.data,
+      };
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      return {
+        success: false,
+        message:
+          axiosError.response?.data?.message ||
+          'Failed to recover account deletion request',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
   public exportInsurancePayments = async (filters?: {
     fromDate?: string;
     toDate?: string;
@@ -5510,6 +5593,53 @@ class AdminApi {
         ),
         error: error.message,
       };
+    }
+  };
+
+  public getCrmCallLogs = async () => {
+    try {
+      const response = await this.client.get('/crm/admin/call-logs');
+      return response.data;
+    } catch (error: any) {
+      return { success: false, message: this.getAxiosErrorMessage(error, 'Failed to get CRM call logs'), data: [] };
+    }
+  };
+
+  public upsertCrmCallLog = async (payload: {
+    insuredPersonKey: string;
+    insuredPersonName: string;
+    insuredPersonUserId?: string | null;
+    phone?: string | null;
+    remarks?: string | null;
+  }) => {
+    try {
+      const response = await this.client.post('/crm/admin/call-log', payload);
+      return response.data;
+    } catch (error: any) {
+      return { success: false, message: this.getAxiosErrorMessage(error, 'Failed to log call') };
+    }
+  };
+
+  public updateCrmCallLogRemarks = async (insuredPersonKey: string, remarks: string) => {
+    try {
+      const response = await this.client.patch(
+        `/crm/admin/call-log/${encodeURIComponent(insuredPersonKey)}/remarks`,
+        { remarks },
+      );
+      return response.data;
+    } catch (error: any) {
+      return { success: false, message: this.getAxiosErrorMessage(error, 'Failed to update remarks') };
+    }
+  };
+
+  public deleteCrmCallLog = async (insuredPersonKey: string) => {
+    try {
+      const response = await this.client.delete(
+        `/crm/admin/call-log/${encodeURIComponent(insuredPersonKey)}`,
+      );
+      return response.data;
+    } catch (error: any) {
+      return { success: false, message: this.getAxiosErrorMessage(error, 'Failed to remove call log') };
     }
   };
 }

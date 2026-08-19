@@ -41,6 +41,7 @@ export const ADMIN_SECTIONS = [
   'app-quick-details',
   'app-payments',
   'app-coupons',
+  'account-deletion',
   'insurance-forms',
   'claims',
   'tracking',
@@ -64,6 +65,7 @@ export const ADMIN_SECTIONS = [
   'channel-partners',
   'reports',
   'analytics',
+  'crm',
 ] as const;
 
 export type AdminSection = (typeof ADMIN_SECTIONS)[number];
@@ -104,6 +106,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Payments', href: '/admin/app-payments', icon: CreditCardIcon, section: 'app-payments' },
   { name: 'Tracking Purchases', href: '/admin/app/tracking-purchases', icon: MapPinIcon, section: 'app-payments' },
   { name: 'Coupons', href: '/admin/app/coupons', icon: TicketIcon, section: 'app-coupons' },
+  { name: 'Deletion Requests', href: '/admin/account-deletion', icon: TrashIcon, section: 'account-deletion' },
   { name: 'Invoice / Insurance Forms', href: '/admin/insurance-forms', icon: FolderIcon, section: 'insurance-forms' },
   { name: 'Bin', href: '/admin/invoices/bin', icon: TrashIcon, section: 'insurance-forms' },
   { name: 'Dashboard', href: '/admin/claims', icon: ClipboardDocumentListIcon, section: 'claims' },
@@ -129,6 +132,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Channel Partners', href: '/admin/channel-partners', icon: UserGroupIcon, section: 'channel-partners' },
   { name: 'Sales Analytics', href: '/admin/analytics', icon: PresentationChartLineIcon, section: 'analytics' },
   { name: 'AI Reports', href: '/admin/reports', icon: SparklesIcon, section: 'reports' },
+  { name: 'CRM', href: '/admin/crm', icon: PhoneIcon, section: 'crm' },
 ];
 
 export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
@@ -149,6 +153,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       'app-quick-details',
       'app-payments',
       'app-coupons',
+      'account-deletion',
       'notifications',
     ],
   },
@@ -158,7 +163,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   },
   {
     name: 'Finance',
-    sections: ['ledger', 'insurance-payments', 'agent-commissions'],
+    sections: ['ledger', 'insurance-payments', 'agent-commissions', 'crm'],
   },
   {
     name: 'Operations',
@@ -186,6 +191,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/app-payments': 'app-payments',
   '/admin/app/tracking-purchases': 'app-payments',
   '/admin/app/coupons': 'app-coupons',
+  '/admin/account-deletion': 'account-deletion',
   '/admin/insurance-forms': 'insurance-forms',
   '/admin/invoices/bin': 'insurance-forms',
   '/admin/claims': 'claims',
@@ -212,6 +218,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/reports': 'reports',
   '/admin/analytics': 'analytics',
   '/admin/impersonate': 'users',
+  '/admin/crm': 'crm',
 };
 
 export function getSectionForAdminPath(pathname: string): AdminSection | null {
