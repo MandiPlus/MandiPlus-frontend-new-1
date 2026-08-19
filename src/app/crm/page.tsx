@@ -139,13 +139,16 @@ export default function StandaloneCrmPage() {
         limit: 10000,
       });
 
-      if (res && Array.isArray(res.records)) {
-        setAllRecords(res.records);
-        if (res.summary) {
-          setSummary(res.summary);
-        }
-      } else {
-        setAllRecords([]);
+      const records = Array.isArray(res?.records)
+        ? res.records
+        : Array.isArray((res as any)?.data?.records)
+        ? (res as any).data.records
+        : [];
+      const sum = res?.summary || (res as any)?.data?.summary || null;
+
+      setAllRecords(records);
+      if (sum) {
+        setSummary(sum);
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load CRM data");
