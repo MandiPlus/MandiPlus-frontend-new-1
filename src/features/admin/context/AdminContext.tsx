@@ -14,7 +14,7 @@ type AdminContextType = {
     isAuthenticated: boolean;
     loading: boolean;
     accessProfile: AdminAccessProfile | null;
-    login: (email: string, password: string) => Promise<void>;
+    login: (email: string, password: string, redirectTo?: string) => Promise<void>;
     logout: () => void;
     canAccessSection: (section: AdminSection) => boolean;
 };
@@ -174,7 +174,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         return () => clearInterval(timer);
     }, [pathname, warningShownForToken]);
 
-    const login = async (email: string, password: string) => {
+    const login = async (email: string, password: string, redirectTo?: string) => {
         try {
             const response = await adminApi.login(email, password);
             const token = response.data?.token;
@@ -189,7 +189,8 @@ export function AdminProvider({ children }: { children: ReactNode }) {
                 setIsAuthenticated(true);
                 setShowSessionWarning(false);
                 setWarningShownForToken(null);
-                router.push(getFirstAllowedAdminPath(profile));
+                const target = redirectTo || getFirstAllowedAdminPath(profile);
+                router.push(target);
                 return;
             }
             throw new Error(response.message || 'Invalid admin credentials');
