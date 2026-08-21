@@ -20,16 +20,17 @@ const RefundPolicyPage = () => {
           <h1 className="text-2xl font-bold text-slate-800 mb-2">
             <span className="text-[#4309ac]">Refund Policy</span>
           </h1>
+          <p className="mb-4 text-sm text-slate-500">Last updated: 21 August 2026</p>
           <p className="text-slate-600 mb-6">
             Refunds are processed as per our terms and applicable regulations. For policy-related refunds, please contact support with your policy details.
           </p>
 
           <div className="border-t border-slate-100 pt-5">
             <h2 className="text-lg font-semibold text-slate-800 mb-2">
-              No Policy Cancellation Refunds
+              Policy cancellation and eligibility
             </h2>
             <p className="text-slate-600 text-sm leading-relaxed">
-              If you cancel a policy shortly after purchase, you may not receive a refund depending on the Terms &amp; Conditions.
+              Eligibility for cancellation and refund is determined by the issued insurer policy, applicable law, and whether coverage has started or a claim has occurred. MandiPlus does not independently promise a refund.
             </p>
           </div>
 
@@ -38,9 +39,7 @@ const RefundPolicyPage = () => {
               Refund Processing Timeline
             </h2>
             <p className="text-slate-600 text-sm leading-relaxed">
-              Once a refund request is approved, MandiPlus processes the refund within 7 working days.
-              The credited amount will reflect in the original payment method or registered bank account within
-              7 to 10 working days, depending on the bank or payment partner.
+              If a refund is approved, it is returned through the insurer, payment provider, or original payment method. Processing and bank-settlement timelines depend on those providers.
             </p>
           </div>
 
@@ -51,13 +50,13 @@ const RefundPolicyPage = () => {
             <p className="text-slate-600 text-sm leading-relaxed">
               All claim-related communication must be made via email at{" "}
               <a href="mailto:support@mandiplus.com" className="text-[#4309ac] hover:underline font-medium">support@mandiplus.com</a>
-              {" "}or by reaching out to our <b> 24/7* Customer Support Number{" "}
-              <a href="tel:+919900186757" className="text-[#4309ac] hover:underline font-medium">+91 99001 86757</a>.</b>
+              {" "}or by calling{" "}
+              <a href="tel:+917676217658" className="text-[#4309ac] hover:underline font-medium">+91 76762 17658</a>.
             </p>
           </div>
 
           <p className="text-slate-500 text-xs mt-6">
-            Last updated: January 2025.
+            ENP FARMS PRIVATE LIMITED operates MandiPlus and does not underwrite insurance.
           </p>
         </div>
       </div>

@@ -1,7 +1,7 @@
 export const PLAY_STORE_URL =
   "https://play.google.com/store/apps/details?id=com.mandiplus.customer";
 
-export const CALL_URL = "tel:+919900186757";
+export const CALL_URL = "tel:+917676217658";
 
 // "Munafa aapka" (profit is yours) in mandi-trade-belt languages, cycled in the hero.
 export const MUNAFA_TRANSLATIONS = [
