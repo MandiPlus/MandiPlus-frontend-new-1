@@ -2240,6 +2240,7 @@ export default function UsersPage() {
                                         <tr>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Date</th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Narration</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Vehicle Number</th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Type</th>
                                             <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Premium</th>
                                             {showUnpaidWalletPaymentColumns ? (
@@ -2272,6 +2273,9 @@ export default function UsersPage() {
                                                             View image
                                                         </a>
                                                     ) : null}
+                                                </td>
+                                                <td className="px-4 py-3 text-xs font-medium text-gray-800">
+                                                    {tx.vehicleNumber || '-'}
                                                 </td>
                                                 <td className="px-4 py-3 text-xs">
                                                     <span className={`rounded-full px-2 py-1 font-semibold ${tx.direction === 'CREDIT' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>

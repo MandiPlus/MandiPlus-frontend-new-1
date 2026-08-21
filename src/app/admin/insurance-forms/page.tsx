@@ -500,6 +500,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
     const [createInvoiceBlockedNoticeOpen, setCreateInvoiceBlockedNoticeOpen] = useState(false);
     const [createInvoiceSubmitting, setCreateInvoiceSubmitting] = useState(false);
+    const createInvoiceRequestInFlightRef = useRef(false);
     const [createInvoiceParsing, setCreateInvoiceParsing] = useState(false);
     const [verifiedUsers, setVerifiedUsers] = useState<AdminLedgerUser[]>([]);
     const [otherPartyHistorical, setOtherPartyHistorical] = useState<HistoricalPartyOption[]>([]);
@@ -1219,6 +1220,8 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
     };
 
     const executeCreateInvoice = async (blacklistOverrideToken?: string) => {
+        if (createInvoiceRequestInFlightRef.current) return;
+
         const insuredUser = selectedInsuredUser;
         if (!insuredUser) {
             toast.error('Select a registered verified insured party.');
@@ -1269,6 +1272,9 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
             return;
         }
 
+        // React state is applied on the next render, so it cannot by itself
+        // stop two clicks delivered in the same tick. The ref is synchronous.
+        createInvoiceRequestInFlightRef.current = true;
         setCreateInvoiceSubmitting(true);
         try {
             const vehicleNumber = normalizeVehicleText(createInvoiceForm.vehicleNumber);
@@ -1325,6 +1331,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         } catch (error: any) {
             toast.error(error?.message || 'Failed to create invoice');
         } finally {
+            createInvoiceRequestInFlightRef.current = false;
             setCreateInvoiceSubmitting(false);
         }
     };

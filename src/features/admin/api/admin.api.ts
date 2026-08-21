@@ -1055,6 +1055,7 @@ export interface AdminWalletStatementItem {
   amount: number;
   direction: "CREDIT" | "DEBIT";
   balanceAfter?: number;
+  vehicleNumber?: string;
   invoicePremiumAmount?: number;
   invoicePaymentStatus?: string;
   invoicePaidAmount?: number;

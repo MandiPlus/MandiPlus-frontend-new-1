@@ -341,6 +341,7 @@ export default function AdminQuickDetailDetailPage() {
   const [productAutofillSource, setProductAutofillSource] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const submitRequestInFlightRef = useRef(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dirtyFieldsRef = useRef(new Set<keyof QuickInvoiceForm>());
@@ -571,6 +572,8 @@ export default function AdminQuickDetailDetailPage() {
   };
 
   const handleSubmit = async () => {
+    if (submitRequestInFlightRef.current) return;
+
     const insuredUser = selectedInsuredUser;
     if (!insuredUser) {
       toast.error("Select a registered verified insured party.");
@@ -621,6 +624,7 @@ export default function AdminQuickDetailDetailPage() {
       return;
     }
 
+    submitRequestInFlightRef.current = true;
     setSubmitting(true);
     try {
       const response = await adminApi.createAdminInvoice({
@@ -671,6 +675,7 @@ export default function AdminQuickDetailDetailPage() {
         err instanceof Error ? err.message : "Failed to create invoice",
       );
     } finally {
+      submitRequestInFlightRef.current = false;
       setSubmitting(false);
     }
   };
