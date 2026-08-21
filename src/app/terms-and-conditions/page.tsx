@@ -30,19 +30,19 @@ const TermsAndConditionsPage = () => {
         <h1 className="text-2xl font-bold text-slate-800 mb-1">
           <span className="text-[#4309ac]">Terms &amp; Conditions</span>
         </h1>
-        <p className="mb-3 text-sm text-slate-500">Last updated: January 2025</p>
+        <p className="mb-3 text-sm text-slate-500">Last updated: 21 August 2026</p>
         <p className="mb-6 text-sm leading-relaxed text-slate-600">
           MandiPlus is owned and operated by{" "}
           <strong className="font-semibold text-slate-800">
             {COMPANY_INFO.parent}
           </strong>
-          .
+          . MandiPlus is a technology and service platform. It does not underwrite insurance. The insurer identified in an issued policy is responsible for coverage and claim decisions under that policy.
         </p>
 
         {/* What is COVERED? */}
         <div className="bg-white rounded-3xl shadow-sm p-5 border border-[#e0d7fc]/50 mb-4">
           <h2 className="text-lg font-bold text-slate-800 mb-3">
-            What is <span className="text-[#4309ac]">COVERED?</span>
+            Examples of risks a policy may cover
           </h2>
           <ul className="space-y-2.5">
             {coveredItems.map((item) => (
@@ -57,7 +57,7 @@ const TermsAndConditionsPage = () => {
             ))}
           </ul>
           <p className="mt-4 pt-4 border-t border-slate-100 text-slate-500 text-xs">
-            In case of any issue, T&amp;C Apply.
+            Coverage is not guaranteed by this list. Only the issued insurer policy, schedule, exclusions, limits, and endorsements determine coverage.
           </p>
         </div>
 
@@ -67,15 +67,15 @@ const TermsAndConditionsPage = () => {
           <ul className="space-y-2.5 text-slate-600 text-sm">
             <li className="flex items-start gap-2.5">
               <span className="shrink-0 w-1.5 h-1.5 mt-2 rounded-full bg-[#4309ac]" aria-hidden="true" />
-              Coverage is valid only for goods insured under MandiPlus policies.
+              Coverage is valid only under a policy issued by the insurer named in the policy schedule.
             </li>
             <li className="flex items-start gap-2.5">
               <span className="shrink-0 w-1.5 h-1.5 mt-2 rounded-full bg-[#4309ac]" aria-hidden="true" />
-              Claims must be reported within 24 hours of the incident.
+              Losses must be reported by the method and deadline stated in the issued policy.
             </li>
             <li className="flex items-start gap-2.5">
               <span className="shrink-0 w-1.5 h-1.5 mt-2 rounded-full bg-[#4309ac]" aria-hidden="true" />
-              ENP FARMS PRIVATE LIMITED, operating MandiPlus, reserves the right to verify all claims before settlement.
+              MandiPlus can assist with document collection and status communication. The insurer or its authorised claim representative assesses and decides the claim.
             </li>
             <li className="flex items-start gap-2.5">
               <span className="shrink-0 w-1.5 h-1.5 mt-2 rounded-full bg-[#4309ac]" aria-hidden="true" />
@@ -85,7 +85,7 @@ const TermsAndConditionsPage = () => {
 
           <h3 className="text-sm font-semibold text-slate-800 mt-5 mb-2">Instructions to Register Your Claim</h3>
           <p className="text-slate-600 text-sm mb-4">
-            In the event of loss or damage which may involve a claim under this insurance, immediate notice should be given to the MandiPlus support team at +91 {COMPANY_INFO.phone}.
+            In the event of loss or damage, follow the notice instructions in the issued policy and contact MandiPlus support at +91 {COMPANY_INFO.phone} for assistance.
           </p>
 
           <h3 className="text-sm font-semibold text-slate-800 mt-5 mb-2">Documentation of Claims</h3>
