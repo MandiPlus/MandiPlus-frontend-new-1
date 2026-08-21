@@ -49,6 +49,9 @@ const TripGoogleMap = dynamic(() => import('@/components/maps/TripGoogleMap'), {
 
 const REFRESH_INTERVAL_MS = 60_000;
 const RECENT_TRIPS_PAGE_SIZE = 10;
+// Temporary product kill switch. Keep the tracking-pack implementation available,
+// but never meter FastTag views or mount purchase UI for customer web users.
+const TRACKING_PLANS_ENABLED = false;
 const FASTAG_VIEWS_TOTAL = 3;
 const PAYMENT_ATTEMPTS = 6;
 const PAYMENT_INTERVAL_MS = 1_500;
@@ -137,7 +140,7 @@ function TrackingApp({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
 
   useEffect(() => {
     void loadTrips();
-    void loadPacks();
+    if (TRACKING_PLANS_ENABLED) void loadPacks();
   }, [loadPacks, loadTrips]);
 
   useEffect(() => {
@@ -153,7 +156,7 @@ function TrackingApp({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
     const vehicleNumber = vehicleKey(trip.vehicleNumber);
     if (!vehicleNumber) return;
 
-    if (trip.locationSource === 'fastag' && !options?.skipAccessCheck) {
+    if (TRACKING_PLANS_ENABLED && trip.locationSource === 'fastag' && !options?.skipAccessCheck) {
       let packActive = Boolean(packEntitlement?.active || trip.fastagPackActive);
       let viewsRemaining = packViewsRemaining ?? trip.fastagViewsRemaining ?? null;
       if (!packActive && viewsRemaining === null) {
@@ -189,7 +192,7 @@ function TrackingApp({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
       let nextTracking: TrackingData;
       if (trip.locationSource === 'fastag') {
         const view = await consumeFastagView(vehicleNumber);
-        if (view.unlocked === false) {
+        if (TRACKING_PLANS_ENABLED && view.unlocked === false) {
           if (requestId !== detailRequestRef.current) return;
           setMode('overview');
           setTracking(null);
@@ -210,7 +213,7 @@ function TrackingApp({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
         nextTracking = (await trackVehicle(vehicleNumber)).data;
         if (nextTracking.locationSource === 'fastag') {
           const view = await consumeFastagView(vehicleNumber);
-          if (view.unlocked === false) {
+          if (TRACKING_PLANS_ENABLED && view.unlocked === false) {
             if (requestId !== detailRequestRef.current) return;
             setMode('overview');
             setTracking(null);
@@ -306,6 +309,12 @@ function TrackingApp({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
   }, [loadPacks, openVehicle, paywallVehicle, trips]);
 
   useEffect(() => {
+    if (!TRACKING_PLANS_ENABLED) {
+      window.sessionStorage.removeItem(PAYMENT_SESSION_KEY);
+      setPendingCheckoutId('');
+      setPaywallVehicle('');
+      return;
+    }
     const raw = window.sessionStorage.getItem(PAYMENT_SESSION_KEY);
     if (!raw) return;
     try {
@@ -355,7 +364,9 @@ function TrackingApp({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
   }, []);
 
   const fleetMapItems = useMemo<FleetMapItem[]>(() => trips.flatMap((trip) => {
-    const mayShowFastag = trip.locationSource !== 'fastag' || Boolean(packEntitlement?.active || trip.fastagPackActive);
+    const mayShowFastag = !TRACKING_PLANS_ENABLED
+      || trip.locationSource !== 'fastag'
+      || Boolean(packEntitlement?.active || trip.fastagPackActive);
     const current = coordFromUnknown(trip.lastLocation);
     if (!mayShowFastag || !current) return [];
     return [{
@@ -376,7 +387,7 @@ function TrackingApp({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
     <div className={styles.root}>
       <TrackingHeader
         nested={mode !== 'overview'}
-        title={mode === 'packs' ? 'Tracking Packs' : 'Track Vehicle'}
+        title={TRACKING_PLANS_ENABLED && mode === 'packs' ? 'Tracking Packs' : 'Track Vehicle'}
         userName={user?.name}
         walletBalance={data.wallet?.availableBalance}
         onBack={goBack}
@@ -427,7 +438,7 @@ function TrackingApp({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
         />
       ) : null}
 
-      {mode === 'packs' ? (
+      {TRACKING_PLANS_ENABLED && mode === 'packs' ? (
         <Packs
           loading={packsLoading}
           checkoutLoading={checkoutLoading}
@@ -438,7 +449,7 @@ function TrackingApp({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
         />
       ) : null}
 
-      {paywallVehicle ? (
+      {TRACKING_PLANS_ENABLED && paywallVehicle ? (
         <Paywall
           price={packPrice}
           listPrice={packListPrice}
@@ -542,14 +553,18 @@ function Overview({
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
           <h2>Live vehicles</h2>
-          <button type="button" onClick={onPacks}>Tracking Packs</button>
+          {TRACKING_PLANS_ENABLED ? (
+            <button type="button" onClick={onPacks}>Tracking Packs</button>
+          ) : null}
         </div>
         {loading ? (
           <div className={styles.loadingPanel}><Spinner /><span>Live trips dhoondh rahe hain...</span></div>
         ) : trips.length ? (
           <div className={styles.listCard}>
             {trips.map((trip) => {
-              const canShowFastag = trip.locationSource !== 'fastag' || trip.fastagPackActive;
+              const canShowFastag = !TRACKING_PLANS_ENABLED
+                || trip.locationSource !== 'fastag'
+                || trip.fastagPackActive;
               const location = canShowFastag ? shortPlace(trip.lastLocation?.address) : '';
               const route = trip.route || [trip.sourceName, trip.destinationName].filter(Boolean).join(' to ');
               return (
@@ -711,7 +726,7 @@ function Detail({
                 <div className={styles.fastagTopRow}>
                   <h2>{tracking.vehicleNumber}</h2>
                   <span>
-                    {tracking.trackingPack?.active
+                    {!TRACKING_PLANS_ENABLED || tracking.trackingPack?.active
                       ? 'FastTag'
                       : typeof tracking.fastagViewsRemaining === 'number'
                         ? `FastTag · ${tracking.fastagViewsRemaining}/${FASTAG_VIEWS_TOTAL}`
