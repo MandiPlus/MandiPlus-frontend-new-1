@@ -63,6 +63,16 @@ export async function updateCustomerUser(
   userId: string,
   payload: Record<string, unknown>,
 ) {
+  if (userId.startsWith("demo-user")) {
+    const existing = typeof window !== "undefined" ? localStorage.getItem("user") : null;
+    const parsed = existing ? JSON.parse(existing) : {};
+    const updated = { ...parsed, ...payload, id: userId };
+    if (typeof window !== "undefined") {
+      localStorage.setItem("user", JSON.stringify(updated));
+    }
+    return { success: true, data: updated, ...updated };
+  }
+
   const request = (data: Record<string, unknown>) =>
     customerRequest<Record<string, unknown>>({
       method: "PATCH",
