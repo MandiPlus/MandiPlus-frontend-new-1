@@ -70,6 +70,12 @@ assert.match(page, /withSingleExtractionRetry/);
 assert.match(page, /Review & pay/);
 assert.match(page, /Save Draft/);
 assert.match(page, /Back to overview/);
+assert.match(
+  page,
+  /paymentDrafts\.some\(\(item\) => isPomegranateProduct\(item\.product\)\)/,
+  "Anar invoices must be blocked before customer invoice creation.",
+);
+assert.match(page, /window\.alert\("Internal server error"\)/);
 assert.doesNotMatch(page, /queueDocumentExtraction\(nextFiles\)/);
 assert.match(api, /signal\?: AbortSignal/);
 assert.match(draftStorage, /indexedDB\.open/);

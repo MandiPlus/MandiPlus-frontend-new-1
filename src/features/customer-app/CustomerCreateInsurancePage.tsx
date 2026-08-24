@@ -1590,6 +1590,11 @@ export default function CustomerCreateInsurancePage() {
       openMissingDetails(invalidDraft, invalidDraftIndex);
       return;
     }
+    if (paymentDrafts.some((item) => isPomegranateProduct(item.product))) {
+      setNotice("");
+      window.alert("Internal server error");
+      return;
+    }
     if (!user?.id) {
       setNotice("Your session is missing. Please sign in again.");
       return;
