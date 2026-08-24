@@ -25,7 +25,7 @@ export default function ProtectedRoute({
     }, []);
 
     const getRedirectByIdentity = (identity?: string | null) => {
-        if (identity === "CUSTOMER") return "/customer/dashboard";
+        if (identity === "CUSTOMER") return "/home";
         if (identity === "AGENT") return "/agent/dashboard";
         if (identity === "TRANSPORTER") return "/transporter/dashboard";
         if (identity === "FIELD_AGENT") return "/home";
