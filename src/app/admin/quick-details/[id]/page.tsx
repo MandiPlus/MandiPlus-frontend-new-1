@@ -201,6 +201,8 @@ function normalizeLookup(value: unknown) {
     .toLowerCase()
     .replace(/\([^)]*\)/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
+    // OCR splits "PINE APPLE" — fold it back before matching Apple.
+    .replace(/\bpine apple\b/g, "pineapple")
     .trim();
 }
 
@@ -216,11 +218,17 @@ function canonicalProduct(value: unknown, hsn: unknown) {
   return (
     itemsData
       .map((item) => ({ item, candidate: normalizeLookup(item.name) }))
-      .filter(
-        ({ candidate }) =>
+      .filter(({ candidate }) => {
+        // "pineapple" contains "apple" — never let one resolve to the other.
+        if (candidate === "apple" && wanted.includes("pineapple")) return false;
+        if (candidate === "pineapple" && !wanted.includes("pineapple")) {
+          return false;
+        }
+        return (
           candidate.length >= 4 &&
-          (candidate.includes(wanted) || wanted.includes(candidate)),
-      )
+          (candidate.includes(wanted) || wanted.includes(candidate))
+        );
+      })
       .sort((left, right) => right.candidate.length - left.candidate.length)[0]
       ?.item || null
   );
@@ -234,6 +242,8 @@ function onboardingProduct(code: unknown) {
     BANANA: "Banana",
     ONION: "Onion",
     POTATO: "Potato",
+    APPLE: "Apple",
+    PINEAPPLE: "Pineapple",
     POMEGRANATE: "Pomegranate (Anar)",
   };
   return canonicalProduct(names[String(code || "")] || String(code || ""), "");

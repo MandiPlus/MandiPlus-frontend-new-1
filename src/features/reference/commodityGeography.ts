@@ -6,6 +6,7 @@ export const STATES_BY_COMMODITY: Record<string, readonly string[]> = {
   TOMATO: ["KARNATAKA", "ANDHRA_PRADESH"],
   POMEGRANATE: ["MAHARASHTRA"],
   APPLE: ["JAMMU_AND_KASHMIR", "HIMACHAL_PRADESH"],
+  PINEAPPLE: ["DELHI", "KERALA", "WEST_BENGAL", "ASSAM"],
 };
 
 /**
@@ -19,6 +20,9 @@ export const SUGGESTED_MANDIS_BY_STATE: Record<string, readonly string[]> = {
   ANDHRA_PRADESH: ["Anantapur"],
   JAMMU_AND_KASHMIR: ["Sopore"],
   HIMACHAL_PRADESH: ["Shimla"],
+  KERALA: ["Vazhakulam", "Muvattupuzha"],
+  WEST_BENGAL: ["Siliguri", "Jalpaiguri"],
+  ASSAM: ["Guwahati"],
 };
 
 /** @deprecated Prefer SUGGESTED_MANDIS_BY_STATE — kept as first-chip alias. */

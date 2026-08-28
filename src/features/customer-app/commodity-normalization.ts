@@ -9,6 +9,7 @@ const COMMODITIES: readonly CommodityDefinition[] = [
   { name: "Mango", aliases: ["aam"] },
   { name: "Banana", aliases: ["kela"] },
   { name: "Apple", aliases: ["seb", "sebb"] },
+  { name: "Pineapple", aliases: ["ananas", "anannas", "anaras"] },
   { name: "Papaya (Papita)", aliases: ["papaya", "papita"] },
   { name: "Pomegranate (Anar)", aliases: ["pomegranate", "anar", "dalimb", "dalimba", "daalimb"] },
   { name: "Oranges", aliases: ["orange"] },
@@ -34,6 +35,8 @@ function normalizeLookup(value: unknown): string {
     .normalize("NFKD")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
+    // OCR splits "PINE APPLE" — fold it back before matching Apple.
+    .replace(/\bpine apple\b/g, "pineapple")
     .trim();
 }
 
@@ -83,7 +86,11 @@ export function canonicalizeCommodityLabel(value: unknown): string {
 
   const contained = candidates
     .filter(({ candidate }) => {
+      // "pineapple" contains "apple" — keep the two from swallowing each other.
       if (candidate === "apple" && wanted.includes("pineapple")) return false;
+      if (candidate === "pineapple" && !wanted.includes("pineapple")) {
+        return false;
+      }
       return (
         candidate.length >= 4 &&
         (wanted.includes(candidate) || candidate.includes(wanted))

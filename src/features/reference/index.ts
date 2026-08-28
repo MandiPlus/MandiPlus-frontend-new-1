@@ -69,6 +69,7 @@ export const FALLBACK_COMMODITIES: ReferenceCommodityOption[] = [
   { code: "MANGO", label: "Mango", emoji: "🥭", sortOrder: 30 },
   { code: "APPLE", label: "Apple", emoji: "🍎", sortOrder: 35 },
   { code: "BANANA", label: "Banana", emoji: "🍌", sortOrder: 40 },
+  { code: "PINEAPPLE", label: "Pineapple", emoji: "🍍", sortOrder: 45 },
   { code: "ONION", label: "Onion", emoji: "🧅", sortOrder: 50 },
   { code: "POTATO", label: "Potato", emoji: "🥔", sortOrder: 60 },
   { code: "OTHER", label: "Other", emoji: "🌾", sortOrder: 80 },

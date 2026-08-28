@@ -110,6 +110,7 @@ const PRODUCT_CATEGORY: Record<string, string> = {
     Potato: 'Vegetables',
     Mango: 'Fruits',
     Pomegranate: 'Fruits',
+    Pineapple: 'Fruits',
     Guava: 'Fruits',
     Cotton: 'Cash Crop',
     Soybean: 'Pulses',
