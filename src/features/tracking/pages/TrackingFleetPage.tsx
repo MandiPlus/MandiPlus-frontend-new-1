@@ -41,6 +41,7 @@ import {
   type TrackingRoute,
 } from '@/features/tracking/api';
 import styles from './tracking-app.module.css';
+import { startGatewayCheckout } from '@/features/payments/gateway-checkout';
 
 const TripGoogleMap = dynamic(() => import('@/components/maps/TripGoogleMap'), {
   ssr: false,
@@ -344,8 +345,7 @@ function TrackingApp({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
         merchantOrderId,
         vehicleNumber: paywallVehicle || null,
       }));
-      if (!checkout.redirectUrl) throw new Error('PhonePe checkout URL was not returned.');
-      window.location.assign(checkout.redirectUrl);
+      await startGatewayCheckout(checkout);
     } catch (error) {
       setPaymentPhase('failed');
       setPaymentError(readableError(error, 'PhonePe is unavailable right now. Please try again shortly.'));

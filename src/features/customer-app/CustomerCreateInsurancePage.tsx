@@ -75,6 +75,7 @@ import {
   withSingleExtractionRetry,
 } from "./invoice-extraction-recovery";
 import listeningFaceAnimation from "./listening-face.json";
+import { startGatewayCheckout } from "@/features/payments/gateway-checkout";
 import {
   clearCustomerInvoicePaymentAttempt,
   customerInvoicePaymentFingerprint,
@@ -1815,7 +1816,7 @@ export default function CustomerCreateInsurancePage() {
       };
       writeCustomerInvoicePaymentAttempt(attempt);
       paymentAttemptRef.current = attempt;
-      window.location.assign(checkout.redirectUrl);
+      await startGatewayCheckout(checkout);
     } catch (error) {
       const paymentError = readableError(error, "");
       const attemptedPayment =
