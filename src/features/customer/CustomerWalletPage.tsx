@@ -38,6 +38,7 @@ import {
   fallbackWalletPacks,
   reconcileWalletCreditPacks,
 } from "./wallet-catalog";
+import { startGatewayCheckout } from "@/features/payments/gateway-checkout";
 
 type WalletView = "home" | "add" | "confirm" | "transactions";
 type WalletOwnership = "loading" | "owned" | "unowned" | "error";
@@ -282,10 +283,7 @@ export default function CustomerWalletPage() {
         packId: selectedPack.id,
         couponCode: quote?.code || undefined,
       });
-      if (!checkout.redirectUrl) {
-        throw new Error("Payment page load nahi hua.");
-      }
-      window.location.assign(checkout.redirectUrl);
+      await startGatewayCheckout(checkout);
     } catch (error) {
       setNotice(errorText(error, "Payment start nahi hua. Dobara try karein."));
       setPaying(false);

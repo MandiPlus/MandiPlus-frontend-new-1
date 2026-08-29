@@ -33,6 +33,7 @@ import {
   type CustomerInvoice,
 } from "./utils";
 import styles from "./customer-app.module.css";
+import { startGatewayCheckout } from "@/features/payments/gateway-checkout";
 
 type PaperTab = "pending" | "policy" | "paid" | "all";
 
@@ -159,9 +160,7 @@ export default function CustomerPapersPage({
           0,
         ),
       );
-      if (!checkout.redirectUrl)
-        throw new Error("PhonePe checkout URL was not returned.");
-      window.location.assign(checkout.redirectUrl);
+      await startGatewayCheckout(checkout);
     } catch (error) {
       const message = readableError(
         error,

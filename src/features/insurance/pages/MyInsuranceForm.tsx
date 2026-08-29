@@ -19,6 +19,7 @@ import {
   markCustomerNotificationRead,
 } from "../../customer/api";
 import ProtectedRoute from "../../auth/components/ProtectedRoute";
+import { startGatewayCheckout } from "@/features/payments/gateway-checkout";
 
 type PaperTab = "pending" | "policy" | "paid" | "all";
 type PaperInvoice = InsuranceForm & {
@@ -168,10 +169,7 @@ const MyInsuranceForms = () => {
       const checkout = await createCustomerWebPaymentCheckout(
         selectedInvoices.map((invoice) => invoice.id),
       );
-      if (!checkout.redirectUrl) {
-        throw new Error("PhonePe checkout did not return a payment URL.");
-      }
-      window.location.assign(checkout.redirectUrl);
+      await startGatewayCheckout(checkout);
     } catch (err: unknown) {
       setActiveTab("pending");
       setNotice(getErrorMessage(err, "Could not start PhonePe checkout. Please try again."));

@@ -1,3 +1,7 @@
+import type {
+  GatewayProvider,
+  RazorpayCheckoutPayload,
+} from '@/features/payments/gateway-checkout';
 import axios, { AxiosError } from "axios";
 import type { ClaimRequest, InsuranceForm } from "@/features/insurance/api";
 import { getStoredAuthToken, refreshAccessToken } from "@/features/auth/api";
@@ -65,7 +69,9 @@ export interface CustomerWalletTopupCheckout {
   merchantTransactionId: string;
   merchantOrderId: string;
   orderId?: string;
-  redirectUrl?: string;
+  provider?: GatewayProvider;
+  redirectUrl?: string | null;
+  razorpayCheckout?: RazorpayCheckoutPayload | null;
   expireAt?: number | string | null;
 }
 
@@ -89,7 +95,9 @@ export interface CustomerPaymentCheckoutResponse {
   merchantTransactionId: string;
   merchantOrderId?: string;
   orderId?: string;
-  redirectUrl?: string;
+  provider?: GatewayProvider;
+  redirectUrl?: string | null;
+  razorpayCheckout?: RazorpayCheckoutPayload | null;
   expireAt?: number | string | null;
   message?: string;
   invoices?: Array<{

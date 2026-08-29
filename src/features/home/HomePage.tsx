@@ -52,6 +52,7 @@ import {
   ChatBubbleLeftRightIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
+import { startGatewayCheckout } from "@/features/payments/gateway-checkout";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000/";
@@ -736,10 +737,7 @@ const HomePage = () => {
       const checkout = await createCustomerWebPaymentCheckout(
         selectedInvoices.map((invoice) => invoice.id),
       );
-      if (!checkout.redirectUrl) {
-        throw new Error("PhonePe checkout did not return a payment URL.");
-      }
-      window.location.assign(checkout.redirectUrl);
+      await startGatewayCheckout(checkout);
     } catch (err: unknown) {
       setPaymentMessage(
         getErrorMessage(
