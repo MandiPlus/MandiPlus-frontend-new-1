@@ -1,5 +1,9 @@
 import axios, { AxiosError } from "axios";
 import { getStoredAuthToken } from "@/features/auth/api";
+import type {
+  GatewayProvider,
+  RazorpayCheckoutPayload,
+} from '@/features/payments/gateway-checkout';
 
 /**
  * Backend base URL
@@ -180,7 +184,9 @@ export interface TrackingPackCheckoutResponse {
   totalPaymentAmount: number;
   merchantTransactionId: string;
   merchantOrderId?: string;
-  redirectUrl?: string;
+  provider?: GatewayProvider;
+  redirectUrl?: string | null;
+  razorpayCheckout?: RazorpayCheckoutPayload | null;
   packId?: string;
   packLabel?: string;
   expireAt?: number | string | null;
