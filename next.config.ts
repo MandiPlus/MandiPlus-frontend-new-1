@@ -3,6 +3,16 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Allow an isolated local-test build to run alongside the normal dev server.
   distDir: process.env.NEXT_DIST_DIR?.trim() || ".next",
+  async redirects() {
+    return [
+      {
+        // Older app builds link to the PDF path; the MOU now lives on a page.
+        source: "/docs/mou.pdf",
+        destination: "/docs/mou",
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     return [
       {
