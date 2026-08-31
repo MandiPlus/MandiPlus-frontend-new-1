@@ -10,6 +10,7 @@ import {
 } from "@/features/auth/api";
 import { usePathname, useRouter } from "next/navigation";
 import { disableWebPushForCurrentBrowser } from "@/features/notifications/webPush";
+import { isPublicStandaloneRoute } from "@/shared/routing/publicStandaloneRoutes";
 
 interface AuthContextType {
     user: any;
@@ -93,6 +94,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [impersonatedUserName, setImpersonatedUserName] = useState("");
     const pathname = usePathname();
     const router = useRouter();
+    const canRenderBeforeAuthBootstrap = isPublicStandaloneRoute(pathname);
 
     const syncUserFromStoredToken = async () => {
         const storedToken = getStoredAuthToken();
@@ -333,7 +335,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     return (
         <AuthContext.Provider value={{ user, loading, login, logout, setUser }}>
-            {!loading && children}
+            {(!loading || canRenderBeforeAuthBootstrap) && children}
             {isImpersonating && (
                 <div className="fixed left-1/2 top-3 z-[101] -translate-x-1/2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 shadow-sm">
                     <div className="flex items-center gap-3">

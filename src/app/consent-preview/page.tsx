@@ -7,7 +7,7 @@ const consentText = {
     <>
       I confirm that I have read, understood, and accepted the terms of the{" "}
       <a
-        href="/docs/mou.pdf"
+        href="/docs/mou"
         target="_blank"
         rel="noopener noreferrer"
         className="text-blue-600 hover:underline font-medium"
@@ -44,7 +44,7 @@ const consentText = {
     <>
       मैं यह पुष्टि करता हूँ कि मैंने Mandi Plus (ENP FARMS PVT LTD) के साथ{" "}
       <a
-        href="/docs/mou.pdf"
+        href="/docs/mou"
         target="_blank"
         rel="noopener noreferrer"
         className="text-blue-600 hover:underline font-medium"

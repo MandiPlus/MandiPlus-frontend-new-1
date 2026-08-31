@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/features/auth/context/AuthContext";
 import axios from "axios";
 import { toast } from "react-toastify";
+import { usePathname } from "next/navigation";
+import { isPublicStandaloneRoute } from "@/shared/routing/publicStandaloneRoutes";
 
 const CONSENT_STORAGE_KEY = "mandi_plus_insurance_consent";
 
@@ -11,7 +13,7 @@ const consentText = {
     en: (
         <>
             I confirm that I have read, understood, and accepted the terms of the{" "}
-            <a href="/docs/mou.pdf" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">
+            <a href="/docs/mou" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">
                 Memorandum of Understanding (MOU)
             </a>{" "}
             with Mandi Plus (ENP FARMS PVT LTD). I accept the insurance terms and conditions and the guidelines for any loss/damage of my agricultural goods during transit as per the clauses mentioned in the{" "}
@@ -28,7 +30,7 @@ const consentText = {
     hi: (
         <>
             मैं यह पुष्टि करता हूँ कि मैंने Mandi Plus (ENP FARMS PVT LTD) के साथ{" "}
-            <a href="/docs/mou.pdf" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">
+            <a href="/docs/mou" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">
                 समझौता ज्ञापन (MOU)
             </a>{" "}
             की शर्तों को पढ़ और समझ लिया है। मैं अपने कृषि सामान (Agri-goods) के ट्रांसपोर्ट के दौरान होने वाले किसी भी नुकसान या डैमेज के लिए{" "}
@@ -46,6 +48,7 @@ const consentText = {
 
 export default function ConsentGuard({ children }: { children: React.ReactNode }) {
     const { user, setUser } = useAuth();
+    const pathname = usePathname();
     const [showModal, setShowModal] = useState(false);
     const [loading, setLoading] = useState(false);
     const [agreed, setAgreed] = useState(false);
@@ -120,8 +123,9 @@ export default function ConsentGuard({ children }: { children: React.ReactNode }
         }
     };
 
-    // If no modal needed, just render the app content normally
-    if (!showModal) {
+    // Public legal and service-information pages must remain readable without
+    // waiting for authentication or accepting an account-specific consent.
+    if (isPublicStandaloneRoute(pathname) || !showModal) {
         return <>{children}</>;
     }
 

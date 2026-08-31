@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
+import { isPublicStandaloneRoute } from "@/shared/routing/publicStandaloneRoutes";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -20,12 +21,13 @@ export default function InstallPrompt() {
   const isIOS =
     typeof navigator !== "undefined" &&
     /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const shouldHidePrompt =
+    pathname === "/" ||
+    pathname.startsWith("/claim/") ||
+    isPublicStandaloneRoute(pathname);
 
   useEffect(() => {
-    if (pathname === "/" || pathname.startsWith("/claim/")) {
-      setShowPrompt(false);
-      return;
-    }
+    if (shouldHidePrompt) return;
 
     const standalone =
       window.matchMedia("(display-mode: standalone)").matches ||
@@ -50,7 +52,7 @@ export default function InstallPrompt() {
 
     window.addEventListener("beforeinstallprompt", handler);
     return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, [pathname]);
+  }, [pathname, shouldHidePrompt]);
 
   const handleInstall = async () => {
     if (!deferredPrompt) return;
@@ -68,8 +70,7 @@ export default function InstallPrompt() {
     localStorage.setItem("pwa-install-dismissed", "true");
   };
 
-  if (pathname === "/" || pathname.startsWith("/claim/") || !showPrompt)
-    return null;
+  if (shouldHidePrompt || !showPrompt) return null;
 
   return (
     <div className="fixed bottom-20 left-4 right-4 z-[90] animate-fadeIn">
