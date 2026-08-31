@@ -13,6 +13,7 @@ type InsuranceCreationAudienceInput = {
 
 const INTERNAL_MOBILE_INVOICE_CREATORS = new Set([
   "8904628742",
+  "8789250356",
 ]);
 
 function normalizedIndianMobile(value: unknown): string {
