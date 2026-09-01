@@ -2364,7 +2364,9 @@ class AdminApi {
         try {
           const response = await this.client.get<
             ApiResponse<{ forms: InsuranceForm[]; total: number }>
-          >("/admin/insurance-forms");
+          >("/admin/insurance-forms", {
+            params: { page, limit },
+          });
           this.adminInsuranceFormsEndpointAvailable = true;
           return response.data;
         } catch (error: any) {
@@ -2374,26 +2376,16 @@ class AdminApi {
         }
       }
 
-      const fallback = await this.client.get<any>("/invoices");
-      if (Array.isArray(fallback.data)) {
-        return {
-          success: true,
-          data: {
-            forms: fallback.data as InsuranceForm[],
-            total: fallback.data.length,
-          },
-        };
-      }
-      if (Array.isArray(fallback.data?.data)) {
-        return {
-          success: true,
-          data: {
-            forms: fallback.data.data as InsuranceForm[],
-            total: fallback.data.data.length,
-          },
-        };
-      }
-      return fallback.data;
+      // No fallback to the legacy GET /invoices dump: polling that unbounded
+      // endpoint from every admin tab is what caused the multi-TB egress bill
+      // in Aug 2026. If the endpoint is missing, degrade to an empty list.
+      console.warn(
+        "/admin/insurance-forms is unavailable (404); returning no forms",
+      );
+      return {
+        success: true,
+        data: { forms: [], total: 0 },
+      };
     } catch (error: any) {
       return {
         success: false,
