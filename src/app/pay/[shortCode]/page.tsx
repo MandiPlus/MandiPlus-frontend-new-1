@@ -1,7 +1,7 @@
 'use client';
 
 import { startGatewayCheckout } from '@/features/payments/gateway-checkout';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { use } from 'react';
 
 const API_BASE_URL =
@@ -42,6 +42,10 @@ export default function PayPage({
   const [checkout, setCheckout] = useState<PayCheckout | null>(null);
   const [error, setError] = useState('');
   const [opening, setOpening] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  // Auto-open must fire once per visit. A ref rather than state because
+  // React re-runs effects in development and a second open would stack modals.
+  const autoOpened = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,12 +73,25 @@ export default function PayPage({
     if (!checkout?.razorpayCheckout || opening) return;
     setOpening(true);
     setError('');
+    setDismissed(false);
     try {
-      await startGatewayCheckout({
-        provider: 'RAZORPAY',
-        redirectUrl: null,
-        razorpayCheckout: checkout.razorpayCheckout,
-      });
+      await startGatewayCheckout(
+        {
+          provider: 'RAZORPAY',
+          redirectUrl: null,
+          razorpayCheckout: checkout.razorpayCheckout,
+        },
+        {
+          // Stay on this page rather than bouncing to the return page. The
+          // modal opens by itself, so a dismiss is usually a mis-tap, and
+          // landing on "not confirmed" would read as a failure that never
+          // happened. Success still navigates.
+          onDismiss: () => {
+            setOpening(false);
+            setDismissed(true);
+          },
+        },
+      );
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Could not open payment. Try again.',
@@ -82,6 +99,16 @@ export default function PayPage({
       setOpening(false);
     }
   }, [checkout, opening]);
+
+  // Open Razorpay as soon as we know what to charge — the customer already
+  // chose to pay by following the link, so the extra tap earns nothing. The
+  // card below stays rendered underneath as the retry surface.
+  useEffect(() => {
+    if (autoOpened.current) return;
+    if (!checkout || checkout.alreadyPaid || !checkout.razorpayCheckout) return;
+    autoOpened.current = true;
+    void pay();
+  }, [checkout, pay]);
 
   if (error) {
     return (
@@ -131,13 +158,22 @@ export default function PayPage({
           </dd>
         </div>
       </dl>
+      {dismissed ? (
+        <p className="mt-6 rounded-lg bg-amber-50 px-3 py-2 text-center text-sm text-amber-800">
+          Payment window closed. Nothing has been charged.
+        </p>
+      ) : null}
       <button
         type="button"
         onClick={pay}
         disabled={opening}
-        className="mt-8 w-full rounded-xl bg-emerald-700 px-4 py-3.5 text-base font-semibold text-white disabled:opacity-60"
+        className="mt-6 w-full rounded-xl bg-emerald-700 px-4 py-3.5 text-base font-semibold text-white disabled:opacity-60"
       >
-        {opening ? 'Opening payment…' : `Pay ${money(checkout.amount)}`}
+        {opening
+          ? 'Opening payment…'
+          : dismissed
+            ? `Try again — ${money(checkout.amount)}`
+            : `Pay ${money(checkout.amount)}`}
       </button>
       <p className="mt-4 text-center text-xs text-gray-400">
         Secured by Razorpay · UPI, cards and netbanking
