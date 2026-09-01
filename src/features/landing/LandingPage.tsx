@@ -22,6 +22,8 @@ import styles from "@/features/landing/LandingPage.module.css";
 import {
   CALL_URL,
   COMPANY_INFO,
+  HERO_CALL_NUMBER,
+  HERO_CALL_URL,
   PLAY_STORE_URL,
   SOCIAL_LINKS,
 } from "@/features/landing/landingData";
@@ -290,6 +292,14 @@ const LandingPage = () => {
                 <Link href="/login" className={styles.heroLogin}>
                   Login
                 </Link>
+                <a
+                  href={HERO_CALL_URL}
+                  className={styles.heroCall}
+                  aria-label={`Call karein ${HERO_CALL_NUMBER}`}
+                >
+                  <Phone size={16} strokeWidth={2} aria-hidden="true" />
+                  Call karein
+                </a>
               </div>
             </div>
 

@@ -3,6 +3,10 @@ export const PLAY_STORE_URL =
 
 export const CALL_URL = "tel:+917676217658";
 
+// Hero "Call karein" button — sales line traders dial straight from the landing page.
+export const HERO_CALL_NUMBER = "+91 96069 95351";
+export const HERO_CALL_URL = "tel:+919606995351";
+
 // "Munafa aapka" (profit is yours) in mandi-trade-belt languages, cycled in the hero.
 export const MUNAFA_TRANSLATIONS = [
   { lang: "Hindi", text: "मुनाफ़ा आपका" },
