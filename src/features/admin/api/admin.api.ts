@@ -1358,8 +1358,9 @@ const CLAIM_STAGE_FAILURE_MESSAGES: Record<string, string> = {
   surveyor_contact_missing: "Add the surveyor's contact number first",
   no_documents_selected: "Select at least one document to request",
   settlement_amount_missing: "Enter a settlement amount first",
-  send_failed_or_already_sent:
-    "Not sent — this update was already delivered, or WhatsApp rejected it",
+  already_sent: "Already delivered — use Resend to send it again",
+  provider_rejected: "WhatsApp rejected this message",
+  send_failed: "Not sent — the send could not be started",
 };
 
 export function claimStageFailureMessage(reason?: string): string {
@@ -1589,6 +1590,7 @@ export type ClaimRequestableDocumentKey =
 export interface ClaimStageNotificationResult {
   sent: boolean;
   reason?: string;
+  errorDetail?: string;
   event: ClaimStageEvent;
   level: number;
   templateName: string | null;
@@ -5504,12 +5506,15 @@ class AdminApi {
       >(`/claim-requests/${id}/notifications/stage`, payload);
       const result = response.data;
 
+      const base = claimStageFailureMessage(result?.reason);
       return {
         success: Boolean(result?.sent),
         data: result,
         message: result?.sent
           ? "WhatsApp update sent"
-          : claimStageFailureMessage(result?.reason),
+          : result?.errorDetail
+            ? `${base}: ${result.errorDetail}`
+            : base,
       };
     } catch (error: unknown) {
       return {
