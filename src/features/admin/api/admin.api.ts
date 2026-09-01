@@ -859,6 +859,7 @@ export interface AppPaymentsSummary {
 export type TrackingPurchaseStatus = 'PENDING' | 'ACTIVE' | 'EXPIRED' | 'FAILED';
 export type TrackingPaymentMethod =
   | 'PHONEPE'
+  | 'RAZORPAY'
   | 'CASH'
   | 'UPI'
   | 'BANK_TRANSFER'
@@ -921,7 +922,8 @@ export interface AdminTrackingPlanCustomer {
 export interface GrantTrackingPlanPayload {
   userId: string;
   idempotencyKey: string;
-  paymentMethod: Exclude<TrackingPaymentMethod, 'PHONEPE'>;
+  // Gateway methods are recorded by the payment flow, never granted manually.
+  paymentMethod: Exclude<TrackingPaymentMethod, 'PHONEPE' | 'RAZORPAY'>;
   amountPaid: number;
   paymentReference?: string;
   note?: string;
