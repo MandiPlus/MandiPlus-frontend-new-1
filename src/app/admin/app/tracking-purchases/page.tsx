@@ -99,6 +99,7 @@ function compactReference(value?: string | null) {
 
 function formatPaymentMethod(value: TrackingPaymentMethod) {
   if (value === 'PHONEPE') return 'PhonePe';
+  if (value === 'RAZORPAY') return 'Razorpay';
   if (value === 'BANK_TRANSFER') return 'Bank transfer';
   return value.charAt(0) + value.slice(1).toLowerCase();
 }
