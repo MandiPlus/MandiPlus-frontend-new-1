@@ -36,6 +36,12 @@ export interface RazorpayCheckoutPayload {
   };
   notes?: Record<string, string>;
   themeColor?: string;
+  /**
+   * Lock the prefilled contact. Used for payment links, where we already know
+   * who owes the money — Razorpay's own hosted link page deliberately never
+   * autofills it, which is the whole reason we host this checkout ourselves.
+   */
+  readonlyContact?: boolean;
 }
 
 /** The subset of a checkout response this helper needs. */
@@ -152,6 +158,9 @@ async function openRazorpayCheckout(
     name: payload.name,
     description: payload.description,
     prefill: payload.prefill ?? {},
+    ...(payload.readonlyContact
+      ? { readonly: { contact: true, email: true } }
+      : {}),
     notes: payload.notes ?? {},
     theme: { color: payload.themeColor || '#0F7A3D' },
     retry: { enabled: true },
