@@ -34,6 +34,13 @@ function formatTimestamp(value?: string | null): string {
 
 const notificationLabels: Record<ClaimNotificationLog['notificationType'], string> = {
   claim_initiated: 'Claim initiated',
+  surveyor_appointment: 'Surveyor appointment initiated',
+  surveyor_details: 'Surveyor details shared',
+  survey_onspot: 'Survey scheduled · on spot',
+  survey_destination: 'Survey scheduled · final destination',
+  survey_completed: 'Survey completed',
+  document_request: 'Documents requested',
+  claim_settled: 'Claim settled',
   document_reminder: 'Document reminder',
   surveyor_assigned: 'Surveyor assigned',
   report_generated: 'Report generated',

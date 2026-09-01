@@ -13,6 +13,7 @@ import {
 } from '@/features/admin/api/admin.api';
 import InvoicePicker from '@/features/admin/claims/InvoicePicker';
 import ClaimDocumentReminderPanel from '@/features/admin/claims/ClaimDocumentReminderPanel';
+import ClaimStageNotificationPanel from '@/features/admin/claims/ClaimStageNotificationPanel';
 import {
   EvidenceBadge,
   LocationLink,
@@ -130,6 +131,7 @@ const fieldClass =
 type ClaimSurveyorDraft = {
   name: string;
   contact: string;
+  company: string;
 };
 
 function getClaimSurveyors(claim: ClaimRequest): ClaimSurveyorDraft[] {
@@ -137,14 +139,17 @@ function getClaimSurveyors(claim: ClaimRequest): ClaimSurveyorDraft[] {
     .map((surveyor) => ({
       name: String(surveyor.name || '').trim(),
       contact: String(surveyor.contact || '').trim(),
+      company: String(surveyor.company || '').trim(),
     }))
-    .filter((surveyor) => surveyor.name || surveyor.contact);
+    .filter((surveyor) => surveyor.name || surveyor.contact || surveyor.company);
 
   if (savedSurveyors.length > 0) return savedSurveyors;
 
   const primaryName = String(claim.surveyorName || '').trim();
   const primaryContact = String(claim.surveyorNumber || claim.surveyorContact || '').trim();
-  return primaryName || primaryContact ? [{ name: primaryName, contact: primaryContact }] : [];
+  return primaryName || primaryContact
+    ? [{ name: primaryName, contact: primaryContact, company: '' }]
+    : [];
 }
 
 function normalizeSurveyors(surveyors: ClaimSurveyorDraft[]): ClaimSurveyorDraft[] {
@@ -152,8 +157,9 @@ function normalizeSurveyors(surveyors: ClaimSurveyorDraft[]): ClaimSurveyorDraft
     .map((surveyor) => ({
       name: surveyor.name.trim(),
       contact: surveyor.contact.trim(),
+      company: (surveyor.company || '').trim(),
     }))
-    .filter((surveyor) => surveyor.name || surveyor.contact);
+    .filter((surveyor) => surveyor.name || surveyor.contact || surveyor.company);
 }
 
 function formatTableSurveyorField(
@@ -1768,7 +1774,9 @@ function FullViewClaimModal({
   onUpdated: (claim: ClaimRequest) => void;
   onDeleted: (claimId: string) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'proof' | 'documents' | 'assessment' | 'snapshot'>('overview');
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'proof' | 'documents' | 'assessment' | 'snapshot' | 'notifications'
+  >('overview');
   const initialSurveyors = getClaimSurveyors(claim);
 
   const [form, setForm] = useState<UpdateClaimDto>({
@@ -1792,7 +1800,7 @@ function FullViewClaimModal({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const currentIsEngineSeize = isEngineSeizeClaim({ ...claim, description: form.description });
   const [surveyors, setSurveyors] = useState<ClaimSurveyorDraft[]>(() => {
-    return initialSurveyors.length > 0 ? initialSurveyors : [{ name: '', contact: '' }];
+    return initialSurveyors.length > 0 ? initialSurveyors : [{ name: '', contact: '', company: '' }];
   });
   const [assessmentReport, setAssessmentReport] = useState<ClaimAssessmentReportData>(() =>
     buildDefaultAssessmentReport(claim),
@@ -1852,7 +1860,7 @@ function FullViewClaimModal({
   }, [activeTab, currentIsEngineSeize]);
 
   const modalTabs: Array<{
-    id: 'overview' | 'proof' | 'documents' | 'assessment' | 'snapshot';
+    id: 'overview' | 'proof' | 'documents' | 'assessment' | 'snapshot' | 'notifications';
     label: string;
     icon: typeof FileText;
     count: string | null;
@@ -1863,6 +1871,12 @@ function FullViewClaimModal({
       ? { id: 'assessment', label: 'Technical Assessment', icon: Wrench, count: null }
       : { id: 'documents', label: 'Official Documents', icon: FileCheck2, count: String(docs.length) },
     { id: 'snapshot', label: 'Invoice & Party Snapshot', icon: Truck, count: null },
+    {
+      id: 'notifications',
+      label: 'Customer Updates',
+      icon: Send,
+      count: `${Number(claim.notificationLevel || 0)}/7`,
+    },
   ];
 
   const handleAssessmentScreenshotUpload = async (files: File[]) => {
@@ -2408,7 +2422,7 @@ function FullViewClaimModal({
                     <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#4309ac]">Surveyors</h3>
                     <button
                       type="button"
-                      onClick={() => setSurveyors((current) => [...current, { name: '', contact: '' }])}
+                      onClick={() => setSurveyors((current) => [...current, { name: '', contact: '', company: '' }])}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 py-1.5 text-xs font-bold text-violet-700 shadow-2xs hover:bg-violet-50"
                     >
                       <Plus className="h-3.5 w-3.5" />
@@ -2418,7 +2432,7 @@ function FullViewClaimModal({
 
                   <div className="space-y-2.5">
                     {surveyors.map((surveyor, index) => (
-                      <div key={index} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-[1fr_1fr_auto]">
+                      <div key={index} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
                         <label className="text-xs font-bold text-slate-800">
                           {index === 0 ? 'Primary Surveyor Name' : `Surveyor ${index + 1} Name`}
                           <input
@@ -2447,11 +2461,25 @@ function FullViewClaimModal({
                             className={`${fieldClass} mt-1.5`}
                           />
                         </label>
+                        <label className="text-xs font-bold text-slate-800">
+                          {index === 0 ? 'Primary Surveyor Company' : `Surveyor ${index + 1} Company`}
+                          <input
+                            value={surveyor.company}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setSurveyors((current) =>
+                                current.map((item, itemIndex) => (itemIndex === index ? { ...item, company: value } : item)),
+                              );
+                            }}
+                            placeholder="Survey company name"
+                            className={`${fieldClass} mt-1.5`}
+                          />
+                        </label>
                         <button
                           type="button"
                           onClick={() =>
                             setSurveyors((current) =>
-                              current.length === 1 ? [{ name: '', contact: '' }] : current.filter((_, itemIndex) => itemIndex !== index),
+                              current.length === 1 ? [{ name: '', contact: '', company: '' }] : current.filter((_, itemIndex) => itemIndex !== index),
                             )
                           }
                           className="self-end rounded-lg border border-rose-200 bg-rose-50 p-2 text-rose-700 hover:bg-rose-100"
@@ -2879,6 +2907,16 @@ function FullViewClaimModal({
           )}
 
           {/* TAB 5: SNAPSHOT */}
+          {activeTab === 'notifications' && (
+            <ClaimStageNotificationPanel
+              claim={claim}
+              onUpdated={async () => {
+                const refreshed = await adminApi.getClaimById(claim.id);
+                if (refreshed.data) onUpdated(refreshed.data);
+              }}
+            />
+          )}
+
           {activeTab === 'snapshot' && (
             <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4 shadow-sm">
               <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#4309ac]">Party Snapshot</h3>
