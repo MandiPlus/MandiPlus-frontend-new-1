@@ -119,9 +119,20 @@ function isRazorpayCheckout(
  */
 export async function startGatewayCheckout(
   checkout: GatewayCheckoutResponse,
+  options?: {
+    /**
+     * Called instead of navigating when the customer closes the modal.
+     *
+     * Only for surfaces that open checkout automatically, where bouncing to
+     * the return page on an accidental dismiss would strand the customer.
+     * Callers that open on a tap leave this unset and keep the default:
+     * navigate, and let the server decide what actually happened.
+     */
+    onDismiss?: () => void;
+  },
 ): Promise<void> {
   if (isRazorpayCheckout(checkout)) {
-    await openRazorpayCheckout(checkout.razorpayCheckout);
+    await openRazorpayCheckout(checkout.razorpayCheckout, options?.onDismiss);
     return;
   }
 
@@ -135,6 +146,7 @@ export async function startGatewayCheckout(
 
 async function openRazorpayCheckout(
   payload: RazorpayCheckoutPayload,
+  onDismiss?: () => void,
 ): Promise<void> {
   await loadRazorpayCheckoutScript();
 
@@ -166,7 +178,7 @@ async function openRazorpayCheckout(
     retry: { enabled: true },
     handler: goToReturnUrl,
     modal: {
-      ondismiss: goToReturnUrl,
+      ondismiss: onDismiss ?? goToReturnUrl,
       confirm_close: true,
       escape: true,
     },
