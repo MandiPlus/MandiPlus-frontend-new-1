@@ -1344,6 +1344,29 @@ export interface FlaggedVehicle {
   createdAt?: string;
 }
 
+
+const CLAIM_STAGE_FAILURE_MESSAGES: Record<string, string> = {
+  claim_not_found: "Claim not found",
+  preview_only: "Preview only — nothing was sent",
+  notifications_disabled:
+    "Claim notifications are switched off (CLAIM_NOTIFICATIONS_ENABLED)",
+  template_not_configured:
+    "No approved WhatsApp template is configured for this update",
+  no_recipient_phone: "This claim has no insured-party WhatsApp number",
+  surveyor_name_missing: "Add the surveyor's name first",
+  surveyor_company_missing: "Add the surveyor's company name first",
+  surveyor_contact_missing: "Add the surveyor's contact number first",
+  no_documents_selected: "Select at least one document to request",
+  settlement_amount_missing: "Enter a settlement amount first",
+  send_failed_or_already_sent:
+    "Not sent — this update was already delivered, or WhatsApp rejected it",
+};
+
+export function claimStageFailureMessage(reason?: string): string {
+  if (!reason) return "WhatsApp update was not sent";
+  return CLAIM_STAGE_FAILURE_MESSAGES[reason] || `Not sent (${reason})`;
+}
+
 export interface ClaimRequest {
   id: string;
   caseNumber: string;
@@ -1353,6 +1376,8 @@ export interface ClaimRequest {
   mandiplusClaimNumber?: string | null;
   handledBy?: 'TATA' | 'MandiPlus' | string | null;
   status: ClaimStatus;
+  /** Customer-communication stage (0-7), independent of `status`. */
+  notificationLevel?: number;
   paymentStatus: ClaimPaymentStatus;
   createdAt: string;
   claimDate?: string | null;
@@ -1373,6 +1398,7 @@ export interface ClaimRequest {
   surveyors?: Array<{
     name: string;
     contact: string;
+    company?: string;
   }>;
   notes?: string;
   claimFormUrl?: string;
@@ -1531,8 +1557,22 @@ export interface ClaimActivity {
   createdAt: string;
 }
 
+export const CLAIM_STAGE_EVENTS = [
+  "claim_initiated",
+  "surveyor_appointment",
+  "surveyor_details",
+  "survey_onspot",
+  "survey_destination",
+  "survey_completed",
+  "document_request",
+  "claim_settled",
+] as const;
+
+export type ClaimStageEvent = (typeof CLAIM_STAGE_EVENTS)[number];
+
 export type ClaimNotificationType =
-  | "claim_initiated"
+  | ClaimStageEvent
+  // Legacy types kept so historical delivery logs still render.
   | "document_reminder"
   | "surveyor_assigned"
   | "report_generated"
@@ -1540,6 +1580,56 @@ export type ClaimNotificationType =
   | "bank_details_request"
   | "completed"
   | "document_uploaded_admin";
+
+export type ClaimRequestableDocumentKey =
+  | "lorry_receipt"
+  | "damage_certificate"
+  | "fir";
+
+export interface ClaimStageNotificationResult {
+  sent: boolean;
+  reason?: string;
+  event: ClaimStageEvent;
+  level: number;
+  templateName: string | null;
+  recipientPhone: string | null;
+  bodyParameters: string[];
+  previewText: string | null;
+}
+
+export interface ClaimStagePreview {
+  event: ClaimStageEvent;
+  level: number;
+  ready: boolean;
+  reason?: string;
+  templateConfigured: boolean;
+  bodyParameters: string[];
+  previewText: string;
+}
+
+export interface ClaimStagePreviewResponse {
+  recipientPhone: string | null;
+  stages: ClaimStagePreview[];
+}
+
+export interface ClaimNotificationConfig {
+  enabled: boolean;
+  testMode: boolean;
+  testRecipient: string | null;
+  allowedRecipients: string[];
+  whatsappConfigured: boolean;
+  missingTemplates: ClaimStageEvent[];
+  levels: Array<{
+    level: number;
+    key: string;
+    label: string;
+    events: ClaimStageEvent[];
+  }>;
+  requestableDocuments: Array<{
+    key: ClaimRequestableDocumentKey;
+    label: string;
+  }>;
+}
 
 export type ClaimNotificationDeliveryStatus =
   | "processing"
@@ -1613,6 +1703,7 @@ export interface UpdateClaimDto {
   surveyors?: Array<{
     name: string;
     contact: string;
+    company?: string;
   }>;
   notes?: string | null;
   proofFiles?: Array<{
@@ -5341,6 +5432,117 @@ class AdminApi {
         message: this.getAxiosErrorMessage(
           error,
           "Failed to fetch claim notification history",
+        ),
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public getClaimNotificationConfig = async (): Promise<
+    ApiResponse<ClaimNotificationConfig>
+  > => {
+    try {
+      const response = await this.client.get<
+        ClaimNotificationConfig | ApiResponse<ClaimNotificationConfig>
+      >("/claim-requests/admin/notification-config");
+      const payload =
+        "enabled" in response.data
+          ? (response.data as ClaimNotificationConfig)
+          : (response.data as ApiResponse<ClaimNotificationConfig>).data;
+
+      return { success: true, data: payload };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to load claim notification configuration",
+        ),
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public getClaimStagePreview = async (
+    id: string,
+  ): Promise<ApiResponse<ClaimStagePreviewResponse>> => {
+    try {
+      const response = await this.client.get<
+        ClaimStagePreviewResponse | ApiResponse<ClaimStagePreviewResponse>
+      >(`/claim-requests/${id}/notifications/stage-preview`);
+      const payload =
+        "stages" in response.data
+          ? (response.data as ClaimStagePreviewResponse)
+          : (response.data as ApiResponse<ClaimStagePreviewResponse>).data;
+
+      return { success: true, data: payload };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to load claim stage preview",
+        ),
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public sendClaimStageNotification = async (
+    id: string,
+    payload: {
+      event: ClaimStageEvent;
+      documents?: ClaimRequestableDocumentKey[];
+      settlementAmount?: number;
+      dryRun?: boolean;
+      resend?: boolean;
+    },
+  ): Promise<ApiResponse<ClaimStageNotificationResult>> => {
+    try {
+      const response = await this.client.post<
+        ClaimStageNotificationResult & { success?: boolean }
+      >(`/claim-requests/${id}/notifications/stage`, payload);
+      const result = response.data;
+
+      return {
+        success: Boolean(result?.sent),
+        data: result,
+        message: result?.sent
+          ? "WhatsApp update sent"
+          : claimStageFailureMessage(result?.reason),
+      };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to send WhatsApp claim update",
+        ),
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public setClaimNotificationLevel = async (
+    id: string,
+    level: number,
+  ): Promise<ApiResponse<ClaimRequest>> => {
+    try {
+      const response = await this.client.patch<
+        ClaimRequest | ApiResponse<ClaimRequest>
+      >(`/claim-requests/${id}/notifications/level`, { level });
+      const payload =
+        "id" in response.data
+          ? (response.data as ClaimRequest)
+          : (response.data as ApiResponse<ClaimRequest>).data;
+
+      return { success: true, data: payload };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to update claim stage",
         ),
         error: error instanceof Error ? error.message : String(error),
       };
