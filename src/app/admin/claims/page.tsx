@@ -21,6 +21,7 @@ import ClaimAutoNotifySheet, {
 import ClaimDocumentRequestButton, {
   REQUESTABLE_DOCUMENT_KEYS,
 } from '@/features/admin/claims/ClaimDocumentRequestButton';
+import ClaimDocumentCollectionPanel from '@/features/admin/claims/ClaimDocumentCollectionPanel';
 import {
   EvidenceBadge,
   LocationLink,
@@ -2991,13 +2992,22 @@ function FullViewClaimModal({
           ) : null}
 
           {activeTab === 'notifications' && (
-            <ClaimStageNotificationPanel
+            <div className="space-y-6">
+              <ClaimDocumentCollectionPanel
+                claim={claim}
+                onUpdated={async () => {
+                  const refreshed = await adminApi.getClaimById(claim.id);
+                  if (refreshed.data) onUpdated(refreshed.data);
+                }}
+              />
+              <ClaimStageNotificationPanel
               claim={claim}
-              onUpdated={async () => {
-                const refreshed = await adminApi.getClaimById(claim.id);
-                if (refreshed.data) onUpdated(refreshed.data);
-              }}
-            />
+                onUpdated={async () => {
+                  const refreshed = await adminApi.getClaimById(claim.id);
+                  if (refreshed.data) onUpdated(refreshed.data);
+                }}
+              />
+            </div>
           )}
 
           {activeTab === 'snapshot' && (
