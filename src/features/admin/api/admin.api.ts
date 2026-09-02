@@ -1390,6 +1390,16 @@ export interface ClaimRequest {
   /** Where claim updates go; overrides the invoice contact when set. */
   notificationRecipientPhone?: string | null;
   surveyStage?: "spot" | "destination" | null;
+  // Customer-supplied vehicle papers.
+  rcUrl?: string | null;
+  drivingLicenceUrl?: string | null;
+  pollutionCertificateUrl?: string | null;
+  fitnessCertificateUrl?: string | null;
+  policeDiaryEntryUrl?: string | null;
+  /** Catalogue keys that do not apply to this claim. */
+  documentsNotApplicable?: string[];
+  /** Admin stop switch for the daily document chase. */
+  documentRemindersPaused?: boolean;
   /** Transient: what the save just queued or wants confirmed. */
   pendingNotifications?: ClaimStageAutomationResult;
   paymentStatus: ClaimPaymentStatus;
@@ -1664,6 +1674,8 @@ export interface ClaimNotificationConfig {
     key: ClaimRequestableDocumentKey;
     label: string;
   }>;
+  /** Full customer-document catalogue; `column` names the claim field. */
+  documentCatalogue: Array<{ key: string; label: string; column: string }>;
 }
 
 export type ClaimNotificationDeliveryStatus =
@@ -1737,6 +1749,8 @@ export interface UpdateClaimDto {
   surveyorNumber?: string | null;
   notificationRecipientPhone?: string | null;
   surveyStage?: "spot" | "destination" | null;
+  documentRemindersPaused?: boolean;
+  documentsNotApplicable?: string[];
   surveyors?: Array<{
     name: string;
     contact: string;

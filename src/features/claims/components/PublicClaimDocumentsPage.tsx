@@ -18,24 +18,14 @@ import {
 } from "@/features/insurance/api";
 import styles from "./public-claim-documents.module.css";
 
-type DocumentDefinition = {
-  type: PublicClaimDocumentType;
-  title: string;
-  Icon: typeof FileText;
+/**
+ * The server owns the document list, so the page renders whatever it is sent.
+ * Icons are cosmetic and fall back for any key added later.
+ */
+const DOCUMENT_ICONS: Record<string, typeof FileText> = {
+  damageCertificate: FileImage,
+  accidentPic: FileImage,
 };
-
-const DOCUMENTS: DocumentDefinition[] = [
-  {
-    type: "lorryReceipt",
-    title: "Lorry Receipt (LR)",
-    Icon: FileText,
-  },
-  {
-    type: "damageCertificate",
-    title: "Damage Certificate",
-    Icon: FileImage,
-  },
-];
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ACCEPTED_TYPES = new Set(["application/pdf", "image/jpeg", "image/png"]);
@@ -101,7 +91,7 @@ export default function PublicClaimDocumentsPage({ token }: { token: string }) {
     try {
       const updated = await uploadPublicClaimDocument(token, type, file);
       setClaim(updated);
-      const label = DOCUMENTS.find((item) => item.type === type)?.title;
+      const label = updated.documents.find((item) => item.key === type)?.label;
       setNotice(`${label} mil gaya. Admin team ko update bhej diya hai.`);
     } catch (error: unknown) {
       setNotice(
@@ -114,10 +104,12 @@ export default function PublicClaimDocumentsPage({ token }: { token: string }) {
     }
   };
 
-  const receivedCount = claim
-    ? DOCUMENTS.filter((item) => claim.documents[item.type].received).length
-    : 0;
-  const complete = receivedCount === DOCUMENTS.length;
+  const requiredDocuments = claim
+    ? claim.documents.filter((item) => item.required)
+    : [];
+  const receivedCount = requiredDocuments.filter((item) => item.received).length;
+  const totalCount = requiredDocuments.length;
+  const complete = totalCount > 0 && receivedCount === totalCount;
   const expired =
     !!claim?.expiresAt && new Date(claim.expiresAt).getTime() <= Date.now();
 
@@ -186,14 +178,20 @@ export default function PublicClaimDocumentsPage({ token }: { token: string }) {
 
         <div
           className={styles.progress}
-          aria-label={`${receivedCount} of 2 documents received`}
+          aria-label={`${receivedCount} of ${totalCount} documents received`}
         >
           <div className={styles.progressMeta}>
             <span>Progress</span>
-            <strong>{receivedCount}/2</strong>
+            <strong>
+              {receivedCount}/{totalCount}
+            </strong>
           </div>
           <div className={styles.track}>
-            <span style={{ width: `${(receivedCount / 2) * 100}%` }} />
+            <span
+              style={{
+                width: `${totalCount ? (receivedCount / totalCount) * 100 : 0}%`,
+              }}
+            />
           </div>
         </div>
 
@@ -201,8 +199,8 @@ export default function PublicClaimDocumentsPage({ token }: { token: string }) {
           className={styles.documentList}
           aria-label="Required documents"
         >
-          {DOCUMENTS.map(({ type, title, Icon }) => {
-            const received = claim.documents[type].received;
+          {requiredDocuments.map(({ key: type, label: title, received }) => {
+            const Icon = DOCUMENT_ICONS[type] || FileText;
             const isUploading = uploading === type;
             return (
               <article className={styles.documentCard} key={type}>
