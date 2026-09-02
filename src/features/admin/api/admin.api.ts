@@ -1361,6 +1361,12 @@ const CLAIM_STAGE_FAILURE_MESSAGES: Record<string, string> = {
   no_documents_selected: "Select at least one document to request",
   settlement_amount_missing: "Enter a settlement amount first",
   already_sent: "Already delivered — use Resend to send it again",
+  recipient_blocked_by_canary:
+    "Blocked by canary mode — only the configured test number can be messaged. Turn off CLAIM_NOTIFICATIONS_TEST_MODE, or use Change to send to the test number",
+  recipient_not_allowlisted:
+    "This number is not in CLAIM_NOTIFICATION_ALLOWED_RECIPIENTS",
+  blocked_claim_identifier:
+    "Blocked — the message contained a claim or insurer identifier",
   provider_rejected: "WhatsApp rejected this message",
   send_failed: "Not sent — the send could not be started",
 };
