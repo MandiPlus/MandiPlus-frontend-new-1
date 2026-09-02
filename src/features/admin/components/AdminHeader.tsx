@@ -219,7 +219,7 @@ export default function AdminHeader() {
                         ? adminApi.getUsers(1, 200)
                         : Promise.resolve({ success: true, data: { users: [] } } as any),
                     canAccessSection('insurance-forms')
-                        ? adminApi.getInsuranceForms(1, 200)
+                        ? adminApi.getInsuranceForms(1, 30, '', 'summary')
                         : Promise.resolve({ success: true, data: { forms: [] } } as any),
                     canAccessSection('claims')
                         ? adminApi.getClaims()
