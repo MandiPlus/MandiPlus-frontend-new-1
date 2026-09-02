@@ -254,21 +254,25 @@ export interface PublicClaimCaptureLink {
   }>;
 }
 
-export type PublicClaimDocumentType =
-  | "lorryReceipt"
-  | "damageCertificate";
+/** Catalogue key. The server owns the list, so this stays open. */
+export type PublicClaimDocumentType = string;
+
+export interface PublicClaimDocumentItem {
+  key: PublicClaimDocumentType;
+  label: string;
+  received: boolean;
+  /** False when an admin marked this document not applicable to the claim. */
+  required: boolean;
+}
 
 export interface PublicClaimDocumentUploadLink {
   claimNumber: string;
   vehicleNumber: string;
   expiresAt: string;
   canUpload: boolean;
-  documents: Record<
-    PublicClaimDocumentType,
-    {
-      received: boolean;
-    }
-  >;
+  /** Rendered as sent: adding a document server-side needs no client change. */
+  documents: PublicClaimDocumentItem[];
+  outstandingCount: number;
 }
 
 export interface ClaimEligibleVehicle {
