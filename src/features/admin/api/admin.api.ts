@@ -1381,6 +1381,11 @@ export interface ClaimRequest {
   status: ClaimStatus;
   /** Customer-communication stage (0-7), independent of `status`. */
   notificationLevel?: number;
+  /** Where claim updates go; overrides the invoice contact when set. */
+  notificationRecipientPhone?: string | null;
+  surveyStage?: "spot" | "destination" | null;
+  /** Transient: what the save just queued or wants confirmed. */
+  pendingNotifications?: ClaimStageAutomationResult;
   paymentStatus: ClaimPaymentStatus;
   createdAt: string;
   claimDate?: string | null;
@@ -1587,7 +1592,10 @@ export type ClaimNotificationType =
 export type ClaimRequestableDocumentKey =
   | "lorry_receipt"
   | "damage_certificate"
-  | "fir";
+  | "fir"
+  | "estimation_bill"
+  | "accident_photos"
+  | "insurance_policy";
 
 export interface ClaimStageNotificationResult {
   sent: boolean;
@@ -1614,6 +1622,23 @@ export interface ClaimStagePreview {
 export interface ClaimStagePreviewResponse {
   recipientPhone: string | null;
   stages: ClaimStagePreview[];
+}
+
+export interface ClaimStageAutomationEntry {
+  event: ClaimStageEvent;
+  level: number;
+  templateName: string | null;
+  bodyParameters: string[];
+  previewText: string;
+}
+
+export interface ClaimStageAutomationResult {
+  status: "scheduled" | "needs_confirmation" | "none";
+  reason?: string;
+  entries: ClaimStageAutomationEntry[];
+  recipientPhone: string | null;
+  dispatchAt?: string;
+  undoWindowSeconds: number;
 }
 
 export interface ClaimNotificationConfig {
@@ -1704,6 +1729,8 @@ export interface UpdateClaimDto {
   surveyorName?: string | null;
   surveyorContact?: string | null;
   surveyorNumber?: string | null;
+  notificationRecipientPhone?: string | null;
+  surveyStage?: "spot" | "destination" | null;
   surveyors?: Array<{
     name: string;
     contact: string;
@@ -5453,6 +5480,26 @@ class AdminApi {
         message: this.getAxiosErrorMessage(
           error,
           "Failed to load claim notification configuration",
+        ),
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  };
+
+  public undoScheduledClaimNotifications = async (
+    id: string,
+  ): Promise<ApiResponse<{ cancelled: number }>> => {
+    try {
+      const response = await this.client.post<{ cancelled?: number }>(
+        `/claim-requests/${id}/notifications/undo`,
+      );
+      return { success: true, data: { cancelled: response.data?.cancelled || 0 } };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to cancel the queued update",
         ),
         error: error instanceof Error ? error.message : String(error),
       };

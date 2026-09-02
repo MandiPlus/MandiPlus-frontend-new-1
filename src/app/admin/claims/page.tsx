@@ -5,6 +5,7 @@ import {
   ClaimPaymentStatus,
   ClaimRequest,
   ClaimsSummary,
+  ClaimStageAutomationResult,
   ClaimStatus,
   EligibleClaimInvoice,
   FlaggedVehicle,
@@ -14,6 +15,12 @@ import {
 import InvoicePicker from '@/features/admin/claims/InvoicePicker';
 import ClaimDocumentReminderPanel from '@/features/admin/claims/ClaimDocumentReminderPanel';
 import ClaimStageNotificationPanel from '@/features/admin/claims/ClaimStageNotificationPanel';
+import ClaimAutoNotifySheet, {
+  showClaimUpdateQueuedToast,
+} from '@/features/admin/claims/ClaimAutoNotify';
+import ClaimDocumentRequestButton, {
+  REQUESTABLE_DOCUMENT_KEYS,
+} from '@/features/admin/claims/ClaimDocumentRequestButton';
 import {
   EvidenceBadge,
   LocationLink,
@@ -1793,9 +1800,13 @@ function FullViewClaimModal({
     surveyorName: claim.surveyorName || initialSurveyors[0]?.name || '',
     surveyorNumber: claim.surveyorNumber || claim.surveyorContact || initialSurveyors[0]?.contact || '',
     notes: claim.notes || '',
+    notificationRecipientPhone: claim.notificationRecipientPhone || '',
+    surveyStage: claim.surveyStage ?? null,
   });
 
   const [saving, setSaving] = useState(false);
+  const [autoNotifyPlan, setAutoNotifyPlan] =
+    useState<ClaimStageAutomationResult | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const currentIsEngineSeize = isEngineSeizeClaim({ ...claim, description: form.description });
@@ -2000,6 +2011,15 @@ function FullViewClaimModal({
     }
     toast.success('Claim updated successfully');
     onUpdated(response.data);
+
+    // The save already said what changed; turn that into the customer update it
+    // implies rather than making the admin re-declare it in another tab.
+    const plan = response.data.pendingNotifications;
+    if (plan?.status === 'scheduled') {
+      showClaimUpdateQueuedToast(claim.id, plan);
+    } else if (plan?.status === 'needs_confirmation') {
+      setAutoNotifyPlan(plan);
+    }
   };
 
   const confirmDelete = async () => {
@@ -2492,6 +2512,44 @@ function FullViewClaimModal({
                   </div>
                 </div>
 
+                <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 sm:grid-cols-2">
+                  <label className="text-xs font-bold text-slate-800">
+                    Survey Stage
+                    <select
+                      value={form.surveyStage ?? ''}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          surveyStage: (e.target.value || null) as 'spot' | 'destination' | null,
+                        })
+                      }
+                      className={`${fieldClass} mt-1.5`}
+                    >
+                      <option value="">Not set</option>
+                      <option value="spot">On spot (accident site)</option>
+                      <option value="destination">Final destination</option>
+                    </select>
+                    <span className="mt-1 block text-[10px] font-medium text-slate-500">
+                      Setting this tells the customer where the survey happens
+                    </span>
+                  </label>
+                  <label className="text-xs font-bold text-slate-800">
+                    WhatsApp Number for Updates
+                    <input
+                      value={form.notificationRecipientPhone ?? ''}
+                      onChange={(e) =>
+                        setForm({ ...form, notificationRecipientPhone: e.target.value })
+                      }
+                      placeholder="Defaults to the insured party's number"
+                      inputMode="numeric"
+                      className={`${fieldClass} mt-1.5`}
+                    />
+                    <span className="mt-1 block text-[10px] font-medium text-slate-500">
+                      Overrides the invoice contact; changes are recorded in the activity log
+                    </span>
+                  </label>
+                </div>
+
                 <label className="block text-xs font-bold text-slate-800">
                   Remarks & Case History
                   <textarea
@@ -2633,25 +2691,38 @@ function FullViewClaimModal({
                     ['Insurance Policy', 'insurancePolicy'],
                     ['Damage Certificate', 'damageForm'],
                   ].map(([label, typeKey]) => (
-                    <label
+                    <div
                       key={typeKey}
-                      className="flex cursor-pointer items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-800 transition hover:border-[#4309ac] hover:bg-violet-50/50 shadow-2xs"
+                      className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-800 transition hover:border-[#4309ac] hover:bg-violet-50/50 shadow-2xs"
                     >
-                      <span className="flex items-center gap-2">
-                        <Upload className="h-4 w-4 text-[#4309ac]" />
-                        {label}
-                      </span>
-                      <input
-                        type="file"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            void handleDocUploadCategory(typeKey, file);
-                          }
-                        }}
-                      />
-                    </label>
+                      {/* The upload target stays a label; the request button is a
+                          sibling so tapping it cannot open the file picker. */}
+                      <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+                        <Upload className="h-4 w-4 shrink-0 text-[#4309ac]" />
+                        <span className="truncate">{label}</span>
+                        <input
+                          type="file"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              void handleDocUploadCategory(typeKey, file);
+                            }
+                          }}
+                        />
+                      </label>
+                      {REQUESTABLE_DOCUMENT_KEYS[typeKey] ? (
+                        <ClaimDocumentRequestButton
+                          claimId={claim.id}
+                          documentKey={REQUESTABLE_DOCUMENT_KEYS[typeKey]}
+                          documentLabel={label}
+                          onSent={async () => {
+                            const refreshed = await adminApi.getClaimById(claim.id);
+                            if (refreshed.data) onUpdated(refreshed.data);
+                          }}
+                        />
+                      ) : null}
+                    </div>
                   ))}
                 </div>
 
@@ -2907,6 +2978,18 @@ function FullViewClaimModal({
           )}
 
           {/* TAB 5: SNAPSHOT */}
+          {autoNotifyPlan ? (
+            <ClaimAutoNotifySheet
+              claimId={claim.id}
+              plan={autoNotifyPlan}
+              onClose={() => setAutoNotifyPlan(null)}
+              onSent={async () => {
+                const refreshed = await adminApi.getClaimById(claim.id);
+                if (refreshed.data) onUpdated(refreshed.data);
+              }}
+            />
+          ) : null}
+
           {activeTab === 'notifications' && (
             <ClaimStageNotificationPanel
               claim={claim}

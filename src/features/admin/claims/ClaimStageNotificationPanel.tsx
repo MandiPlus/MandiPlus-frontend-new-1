@@ -25,7 +25,7 @@ import { toast } from 'react-toastify';
 
 const DELIVERED_STATUSES = ['accepted', 'delivered', 'read'];
 
-const EVENT_LABELS: Record<ClaimStageEvent, string> = {
+export const EVENT_LABELS: Record<ClaimStageEvent, string> = {
   claim_initiated: 'Claim initiated',
   surveyor_appointment: 'Surveyor appointment initiated',
   surveyor_details: 'Surveyor details (name, company, contact)',
@@ -435,12 +435,24 @@ export default function ClaimStageNotificationPanel({
 
       // Surveyor company is optional: when it is absent the backend sends a
       // four-parameter template with no Company line, so the positions shift.
+      // Survey messages carry the surveyor when one is on file, so the label
+      // set depends on how many parameters the backend resolved.
+      const surveyorOnSurvey =
+        (event === 'survey_onspot' || event === 'survey_destination') &&
+        values.length === 4;
+
       const fields: Array<{
         label: string;
         value: string;
         optional?: boolean;
-      }> =
-        event === 'surveyor_details'
+      }> = surveyorOnSurvey
+        ? [
+            { label: 'Customer', value: values[0] || '' },
+            { label: 'Vehicle', value: values[1] || '' },
+            { label: 'Surveyor', value: values[2] || '' },
+            { label: 'Contact', value: values[3] || '' },
+          ]
+        : event === 'surveyor_details'
           ? (() => {
               const hasCompany = values.length === 5;
               return [
@@ -462,6 +474,7 @@ export default function ClaimStageNotificationPanel({
               label,
               value: values[index] || '',
             }));
+
 
       let blocker: string | null = null;
       if (!preview.templateConfigured) {
