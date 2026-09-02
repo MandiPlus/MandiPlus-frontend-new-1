@@ -2391,6 +2391,7 @@ class AdminApi {
     page: number = 1,
     limit: number = 10,
     searchTerm: string = "",
+    view?: "summary",
   ): Promise<ApiResponse<{ forms: InsuranceForm[]; total: number }>> => {
     try {
       if (this.adminInsuranceFormsEndpointAvailable !== false) {
@@ -2398,7 +2399,7 @@ class AdminApi {
           const response = await this.client.get<
             ApiResponse<{ forms: InsuranceForm[]; total: number }>
           >("/admin/insurance-forms", {
-            params: { page, limit },
+            params: view ? { page, limit, view } : { page, limit },
           });
           this.adminInsuranceFormsEndpointAvailable = true;
           return response.data;
