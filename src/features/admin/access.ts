@@ -29,6 +29,7 @@ import {
   PresentationChartLineIcon,
   TicketIcon,
   TrashIcon,
+  MegaphoneIcon,
 } from '@heroicons/react/24/outline';
 
 export const ADMIN_SECTIONS = [
@@ -66,6 +67,7 @@ export const ADMIN_SECTIONS = [
   'reports',
   'analytics',
   'crm',
+  'promo',
 ] as const;
 
 export type AdminSection = (typeof ADMIN_SECTIONS)[number];
@@ -134,6 +136,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'Sales Analytics', href: '/admin/analytics', icon: PresentationChartLineIcon, section: 'analytics' },
   { name: 'AI Reports', href: '/admin/reports', icon: SparklesIcon, section: 'reports' },
   { name: 'CRM', href: '/crm', icon: PhoneIcon, section: 'crm' },
+  { name: 'Promo Links', href: '/admin/promo', icon: MegaphoneIcon, section: 'promo' },
 ];
 
 export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
@@ -176,7 +179,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   },
   {
     name: 'Communications',
-    sections: ['chat-logs', 'call-routing'],
+    sections: ['chat-logs', 'call-routing', 'promo'],
   },
 ];
 
@@ -222,6 +225,7 @@ export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/crm': 'crm',
   '/crm': 'crm',
   '/crm/user': 'crm',
+  '/admin/promo': 'promo',
 };
 
 export function getSectionForAdminPath(pathname: string): AdminSection | null {

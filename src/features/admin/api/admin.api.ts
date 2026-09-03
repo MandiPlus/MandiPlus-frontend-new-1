@@ -1805,6 +1805,26 @@ export interface UpdateClaimStatusDto {
   notes?: string;
 }
 
+export interface PromoLinkRow {
+  id: string;
+  token: string;
+  url: string;
+  userId: string;
+  userName: string | null;
+  mobileNumber: string | null;
+  displayName: string;
+  isFallbackName: boolean;
+  language: string | null;
+  campaign: string;
+  viewCount: number;
+  firstViewedAt: string | null;
+  lastViewedAt: string | null;
+  videoPlayedAt: string | null;
+  revokedAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
 // ----------------------------------------
 
 const API_BASE_URL =
@@ -2811,6 +2831,41 @@ class AdminApi {
         success: false,
         message: error.response?.data?.message || "Failed to search users",
         error: error.message,
+      };
+    }
+  };
+
+  public listPromoLinks = async (
+    campaign?: string,
+  ): Promise<ApiResponse<PromoLinkRow[]>> => {
+    try {
+      const response = await this.client.get("/admin/promo/links", {
+        params: { ...(campaign ? { campaign } : {}), limit: 60 },
+      });
+      return response.data as ApiResponse<PromoLinkRow[]>;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to load promo links",
+      };
+    }
+  };
+
+  public createPromoLink = async (payload: {
+    userId: string;
+    campaign?: string;
+    displayNameOverride?: string | null;
+    language?: string | null;
+  }): Promise<ApiResponse<PromoLinkRow>> => {
+    try {
+      const response = await this.client.post("/admin/promo/links", payload);
+      return { success: true, data: response.data as PromoLinkRow };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to create promo link",
       };
     }
   };
