@@ -40,16 +40,29 @@ export default function ClaimDocumentCollectionPanel({
   }, []);
 
   const notApplicable = claim.documentsNotApplicable || [];
+  const markedReceived = claim.documentsMarkedReceived || [];
   const paused = Boolean(claim.documentRemindersPaused);
-  const received = (entry: CatalogueEntry) =>
+
+  const uploaded = (entry: CatalogueEntry) =>
     Boolean(
       String(
         (claim as unknown as Record<string, unknown>)[entry.column] || '',
       ).trim(),
     );
 
+  /**
+   * Four states, deliberately distinct: a file exists, someone confirmed it in
+   * hand, it does not apply, or it is still owed. Only the last is chased.
+   */
+  const stateOf = (entry: CatalogueEntry) => {
+    if (uploaded(entry)) return 'uploaded' as const;
+    if (markedReceived.includes(entry.key)) return 'marked' as const;
+    if (notApplicable.includes(entry.key)) return 'skipped' as const;
+    return 'pending' as const;
+  };
+
   const outstanding = catalogue.filter(
-    (entry) => !notApplicable.includes(entry.key) && !received(entry),
+    (entry) => stateOf(entry) === 'pending',
   );
 
   const persist = async (
@@ -63,12 +76,33 @@ export default function ClaimDocumentCollectionPanel({
     else toast.error(response.message || 'Could not update the claim');
   };
 
-  const toggleApplicable = (key: string) => {
-    const next = notApplicable.includes(key)
-      ? notApplicable.filter((value) => value !== key)
-      : [...notApplicable, key];
-    void persist({ documentsNotApplicable: next }, key);
-  };
+  const setNotNeeded = (key: string, value: boolean) =>
+    void persist(
+      {
+        documentsNotApplicable: value
+          ? [...notApplicable, key]
+          : notApplicable.filter((item) => item !== key),
+        // Leaving one state always clears the other, so a document can never
+        // be both "not needed" and "received".
+        ...(value
+          ? { documentsMarkedReceived: markedReceived.filter((i) => i !== key) }
+          : {}),
+      },
+      key,
+    );
+
+  const setReceived = (key: string, value: boolean) =>
+    void persist(
+      {
+        documentsMarkedReceived: value
+          ? [...markedReceived, key]
+          : markedReceived.filter((item) => item !== key),
+        ...(value
+          ? { documentsNotApplicable: notApplicable.filter((i) => i !== key) }
+          : {}),
+      },
+      key,
+    );
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -116,34 +150,49 @@ export default function ClaimDocumentCollectionPanel({
 
       <ul className="mt-3 space-y-1.5">
         {catalogue.map((entry) => {
-          const has = received(entry);
-          const skipped = notApplicable.includes(entry.key);
+          const state = stateOf(entry);
+          const busy = saving === entry.key;
+          const tone = {
+            uploaded: 'border-emerald-200 bg-emerald-50/50',
+            marked: 'border-emerald-200 bg-emerald-50/30',
+            skipped: 'border-slate-200 bg-slate-50/60',
+            pending: 'border-amber-200 bg-amber-50/40',
+          }[state];
+          const dot = {
+            uploaded: 'bg-emerald-600 text-white',
+            marked: 'bg-emerald-500 text-white',
+            skipped: 'bg-slate-300 text-slate-600',
+            pending: 'bg-amber-500 text-white',
+          }[state];
+          const status = {
+            uploaded: 'uploaded',
+            marked: 'received',
+            skipped: 'not needed',
+            pending: 'pending',
+          }[state];
+
           return (
             <li
               key={entry.key}
-              className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
-                skipped
-                  ? 'border-slate-200 bg-slate-50/60'
-                  : has
-                    ? 'border-emerald-200 bg-emerald-50/50'
-                    : 'border-amber-200 bg-amber-50/40'
-              }`}
+              className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 ${tone}`}
             >
               <span className="flex min-w-0 items-center gap-2">
                 <span
-                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-black ${
-                    has
-                      ? 'bg-emerald-600 text-white'
-                      : skipped
-                        ? 'bg-slate-300 text-slate-600'
-                        : 'bg-amber-500 text-white'
-                  }`}
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-black ${dot}`}
                 >
-                  {has ? <Check className="h-3 w-3" /> : skipped ? '–' : '!'}
+                  {state === 'pending' ? (
+                    '!'
+                  ) : state === 'skipped' ? (
+                    '–'
+                  ) : (
+                    <Check className="h-3 w-3" />
+                  )}
                 </span>
                 <span
                   className={`truncate text-xs font-bold ${
-                    skipped ? 'text-slate-400 line-through' : 'text-slate-800'
+                    state === 'skipped'
+                      ? 'text-slate-400 line-through'
+                      : 'text-slate-800'
                   }`}
                 >
                   {entry.label}
@@ -152,31 +201,48 @@ export default function ClaimDocumentCollectionPanel({
 
               <span className="flex shrink-0 items-center gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  {has ? 'received' : skipped ? 'not needed' : 'pending'}
+                  {status}
                 </span>
-                {/* A document that does not apply is never chased, so an FIR is
-                    not requested daily on a claim with no police case. */}
-                <button
-                  type="button"
-                  onClick={() => toggleApplicable(entry.key)}
-                  disabled={saving === entry.key || has}
-                  title={
-                    has
-                      ? 'Already received'
-                      : skipped
-                        ? 'Ask for this document again'
-                        : 'Do not ask for this document on this claim'
-                  }
-                  className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
-                >
-                  {saving === entry.key ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : skipped ? (
-                    'Need it'
-                  ) : (
-                    'Not needed'
-                  )}
-                </button>
+                {busy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
+                ) : state === 'pending' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setReceived(entry.key, true)}
+                      title="We already have this document; stop asking for it"
+                      className="rounded-lg border border-emerald-300 bg-white px-2.5 py-1 text-[11px] font-bold text-emerald-800 hover:bg-emerald-50"
+                    >
+                      Received
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNotNeeded(entry.key, true)}
+                      title="This document does not apply to this claim"
+                      className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                    >
+                      Not needed
+                    </button>
+                  </>
+                ) : state === 'marked' ? (
+                  <button
+                    type="button"
+                    onClick={() => setReceived(entry.key, false)}
+                    title="Mark as still outstanding"
+                    className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                  >
+                    Undo
+                  </button>
+                ) : state === 'skipped' ? (
+                  <button
+                    type="button"
+                    onClick={() => setNotNeeded(entry.key, false)}
+                    title="Ask for this document again"
+                    className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                  >
+                    Need it
+                  </button>
+                ) : null}
               </span>
             </li>
           );
