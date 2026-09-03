@@ -1398,6 +1398,8 @@ export interface ClaimRequest {
   policeDiaryEntryUrl?: string | null;
   /** Catalogue keys that do not apply to this claim. */
   documentsNotApplicable?: string[];
+  /** Catalogue keys confirmed in hand without a file upload. */
+  documentsMarkedReceived?: string[];
   /** Admin stop switch for the daily document chase. */
   documentRemindersPaused?: boolean;
   /** Transient: what the save just queued or wants confirmed. */
@@ -1751,6 +1753,7 @@ export interface UpdateClaimDto {
   surveyStage?: "spot" | "destination" | null;
   documentRemindersPaused?: boolean;
   documentsNotApplicable?: string[];
+  documentsMarkedReceived?: string[];
   surveyors?: Array<{
     name: string;
     contact: string;
