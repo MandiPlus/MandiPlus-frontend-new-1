@@ -1820,6 +1820,8 @@ export interface PromoLinkRow {
   firstViewedAt: string | null;
   lastViewedAt: string | null;
   videoPlayedAt: string | null;
+  whatsappSentAt: string | null;
+  whatsappSendError: string | null;
   revokedAt: string | null;
   expiresAt: string | null;
   createdAt: string;
@@ -2866,6 +2868,24 @@ class AdminApi {
         success: false,
         message:
           error.response?.data?.message || "Failed to create promo link",
+      };
+    }
+  };
+
+  public sendPromoLinkWhatsapp = async (
+    id: string,
+  ): Promise<ApiResponse<{ messageId: string | null }>> => {
+    try {
+      const response = await this.client.post(
+        `/admin/promo/links/${id}/send`,
+      );
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message ||
+          "Failed to send via WhatsApp",
       };
     }
   };
