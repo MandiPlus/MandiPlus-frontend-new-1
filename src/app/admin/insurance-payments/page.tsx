@@ -640,12 +640,13 @@ export default function AdminInsurancePaymentsPage() {
   );
   const pageSelectableRows = useMemo(
     () =>
-      paginatedRows.filter(
-        (row) =>
-          String(row.paymentStatus || '').toUpperCase() !== 'PAID' &&
-          getEffectiveBalance(row) > 0,
-      ),
-    [paginatedRows],
+      paginatedRows.filter((row) => {
+        const isPaid = String(row.paymentStatus || '').toUpperCase() === 'PAID';
+        return effectivePaymentStatus === 'PAID'
+          ? true
+          : !isPaid && getEffectiveBalance(row) > 0;
+      }),
+    [paginatedRows, effectivePaymentStatus],
   );
   const allPageRowsSelected =
     pageSelectableRows.length > 0 &&
@@ -772,12 +773,16 @@ export default function AdminInsurancePaymentsPage() {
       }
       const allRows = Array.isArray(response.data) ? response.data : [];
       const minAmt = Number(debouncedMinAmount) || 0;
-      const selectableRows = allRows.filter(
-        (row) =>
-          String(row.paymentStatus || '').toUpperCase() !== 'PAID' &&
-          getEffectiveBalance(row) > 0 &&
-          (minAmt <= 0 || Number(row.premiumAmount || 0) >= minAmt),
-      );
+      const includePaidRows = effectivePaymentStatus === 'PAID';
+      const selectableRows = allRows.filter((row) => {
+        const isPaid = String(row.paymentStatus || '').toUpperCase() === 'PAID';
+        const selectable = includePaidRows
+          ? true
+          : !isPaid && getEffectiveBalance(row) > 0;
+        return (
+          selectable && (minAmt <= 0 || Number(row.premiumAmount || 0) >= minAmt)
+        );
+      });
       setSelectedInvoiceIds(new Set(selectableRows.map((row) => row.invoiceId)));
       setSelectedRowsById(
         selectableRows.reduce<Record<string, InsurancePaymentRow>>((acc, row) => {
@@ -999,15 +1004,15 @@ export default function AdminInsurancePaymentsPage() {
   };
 
   const generateSummaryImage = async () => {
-    if (selectedPendingRows.length === 0) {
-      toast.error('Select at least one unpaid invoice');
+    if (selectedRows.length === 0) {
+      toast.error('Select at least one invoice');
       return;
     }
 
     setGeneratingSummaryImage(true);
     try {
       const response = await adminApi.generatePaymentSummaryImage(
-        selectedPendingRows.map((row) => row.invoiceId),
+        selectedRows.map((row) => row.invoiceId),
       );
       if (!response.success || !response.data?.imageUrl) {
         throw new Error(
@@ -1717,10 +1722,11 @@ export default function AdminInsurancePaymentsPage() {
         <div className="mt-5 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-gray-200 bg-gray-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-gray-700">
-              <span className="font-semibold">{selectedPendingRows.length}</span>{' '}
-              unpaid selected
+              <span className="font-semibold">{selectedRows.length}</span>{' '}
+              selected
               {selectedPendingRows.length > 0 ? (
                 <span className="ml-2 text-gray-500">
+                  {selectedPendingRows.length} unpaid ·{' '}
                   {formatCurrency(selectedPendingTotal)}
                 </span>
               ) : null}
@@ -1764,7 +1770,7 @@ export default function AdminInsurancePaymentsPage() {
                 type="button"
                 onClick={generateSummaryImage}
                 disabled={
-                  generatingSummaryImage || selectedPendingRows.length === 0
+                  generatingSummaryImage || selectedRows.length === 0
                 }
                 className="inline-flex items-center gap-2 rounded-md bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
@@ -1796,7 +1802,7 @@ export default function AdminInsurancePaymentsPage() {
                       checked={allPageRowsSelected}
                       disabled={loading || totalRows === 0}
                       onChange={(e) => toggleAllSelection(e.target.checked)}
-                      aria-label="Select all unpaid invoices matching filters"
+                      aria-label="Select all invoices matching filters"
                     />
                   </th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">
