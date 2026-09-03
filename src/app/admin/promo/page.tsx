@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import {
+  CheckCircleIcon,
   ExclamationTriangleIcon,
   MagnifyingGlassIcon,
+  PaperAirplaneIcon,
   ShieldCheckIcon,
   UserCircleIcon,
 } from '@heroicons/react/24/outline';
@@ -76,6 +78,7 @@ export default function PromoLinksPage() {
   const [creating, setCreating] = useState(false);
   const [link, setLink] = useState<PromoLinkRow | null>(null);
   const [recent, setRecent] = useState<PromoLinkRow[]>([]);
+  const [sending, setSending] = useState(false);
 
   const loadRecent = useCallback(async () => {
     const response = await adminApi.listPromoLinks();
@@ -154,6 +157,20 @@ export default function PromoLinksPage() {
     setLink(response.data);
     void loadRecent();
   }, [selected, nameOverride, language, loadRecent]);
+
+  const sendViaBot = useCallback(async () => {
+    if (!link) return;
+    setSending(true);
+    const response = await adminApi.sendPromoLinkWhatsapp(link.id);
+    setSending(false);
+    if (!response.success) {
+      toast.error(response.message || 'Bot se bhej nahi paya');
+      return;
+    }
+    toast.success('WhatsApp par bhej diya');
+    setLink({ ...link, whatsappSentAt: new Date().toISOString(), whatsappSendError: null });
+    void loadRecent();
+  }, [link, loadRecent]);
 
   const copy = useMemo(() => getPromoCopy(language), [language]);
   const previewName = nameOverride.trim() || link?.displayName || selected?.name || '';
@@ -317,16 +334,40 @@ export default function PromoLinksPage() {
                   <p className="truncate rounded-md bg-slate-50 px-3 py-2 font-mono text-xs text-slate-600">
                     {link.url}
                   </p>
-                  <div className="flex flex-wrap gap-2">
+
+                  <button
+                    type="button"
+                    onClick={sendViaBot}
+                    disabled={sending}
+                    className="flex w-full items-center justify-center gap-2 rounded-md bg-[#4309ac] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+                  >
+                    <PaperAirplaneIcon className="h-4 w-4" />
+                    {sending ? 'Bheja ja raha hai…' : 'Bot se seedha bhejein'}
+                  </button>
+
+                  {link.whatsappSentAt ? (
+                    <p className="flex items-center gap-1.5 text-xs font-bold text-emerald-700">
+                      <CheckCircleIcon className="h-4 w-4" />
+                      {formatDateTime(link.whatsappSentAt)} ko bheja gaya
+                    </p>
+                  ) : null}
+                  {link.whatsappSendError ? (
+                    <p className="flex items-start gap-1.5 text-xs font-bold text-rose-700">
+                      <ExclamationTriangleIcon className="h-4 w-4 shrink-0" />
+                      {link.whatsappSendError}
+                    </p>
+                  ) : null}
+
+                  <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
                     <a
                       href={`https://wa.me/${waNumber(
                         selected.mobileNumber,
                       )}?text=${encodeURIComponent(message)}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="rounded-md bg-[#4309ac] px-4 py-2 text-sm font-bold text-white"
+                      className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
                     >
-                      WhatsApp par bhejein
+                      wa.me se kholein
                     </a>
                     <button
                       type="button"
@@ -350,6 +391,10 @@ export default function PromoLinksPage() {
                       Update
                     </button>
                   </div>
+                  <p className="text-xs font-medium text-slate-400">
+                    Bot sirf isi number par bhej sakta hai. Group mein daalne
+                    ke liye link ya message copy karein.
+                  </p>
                 </div>
               )}
             </div>
@@ -377,6 +422,7 @@ export default function PromoLinksPage() {
                   <th className="px-4 py-2.5 text-left">Dikhega</th>
                   <th className="px-4 py-2.5 text-left">Khola</th>
                   <th className="px-4 py-2.5 text-left">Video</th>
+                  <th className="px-4 py-2.5 text-left">Bot se bheja</th>
                   <th className="px-4 py-2.5 text-right">Link</th>
                 </tr>
               </thead>
@@ -409,6 +455,17 @@ export default function PromoLinksPage() {
                     </td>
                     <td className="px-4 py-2.5 text-xs font-semibold text-slate-600">
                       {formatDateTime(row.videoPlayedAt) || (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs font-semibold">
+                      {row.whatsappSentAt ? (
+                        <span className="text-emerald-700">
+                          {formatDateTime(row.whatsappSentAt)}
+                        </span>
+                      ) : row.whatsappSendError ? (
+                        <span className="text-rose-700">Fail ho gaya</span>
+                      ) : (
                         <span className="text-slate-400">—</span>
                       )}
                     </td>
