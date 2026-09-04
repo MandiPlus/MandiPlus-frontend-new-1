@@ -7,7 +7,13 @@ import {
   isValidPromoCode,
   type PromoCopy,
 } from './copy';
-import { buildYouTubeEmbedUrl, postToPlayer, toYouTubeId } from './video';
+import {
+  buildYouTubeEmbedUrl,
+  enterFullscreen,
+  exitImmersive,
+  lockLandscape,
+  toYouTubeId,
+} from './video';
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
@@ -17,6 +23,7 @@ export type PromoLink = {
   language: string;
   campaign: string;
   videoUrl: string | null;
+  videoPosterUrl?: string | null;
   playStoreUrl: string;
   appStoreUrl: string;
 };
@@ -72,9 +79,32 @@ export default function PromoReveal({
   const [stage, setStage] = useState<Stage>('gate');
   const [code, setCode] = useState('');
   const [wrong, setWrong] = useState(false);
+  const [stalled, setStalled] = useState(false);
   const timers = useRef<number[]>([]);
 
-  const videoId = toYouTubeId(link.videoUrl);
+  // A YouTube link can only be embedded, never preloaded. A direct file gets
+  // the whole head start below, so that is what the campaign ships.
+  const youTubeId = toYouTubeId(link.videoUrl);
+  const fileUrl = youTubeId ? null : link.videoUrl;
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const rootRef = useRef<HTMLElement>(null);
+  const isVideoStage = stage === 'video';
+
+  // The film is 16:9. Where the browser will not turn the screen for us, the
+  // player is turned instead so it still fills the phone.
+  const [portrait, setPortrait] = useState(true);
+  const [rotate, setRotate] = useState(false);
+
+  useEffect(() => {
+    const query = window.matchMedia('(orientation: portrait)');
+    const sync = () => setPortrait(query.matches);
+    sync();
+    query.addEventListener('change', sync);
+    return () => query.removeEventListener('change', sync);
+  }, []);
+
+  useEffect(() => exitImmersive, []);
 
   const sendEvent = useCallback(
     (type: 'code' | 'reveal' | 'video') => {
@@ -96,6 +126,67 @@ export default function PromoReveal({
 
   useEffect(() => clearTimers, [clearTimers]);
 
+  /**
+   * Buffering starts on the gate screen, so by the time the ten-second
+   * sequence finishes the file is far enough ahead to play without a spinner.
+   */
+  useEffect(() => {
+    if (!fileUrl) return;
+    const video = videoRef.current;
+    if (!video) return;
+    video.preload = 'auto';
+    try {
+      video.load();
+    } catch {
+      // Safari throws if load() races the element being attached.
+    }
+  }, [fileUrl]);
+
+  /**
+   * iOS ignores preload="auto" to save data and refuses playback that is not
+   * rooted in a gesture. Starting and immediately pausing inside the tap that
+   * submits the code unlocks the element and kicks off a real fetch.
+   */
+  const primeVideo = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !fileUrl) return;
+    video.muted = true;
+    const started = video.play();
+    if (started?.then) {
+      started
+        .then(() => {
+          video.pause();
+          video.currentTime = 0;
+        })
+        .catch(() => undefined);
+    }
+  }, [fileUrl]);
+
+  const startVideo = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !fileUrl) return;
+    video.currentTime = 0;
+    // Ask for sound first: the visitor typed the code, so Chrome and Android
+    // usually allow it. Where it is refused, fall back to muted rather than
+    // not playing at all — the native controls carry the unmute.
+    video.muted = false;
+    video.play().catch(() => {
+      video.muted = true;
+      video.play().catch(() => undefined);
+    });
+  }, [fileUrl]);
+
+  useEffect(() => {
+    if (!isVideoStage) return;
+    startVideo();
+    // Android turns the screen properly. iOS has no orientation lock, so fall
+    // back to rotating the player itself rather than showing a letterboxed
+    // strip in the middle of a portrait screen.
+    void lockLandscape().then((locked) => setRotate(!locked));
+  }, [isVideoStage, startVideo]);
+
+  const rotated = rotate && portrait && isVideoStage;
+
   const skipToVideo = useCallback(() => {
     clearTimers();
     setStage('video');
@@ -103,8 +194,10 @@ export default function PromoReveal({
     sendEvent('video');
   }, [clearTimers, sendEvent]);
 
-  const open = useCallback(() => {
-    if (!isValidPromoCode(code)) {
+  // `typed` is passed by the auto-submit, whose keystroke has not yet landed
+  // in state; the Enter key path falls back to what is already there.
+  const open = useCallback((typed?: string) => {
+    if (!isValidPromoCode(typed ?? code)) {
       setWrong(true);
       vibrate([20, 50, 20]);
       window.setTimeout(() => setWrong(false), 400);
@@ -112,6 +205,10 @@ export default function PromoReveal({
     }
 
     sendEvent('code');
+    primeVideo();
+    // Must happen inside this tap: by the time the video arrives the gesture
+    // has expired and the request would be refused.
+    void enterFullscreen(rootRef.current);
 
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       skipToVideo();
@@ -129,106 +226,227 @@ export default function PromoReveal({
       }, beat.at);
       timers.current.push(id);
     });
-  }, [code, sendEvent, skipToVideo]);
+  }, [code, sendEvent, primeVideo, skipToVideo]);
+
+  /**
+   * Finishing the word is the whole interaction — there is no button to press.
+   * Submitting straight from the keystroke matters beyond tidiness: a keydown
+   * carries user activation, so fullscreen and vibration are still allowed
+   * here, exactly as they would be from a tap.
+   */
+  const submitted = useRef(false);
+  const handleCodeChange = useCallback(
+    (value: string) => {
+      setCode(value);
+      if (submitted.current) return;
+      if (isValidPromoCode(value)) {
+        submitted.current = true;
+        open(value);
+      }
+    },
+    [open],
+  );
 
   const scriptStyle = copy.fontVar
     ? { fontFamily: `var(${copy.fontVar}), var(--font-manrope), sans-serif` }
     : undefined;
 
-  if (stage === 'video') {
-    return (
-      <VideoScreen
-        copy={copy}
-        link={link}
-        videoId={videoId}
-        scriptStyle={scriptStyle}
-      />
-    );
-  }
-
-  const showingSequence = stage !== 'gate';
+  const showingSequence = stage !== 'gate' && !isVideoStage;
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-[#eeeafc]">
-      <div className="relative h-dvh w-full max-w-[430px] overflow-hidden bg-[#eeeafc]">
-        <img
-          src="/promo/yard-tall.webp"
-          alt=""
-          aria-hidden="true"
-          className="absolute inset-0 h-full w-full object-cover transition-[filter] duration-500 ease-out"
-          style={{ filter: reached(stage, 'yard') ? 'none' : 'blur(3px)' }}
-        />
-        <img
-          src="/promo/scene-tall.webp"
-          alt="Mandi yard with a trader, a loaded truck and crates of produce"
-          className="absolute inset-0 h-full w-full object-cover transition-all duration-[900ms] ease-out"
-          style={{
-            opacity: reached(stage, 'scene') ? 1 : 0,
-            transform: reached(stage, 'scene')
-              ? 'none'
-              : 'translateY(14px) scale(1.035)',
-          }}
-        />
-
-        {/* One message at a time, each fading out as the next arrives. */}
-        <div className="pointer-events-none absolute inset-x-0 top-[11%] px-6 text-center">
-          <Message shown={stage === 'name'}>
-            <p
-              className="text-base font-medium text-[#4a4770]"
-              style={scriptStyle}
-            >
-              {copy.greeting}
-            </p>
-            <p
-              className="mt-1 break-words text-[clamp(1.75rem,8vw,2.4rem)] font-extrabold leading-[1.05] tracking-tight text-[#241a52]"
-              style={scriptStyle}
-            >
-              {link.name}
-              {link.name === FALLBACK_DISPLAY_NAME ? '' : copy.honorific}
-            </p>
-          </Message>
-
-          <Message shown={stage === 'headline'}>
-            <p
-              className="break-words text-[clamp(1.6rem,7.5vw,2.2rem)] font-extrabold leading-[1.1] tracking-tight text-[#241a52]"
-              style={scriptStyle}
-            >
-              {copy.headline}
-            </p>
-          </Message>
-
-          <Message shown={stage === 'tagline'}>
-            <p
-              className="text-[clamp(1.25rem,6vw,1.7rem)] font-extrabold leading-tight tracking-tight text-[#241a52]"
-              style={scriptStyle}
-            >
-              {copy.tagline}
-            </p>
-          </Message>
-        </div>
-
-        {showingSequence ? (
-          <button
-            type="button"
-            onClick={skipToVideo}
-            className="absolute bottom-6 right-5 rounded-full bg-white/80 px-4 py-2 text-xs font-bold text-[#4a4770]"
-            style={scriptStyle}
-          >
-            {copy.skip}
-          </button>
-        ) : null}
-
-        {stage === 'gate' ? (
-          <CodeGate
-            copy={copy}
-            code={code}
-            wrong={wrong}
-            scriptStyle={scriptStyle}
-            onChange={setCode}
-            onSubmit={open}
+    <main
+      ref={rootRef}
+      className="relative flex min-h-dvh items-center justify-center bg-[#eeeafc]"
+    >
+      {/* The reveal. Unmounted once the video takes over. */}
+      {!isVideoStage ? (
+        <div className="relative h-dvh w-full max-w-[430px] overflow-hidden bg-[#eeeafc]">
+          <img
+            src="/promo/yard-tall.webp"
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full object-cover transition-[filter] duration-500 ease-out"
+            style={{ filter: reached(stage, 'yard') ? 'none' : 'blur(3px)' }}
           />
-        ) : null}
-      </div>
+          <img
+            src="/promo/scene-tall.webp"
+            alt="Mandi yard with a trader, a loaded truck and crates of produce"
+            className="absolute inset-0 h-full w-full object-cover transition-all duration-[900ms] ease-out"
+            style={{
+              opacity: reached(stage, 'scene') ? 1 : 0,
+              transform: reached(stage, 'scene')
+                ? 'none'
+                : 'translateY(14px) scale(1.035)',
+            }}
+          />
+
+          <div className="pointer-events-none absolute inset-x-0 top-[11%] px-6 text-center">
+            <Message shown={stage === 'name'}>
+              <p
+                className="text-base font-medium text-[#4a4770]"
+                style={scriptStyle}
+              >
+                {copy.greeting}
+              </p>
+              <p
+                className="mt-1 break-words text-[clamp(1.75rem,8vw,2.4rem)] font-extrabold leading-[1.05] tracking-tight text-[#241a52]"
+                style={scriptStyle}
+              >
+                {link.name}
+                {link.name === FALLBACK_DISPLAY_NAME ? '' : copy.honorific}
+              </p>
+            </Message>
+
+            <Message shown={stage === 'headline'}>
+              <p
+                className="break-words text-[clamp(1.6rem,7.5vw,2.2rem)] font-extrabold leading-[1.1] tracking-tight text-[#241a52]"
+                style={scriptStyle}
+              >
+                {copy.headline}
+              </p>
+            </Message>
+
+            <Message shown={stage === 'tagline'}>
+              <p
+                className="text-[clamp(1.25rem,6vw,1.7rem)] font-extrabold leading-tight tracking-tight text-[#241a52]"
+                style={scriptStyle}
+              >
+                {copy.tagline}
+              </p>
+            </Message>
+          </div>
+
+          {showingSequence ? (
+            <button
+              type="button"
+              onClick={skipToVideo}
+              className="absolute bottom-6 right-5 rounded-full bg-white/80 px-4 py-2 text-xs font-bold text-[#4a4770]"
+              style={scriptStyle}
+            >
+              {copy.skip}
+            </button>
+          ) : null}
+
+          {stage === 'gate' ? (
+            <CodeGate
+              copy={copy}
+              code={code}
+              wrong={wrong}
+              scriptStyle={scriptStyle}
+              onChange={handleCodeChange}
+              onSubmit={open}
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {/*
+        Always mounted, only revealed at the end. Keeping it in the tree means
+        the video element never unmounts, so the bytes pulled down during the
+        gate and the sequence are the same bytes that play.
+      */}
+      <div
+        aria-hidden={!isVideoStage}
+        className={`absolute inset-0 flex flex-col items-center justify-center overflow-hidden bg-[#1b1436] px-4 py-6 ${
+          isVideoStage ? 'z-10' : 'pointer-events-none -z-10 opacity-0'
+        }`}
+      >
+          <img
+            src="/promo/scene-tall.webp"
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full scale-110 object-cover opacity-70 blur-lg"
+          />
+          <div className="absolute inset-0 bg-[#1b1436]/45" aria-hidden="true" />
+
+          <div
+            className={`relative flex flex-col items-center gap-6 ${
+              rotated
+                ? 'w-full'
+                : 'w-full max-w-[430px] landscape:max-w-none landscape:gap-3'
+            }`}
+          >
+            <div
+              className={`relative overflow-hidden bg-black shadow-2xl ${
+                rotated
+                  ? 'rounded-none'
+                  : 'w-full rounded-2xl landscape:aspect-video landscape:h-[72dvh] landscape:w-auto'
+              }`}
+              style={
+                rotated
+                  ? {
+                      // Turned a quarter turn and sized against the screen's
+                      // long edge, capped so the rotated result still fits
+                      // across the short edge (16/9 ≈ 1.778).
+                      width: 'min(100dvh, 177.7vw)',
+                      transform: 'rotate(90deg)',
+                    }
+                  : undefined
+              }
+            >
+              {fileUrl ? (
+                <video
+                  ref={videoRef}
+                  src={fileUrl}
+                  poster={link.videoPosterUrl || undefined}
+                  preload="auto"
+                  playsInline
+                  controls={isVideoStage}
+                  onWaiting={() => setStalled(true)}
+                  onPlaying={() => setStalled(false)}
+                  onCanPlay={() => setStalled(false)}
+                  className={`aspect-video bg-black ${
+                    rotated ? 'w-full' : 'w-full landscape:h-full landscape:w-auto'
+                  }`}
+                />
+              ) : null}
+              {/* A YouTube embed cannot be preloaded, and autoplay=1 would
+                  start it behind the reveal, so it mounts only at the end. */}
+              {youTubeId && isVideoStage ? (
+                <iframe
+                  src={buildYouTubeEmbedUrl(youTubeId)}
+                  title={copy.videoCta}
+                  allow="autoplay; encrypted-media; picture-in-picture"
+                  allowFullScreen
+                  className="aspect-video w-full border-0"
+                />
+              ) : null}
+              {stalled ? (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <span className="h-7 w-7 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                </div>
+              ) : null}
+            </div>
+
+            {/* While the player is turned sideways these would sit at ninety
+                degrees to it. They come back the moment the phone is rotated,
+                or when the video is done. */}
+            <div
+              className={`w-full max-w-[430px] flex-col items-center gap-3 ${
+                rotated ? 'hidden' : 'flex'
+              }`}
+            >
+              <p
+                className="text-xs font-bold uppercase tracking-[0.12em] text-white/60"
+                style={scriptStyle}
+              >
+                {copy.downloadLabel}
+              </p>
+              <div className="flex w-full gap-3">
+                <StoreButton
+                  href={link.playStoreUrl}
+                  label="Play Store"
+                  icon={<PlayStoreIcon />}
+                />
+                <StoreButton
+                  href={link.appStoreUrl}
+                  label="App Store"
+                  icon={<AppStoreIcon />}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
     </main>
   );
 }
@@ -280,123 +498,23 @@ function CodeGate({
           event.preventDefault();
           onSubmit();
         }}
-        className="flex w-full max-w-[280px] gap-2"
+        className="w-full max-w-[240px]"
         style={wrong ? { animation: 'promo-shake 0.36s' } : undefined}
       >
         <input
           value={code}
           onChange={(event) => onChange(event.target.value)}
           placeholder={copy.codePlaceholder}
+          autoFocus
           autoComplete="off"
           autoCapitalize="none"
           spellCheck={false}
           aria-label={copy.codeLabel}
-          className="min-w-0 flex-1 rounded-xl border-[1.5px] border-[#cec7ea] bg-white px-4 py-3 text-center text-base font-semibold tracking-[0.16em] text-[#241a52] outline-none placeholder:text-[#a49dc4] focus:border-[#4309ac]"
+          className="w-full rounded-xl border-[1.5px] border-[#cec7ea] bg-white px-4 py-3 text-center text-base font-semibold tracking-[0.16em] text-[#241a52] outline-none placeholder:text-[#a49dc4] focus:border-[#4309ac]"
         />
-        <button
-          type="submit"
-          className="rounded-xl bg-[#4309ac] px-5 py-3 text-sm font-extrabold text-white"
-          style={scriptStyle}
-        >
-          {copy.openCta}
-        </button>
       </form>
       <style>{`@keyframes promo-shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}`}</style>
     </div>
-  );
-}
-
-/**
- * The video sits on the mandi scene, blurred and dimmed, so the frame reads as
- * part of the same world rather than a bare black player.
- */
-function VideoScreen({
-  copy,
-  link,
-  videoId,
-  scriptStyle,
-}: {
-  copy: PromoCopy;
-  link: PromoLink;
-  videoId: string | null;
-  scriptStyle?: React.CSSProperties;
-}) {
-  const frameRef = useRef<HTMLIFrameElement>(null);
-
-  // Autoplay has to start muted — that is the only kind every browser allows.
-  // Ask for sound once the player is ready: Chrome and Android usually grant it
-  // because the visitor typed the code. Where it is refused, YouTube's own
-  // controls carry the unmute.
-  useEffect(() => {
-    if (!videoId) return;
-    const id = window.setTimeout(() => {
-      postToPlayer(frameRef.current, 'unMute');
-      postToPlayer(frameRef.current, 'setVolume', [100]);
-    }, 1200);
-    return () => window.clearTimeout(id);
-  }, [videoId]);
-
-  return (
-    <main className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-[#1b1436] px-4 py-6">
-      <img
-        src="/promo/scene-tall.webp"
-        alt=""
-        aria-hidden="true"
-        className="absolute inset-0 h-full w-full scale-110 object-cover opacity-70 blur-lg"
-      />
-      <div className="absolute inset-0 bg-[#1b1436]/45" aria-hidden="true" />
-
-      <div className="relative flex w-full max-w-[430px] flex-col items-center gap-6">
-        <div className="w-full overflow-hidden rounded-2xl bg-black shadow-2xl">
-          <div className="relative aspect-video w-full">
-            {videoId ? (
-              <iframe
-                ref={frameRef}
-                src={buildYouTubeEmbedUrl(videoId)}
-                title={copy.videoCta}
-                allow="autoplay; encrypted-media; picture-in-picture"
-                allowFullScreen
-                className="absolute inset-0 h-full w-full border-0"
-              />
-            ) : link.videoUrl ? (
-              <video
-                src={link.videoUrl}
-                autoPlay
-                muted
-                controls
-                playsInline
-                className="absolute inset-0 h-full w-full"
-              />
-            ) : (
-              <p className="absolute inset-0 flex items-center justify-center text-sm font-semibold text-white/70">
-                Video jaldi aa raha hai
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="flex w-full flex-col items-center gap-3">
-          <p
-            className="text-xs font-bold uppercase tracking-[0.12em] text-white/60"
-            style={scriptStyle}
-          >
-            {copy.downloadLabel}
-          </p>
-          <div className="flex w-full gap-3">
-            <StoreButton
-              href={link.playStoreUrl}
-              label="Play Store"
-              icon={<PlayStoreIcon />}
-            />
-            <StoreButton
-              href={link.appStoreUrl}
-              label="App Store"
-              icon={<AppStoreIcon />}
-            />
-          </div>
-        </div>
-      </div>
-    </main>
   );
 }
 
