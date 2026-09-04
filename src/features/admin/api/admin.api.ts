@@ -1534,6 +1534,8 @@ export interface ClaimCaptureLinkResult {
 
 export interface FilterClaimRequestsDto {
   status?: ClaimStatus;
+  /** Comma separated reasons for claim, e.g. "OVERTURN,THEFT". */
+  reasons?: string;
   paymentStatus?: ClaimPaymentStatus;
   evidenceStatus?: 'not_requested' | 'active' | 'in_progress' | 'received' | 'expired';
   captureType?: 'accident' | 'engine_seize';
@@ -1552,8 +1554,14 @@ export interface ClaimsPage {
   totalPages: number;
 }
 
+export interface ClaimReasonOption {
+  value: string;
+  count: number;
+}
+
 export interface ClaimsSummary {
   total: number;
+  settledAmount?: number;
   open: number;
   evidenceReceived: number;
   captureLinksActive?: number;
@@ -5104,10 +5112,34 @@ class AdminApi {
     return response.data;
   };
 
-  public getClaimsSummary = async (): Promise<ApiResponse<ClaimsSummary>> => {
+  public getClaimReasons = async (): Promise<
+    ApiResponse<ClaimReasonOption[]>
+  > => {
+    try {
+      const response = await this.client.get<ClaimReasonOption[]>(
+        "/claim-requests/admin/claim-reasons",
+      );
+      const payload = (response.data as any)?.data ?? response.data;
+      return { success: true, data: Array.isArray(payload) ? payload : [] };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: this.getAxiosErrorMessage(
+          error,
+          "Failed to fetch claim reasons",
+        ),
+        error: error.message,
+      };
+    }
+  };
+
+  public getClaimsSummary = async (
+    filters?: FilterClaimRequestsDto,
+  ): Promise<ApiResponse<ClaimsSummary>> => {
     try {
       const response = await this.client.get<ClaimsSummary>(
         "/claim-requests/admin/summary",
+        { params: filters },
       );
       return {
         success: true,
