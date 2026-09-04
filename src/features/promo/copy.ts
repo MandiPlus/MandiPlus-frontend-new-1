@@ -15,7 +15,6 @@ export type PromoCopy = {
   tagline: string;
   codeLabel: string;
   codePlaceholder: string;
-  openCta: string;
   wrongCode: string;
   videoCta: string;
   appCta: string;
@@ -33,7 +32,6 @@ const COPY: Record<PromoLanguage, PromoCopy> = {
     tagline: 'Risk humara · Munafa aapka',
     codeLabel: 'Code daalein',
     codePlaceholder: 'mandi',
-    openCta: 'Kholein',
     wrongCode: 'Code galat hai',
     videoCta: 'Dekhiye kya naya hai',
     appCta: 'App kholein',
@@ -48,7 +46,6 @@ const COPY: Record<PromoLanguage, PromoCopy> = {
     tagline: 'रिस्क हमारा · मुनाफ़ा आपका',
     codeLabel: 'कोड डालें',
     codePlaceholder: 'mandi',
-    openCta: 'खोलें',
     wrongCode: 'कोड ग़लत है',
     videoCta: 'देखिए क्या नया है',
     appCta: 'ऐप खोलें',
@@ -63,7 +60,6 @@ const COPY: Record<PromoLanguage, PromoCopy> = {
     tagline: 'रिस्क आमचा · नफा तुमचा',
     codeLabel: 'कोड टाका',
     codePlaceholder: 'mandi',
-    openCta: 'उघडा',
     wrongCode: 'कोड चुकीचा आहे',
     videoCta: 'काय नवीन आहे बघा',
     appCta: 'अ‍ॅप उघडा',
@@ -78,7 +74,6 @@ const COPY: Record<PromoLanguage, PromoCopy> = {
     tagline: 'ರಿಸ್ಕ್ ನಮ್ಮದು · ಲಾಭ ನಿಮ್ಮದು',
     codeLabel: 'ಕೋಡ್ ಹಾಕಿ',
     codePlaceholder: 'mandi',
-    openCta: 'ತೆರೆಯಿರಿ',
     wrongCode: 'ಕೋಡ್ ತಪ್ಪಾಗಿದೆ',
     videoCta: 'ಹೊಸದೇನಿದೆ ನೋಡಿ',
     appCta: 'ಆ್ಯಪ್ ತೆರೆಯಿರಿ',
@@ -93,7 +88,6 @@ const COPY: Record<PromoLanguage, PromoCopy> = {
     tagline: 'ரிஸ்க் எங்களுடையது · லாபம் உங்களுடையது',
     codeLabel: 'கோடு போடுங்கள்',
     codePlaceholder: 'mandi',
-    openCta: 'திறக்க',
     wrongCode: 'கோடு தவறு',
     videoCta: 'என்ன புதிது எனப் பாருங்கள்',
     appCta: 'ஆப் திறக்க',
@@ -108,7 +102,6 @@ const COPY: Record<PromoLanguage, PromoCopy> = {
     tagline: 'రిస్క్ మాది · లాభం మీది',
     codeLabel: 'కోడ్ వేయండి',
     codePlaceholder: 'mandi',
-    openCta: 'తెరవండి',
     wrongCode: 'కోడ్ తప్పు',
     videoCta: 'కొత్తది ఏమిటో చూడండి',
     appCta: 'యాప్ తెరవండి',

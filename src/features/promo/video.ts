@@ -37,6 +37,71 @@ export function buildYouTubeEmbedUrl(videoId: string): string {
   return `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`;
 }
 
+/**
+ * Fullscreen must be requested inside a user gesture — Chrome's activation
+ * expires within seconds, so asking after the ten-second sequence is refused.
+ * It is requested on the tap that submits the code instead, which makes the
+ * whole reveal immersive and leaves us already fullscreen for the video.
+ */
+export async function enterFullscreen(el: HTMLElement | null): Promise<boolean> {
+  if (!el) return false;
+  const target = el as HTMLElement & {
+    webkitRequestFullscreen?: () => Promise<void> | void;
+  };
+  const doc = document as Document & { webkitFullscreenElement?: Element };
+
+  if (doc.fullscreenElement || doc.webkitFullscreenElement) return true;
+
+  try {
+    if (target.requestFullscreen) {
+      await target.requestFullscreen({ navigationUI: 'hide' });
+      return true;
+    }
+    if (target.webkitRequestFullscreen) {
+      await target.webkitRequestFullscreen();
+      return true;
+    }
+  } catch {
+    // Refused (no activation, or an iframed page without allowfullscreen).
+  }
+  return false;
+}
+
+/**
+ * Landscape lock needs fullscreen first and does not exist on iOS Safari at
+ * all, so a false return is expected there and the caller rotates with CSS.
+ */
+export async function lockLandscape(): Promise<boolean> {
+  try {
+    const orientation = screen.orientation as ScreenOrientation & {
+      lock?: (o: string) => Promise<void>;
+    };
+    if (!orientation?.lock) return false;
+    await orientation.lock('landscape');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function exitImmersive(): void {
+  try {
+    (screen.orientation as ScreenOrientation & { unlock?: () => void })?.unlock?.();
+  } catch {
+    // Never locked in the first place.
+  }
+  try {
+    const doc = document as Document & {
+      webkitFullscreenElement?: Element;
+      webkitCancelFullScreen?: () => void;
+    };
+    if (doc.fullscreenElement) void doc.exitFullscreen();
+    else if (doc.webkitFullscreenElement) doc.webkitCancelFullScreen?.();
+  } catch {
+    // Already out.
+  }
+}
+
 /** Controls the embed without pulling in the whole IFrame Player API. */
 export function postToPlayer(
   frame: HTMLIFrameElement | null,
