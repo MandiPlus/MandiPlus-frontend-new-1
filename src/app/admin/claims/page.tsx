@@ -3288,11 +3288,8 @@ export default function AdminClaimsPage() {
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
           <div>
             <h1 className="text-2xl font-black tracking-tight text-slate-950">
-              MandiPlus — Insurance Claim Status
+              Insurance Claim Status
             </h1>
-            <p className="mt-1 text-xs font-semibold text-slate-500">
-              Live claim tracking, surveyor details, proof documentation and assessment reports
-            </p>
           </div>
           <div className="flex flex-wrap gap-2.5">
             <button
