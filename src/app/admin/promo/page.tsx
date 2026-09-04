@@ -12,6 +12,7 @@ import {
 } from '@heroicons/react/24/outline';
 import {
   AdminLedgerUser,
+  PromoCommodity,
   PromoLinkRow,
   adminApi,
 } from '@/features/admin/api/admin.api';
@@ -80,6 +81,11 @@ export default function PromoLinksPage() {
   const [recent, setRecent] = useState<PromoLinkRow[]>([]);
   const [sending, setSending] = useState(false);
 
+  const [commodities, setCommodities] = useState<PromoCommodity[]>([]);
+  const [commodity, setCommodity] = useState('');
+  const [testPhone, setTestPhone] = useState('');
+  const [busy, setBusy] = useState<'generate' | 'test' | 'send' | null>(null);
+
   const loadRecent = useCallback(async () => {
     const response = await adminApi.listPromoLinks();
     if (response.success) setRecent(response.data || []);
@@ -87,10 +93,11 @@ export default function PromoLinksPage() {
 
   useEffect(() => {
     void loadRecent();
+    void adminApi.listPromoCommodities().then((response) => {
+      if (response.success) setCommodities(response.data || []);
+    });
   }, [loadRecent]);
 
-  // With an empty box the page still shows who you could send to — the most
-  // recent app customers — so it is useful before anyone types anything.
   useEffect(() => {
     const trimmed = query.trim();
 
@@ -167,13 +174,62 @@ export default function PromoLinksPage() {
       toast.error(response.message || 'Bot se bhej nahi paya');
       return;
     }
-    toast.success('WhatsApp par bhej diya');
-    setLink({ ...link, whatsappSentAt: new Date().toISOString(), whatsappSendError: null });
+    toast.success('Bhej diya');
+    setLink({
+      ...link,
+      whatsappSentAt: new Date().toISOString(),
+      whatsappSendError: null,
+    });
     void loadRecent();
   }, [link, loadRecent]);
 
+  const audience = useMemo(
+    () => commodities.find((row) => row.code === commodity)?.users ?? 0,
+    [commodities, commodity],
+  );
+
+  const generateBulk = useCallback(async () => {
+    if (!commodity) return;
+    setBusy('generate');
+    const response = await adminApi.createPromoLinksForCommodity(commodity);
+    setBusy(null);
+    if (!response.success) {
+      toast.error(response.message || 'Links nahi bane');
+      return;
+    }
+    toast.success(`${response.count} link ban gaye`);
+    void loadRecent();
+  }, [commodity, loadRecent]);
+
+  const sendBulk = useCallback(
+    async (mode: 'test' | 'send') => {
+      if (!commodity) return;
+      if (mode === 'send') {
+        const ok = window.confirm(
+          `${audience} logon ko WhatsApp par bheja jayega. Pakka?`,
+        );
+        if (!ok) return;
+      }
+      setBusy(mode);
+      const response = await adminApi.sendPromoBulk({
+        commodity,
+        testPhone: mode === 'test' ? testPhone.trim() : undefined,
+      });
+      setBusy(null);
+      if (!response.success || !response.data) {
+        toast.error(response.message || 'Bhej nahi paya');
+        return;
+      }
+      const { sent, failed } = response.data;
+      toast.success(failed ? `${sent} gaye, ${failed} fail` : `${sent} bhej diye`);
+      void loadRecent();
+    },
+    [commodity, testPhone, audience, loadRecent],
+  );
+
   const copy = useMemo(() => getPromoCopy(language), [language]);
-  const previewName = nameOverride.trim() || link?.displayName || selected?.name || '';
+  const previewName =
+    nameOverride.trim() || link?.displayName || selected?.name || '';
 
   const message = link
     ? `${copy.greeting} ${link.displayName}${copy.honorific}\n${copy.headline}\n\n${link.url}`
@@ -181,21 +237,93 @@ export default function PromoLinksPage() {
 
   return (
     <div className="space-y-5 p-5">
-      <div>
-        <h1 className="text-lg font-black uppercase tracking-[0.08em] text-slate-800">
-          Promo Links
-        </h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500">
-          User chunein, preview dekhein, link WhatsApp par bhejein.
-        </p>
-      </div>
+      <h1 className="text-lg font-black uppercase tracking-[0.08em] text-slate-800">
+        Promo Links
+      </h1>
+
+      {/* Commodity audience */}
+      <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 px-4 py-3">
+          <h2 className="text-xs font-black uppercase tracking-[0.08em] text-slate-500">
+            Commodity
+          </h2>
+        </div>
+        <div className="space-y-4 p-4">
+          <div className="flex flex-wrap gap-2">
+            {commodities.map((row) => (
+              <button
+                key={row.code}
+                type="button"
+                onClick={() => setCommodity(row.code)}
+                className={`rounded-md border px-3 py-2 text-sm font-bold ${
+                  commodity === row.code
+                    ? 'border-[#4309ac] bg-[#4309ac]/5 text-[#4309ac]'
+                    : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                {row.label}
+                <span className="ml-2 text-xs font-semibold text-slate-400">
+                  {row.users}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {commodity ? (
+            <div className="space-y-3 border-t border-slate-100 pt-4">
+              <p className="text-sm font-bold text-slate-700">
+                {audience} log
+              </p>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={generateBulk}
+                  disabled={busy !== null}
+                  className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  {busy === 'generate' ? 'Ban rahe hain…' : 'Links banayein'}
+                </button>
+
+                <input
+                  value={testPhone}
+                  onChange={(event) => setTestPhone(event.target.value)}
+                  placeholder="Test number"
+                  inputMode="numeric"
+                  className="w-40 rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-[#4309ac]"
+                />
+                <button
+                  type="button"
+                  onClick={() => sendBulk('test')}
+                  disabled={busy !== null || testPhone.trim().length < 10}
+                  className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  {busy === 'test' ? 'Bhej rahe hain…' : 'Test bhejein'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => sendBulk('send')}
+                  disabled={busy !== null || audience === 0}
+                  className="flex items-center gap-2 rounded-md bg-[#4309ac] px-4 py-2 text-sm font-bold text-white disabled:opacity-60"
+                >
+                  <PaperAirplaneIcon className="h-4 w-4" />
+                  {busy === 'send'
+                    ? 'Bhej rahe hain…'
+                    : `Sabko bhejein (${audience})`}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Search */}
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-4 py-3">
             <h2 className="text-xs font-black uppercase tracking-[0.08em] text-slate-500">
-              Search
+              Ek user
             </h2>
           </div>
           <div className="p-4">
@@ -203,19 +331,13 @@ export default function PromoLinksPage() {
               <MagnifyingGlassIcon className="h-5 w-5 shrink-0 text-slate-400" />
               <input
                 value={query}
-                autoFocus
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Naam ya mobile number…"
+                placeholder="Naam ya mobile number"
                 className="min-w-0 flex-1 border-0 bg-transparent text-sm font-semibold text-slate-900 outline-none placeholder:text-slate-400"
               />
             </div>
           </div>
           <div className="max-h-[360px] overflow-y-auto">
-            {!searching && query.trim().length === 0 && results.length > 0 ? (
-              <p className="px-4 pb-1 text-xs font-black uppercase tracking-[0.08em] text-slate-400">
-                Naye app customers
-              </p>
-            ) : null}
             {searching ? (
               <p className="px-4 py-3 text-sm font-semibold text-slate-400">
                 Dhoond rahe hain…
@@ -247,7 +369,6 @@ export default function PromoLinksPage() {
                     </p>
                     <p className="text-xs font-semibold text-slate-500">
                       {formatPhone(user.mobileNumber)}
-                      {user.identity ? ` | ${user.identity}` : ''}
                     </p>
                   </div>
                   {user.isLedgerMasterVerified ? (
@@ -259,17 +380,17 @@ export default function PromoLinksPage() {
           </div>
         </section>
 
-        {/* Preview and copy */}
+        {/* Preview */}
         <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-4 py-3">
             <h2 className="text-xs font-black uppercase tracking-[0.08em] text-slate-500">
-              Preview &amp; copy
+              Preview
             </h2>
           </div>
 
           {!selected ? (
             <p className="px-4 py-6 text-sm font-semibold text-slate-400">
-              Left se ek user chunein.
+              Ek user chunein
             </p>
           ) : (
             <div className="space-y-4 p-4">
@@ -278,45 +399,33 @@ export default function PromoLinksPage() {
                 greeting={copy.greeting}
                 honorific={copy.honorific}
                 headline={copy.headline}
-                tagline={copy.tagline}
               />
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="text-xs font-black uppercase tracking-[0.08em] text-slate-500">
-                    Naam badlein
-                  </span>
-                  <input
-                    value={nameOverride}
-                    onChange={(event) => setNameOverride(event.target.value)}
-                    placeholder={selected.name || ''}
-                    maxLength={40}
-                    className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-[#4309ac]"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-xs font-black uppercase tracking-[0.08em] text-slate-500">
-                    Language
-                  </span>
-                  <select
-                    value={language}
-                    onChange={(event) => setLanguage(event.target.value)}
-                    className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-[#4309ac]"
-                  >
-                    {PROMO_LANGUAGES.map((code) => (
-                      <option key={code} value={code}>
-                        {LANGUAGE_LABELS[code] || code}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <input
+                  value={nameOverride}
+                  onChange={(event) => setNameOverride(event.target.value)}
+                  placeholder={selected.name || 'Naam'}
+                  maxLength={40}
+                  className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-[#4309ac]"
+                />
+                <select
+                  value={language}
+                  onChange={(event) => setLanguage(event.target.value)}
+                  className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900 outline-none focus:border-[#4309ac]"
+                >
+                  {PROMO_LANGUAGES.map((code) => (
+                    <option key={code} value={code}>
+                      {LANGUAGE_LABELS[code] || code}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {link?.isFallbackName ? (
                 <p className="flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
                   <ExclamationTriangleIcon className="h-4 w-4 shrink-0" />
-                  Is user ka naam use nahi ho sakta. Upar apna naam likhein,
-                  warna &ldquo;MandiPlus parivaar&rdquo; dikhega.
+                  Naam use nahi ho sakta — upar likhein
                 </p>
               ) : null}
 
@@ -342,13 +451,13 @@ export default function PromoLinksPage() {
                     className="flex w-full items-center justify-center gap-2 rounded-md bg-[#4309ac] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-60"
                   >
                     <PaperAirplaneIcon className="h-4 w-4" />
-                    {sending ? 'Bheja ja raha hai…' : 'Bot se seedha bhejein'}
+                    {sending ? 'Bhej rahe hain…' : 'Bhejein'}
                   </button>
 
                   {link.whatsappSentAt ? (
                     <p className="flex items-center gap-1.5 text-xs font-bold text-emerald-700">
                       <CheckCircleIcon className="h-4 w-4" />
-                      {formatDateTime(link.whatsappSentAt)} ko bheja gaya
+                      {formatDateTime(link.whatsappSentAt)}
                     </p>
                   ) : null}
                   {link.whatsappSendError ? (
@@ -367,7 +476,7 @@ export default function PromoLinksPage() {
                       rel="noopener noreferrer"
                       className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
                     >
-                      wa.me se kholein
+                      wa.me
                     </a>
                     <button
                       type="button"
@@ -383,18 +492,7 @@ export default function PromoLinksPage() {
                     >
                       Message copy
                     </button>
-                    <button
-                      type="button"
-                      onClick={generate}
-                      className="rounded-md border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
-                    >
-                      Update
-                    </button>
                   </div>
-                  <p className="text-xs font-medium text-slate-400">
-                    Bot sirf isi number par bhej sakta hai. Group mein daalne
-                    ke liye link ya message copy karein.
-                  </p>
                 </div>
               )}
             </div>
@@ -402,16 +500,16 @@ export default function PromoLinksPage() {
         </section>
       </div>
 
-      {/* Who opened theirs */}
+      {/* Generated links */}
       <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-4 py-3">
           <h2 className="text-xs font-black uppercase tracking-[0.08em] text-slate-500">
-            Banaye gaye links
+            Links
           </h2>
         </div>
         {recent.length === 0 ? (
           <p className="px-4 py-6 text-sm font-semibold text-slate-400">
-            Abhi tak koi link nahi bana.
+            Abhi tak koi link nahi
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -420,10 +518,10 @@ export default function PromoLinksPage() {
                 <tr className="bg-slate-50 text-xs font-black uppercase tracking-[0.08em] text-slate-500">
                   <th className="px-4 py-2.5 text-left">User</th>
                   <th className="px-4 py-2.5 text-left">Dikhega</th>
+                  <th className="px-4 py-2.5 text-left">Bheja</th>
                   <th className="px-4 py-2.5 text-left">Khola</th>
                   <th className="px-4 py-2.5 text-left">Video</th>
-                  <th className="px-4 py-2.5 text-left">Bot se bheja</th>
-                  <th className="px-4 py-2.5 text-right">Link</th>
+                  <th className="px-4 py-2.5 text-right" />
                 </tr>
               </thead>
               <tbody>
@@ -448,24 +546,24 @@ export default function PromoLinksPage() {
                         {row.displayName}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-600">
-                      {formatDateTime(row.firstViewedAt) || (
-                        <span className="text-slate-400">Nahi khola</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-600">
-                      {formatDateTime(row.videoPlayedAt) || (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
                     <td className="px-4 py-2.5 text-xs font-semibold">
                       {row.whatsappSentAt ? (
                         <span className="text-emerald-700">
                           {formatDateTime(row.whatsappSentAt)}
                         </span>
                       ) : row.whatsappSendError ? (
-                        <span className="text-rose-700">Fail ho gaya</span>
+                        <span className="text-rose-700">Fail</span>
                       ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-600">
+                      {formatDateTime(row.firstViewedAt) || (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs font-semibold text-slate-600">
+                      {formatDateTime(row.videoPlayedAt) || (
                         <span className="text-slate-400">—</span>
                       )}
                     </td>
@@ -495,33 +593,30 @@ function RevealPreview({
   greeting,
   honorific,
   headline,
-  tagline,
 }: {
   name: string;
   greeting: string;
   honorific: string;
   headline: string;
-  tagline: string;
 }) {
   return (
-    <div className="relative mx-auto aspect-[9/16] w-full max-w-[230px] overflow-hidden rounded-xl bg-[#eeeafc]">
+    <div className="relative mx-auto aspect-[9/16] w-full max-w-[200px] overflow-hidden rounded-xl bg-[#eeeafc]">
       <img
         src="/promo/scene-tall.webp"
         alt=""
         className="absolute inset-0 h-full w-full object-cover"
       />
-      <div className="absolute inset-x-0 top-[8%] px-3 text-center">
-        <p className="text-[10px] font-medium text-[#4a4770]">{greeting}</p>
-        <p className="break-words text-[17px] font-extrabold leading-tight tracking-tight text-[#241a52]">
+      <div className="absolute inset-x-0 top-[10%] px-3 text-center">
+        <p className="text-[9px] font-medium text-[#4a4770]">{greeting}</p>
+        <p className="break-words text-[15px] font-extrabold leading-tight tracking-tight text-[#241a52]">
           {name || 'MandiPlus parivaar'}
           {name ? honorific : ''}
         </p>
       </div>
       <div className="absolute inset-x-0 bottom-4 px-3 text-center">
-        <p className="text-[12px] font-extrabold leading-tight text-[#241a52]">
+        <p className="text-[11px] font-extrabold leading-tight text-[#241a52]">
           {headline}
         </p>
-        <p className="mt-0.5 text-[9px] font-bold text-[#5b5486]">{tagline}</p>
       </div>
     </div>
   );

@@ -1805,6 +1805,20 @@ export interface UpdateClaimStatusDto {
   notes?: string;
 }
 
+export interface PromoCommodity {
+  code: string;
+  label: string;
+  users: number;
+}
+
+export interface PromoBulkSendResult {
+  success: boolean;
+  test: boolean;
+  sent: number;
+  failed: number;
+  total: number;
+}
+
 export interface PromoLinkRow {
   id: string;
   token: string;
@@ -2868,6 +2882,56 @@ class AdminApi {
         success: false,
         message:
           error.response?.data?.message || "Failed to create promo link",
+      };
+    }
+  };
+
+  public listPromoCommodities = async (): Promise<
+    ApiResponse<PromoCommodity[]>
+  > => {
+    try {
+      const response = await this.client.get("/admin/promo/commodities");
+      return response.data as ApiResponse<PromoCommodity[]>;
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to load commodities",
+      };
+    }
+  };
+
+  public createPromoLinksForCommodity = async (
+    commodity: string,
+  ): Promise<{ success: boolean; count?: number; message?: string }> => {
+    try {
+      const response = await this.client.post("/admin/promo/bulk", {
+        commodity,
+      });
+      return { success: true, count: response.data?.count ?? 0 };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to generate links",
+      };
+    }
+  };
+
+  public sendPromoBulk = async (payload: {
+    commodity: string;
+    testPhone?: string;
+    resend?: boolean;
+  }): Promise<ApiResponse<PromoBulkSendResult>> => {
+    try {
+      const response = await this.client.post(
+        "/admin/promo/bulk/send",
+        payload,
+      );
+      return { success: true, data: response.data as PromoBulkSendResult };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to send",
       };
     }
   };
