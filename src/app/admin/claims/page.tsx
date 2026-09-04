@@ -3,6 +3,7 @@
 import {
   ClaimActivity,
   ClaimPaymentStatus,
+  ClaimReasonOption,
   ClaimRequest,
   ClaimsSummary,
   ClaimStageAutomationResult,
@@ -13,6 +14,7 @@ import {
   adminApi,
 } from '@/features/admin/api/admin.api';
 import InvoicePicker from '@/features/admin/claims/InvoicePicker';
+import { MultiSelectFilter } from '@/features/admin/components/MultiSelectFilter';
 import ClaimDocumentReminderPanel from '@/features/admin/claims/ClaimDocumentReminderPanel';
 import ClaimStageNotificationPanel from '@/features/admin/claims/ClaimStageNotificationPanel';
 import ClaimAutoNotifySheet, {
@@ -3098,6 +3100,8 @@ export default function AdminClaimsPage() {
   const [searchInput, setSearchInput] = useState('');
   const [status, setStatus] = useState('');
   const [paymentStatus, setPaymentStatus] = useState('');
+  const [reasonFilter, setReasonFilter] = useState<Set<string>>(new Set());
+  const [reasonOptions, setReasonOptions] = useState<ClaimReasonOption[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -3120,18 +3124,23 @@ export default function AdminClaimsPage() {
     updateKey: 'status' | 'paymentStatus' | 'handledBy';
   } | null>(null);
 
+  const reasonsParam = useMemo(
+    () => (reasonFilter.size ? Array.from(reasonFilter).sort().join(',') : ''),
+    [reasonFilter],
+  );
+
   const load = useCallback(
     async (silent = false) => {
       if (!silent) setLoading(true);
+      const filters = {
+        search: search || undefined,
+        status: (status as ClaimStatus) || undefined,
+        paymentStatus: (paymentStatus as ClaimPaymentStatus) || undefined,
+        reasons: reasonsParam || undefined,
+      };
       const [claimsResponse, summaryResponse] = await Promise.all([
-        adminApi.getClaimsPage({
-          search: search || undefined,
-          status: (status as ClaimStatus) || undefined,
-          paymentStatus: (paymentStatus as ClaimPaymentStatus) || undefined,
-          page,
-          limit: 20,
-        }),
-        adminApi.getClaimsSummary(),
+        adminApi.getClaimsPage({ ...filters, page, limit: 20 }),
+        adminApi.getClaimsSummary(filters),
       ]);
 
       setClaims(claimsResponse.data?.data || []);
@@ -3140,7 +3149,7 @@ export default function AdminClaimsPage() {
       setSummary(summaryResponse.data || null);
       if (!silent) setLoading(false);
     },
-    [page, paymentStatus, search, status],
+    [page, paymentStatus, reasonsParam, search, status],
   );
 
   useEffect(() => {
@@ -3149,6 +3158,9 @@ export default function AdminClaimsPage() {
 
   useEffect(() => {
     void adminApi.syncBlacklistedFromClaims();
+    void adminApi.getClaimReasons().then((response) => {
+      if (response.success) setReasonOptions(response.data || []);
+    });
   }, []);
 
   useEffect(() => {
@@ -3215,6 +3227,7 @@ export default function AdminClaimsPage() {
         search: search || undefined,
         status: (status as ClaimStatus) || undefined,
         paymentStatus: (paymentStatus as ClaimPaymentStatus) || undefined,
+        reasons: reasonsParam || undefined,
       });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -3258,6 +3271,12 @@ export default function AdminClaimsPage() {
         icon: CircleDollarSign,
         tone: 'blue' as const,
       },
+      {
+        label: 'Settled Amount',
+        value: formatCurrency(summary?.settledAmount || 0),
+        icon: CircleDollarSign,
+        tone: 'emerald' as const,
+      },
     ],
     [claims.length, summary],
   );
@@ -3269,11 +3288,8 @@ export default function AdminClaimsPage() {
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
           <div>
             <h1 className="text-2xl font-black tracking-tight text-slate-950">
-              MandiPlus — Insurance Claim Status
+              Insurance Claim Status
             </h1>
-            <p className="mt-1 text-xs font-semibold text-slate-500">
-              Live claim tracking, surveyor details, proof documentation and assessment reports
-            </p>
           </div>
           <div className="flex flex-wrap gap-2.5">
             <button
@@ -3301,7 +3317,7 @@ export default function AdminClaimsPage() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-5">
           {summaryCards.map((card) => (
             <SummaryCard key={card.label} {...card} />
           ))}
@@ -3347,6 +3363,16 @@ export default function AdminClaimsPage() {
                     </option>
                   ))}
                 </select>
+
+                <MultiSelectFilter
+                  allLabel="All Reasons"
+                  options={reasonOptions}
+                  selected={reasonFilter}
+                  onChange={(next) => {
+                    setPage(1);
+                    setReasonFilter(next);
+                  }}
+                />
 
                 <button
                   type="button"
