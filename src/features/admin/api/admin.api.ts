@@ -1396,6 +1396,7 @@ export interface ClaimRequest {
   pollutionCertificateUrl?: string | null;
   fitnessCertificateUrl?: string | null;
   policeDiaryEntryUrl?: string | null;
+  letterOfSubrogationUrl?: string | null;
   /** Catalogue keys that do not apply to this claim. */
   documentsNotApplicable?: string[];
   /** Catalogue keys confirmed in hand without a file upload. */
@@ -5871,7 +5872,8 @@ class AdminApi {
       | "insurancePolicy"
       | "damageForm"
       | "estimationBill"
-      | "paymentProof",
+      | "paymentProof"
+      | "letterOfSubrogation",
     file: File,
   ): Promise<ApiResponse<ClaimRequest>> => {
     try {
