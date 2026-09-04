@@ -15,7 +15,13 @@ import {
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 
-type CatalogueEntry = { key: string; label: string; column: string };
+type CatalogueEntry = {
+  key: string;
+  label: string;
+  column: string;
+  /** Collected by the team; the customer is never chased for it. */
+  adminOnly?: boolean;
+};
 
 export default function ClaimDocumentCollectionPanel({
   claim,
@@ -61,8 +67,9 @@ export default function ClaimDocumentCollectionPanel({
     return 'pending' as const;
   };
 
+  // Only customer documents are chased, so admin-only ones never count as owed.
   const outstanding = catalogue.filter(
-    (entry) => stateOf(entry) === 'pending',
+    (entry) => !entry.adminOnly && stateOf(entry) === 'pending',
   );
 
   const persist = async (
@@ -197,6 +204,11 @@ export default function ClaimDocumentCollectionPanel({
                 >
                   {entry.label}
                 </span>
+                {entry.adminOnly ? (
+                  <span className="shrink-0 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    admin only
+                  </span>
+                ) : null}
               </span>
 
               <span className="flex shrink-0 items-center gap-2">

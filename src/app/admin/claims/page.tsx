@@ -231,6 +231,7 @@ function documentEntries(claim: ClaimRequest): Array<[string, string, string]> {
     ['Lorry Receipt (LR)', claim.lorryReceipt, 'lorryReceipt'],
     ['Insurance Policy', claim.insurancePolicy, 'insurancePolicy'],
     ['Damage Certificate', claim.claimFormUrl || claim.damageFormUrl, 'damageForm'],
+    ['Letter of Subrogation', claim.letterOfSubrogationUrl, 'letterOfSubrogation'],
     ['Invoice PDF', claim.invoice?.pdfUrl || claim.invoice?.invoicePdfUrl, 'inspectionReport'],
     ['Assessment Report', claim.assessmentReportUrl, 'inspectionReport'],
   ];
@@ -266,6 +267,7 @@ function CategorySelectModal({
     { label: 'Lorry Receipt (LR)', key: 'lorryReceipt', icon: Truck, desc: 'Transport consignment note' },
     { label: 'Insurance Policy', key: 'insurancePolicy', icon: ShieldCheck, desc: 'Insurance cover document' },
     { label: 'Damage Certificate', key: 'damageForm', icon: Wrench, desc: 'Certificate of cargo damage' },
+    { label: 'Letter of Subrogation', key: 'letterOfSubrogation', icon: FileText, desc: 'Signed by the insured; collected by the team' },
   ];
 
   return (
@@ -1866,9 +1868,8 @@ function FullViewClaimModal({
   }, [claim.id, claim.assessmentReportUrl, claim.assessmentReportData]);
 
   useEffect(() => {
-    if (currentIsEngineSeize && activeTab === 'documents') {
-      setActiveTab('assessment');
-    } else if (!currentIsEngineSeize && activeTab === 'assessment') {
+    // Documents apply to every claim; only the assessment tab is engine-seize only.
+    if (!currentIsEngineSeize && activeTab === 'assessment') {
       setActiveTab('documents');
     }
   }, [activeTab, currentIsEngineSeize]);
@@ -1881,9 +1882,17 @@ function FullViewClaimModal({
   }> = [
     { id: 'overview', label: 'Claim Details & Edit', icon: FileText, count: null },
     { id: 'proof', label: 'Proof Media', icon: ImageIcon, count: `${proofs.length}/10` },
-    currentIsEngineSeize
-      ? { id: 'assessment', label: 'Technical Assessment', icon: Wrench, count: null }
-      : { id: 'documents', label: 'Official Documents', icon: FileCheck2, count: String(docs.length) },
+    { id: 'documents', label: 'Official Documents', icon: FileCheck2, count: String(docs.length) },
+    ...(currentIsEngineSeize
+      ? [
+          {
+            id: 'assessment' as const,
+            label: 'Technical Assessment',
+            icon: Wrench,
+            count: null,
+          },
+        ]
+      : []),
     { id: 'snapshot', label: 'Invoice & Party Snapshot', icon: Truck, count: null },
     {
       id: 'notifications',
@@ -2661,7 +2670,7 @@ function FullViewClaimModal({
           )}
 
           {/* TAB 3: OFFICIAL DOCUMENTS (DRAG & DROP) */}
-          {activeTab === 'documents' && !currentIsEngineSeize && (
+          {activeTab === 'documents' && (
             <div className="space-y-6">
               <ClaimDocumentReminderPanel
                 claim={claim}
@@ -2693,6 +2702,7 @@ function FullViewClaimModal({
                     ['Lorry Receipt (LR)', 'lorryReceipt'],
                     ['Insurance Policy', 'insurancePolicy'],
                     ['Damage Certificate', 'damageForm'],
+                    ['Letter of Subrogation', 'letterOfSubrogation'],
                   ].map(([label, typeKey]) => (
                     <div
                       key={typeKey}
