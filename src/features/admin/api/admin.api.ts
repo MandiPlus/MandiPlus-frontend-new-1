@@ -2878,7 +2878,7 @@ class AdminApi {
   public searchUsers = async (
     query: string,
     limit: number = 20,
-    options?: { verified?: boolean },
+    options?: { verified?: boolean; offset?: number },
   ): Promise<ApiResponse<AdminLedgerUser[]>> => {
     try {
       const response = await this.client.get("/users/search", {
@@ -2886,6 +2886,7 @@ class AdminApi {
           q: query,
           limit,
           ...(options?.verified ? { verified: "true" } : {}),
+          ...(options?.offset ? { offset: options.offset } : {}),
         },
       });
       const rows = Array.isArray(response.data)
