@@ -1855,6 +1855,16 @@ export interface PromoLinkRow {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 
+/**
+ * Shared key for the link-accessible promo console, read from the page URL.
+ * Never bundled — it only exists in memory for the life of the tab.
+ */
+let promoConsoleKey: string | null = null;
+export function setPromoConsoleKey(key: string | null) {
+  promoConsoleKey = key && key.trim() ? key.trim() : null;
+}
+const promoKeyParams = () => (promoConsoleKey ? { key: promoConsoleKey } : {});
+
 class AdminApi {
   private client: AxiosInstance;
   private authToken: string | null = null;
@@ -2865,7 +2875,7 @@ class AdminApi {
   ): Promise<ApiResponse<PromoLinkRow[]>> => {
     try {
       const response = await this.client.get("/admin/promo/links", {
-        params: { ...(campaign ? { campaign } : {}), limit: 60 },
+        params: { ...(campaign ? { campaign } : {}), limit: 60, ...promoKeyParams() },
       });
       return response.data as ApiResponse<PromoLinkRow[]>;
     } catch (error: any) {
@@ -2884,7 +2894,9 @@ class AdminApi {
     language?: string | null;
   }): Promise<ApiResponse<PromoLinkRow>> => {
     try {
-      const response = await this.client.post("/admin/promo/links", payload);
+      const response = await this.client.post("/admin/promo/links", payload, {
+        params: { ...promoKeyParams() },
+      });
       return { success: true, data: response.data as PromoLinkRow };
     } catch (error: any) {
       return {
@@ -2899,7 +2911,9 @@ class AdminApi {
     ApiResponse<PromoCommodity[]>
   > => {
     try {
-      const response = await this.client.get("/admin/promo/commodities");
+      const response = await this.client.get("/admin/promo/commodities", {
+        params: { ...promoKeyParams() },
+      });
       return response.data as ApiResponse<PromoCommodity[]>;
     } catch (error: any) {
       return {
@@ -2914,9 +2928,11 @@ class AdminApi {
     commodity: string,
   ): Promise<{ success: boolean; count?: number; message?: string }> => {
     try {
-      const response = await this.client.post("/admin/promo/bulk", {
-        commodity,
-      });
+      const response = await this.client.post(
+        "/admin/promo/bulk",
+        { commodity },
+        { params: { ...promoKeyParams() } },
+      );
       return { success: true, count: response.data?.count ?? 0 };
     } catch (error: any) {
       return {
@@ -2935,6 +2951,7 @@ class AdminApi {
       const response = await this.client.post(
         "/admin/promo/bulk/send",
         payload,
+        { params: { ...promoKeyParams() } },
       );
       return { success: true, data: response.data as PromoBulkSendResult };
     } catch (error: any) {
@@ -2951,6 +2968,8 @@ class AdminApi {
     try {
       const response = await this.client.post(
         `/admin/promo/links/${id}/send`,
+        {},
+        { params: { ...promoKeyParams() } },
       );
       return { success: true, data: response.data };
     } catch (error: any) {
