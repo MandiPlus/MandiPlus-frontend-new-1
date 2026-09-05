@@ -276,14 +276,82 @@ export type CustomerInvoiceDraft = {
   note: string;
 };
 
+export type TenderCoconutLogisticsTier = {
+  tonnage: number;
+  amount: number;
+};
+
 export type CustomerAppPricing = {
   tenderCoconut: {
     pricingVersion: number;
+    // Generic tier list. Truck sizes render from this, so a new tonnage added
+    // on the backend needs no web deploy. Optional because an older backend
+    // only sends the legacy amountNNTon fields below.
+    tiers?: TenderCoconutLogisticsTier[];
+    amount20Ton?: number;
     amount25Ton: number;
     amount30Ton: number;
     updatedAt: string | null;
   };
 };
+
+export const FALLBACK_TENDER_COCONUT_TONNAGES = [20, 25, 30] as const;
+
+export function tenderCoconutTiers(
+  pricing?: CustomerAppPricing["tenderCoconut"] | null,
+): TenderCoconutLogisticsTier[] {
+  const fromBackend = Array.isArray(pricing?.tiers)
+    ? pricing.tiers
+        .map((tier) => ({
+          tonnage: Number(tier?.tonnage),
+          amount: Number(tier?.amount),
+        }))
+        .filter(
+          (tier) =>
+            Number.isFinite(tier.tonnage) &&
+            tier.tonnage > 0 &&
+            Number.isFinite(tier.amount) &&
+            tier.amount >= 0,
+        )
+    : [];
+  if (fromBackend.length > 0) {
+    return fromBackend.sort((left, right) => left.tonnage - right.tonnage);
+  }
+  // Older backend: rebuild the list from the legacy named fields.
+  return [
+    { tonnage: 20, amount: Number(pricing?.amount20Ton ?? 120000) },
+    { tonnage: 25, amount: Number(pricing?.amount25Ton ?? 130000) },
+    { tonnage: 30, amount: Number(pricing?.amount30Ton ?? 140000) },
+  ].filter((tier) => Number.isFinite(tier.amount));
+}
+
+export function normalizeVehicleTonnage(value: unknown): string {
+  const text = String(value ?? "").trim();
+  return /^\d{1,3}$/.test(text) ? text : "";
+}
+
+export function tenderCoconutTierAmount(
+  pricing: CustomerAppPricing["tenderCoconut"] | null | undefined,
+  vehicleTonnage: unknown,
+): number {
+  const selected = normalizeVehicleTonnage(vehicleTonnage);
+  if (!selected) return 0;
+  const tier = tenderCoconutTiers(pricing).find(
+    (candidate) => String(candidate.tonnage) === selected,
+  );
+  return tier ? Number(tier.amount) || 0 : 0;
+}
+
+export function isSelectedVehicleTonnage(
+  value: unknown,
+  pricing?: CustomerAppPricing["tenderCoconut"] | null,
+): boolean {
+  const text = normalizeVehicleTonnage(value);
+  if (!text) return false;
+  return tenderCoconutTiers(pricing).some(
+    (tier) => String(tier.tonnage) === text,
+  );
+}
 
 export function roundCustomerInvoiceMoney(value: number) {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
@@ -336,11 +404,7 @@ export async function createCustomerInvoice(
       : quantity * enteredRate;
   const isTenderCoconut = isTenderCoconutProduct(draft.product);
   const configuredLogisticsAmount = isTenderCoconut
-    ? draft.vehicleTonnage === "30"
-      ? Number(pricing?.amount30Ton || 0)
-      : draft.vehicleTonnage === "25"
-        ? Number(pricing?.amount25Ton || 0)
-        : 0
+    ? tenderCoconutTierAmount(pricing, draft.vehicleTonnage)
     : 0;
   const logisticsAmount = draft.includeLogistics !== false
     ? configuredLogisticsAmount
@@ -380,8 +444,8 @@ export async function createCustomerInvoice(
   form.append("vehicleNumber", vehicle);
   form.append("truckNumber", vehicle);
   if (isTenderCoconut) {
-    if (draft.vehicleTonnage === "25" || draft.vehicleTonnage === "30") {
-      form.append("vehicleTonnage", draft.vehicleTonnage);
+    if (isSelectedVehicleTonnage(draft.vehicleTonnage, pricing)) {
+      form.append("vehicleTonnage", normalizeVehicleTonnage(draft.vehicleTonnage));
       form.append("pricingVersion", String(pricing?.pricingVersion || 1));
       form.append(
         "includeLogistics",
