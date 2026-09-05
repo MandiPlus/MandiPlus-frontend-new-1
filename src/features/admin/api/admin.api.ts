@@ -1184,6 +1184,7 @@ export interface ChannelPartnerPaymentPayload {
   year: number;
   amount: number;
   slipUrl?: string | null;
+  invoiceUrl?: string | null;
   notes?: string | null;
   createdAt: string;
   /** What that month earned, so a payout can be read against it. */
@@ -3586,6 +3587,7 @@ class AdminApi {
       amount: number;
       notes?: string;
       slip?: File | null;
+      invoice?: File | null;
     },
   ): Promise<ApiResponse<ChannelPartnerPaymentPayload> & { settledCount?: number }> => {
     try {
@@ -3595,6 +3597,7 @@ class AdminApi {
       formData.append("amount", String(input.amount));
       if (input.notes) formData.append("notes", input.notes);
       if (input.slip) formData.append("slip", input.slip);
+      if (input.invoice) formData.append("invoice", input.invoice);
 
       const response = await this.client.post<
         ApiResponse<ChannelPartnerPaymentPayload> & { settledCount?: number }
