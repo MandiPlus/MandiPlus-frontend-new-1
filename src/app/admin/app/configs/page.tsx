@@ -131,8 +131,9 @@ export default function AppConfigsPage() {
       <header className="grid gap-1">
         <h1 className="text-lg font-semibold text-slate-950">App Config</h1>
         <p className="text-sm text-slate-600">
-          Pricing the customer app reads at runtime. Changes apply to new
-          invoices immediately — no app release needed.
+          Pricing the customer app reads at runtime. These settings are
+          platform-wide and apply to new invoices immediately — no app release
+          needed.
         </p>
       </header>
 
@@ -201,10 +202,12 @@ export default function AppConfigsPage() {
           </h2>
           <p className="text-xs text-slate-600">
             Applied to the premium at invoice creation, for invoices raised from
-            the customer mobile app. Those customers see the full premium struck
-            through and pay the discounted amount. Invoices raised here in the
-            admin console, or from the customer web app, are always charged the
-            full premium.
+            the customer mobile app by customers who pay at checkout. They see
+            the full premium struck through and pay the discounted amount.
+            Always charged the full premium: invoices raised here in the admin
+            console, invoices from the customer web app, and wallet customers,
+            whose invoices settle off the insurance service limit and never
+            reach a checkout. Applies to every commodity.
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-[160px_auto] sm:items-end">
