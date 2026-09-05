@@ -281,7 +281,37 @@ export type TenderCoconutLogisticsTier = {
   amount: number;
 };
 
+export type PremiumDiscount = {
+  percent: number;
+  active: boolean;
+};
+
+export const NO_PREMIUM_DISCOUNT: PremiumDiscount = {
+  percent: 0,
+  active: false,
+};
+
+/**
+ * Mirrors the backend's applyPremiumDiscount exactly. The backend is what
+ * actually charges the customer, so any change to the rounding here has to be
+ * made there too or the previewed amount stops matching the charge.
+ */
+export function applyPremiumDiscount(
+  premiumAmount: unknown,
+  discount?: PremiumDiscount | null,
+): number {
+  const premium = Number(premiumAmount);
+  if (!Number.isFinite(premium) || premium <= 0) return 0;
+  const percent = Number(discount?.percent);
+  if (!discount?.active || !Number.isFinite(percent) || percent <= 0) {
+    return Number(premium.toFixed(2));
+  }
+  const capped = Math.min(percent, 100);
+  return Number((premium * (1 - capped / 100)).toFixed(2));
+}
+
 export type CustomerAppPricing = {
+  premiumDiscount?: PremiumDiscount;
   tenderCoconut: {
     pricingVersion: number;
     // Generic tier list. Truck sizes render from this, so a new tonnage added

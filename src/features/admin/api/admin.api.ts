@@ -974,6 +974,37 @@ export interface AdminAccountDeletionRequest extends AccountDeletionRequest {
 export type AdminAccountDeletionRequestFilters =
   AccountDeletionRequestListFilters;
 
+export interface AdminAppTonnageTier {
+  tonnage: number;
+  amount: number;
+}
+
+export interface AdminAppSettings {
+  tenderCoconut: {
+    pricingVersion: number;
+    tiers?: AdminAppTonnageTier[];
+    amount20Ton?: number;
+    amount25Ton: number;
+    amount30Ton: number;
+    updatedAt: string | null;
+  };
+  premiumDiscount: {
+    percent: number;
+    active: boolean;
+  };
+}
+
+export interface UpdateTenderCoconutLogisticsPayload {
+  amount20Ton?: number;
+  amount25Ton: number;
+  amount30Ton: number;
+}
+
+export interface UpdatePremiumDiscountPayload {
+  percent: number;
+  active: boolean;
+}
+
 export interface AdminWalletPack {
   id: string;
   code: string;
@@ -4723,6 +4754,56 @@ class AdminApi {
         success: false,
         message:
           error.response?.data?.message || 'Failed to fetch wallet offers',
+        error: error.message,
+      };
+    }
+  };
+
+  getAppSettings = async (): Promise<ApiResponse<AdminAppSettings>> => {
+    try {
+      const response =
+        await this.client.get<AdminAppSettings>('/admin/app/settings');
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to load app settings',
+        error: error.message,
+      };
+    }
+  };
+
+  updateTenderCoconutLogistics = async (
+    payload: UpdateTenderCoconutLogisticsPayload,
+  ): Promise<ApiResponse<AdminAppSettings['tenderCoconut']>> => {
+    try {
+      const response = await this.client.patch<{
+        tenderCoconut: AdminAppSettings['tenderCoconut'];
+      }>('/admin/app/settings/tender-coconut-logistics', payload);
+      return { success: true, data: response.data.tenderCoconut };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || 'Failed to save logistics pricing',
+        error: error.message,
+      };
+    }
+  };
+
+  updatePremiumDiscount = async (
+    payload: UpdatePremiumDiscountPayload,
+  ): Promise<ApiResponse<AdminAppSettings['premiumDiscount']>> => {
+    try {
+      const response = await this.client.patch<{
+        premiumDiscount: AdminAppSettings['premiumDiscount'];
+      }>('/admin/app/settings/premium-discount', payload);
+      return { success: true, data: response.data.premiumDiscount };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'Failed to save the discount',
         error: error.message,
       };
     }
