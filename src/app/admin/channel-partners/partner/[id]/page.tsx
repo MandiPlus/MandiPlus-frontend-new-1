@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import toast from "react-hot-toast";
@@ -8,13 +8,17 @@ import {
   ArrowLeft,
   BadgeIndianRupee,
   CheckCircle,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   FileText,
-  MapPin,
+  Paperclip,
   Pencil,
   RefreshCw,
   Search,
+  Trash2,
+  UploadCloud,
   UserPlus,
   Users,
   X,
@@ -28,18 +32,38 @@ import {
   ChannelPartnerCommissionPayload,
   ChannelPartnerProfilePayload,
   ChannelPartnerCustomerPayload,
+  ChannelPartnerPaymentPayload,
+  ChannelPartnerPaymentCommissionPayload,
   ChannelPartnerSummary,
   adminApi,
 } from "@/features/admin/api/admin.api";
 
-type TabKey = "customers" | "invoices" | "commissions" | "tracking";
+type TabKey = "customers" | "invoices" | "commissions" | "payments" | "tracking";
 
 const tabs: Array<{ key: TabKey; label: string }> = [
   { key: "customers", label: "Customers" },
   { key: "invoices", label: "Invoices" },
   { key: "commissions", label: "Commissions" },
+  { key: "payments", label: "Payments" },
   { key: "tracking", label: "Tracking" },
 ];
+
+const MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+function formatPeriod(month: number, year: number) {
+  return `${MONTHS[month - 1] ?? month} ${year}`;
+}
+
+/** One page of the commissions a payout settled — a month can run to thousands. */
+type SettledCommissionPage = {
+  rows: ChannelPartnerPaymentCommissionPayload[];
+  total: number;
+  totalPages: number;
+  page: number;
+};
 const TAB_PAGE_SIZE = 50;
 const INVOICE_TAB_PAGE_SIZE = 20;
 const INVOICE_STATUS_OPTIONS = ["NOT_REQUIRED", "PENDING", "PARTIAL", "PAID", "FAILED", "REFUNDED"];
@@ -129,6 +153,27 @@ export default function PartnerDetailPage() {
   const [hasMoreUserOptions, setHasMoreUserOptions] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<AdminLedgerUser[]>([]);
   const [assigningUsers, setAssigningUsers] = useState(false);
+  const [payments, setPayments] = useState<ChannelPartnerPaymentPayload[]>([]);
+  const [loadingPayments, setLoadingPayments] = useState(false);
+  const [savingPayment, setSavingPayment] = useState(false);
+  const [paymentForm, setPaymentForm] = useState(() => {
+    const now = new Date();
+    // Default to last month: a payout is normally recorded once the month closes.
+    const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return {
+      month: previous.getMonth() + 1,
+      year: previous.getFullYear(),
+      amount: "",
+      notes: "",
+    };
+  });
+  const [paymentSlip, setPaymentSlip] = useState<File | null>(null);
+  const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
+  const [paymentCommissions, setPaymentCommissions] = useState<
+    Record<string, SettledCommissionPage>
+  >({});
+  const [loadingPaymentCommissions, setLoadingPaymentCommissions] = useState(false);
+  const slipInputRef = useRef<HTMLInputElement | null>(null);
   const userPickerRef = useRef<HTMLDivElement | null>(null);
   const userListRef = useRef<HTMLDivElement | null>(null);
   const userRequestRef = useRef(0);
@@ -363,6 +408,114 @@ export default function PartnerDetailPage() {
     }
   }, [partnerId, trackingStatusFilter]);
 
+  const loadPayments = useCallback(async () => {
+    if (!partnerId) return;
+    setLoadingPayments(true);
+    try {
+      const response = await adminApi.getChannelPartnerPayments(partnerId);
+      if (response.success) {
+        setPayments(response.data ?? []);
+      } else {
+        toast.error(response.message ?? "Failed to load payments");
+      }
+    } finally {
+      setLoadingPayments(false);
+    }
+  }, [partnerId]);
+
+  const loadPaymentCommissions = async (paymentId: string, page: number) => {
+    setLoadingPaymentCommissions(true);
+    try {
+      const response = await adminApi.getChannelPartnerPaymentCommissions(paymentId, page);
+      if (response.success) {
+        setPaymentCommissions((prev) => ({
+          ...prev,
+          [paymentId]: {
+            rows: response.data ?? [],
+            total: response.total ?? 0,
+            totalPages: response.totalPages ?? 1,
+            page: response.page ?? page,
+          },
+        }));
+      } else {
+        toast.error(response.message ?? "Failed to load settled invoices");
+      }
+    } finally {
+      setLoadingPaymentCommissions(false);
+    }
+  };
+
+  const togglePaymentRow = async (paymentId: string) => {
+    if (expandedPaymentId === paymentId) {
+      setExpandedPaymentId(null);
+      return;
+    }
+    setExpandedPaymentId(paymentId);
+    if (paymentCommissions[paymentId]) return;
+    await loadPaymentCommissions(paymentId, 1);
+  };
+
+  const savePayment = async () => {
+    if (!partnerId) return;
+    const amount = Number(paymentForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Enter a payment amount greater than zero");
+      return;
+    }
+
+    setSavingPayment(true);
+    try {
+      const response = await adminApi.recordChannelPartnerPayment(partnerId, {
+        month: paymentForm.month,
+        year: paymentForm.year,
+        amount,
+        notes: paymentForm.notes.trim() || undefined,
+        slip: paymentSlip,
+      });
+      if (!response.success) {
+        toast.error(response.message ?? "Failed to record payment");
+        return;
+      }
+
+      const settled = response.settledCount ?? 0;
+      toast.success(
+        settled
+          ? `Payment recorded · ${settled} ${settled === 1 ? "commission" : "commissions"} marked paid`
+          : "Payment recorded",
+      );
+      setPaymentForm((prev) => ({ ...prev, amount: "", notes: "" }));
+      setPaymentSlip(null);
+      if (slipInputRef.current) slipInputRef.current.value = "";
+      // Settling changes the commission statuses the metrics are built from.
+      setPaymentCommissions({});
+      setExpandedPaymentId(null);
+      await Promise.all([loadPayments(), loadSummary()]);
+    } finally {
+      setSavingPayment(false);
+    }
+  };
+
+  const removePayment = async (payment: ChannelPartnerPaymentPayload) => {
+    const label = formatPeriod(payment.month, payment.year);
+    if (!window.confirm(`Delete the ${label} payment of ${formatCurrency(payment.amount)}? Its commissions go back to unpaid unless another payment covers that month.`)) {
+      return;
+    }
+    const response = await adminApi.deleteChannelPartnerPayment(payment.id);
+    if (!response.success) {
+      toast.error(response.message ?? "Failed to delete payment");
+      return;
+    }
+    const reverted = response.data?.revertedCount ?? 0;
+    toast.success(
+      reverted
+        ? `Payment deleted · ${reverted} ${reverted === 1 ? "commission" : "commissions"} reopened`
+        : "Payment deleted",
+    );
+    setPaymentCommissions({});
+    setExpandedPaymentId(null);
+    await Promise.all([loadPayments(), loadSummary()]);
+  };
+
   const loadTabData = useCallback(
     (page = 1) => {
       if (activeTab === "invoices") return loadInvoicesTabData(page);
@@ -403,6 +556,13 @@ export default function PartnerDetailPage() {
       void loadTrackingTabData(1);
     }
   }, [activeTab, loadTrackingTabData]);
+
+  // Tab data: payments
+  useEffect(() => {
+    if (activeTab === "payments") {
+      void loadPayments();
+    }
+  }, [activeTab, loadPayments]);
 
   // Customers tab: load customer stats lazily
   useEffect(() => {
@@ -468,6 +628,20 @@ export default function PartnerDetailPage() {
       ),
     );
   }, [trips, q]);
+
+  const paymentRows = useMemo(() => {
+    if (!q) return payments;
+    return payments.filter((row) =>
+      [formatPeriod(row.month, row.year), String(row.amount), row.notes].some((item) =>
+        searchable(item).includes(q),
+      ),
+    );
+  }, [payments, q]);
+
+  const totalPaidOut = useMemo(
+    () => payments.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+    [payments],
+  );
 
   const availableStatuses = useMemo(() => {
     if (activeTab === "invoices") {
@@ -817,13 +991,12 @@ export default function PartnerDetailPage() {
         {/* Analytics & Content Layout */}
         <div className="space-y-6">
           {/* Metrics */}
-          <div className={`grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6 transition-opacity duration-200 ${loadingSummary ? 'opacity-65' : ''}`}>
+          <div className={`grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5 transition-opacity duration-200 ${loadingSummary ? 'opacity-65' : ''}`}>
             <Metric icon={Users} label="Customers" value={String(dynamicSummary.customers)} color="blue" />
             <Metric icon={FileText} label="Invoices" value={String(dynamicSummary.invoices)} color="slate" />
             <Metric icon={BadgeIndianRupee} label="Premium Total" value={formatCurrency(dynamicSummary.premiumTotal)} color="emerald" />
             <Metric icon={BadgeIndianRupee} label="Pending Comm." value={formatCurrency(dynamicSummary.commissionPending)} color="amber" />
-            <Metric icon={BadgeIndianRupee} label="Payable Comm." value={formatCurrency(dynamicSummary.commissionPayable)} color="indigo" />
-            <Metric icon={MapPin} label="Active Trips" value={String(dynamicSummary.activeTrips)} color="violet" />
+            <Metric icon={BadgeIndianRupee} label="Paid Comm." value={formatCurrency(dynamicSummary.commissionPaid)} color="violet" />
           </div>
 
           {/* Customer Assignment Panel */}
@@ -1130,6 +1303,27 @@ export default function PartnerDetailPage() {
                       </div>
                     )}
                   </>
+                ) : activeTab === "payments" ? (
+                  <PaymentsPanel
+                    rows={paymentRows}
+                    totalPaidOut={totalPaidOut}
+                    loading={loadingPayments}
+                    saving={savingPayment}
+                    form={paymentForm}
+                    onFormChange={setPaymentForm}
+                    slip={paymentSlip}
+                    onSlipChange={setPaymentSlip}
+                    slipInputRef={slipInputRef}
+                    onSave={() => void savePayment()}
+                    onDelete={(payment) => void removePayment(payment)}
+                    expandedPaymentId={expandedPaymentId}
+                    onToggleRow={(paymentId) => void togglePaymentRow(paymentId)}
+                    onCommissionsPageChange={(paymentId, page) =>
+                      void loadPaymentCommissions(paymentId, page)
+                    }
+                    commissionsByPayment={paymentCommissions}
+                    loadingCommissions={loadingPaymentCommissions}
+                  />
                 ) : (
                   <>
                     <TrackingTable rows={tripRows} />
@@ -1163,6 +1357,321 @@ export default function PartnerDetailPage() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PaymentsPanel({
+  rows,
+  totalPaidOut,
+  loading,
+  saving,
+  form,
+  onFormChange,
+  slip,
+  onSlipChange,
+  slipInputRef,
+  onSave,
+  onDelete,
+  expandedPaymentId,
+  onToggleRow,
+  commissionsByPayment,
+  loadingCommissions,
+  onCommissionsPageChange,
+}: {
+  rows: ChannelPartnerPaymentPayload[];
+  totalPaidOut: number;
+  loading: boolean;
+  saving: boolean;
+  form: { month: number; year: number; amount: string; notes: string };
+  onFormChange: React.Dispatch<
+    React.SetStateAction<{ month: number; year: number; amount: string; notes: string }>
+  >;
+  slip: File | null;
+  onSlipChange: (file: File | null) => void;
+  slipInputRef: React.RefObject<HTMLInputElement | null>;
+  onSave: () => void;
+  onDelete: (payment: ChannelPartnerPaymentPayload) => void;
+  expandedPaymentId: string | null;
+  onToggleRow: (paymentId: string) => void;
+  commissionsByPayment: Record<string, SettledCommissionPage>;
+  loadingCommissions: boolean;
+  onCommissionsPageChange: (paymentId: string, page: number) => void;
+}) {
+  const currentYear = new Date().getFullYear();
+  const years = [currentYear + 1, currentYear, currentYear - 1, currentYear - 2];
+
+  return (
+    <div>
+      {/* Record a payout */}
+      <div className="border-b border-slate-200/60 bg-slate-50/50 px-6 py-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-sm font-bold uppercase tracking-wider text-slate-400">
+            Record a Commission Payment
+          </h4>
+          <span className="text-xs font-semibold text-slate-500">
+            Paid out so far: {formatCurrency(totalPaidOut)}
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-400">Month</span>
+            <select
+              value={form.month}
+              onChange={(event) => onFormChange((prev) => ({ ...prev, month: Number(event.target.value) }))}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-blue-400"
+            >
+              {MONTHS.map((label, index) => (
+                <option key={label} value={index + 1}>{label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-400">Year</span>
+            <select
+              value={form.year}
+              onChange={(event) => onFormChange((prev) => ({ ...prev, year: Number(event.target.value) }))}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-blue-400"
+            >
+              {years.map((year) => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-400">Amount paid</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              value={form.amount}
+              onChange={(event) => onFormChange((prev) => ({ ...prev, amount: event.target.value }))}
+              placeholder="0.00"
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 outline-none focus:border-blue-400"
+            />
+          </label>
+
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-400">
+              Payment slip <span className="font-medium normal-case tracking-normal text-slate-400">(optional)</span>
+            </span>
+            <div className="flex items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2">
+              <UploadCloud className="h-4 w-4 shrink-0 text-slate-400" />
+              <input
+                ref={slipInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(event) => onSlipChange(event.target.files?.[0] ?? null)}
+                className="w-full text-xs text-slate-600 file:mr-2 file:rounded-lg file:border-0 file:bg-slate-100 file:px-2.5 file:py-1 file:text-xs file:font-semibold file:text-slate-700"
+              />
+            </div>
+          </label>
+
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={saving}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-50 lg:w-auto"
+            >
+              <BadgeIndianRupee className="h-4 w-4" />
+              {saving ? "Saving..." : "Save Payment"}
+            </button>
+          </div>
+        </div>
+
+        <input
+          value={form.notes}
+          onChange={(event) => onFormChange((prev) => ({ ...prev, notes: event.target.value }))}
+          placeholder="Reference or note (optional)"
+          className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-blue-400"
+        />
+
+        <p className="mt-3 text-xs text-slate-500">
+          Saving marks every commission on that month&apos;s invoices as paid, and the Paid Commission
+          metric moves with it.{slip ? ` Attached: ${slip.name}` : ""}
+        </p>
+      </div>
+
+      {/* Recorded payouts */}
+      <Table>
+        <thead className="bg-slate-50/70 border-b border-slate-200/60 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <tr>
+            <Th>Period</Th>
+            <Th>Amount Paid</Th>
+            <Th>Month&apos;s Commission</Th>
+            <Th>Settled</Th>
+            <Th>Slip</Th>
+            <Th>Recorded</Th>
+            <Th>Actions</Th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map((row) => {
+            const expanded = expandedPaymentId === row.id;
+            const settledRows = commissionsByPayment[row.id];
+            return (
+              <Fragment key={row.id}>
+                <tr
+                  onClick={() => onToggleRow(row.id)}
+                  className={`cursor-pointer transition-colors ${expanded ? "bg-blue-50/40" : "hover:bg-slate-50/50"}`}
+                >
+                  <Td>
+                    <p className="font-semibold text-slate-950">{formatPeriod(row.month, row.year)}</p>
+                    {row.notes ? <p className="mt-0.5 text-xs text-slate-500">{row.notes}</p> : null}
+                  </Td>
+                  <Td className="font-bold text-slate-900">{formatCurrency(row.amount)}</Td>
+                  <Td className="text-slate-600">
+                    {formatCurrency(row.commissionTotal)}
+                    <span className="ml-1 text-xs text-slate-400">
+                      ({row.commissionCount} {row.commissionCount === 1 ? "invoice" : "invoices"})
+                    </span>
+                  </Td>
+                  <Td className="text-slate-600">
+                    {row.settledCount} of {row.commissionCount}
+                  </Td>
+                  <Td>
+                    {row.slipUrl ? (
+                      <a
+                        href={row.slipUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(event) => event.stopPropagation()}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700"
+                      >
+                        <Paperclip className="h-3.5 w-3.5" />
+                        View
+                      </a>
+                    ) : (
+                      <span className="text-xs text-slate-400">-</span>
+                    )}
+                  </Td>
+                  <Td className="text-slate-500">{formatDate(row.createdAt)}</Td>
+                  <Td>
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDelete(row);
+                        }}
+                        aria-label={`Delete the ${formatPeriod(row.month, row.year)} payment`}
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                      {expanded ? (
+                        <ChevronUp className="h-4 w-4 text-slate-400" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-slate-400" />
+                      )}
+                    </div>
+                  </Td>
+                </tr>
+
+                {expanded ? (
+                  <tr className="bg-slate-50/40">
+                    <td colSpan={7} className="px-6 py-4">
+                      <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+                        Invoices in {formatPeriod(row.month, row.year)}
+                      </p>
+                      {!settledRows ? (
+                        <p className="text-sm text-slate-500">
+                          {loadingCommissions ? "Loading invoices..." : "No invoices loaded."}
+                        </p>
+                      ) : !settledRows.rows.length ? (
+                        <p className="text-sm text-slate-500">
+                          No commissions were raised for this month.
+                        </p>
+                      ) : (
+                        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                          <table className="w-full text-sm">
+                            <thead className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              <tr>
+                                <Th>Invoice</Th>
+                                <Th>Customer</Th>
+                                <Th>Premium</Th>
+                                <Th>Commission</Th>
+                                <Th>Status</Th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {settledRows.rows.map((commission) => (
+                                <tr key={commission.id}>
+                                  <Td>
+                                    <p className="font-semibold text-slate-950">
+                                      {commission.invoiceNumber || commission.invoiceId}
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-slate-500">
+                                      {formatDate(commission.invoiceDate)}
+                                    </p>
+                                  </Td>
+                                  <Td>
+                                    <p className="font-semibold text-slate-900">
+                                      {commission.customer?.name || "-"}
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-slate-500">
+                                      {commission.customer?.mobileNumber || ""}
+                                    </p>
+                                  </Td>
+                                  <Td className="text-slate-600">
+                                    {formatCurrency(commission.premiumAmount)}
+                                  </Td>
+                                  <Td className="font-bold text-slate-900">
+                                    {formatCurrency(commission.commissionAmount)}
+                                  </Td>
+                                  <Td><StatusPill status={commission.status} /></Td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+
+                          {settledRows.totalPages > 1 ? (
+                            <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5">
+                              <span className="text-xs font-semibold text-slate-500">
+                                Showing {settledRows.rows.length} of {settledRows.total} invoices ·
+                                Page {settledRows.page} of {settledRows.totalPages}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  disabled={settledRows.page <= 1 || loadingCommissions}
+                                  onClick={() => onCommissionsPageChange(row.id, settledRows.page - 1)}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                                >
+                                  <ChevronLeft className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={settledRows.page >= settledRows.totalPages || loadingCommissions}
+                                  onClick={() => onCommissionsPageChange(row.id, settledRows.page + 1)}
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
+                                >
+                                  <ChevronRight className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
+            );
+          })}
+          {!rows.length ? (
+            <EmptyRow
+              colSpan={7}
+              label={loading ? "Loading payments..." : "No payments recorded for this partner yet."}
+            />
+          ) : null}
+        </tbody>
+      </Table>
     </div>
   );
 }

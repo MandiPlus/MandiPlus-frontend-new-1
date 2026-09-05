@@ -1178,6 +1178,36 @@ export interface ChannelPartnerProfilePayload {
   };
 }
 
+export interface ChannelPartnerPaymentPayload {
+  id: string;
+  month: number;
+  year: number;
+  amount: number;
+  slipUrl?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  /** What that month earned, so a payout can be read against it. */
+  commissionCount: number;
+  commissionTotal: number;
+  settledCount: number;
+}
+
+export interface ChannelPartnerPaymentCommissionPayload {
+  id: string;
+  invoiceId: string;
+  invoiceNumber?: string;
+  invoiceDate?: string;
+  customer: {
+    id: string;
+    name: string;
+    mobileNumber: string;
+  };
+  premiumAmount: number;
+  commissionAmount: number;
+  status: string;
+  paidAt?: string | null;
+}
+
 export interface ChannelPartnerCustomerPayload {
   linkId: string;
   status: ChannelPartnerLinkStatus;
@@ -3526,6 +3556,109 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || "Failed to assign customer",
+        error: error.message,
+      };
+    }
+  };
+
+  public getChannelPartnerPayments = async (
+    partnerId: string,
+  ): Promise<ApiResponse<ChannelPartnerPaymentPayload[]>> => {
+    try {
+      const response = await this.client.get<
+        ApiResponse<ChannelPartnerPaymentPayload[]>
+      >(`/channel-partners/admin/${partnerId}/payments`);
+      return { success: true, data: response.data?.data ?? [] };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to load payments",
+        error: error.message,
+      };
+    }
+  };
+
+  public recordChannelPartnerPayment = async (
+    partnerId: string,
+    input: {
+      month: number;
+      year: number;
+      amount: number;
+      notes?: string;
+      slip?: File | null;
+    },
+  ): Promise<ApiResponse<ChannelPartnerPaymentPayload> & { settledCount?: number }> => {
+    try {
+      const formData = new FormData();
+      formData.append("month", String(input.month));
+      formData.append("year", String(input.year));
+      formData.append("amount", String(input.amount));
+      if (input.notes) formData.append("notes", input.notes);
+      if (input.slip) formData.append("slip", input.slip);
+
+      const response = await this.client.post<
+        ApiResponse<ChannelPartnerPaymentPayload> & { settledCount?: number }
+      >(`/channel-partners/admin/${partnerId}/payments`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
+      return {
+        success: true,
+        data: response.data?.data,
+        settledCount: response.data?.settledCount,
+      };
+    } catch (error: any) {
+      const raw = error.response?.data?.message;
+      return {
+        success: false,
+        message:
+          (Array.isArray(raw) ? raw.join(", ") : raw) || "Failed to record payment",
+        error: error.message,
+      };
+    }
+  };
+
+  public getChannelPartnerPaymentCommissions = async (
+    paymentId: string,
+    page: number = 1,
+    limit: number = 50,
+  ): Promise<ApiResponse<ChannelPartnerPaymentCommissionPayload[]>> => {
+    try {
+      const response = await this.client.get<
+        ApiResponse<ChannelPartnerPaymentCommissionPayload[]>
+      >(`/channel-partners/admin/payments/${paymentId}/commissions`, {
+        params: { page, limit },
+      });
+      return {
+        success: true,
+        data: response.data?.data ?? [],
+        total: response.data?.total ?? 0,
+        totalPages: Math.max(1, Number(response.data?.totalPages || 0) || 1),
+        page: response.data?.page ?? page,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to load settled invoices",
+        error: error.message,
+      };
+    }
+  };
+
+  public deleteChannelPartnerPayment = async (
+    paymentId: string,
+  ): Promise<ApiResponse<{ revertedCount?: number }>> => {
+    try {
+      const response = await this.client.delete<{ revertedCount?: number }>(
+        `/channel-partners/admin/payments/${paymentId}`,
+      );
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || "Failed to delete payment",
         error: error.message,
       };
     }
