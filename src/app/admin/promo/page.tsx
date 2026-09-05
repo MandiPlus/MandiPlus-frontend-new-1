@@ -220,8 +220,12 @@ export default function PromoLinksPage() {
         toast.error(response.message || 'Bhej nahi paya');
         return;
       }
+      // A run where nothing got through is a failure, not a success with a
+      // number in it — WhatsApp accepting the API call is not delivery.
       const { sent, failed } = response.data;
-      toast.success(failed ? `${sent} gaye, ${failed} fail` : `${sent} bhej diye`);
+      if (sent === 0) toast.error(`Koi nahi gaya — ${failed} fail`);
+      else if (failed > 0) toast(`${sent} gaye, ${failed} fail`);
+      else toast.success(`${sent} bhej diye`);
       void loadRecent();
     },
     [commodity, testPhone, audience, loadRecent],
