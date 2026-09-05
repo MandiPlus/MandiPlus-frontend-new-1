@@ -3,6 +3,7 @@ const PUBLIC_STANDALONE_ROUTES = new Set([
   "/docs/mou",
   "/mandi",
   "/pricing",
+  "/promo",
   "/privacy-policy",
   "/refund-policy",
   "/support",
