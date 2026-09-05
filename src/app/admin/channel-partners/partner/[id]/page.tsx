@@ -17,6 +17,7 @@ import {
   Search,
   UserPlus,
   Users,
+  X,
 } from "lucide-react";
 import {
   AdminLedgerUser,
@@ -44,6 +45,10 @@ const INVOICE_TAB_PAGE_SIZE = 20;
 const INVOICE_STATUS_OPTIONS = ["NOT_REQUIRED", "PENDING", "PARTIAL", "PAID", "FAILED", "REFUNDED"];
 const COMMISSION_STATUS_OPTIONS = ["PENDING", "PAYABLE", "PAID", "VOID"];
 const TRACKING_STATUS_OPTIONS = ["PENDING", "ACTIVE", "IN_PROGRESS", "ENDED"];
+// The user picker pages as you scroll rather than loading every user at once.
+const USER_PICKER_PAGE_SIZE = 50;
+// Assign in small batches so a large selection stays quick without flooding the API.
+const ASSIGN_BATCH_SIZE = 5;
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-IN", {
@@ -117,8 +122,17 @@ export default function PartnerDetailPage() {
   const [tableSearch, setTableSearch] = useState("");
   const [debouncedInvoiceSearch, setDebouncedInvoiceSearch] = useState("");
   const [userSearch, setUserSearch] = useState("");
-  const [userResults, setUserResults] = useState<AdminLedgerUser[]>([]);
-  const [assigningUserId, setAssigningUserId] = useState("");
+  const [debouncedUserSearch, setDebouncedUserSearch] = useState("");
+  const [userOptions, setUserOptions] = useState<AdminLedgerUser[]>([]);
+  const [userPickerOpen, setUserPickerOpen] = useState(false);
+  const [loadingUserOptions, setLoadingUserOptions] = useState(false);
+  const [hasMoreUserOptions, setHasMoreUserOptions] = useState(false);
+  const [selectedUsers, setSelectedUsers] = useState<AdminLedgerUser[]>([]);
+  const [assigningUsers, setAssigningUsers] = useState(false);
+  const userPickerRef = useRef<HTMLDivElement | null>(null);
+  const userListRef = useRef<HTMLDivElement | null>(null);
+  const userRequestRef = useRef(0);
+  const userOptionsRef = useRef<AdminLedgerUser[]>([]);
   const [editingCommission, setEditingCommission] = useState(false);
   const [commissionDraft, setCommissionDraft] = useState("");
   const [savingCommission, setSavingCommission] = useState(false);
@@ -533,29 +547,135 @@ export default function PartnerDetailPage() {
     }
   };
 
-  const searchUsers = async () => {
-    if (!userSearch.trim()) return;
-    const response = await adminApi.searchUsers(userSearch, 10);
-    if (response.success) {
-      setUserResults(response.data ?? []);
-    } else {
-      toast.error(response.message ?? "Failed to search users");
+  // Customers already linked to this partner cannot be picked again.
+  const linkedCustomerIds = useMemo(
+    () => new Set(customers.map((row) => row.customer.id)),
+    [customers],
+  );
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedUserSearch(userSearch.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [userSearch]);
+
+  const loadUserOptions = useCallback(async (query: string, offset: number) => {
+    // Only the newest request may write: an earlier page can land after a newer search.
+    const requestId = offset === 0 ? ++userRequestRef.current : userRequestRef.current;
+    setLoadingUserOptions(true);
+    try {
+      const response = await adminApi.searchUsers(query, USER_PICKER_PAGE_SIZE, { offset });
+      if (requestId !== userRequestRef.current) return;
+      if (!response.success) {
+        toast.error(response.message ?? "Failed to load users");
+        return;
+      }
+      const rows = response.data ?? [];
+      if (!offset) {
+        userOptionsRef.current = rows;
+        setUserOptions(rows);
+        setHasMoreUserOptions(rows.length === USER_PICKER_PAGE_SIZE);
+        return;
+      }
+      // Append by id: a page that repeats what we already hold (an API that ignores
+      // offset, or a user created between pages) must not duplicate rows or loop.
+      const seen = new Set(userOptionsRef.current.map((row) => row.id));
+      const additions = rows.filter((row) => !seen.has(row.id));
+      setHasMoreUserOptions(additions.length > 0 && rows.length === USER_PICKER_PAGE_SIZE);
+      if (additions.length) {
+        userOptionsRef.current = [...userOptionsRef.current, ...additions];
+        setUserOptions(userOptionsRef.current);
+      }
+    } finally {
+      if (requestId === userRequestRef.current) setLoadingUserOptions(false);
     }
+  }, []);
+
+  useEffect(() => {
+    if (!userPickerOpen) return;
+    if (userListRef.current) userListRef.current.scrollTop = 0;
+    void loadUserOptions(debouncedUserSearch, 0);
+  }, [userPickerOpen, debouncedUserSearch, loadUserOptions]);
+
+  useEffect(() => {
+    if (!userPickerOpen) return;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!userPickerRef.current?.contains(event.target as Node)) setUserPickerOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setUserPickerOpen(false);
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [userPickerOpen]);
+
+  const handleUserListScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const list = event.currentTarget;
+    if (loadingUserOptions || !hasMoreUserOptions) return;
+    if (list.scrollHeight - list.scrollTop - list.clientHeight > 96) return;
+    void loadUserOptions(debouncedUserSearch, userOptions.length);
   };
 
-  const assignCustomer = async () => {
-    if (!selectedPartner?.id || !assigningUserId) return;
-    const response = await adminApi.addChannelPartnerCustomer(selectedPartner.id, assigningUserId);
-    if (!response.success) {
-      toast.error(response.message ?? "Failed to assign customer");
-      return;
+  const toggleUserSelection = (user: AdminLedgerUser) => {
+    setSelectedUsers((prev) =>
+      prev.some((row) => row.id === user.id)
+        ? prev.filter((row) => row.id !== user.id)
+        : [...prev, user],
+    );
+  };
+
+  const assignSelectedUsers = async () => {
+    const partnerProfileId = selectedPartner?.id;
+    if (!partnerProfileId || !selectedUsers.length) return;
+    setAssigningUsers(true);
+    try {
+      const failures: Array<{ id: string; label: string; message: string }> = [];
+      let assigned = 0;
+
+      for (let index = 0; index < selectedUsers.length; index += ASSIGN_BATCH_SIZE) {
+        const batch = selectedUsers.slice(index, index + ASSIGN_BATCH_SIZE);
+        const responses = await Promise.all(
+          batch.map((user) => adminApi.addChannelPartnerCustomer(partnerProfileId, user.id)),
+        );
+        responses.forEach((response, position) => {
+          const user = batch[position];
+          if (response.success) {
+            assigned += 1;
+            return;
+          }
+          failures.push({
+            id: user.id,
+            label: user.name || user.mobileNumber || "User",
+            message: response.message ?? "Failed to assign",
+          });
+        });
+      }
+
+      if (assigned) {
+        toast.success(assigned === 1 ? "1 customer assigned" : `${assigned} customers assigned`);
+      }
+      if (failures.length <= 3) {
+        failures.forEach((failure) => toast.error(`${failure.label}: ${failure.message}`));
+      } else {
+        toast.error(`${failures.length} could not be assigned — ${failures[0].message}`);
+      }
+
+      // Keep the ones that failed selected so they can be retried or dropped.
+      const failedIds = new Set(failures.map((failure) => failure.id));
+      setSelectedUsers((prev) => prev.filter((user) => failedIds.has(user.id)));
+
+      if (assigned) {
+        setUserPickerOpen(false);
+        setUserSearch("");
+        void Promise.all([loadProfile(), loadSummary()]);
+        void loadCustomerStats();
+      }
+    } finally {
+      setAssigningUsers(false);
     }
-    toast.success("Customer assigned successfully");
-    setAssigningUserId("");
-    setUserSearch("");
-    setUserResults([]);
-    void Promise.all([loadProfile(), loadSummary()]);
-    void loadCustomerStats();
   };
 
   const updateLink = async (linkId: string, status: "APPROVED" | "REMOVED") => {
@@ -708,60 +828,136 @@ export default function PartnerDetailPage() {
 
           {/* Customer Assignment Panel */}
           <div className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Assign Customer to Partner</h3>
-            <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
-              <div className="relative flex items-center">
-                <Search className="absolute left-3.5 h-4 w-4 text-slate-400" />
-                <input
-                  value={userSearch}
-                  onChange={(event) => setUserSearch(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void searchUsers();
-                  }}
-                  placeholder="Search user by name or mobile number..."
-                  className="w-full rounded-xl border border-slate-200 pl-10 pr-4 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition"
-                />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400">Assign Customers to Partner</h3>
+              {selectedUsers.length ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedUsers([])}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-700 transition"
+                >
+                  Clear selection
+                </button>
+              ) : null}
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
+              <div ref={userPickerRef} className="relative">
+                <div className="relative flex items-center">
+                  <Search className="absolute left-3.5 h-4 w-4 text-slate-400" />
+                  <input
+                    value={userSearch}
+                    onChange={(event) => {
+                      setUserSearch(event.target.value);
+                      setUserPickerOpen(true);
+                    }}
+                    onFocus={() => setUserPickerOpen(true)}
+                    role="combobox"
+                    aria-expanded={userPickerOpen}
+                    aria-controls="channel-partner-user-picker"
+                    placeholder="Tap to browse users, or type a name or mobile number..."
+                    className="w-full rounded-xl border border-slate-200 pl-10 pr-4 py-2.5 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition"
+                  />
+                </div>
+
+                {userPickerOpen ? (
+                  <div
+                    id="channel-partner-user-picker"
+                    className="absolute z-20 mt-2 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
+                  >
+                    <div
+                      ref={userListRef}
+                      onScroll={handleUserListScroll}
+                      className="max-h-80 overflow-y-auto divide-y divide-slate-100"
+                    >
+                      {userOptions.map((user) => {
+                        const alreadyAssigned = linkedCustomerIds.has(user.id);
+                        const checked = selectedUsers.some((row) => row.id === user.id);
+                        return (
+                          <label
+                            key={user.id}
+                            className={`flex items-center gap-3 px-4 py-2.5 text-sm transition ${
+                              alreadyAssigned
+                                ? "cursor-not-allowed opacity-60"
+                                : `cursor-pointer ${checked ? "bg-blue-50/60" : "hover:bg-slate-50"}`
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={alreadyAssigned}
+                              onChange={() => toggleUserSelection(user)}
+                              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-400"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate font-semibold text-slate-900">
+                                {user.name || "Unnamed user"}
+                              </span>
+                              <span className="block truncate text-xs text-slate-500">
+                                {user.mobileNumber}
+                                {user.state ? ` · ${user.state}` : ""}
+                              </span>
+                            </span>
+                            {alreadyAssigned ? (
+                              <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                                Assigned
+                              </span>
+                            ) : null}
+                          </label>
+                        );
+                      })}
+
+                      {loadingUserOptions ? (
+                        <p className="px-4 py-3 text-xs font-medium text-slate-500">Loading users...</p>
+                      ) : null}
+                      {!loadingUserOptions && !userOptions.length ? (
+                        <p className="px-4 py-6 text-center text-sm text-slate-500">
+                          {debouncedUserSearch ? "No users match this search." : "No users found."}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-[11px] font-medium text-slate-500">
+                      {selectedUsers.length
+                        ? `${selectedUsers.length} selected · scroll for more`
+                        : "Select as many as you need · scroll for more"}
+                    </div>
+                  </div>
+                ) : null}
               </div>
+
               <button
                 type="button"
-                onClick={() => void searchUsers()}
-                className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
-              >
-                Search
-              </button>
-              <button
-                type="button"
-                onClick={() => void assignCustomer()}
-                disabled={!assigningUserId}
+                onClick={() => void assignSelectedUsers()}
+                disabled={!selectedUsers.length || assigningUsers}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm transition"
               >
                 <UserPlus className="h-4 w-4" />
-                Assign User
+                {assigningUsers
+                  ? "Assigning..."
+                  : selectedUsers.length > 1
+                    ? `Assign ${selectedUsers.length} Users`
+                    : "Assign User"}
               </button>
             </div>
-            {userResults.length ? (
-              <div className="grid gap-3 border-t border-slate-100 pt-4 md:grid-cols-2 lg:grid-cols-3">
-                {userResults.map((user) => (
-                  <label
+
+            {selectedUsers.length ? (
+              <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+                {selectedUsers.map((user) => (
+                  <span
                     key={user.id}
-                    className={`cursor-pointer rounded-xl border p-3 text-sm transition flex items-center ${
-                      assigningUserId === user.id
-                        ? "border-blue-500 bg-blue-50/50 shadow-sm"
-                        : "border-slate-200 bg-white hover:bg-slate-50"
-                    }`}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 py-1 pl-3 pr-1.5 text-xs font-semibold text-blue-700"
                   >
-                    <input
-                      type="radio"
-                      name="customerUserId"
-                      checked={assigningUserId === user.id}
-                      onChange={() => setAssigningUserId(user.id)}
-                      className="mr-3 text-blue-600 focus:ring-blue-400"
-                    />
-                    <div>
-                      <p className="font-semibold text-slate-900">{user.name}</p>
-                      <p className="text-slate-500 text-xs mt-0.5">{user.mobileNumber}</p>
-                    </div>
-                  </label>
+                    <span className="max-w-[180px] truncate">{user.name || user.mobileNumber}</span>
+                    <button
+                      type="button"
+                      onClick={() => toggleUserSelection(user)}
+                      aria-label={`Remove ${user.name || user.mobileNumber}`}
+                      className="rounded-full p-0.5 text-blue-500 hover:bg-blue-100 hover:text-blue-700 transition"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
                 ))}
               </div>
             ) : null}
