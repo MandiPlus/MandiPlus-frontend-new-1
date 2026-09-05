@@ -70,7 +70,10 @@ export default function CustomerDashboardPage() {
   }, [loadWalletData]);
 
   return (
-    <ProtectedRoute allowedIdentities={["CUSTOMER"]}>
+    <ProtectedRoute
+      allowedIdentities={["CUSTOMER"]}
+      allowCustomerCapability
+    >
       <div className="min-h-screen bg-[#f6f7fb]">
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white">
           <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">

@@ -1,9 +1,10 @@
 ﻿'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { useAdmin } from '@/features/admin/context/AdminContext';
+import { MoreVertical } from 'lucide-react';
 
 type Conversation = {
   phone: string;
@@ -127,35 +128,25 @@ type MetaSenderProfileResponse = {
 };
 
 type ChatFilter = 'all' | 'unread' | 'delivered' | 'failed';
-type MainTab = 'chats' | 'invoice-details';
+type MainTab = 'chats' | 'calls';
 
-type InvoiceCollection = {
-  id: string;
-  phone: string;
-  display_name: string | null;
-  status: 'pending' | 'done';
-  window_started_at: string | null;
-  window_closed_at: string;
-  message_count: number;
-  completed_by: string | null;
-  completed_at: string | null;
-  created_at: string;
-  ai_draft?: {
-    commodity?: string | null;
-    quantity?: number | null;
-    unit?: string | null;
-    rate?: number | null;
-    total_amount?: number | null;
-    buyer_name?: string | null;
-    seller_name?: string | null;
-    invoice_date?: string | null;
-    vehicle_number?: string | null;
-    notes?: string | null;
-    confidence?: 'high' | 'medium' | 'low';
-    missing_fields?: string[];
-    ai_note?: string;
-    error?: string;
-  } | null;
+type ChatWorkspaceMemory = {
+  selectedPhone?: string;
+  search?: string;
+  chatFilter?: ChatFilter;
+  mainTab?: MainTab;
+  conversationScrollTop?: number;
+  updatedAt?: number;
+};
+
+type CallRecord = {
+  call_id: string;
+  from: string;
+  to: string;
+  direction: 'inbound' | 'outbound';
+  status: 'answered' | 'missed';
+  started_at: number;
+  duration: number;
 };
 
 type ChatTheme = 'light' | 'dark';
@@ -223,6 +214,17 @@ function payloadPreview(payload: unknown): string | null {
     const listTitle = src?.interactive?.list_reply?.title;
     if (typeof listTitle === 'string' && listTitle.trim()) return listTitle.trim();
 
+    const interactive = src?.interactive;
+    if (interactive && typeof interactive === 'object') {
+      const interactiveType = String(interactive?.type || '').toLowerCase();
+      const bodyText = interactive?.body?.text;
+      if (typeof bodyText === 'string' && bodyText.trim()) return bodyText.trim();
+      if (interactiveType.includes('call') || interactiveType === 'call_permission_request') {
+        return 'WhatsApp Voice Call';
+      }
+      return 'Interactive message';
+    }
+
     const imageCaption = src?.image?.caption;
     if (typeof imageCaption === 'string' && imageCaption.trim()) return `[image] ${imageCaption.trim()}`;
     if (src?.image) return '[image]';
@@ -278,6 +280,10 @@ function payloadPreview(payload: unknown): string | null {
       const first = errors[0] || {};
       const title = first?.title || first?.message || first?.details;
       const code = first?.code;
+      const errorText = `${title || ''} ${code || ''}`.toLowerCase();
+      if (errorText.includes('131051') || errorText.includes('message type unknown')) {
+        return 'WhatsApp Voice Call';
+      }
       if (title && code !== undefined) return `[error] ${title} (code ${code})`;
       if (title) return `[error] ${title}`;
     }
@@ -355,7 +361,23 @@ function previewText(
     const rendered = renderTemplateText(templatesByName[templateNameFromText], payload);
     if (rendered && rendered.trim()) return rendered.trim();
   }
-  if (text && text.trim()) return text.trim();
+  if (text && text.trim()) {
+    const raw = text.trim();
+    if (/^\[interactive\]$/i.test(raw)) {
+      const fromPayload = payloadPreview(payload);
+      return fromPayload && fromPayload !== '[interactive]' ? fromPayload : 'Interactive message';
+    }
+    if (/^WhatsApp Voice Call$/i.test(raw)) {
+      return 'WhatsApp Voice Call';
+    }
+    if (/\{\{\d+\}\}/.test(raw) && payload) {
+      const params = extractTemplateBodyParameters(payload);
+      if (params.length > 0) {
+        return raw.replace(/\{\{(\d+)\}\}/g, (_m, idx) => params[Number(idx) - 1] ?? `{{${idx}}}`);
+      }
+    }
+    return raw;
+  }
   const templateName = getTemplateNameFromPayload(payload);
   if (templateName && templatesByName) {
     const rendered = renderTemplateText(templatesByName[templateName], payload);
@@ -599,6 +621,64 @@ function openAttachment(media: MediaInfo, resolvedUrl: string) {
   window.open(targetUrl, '_blank', 'noopener,noreferrer');
 }
 
+type UrlButton = { text: string; url: string };
+
+function extractUrlButtons(payload: unknown): UrlButton[] {
+  const buttons: UrlButton[] = [];
+  for (const src of payloadSources(payload)) {
+    const template = src?.template as Record<string, any> | undefined;
+    const components = Array.isArray(template?.components)
+      ? (template.components as Array<Record<string, any>>)
+      : [];
+    for (const component of components) {
+      if (String(component?.type || '').toUpperCase() !== 'BUTTONS') continue;
+      const btns = Array.isArray(component?.buttons)
+        ? (component.buttons as Array<Record<string, any>>)
+        : [];
+      for (const btn of btns) {
+        if (String(btn?.type || '').toUpperCase() === 'URL' && typeof btn.url === 'string') {
+          buttons.push({ text: String(btn.text || 'Open link'), url: btn.url });
+        }
+      }
+    }
+    // cta_url interactive messages
+    const interactive = src?.interactive as Record<string, any> | undefined;
+    if (interactive?.type === 'cta_url') {
+      const action = interactive?.action as Record<string, any> | undefined;
+      if (typeof action?.url === 'string') {
+        buttons.push({ text: String(interactive?.body?.text || 'Open link'), url: action.url });
+      }
+    }
+  }
+  return buttons;
+}
+
+const URL_REGEX = /https?:\/\/[^\s<>"']+/g;
+
+function LinkifiedText({ text, className }: { text: string; className?: string }) {
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  URL_REGEX.lastIndex = 0;
+  while ((match = URL_REGEX.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    parts.push(
+      <a key={key++} href={match[0]} target="_blank" rel="noreferrer"
+        className="break-all underline underline-offset-2 opacity-90 hover:opacity-100">
+        {match[0]}
+      </a>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return (
+    <p className={`whitespace-pre-wrap break-words text-sm leading-6 ${className ?? ''}`}>
+      {parts}
+    </p>
+  );
+}
+
 function prettifyFieldLabel(key: string) {
   return key
     .replace(/_/g, ' ')
@@ -720,22 +800,81 @@ const themeOptions: Array<{
     },
   ];
 
+function isMobileViewport() {
+  if (typeof window === 'undefined') return false;
+  return window.innerWidth < 1024;
+}
+
+const CHAT_WORKSPACE_MEMORY_KEY = 'chatLogsWorkspaceMemory';
+const CHAT_WORKSPACE_MEMORY_TTL_MS = 60 * 60 * 1000;
+
+function readChatWorkspaceMemory(): ChatWorkspaceMemory {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = sessionStorage.getItem(CHAT_WORKSPACE_MEMORY_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as ChatWorkspaceMemory;
+    if (!parsed.updatedAt || Date.now() - parsed.updatedAt > CHAT_WORKSPACE_MEMORY_TTL_MS) {
+      sessionStorage.removeItem(CHAT_WORKSPACE_MEMORY_KEY);
+      return {};
+    }
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function writeChatWorkspaceMemory(next: ChatWorkspaceMemory) {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem(
+      CHAT_WORKSPACE_MEMORY_KEY,
+      JSON.stringify({ ...readChatWorkspaceMemory(), ...next, updatedAt: Date.now() })
+    );
+  } catch { }
+}
+
+function getSavedChatFilter(value: unknown): ChatFilter {
+  return value === 'unread' || value === 'delivered' || value === 'failed' ? value : 'all';
+}
+
+function getSavedMainTab(value: unknown): MainTab {
+  return value === 'calls' ? 'calls' : 'chats';
+}
+
 export function AdminChatLogsView({ standalone = false }: { standalone?: boolean }) {
   const router = useRouter();
-  const { isAuthenticated } = useAdmin();
-  const [contactDirectory, setContactDirectory] = useState<Record<string, { name: string }>>({});
+  const { isAuthenticated, accessProfile } = useAdmin();
+  const [contactDirectory, setContactDirectory] = useState<Record<string, { name: string }>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      const stored = localStorage.getItem('chatContactDirectory');
+      return stored ? JSON.parse(stored) : {};
+    } catch { return {}; }
+  });
 
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [error, setError] = useState('');
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selectedPhone, setSelectedPhone] = useState('');
+  const [selectedPhone, setSelectedPhone] = useState(() => {
+    const saved = readChatWorkspaceMemory().selectedPhone || '';
+    return isMobileViewport() ? '' : saved;
+  });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
   const [mediaFailures, setMediaFailures] = useState<Record<string, boolean>>({});
-  const [search, setSearch] = useState('');
-  const [chatFilter, setChatFilter] = useState<ChatFilter>('all');
-  const [chatTheme, setChatTheme] = useState<ChatTheme>('light');
+  const [search, setSearch] = useState(() => readChatWorkspaceMemory().search || '');
+  const [chatFilter, setChatFilter] = useState<ChatFilter>(() =>
+    getSavedChatFilter(readChatWorkspaceMemory().chatFilter)
+  );
+  const [chatTheme, setChatTheme] = useState<ChatTheme>(() => {
+    if (typeof window === 'undefined') return 'light';
+    try {
+      const stored = localStorage.getItem('chatLogsTheme');
+      return (stored === 'light' || stored === 'dark') ? stored : 'light';
+    } catch { return 'light'; }
+  });
   const [refreshTick, setRefreshTick] = useState(0);
   const [draftMessage, setDraftMessage] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
@@ -750,7 +889,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   const [showNewContactModal, setShowNewContactModal] = useState(false);
   const [newContactName, setNewContactName] = useState('');
   const [newContactPhone, setNewContactPhone] = useState('');
-  const [newContactMessage, setNewContactMessage] = useState('');
+  const [newContactMessage, setNewContactMessage] = useState('Namaste! MandiPlus se aapka swagat hai. Hum aapki kaise madad kar sakte hain?');
   const [savingContact, setSavingContact] = useState(false);
   const [contactProfile, setContactProfile] = useState<ContactProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
@@ -768,6 +907,8 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   });
 
   const [showActionMenu, setShowActionMenu] = useState(false);
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const [msgMenuId, setMsgMenuId] = useState<string | null>(null);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [templateSearch, setTemplateSearch] = useState('');
   const [loadingTemplates, setLoadingTemplates] = useState(false);
@@ -777,18 +918,25 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   const [templateVars, setTemplateVars] = useState<string[]>([]);
   const [sendingTemplate, setSendingTemplate] = useState(false);
 
-  // Invoice Details tab
-  const [mainTab, setMainTab] = useState<MainTab>('chats');
-  const [invoiceCollections, setInvoiceCollections] = useState<InvoiceCollection[]>([]);
-  const [loadingCollections, setLoadingCollections] = useState(false);
-  const [collectionFilter, setCollectionFilter] = useState<'all' | 'pending' | 'done'>('pending');
-  const [completingId, setCompletingId] = useState<string | null>(null);
-  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
+  // Calls tab
+  const [mainTab, setMainTab] = useState<MainTab>(() =>
+    getSavedMainTab(readChatWorkspaceMemory().mainTab)
+  );
+  const [callHistory, setCallHistory] = useState<CallRecord[]>([]);
+  const [loadingCalls, setLoadingCalls] = useState(false);
+
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
 
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+  const conversationListRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const hasLoadedConversationsRef = useRef(false);
   const hasLoadedMessagesRef = useRef(false);
+  const mobileBackRef = useRef(false);
+  const suppressAutoSelectRef = useRef(isMobileViewport());
+  const shouldRestoreConversationListRef = useRef(true);
+  const phoneChangedRef = useRef(false);
   const scrollSnapshotRef = useRef<{
     scrollTop: number;
     scrollHeight: number;
@@ -797,21 +945,24 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
 
   const botBaseUrl =
     process.env.NEXT_PUBLIC_BOT_API_BASE_URL || 'http://localhost:8000';
+  const adminJwt =
+    (typeof window !== 'undefined' && localStorage.getItem('adminToken')) ||
+    '';
   const botAdminToken =
     (typeof window !== 'undefined' && localStorage.getItem('botChatAdminToken')) ||
     process.env.NEXT_PUBLIC_BOT_CHAT_ADMIN_TOKEN ||
     '';
+  const currentUser = accessProfile?.account?.username
+    || (accessProfile?.isFullAdmin ? 'admin@mandiplus.com' : '');
 
   const axiosConfig = useMemo(
-    () =>
-      botAdminToken
-        ? {
-          headers: {
-            'x-admin-token': botAdminToken,
-          },
-        }
-        : {},
-    [botAdminToken]
+    () => ({
+      headers: {
+        ...(adminJwt ? { Authorization: `Bearer ${adminJwt}` } : {}),
+        ...(botAdminToken ? { 'x-admin-token': botAdminToken } : {}),
+      },
+    }),
+    [adminJwt, botAdminToken]
   );
 
   const bodyVarCount = useMemo(
@@ -845,19 +996,6 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     ? 'border border-rose-400/30 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20'
     : 'border border-rose-200 bg-white/85 text-rose-600 hover:bg-rose-50';
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const storedContacts = localStorage.getItem('chatContactDirectory');
-      if (storedContacts) {
-        setContactDirectory(JSON.parse(storedContacts));
-      }
-      const storedTheme = localStorage.getItem('chatLogsTheme');
-      if (storedTheme === 'light' || storedTheme === 'dark') {
-        setChatTheme(storedTheme);
-      }
-    } catch { }
-  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -874,40 +1012,39 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   }, [chatTheme]);
 
   useEffect(() => {
+    writeChatWorkspaceMemory({ selectedPhone });
+  }, [selectedPhone]);
+
+  useEffect(() => {
+    writeChatWorkspaceMemory({ search });
+  }, [search]);
+
+  useEffect(() => {
+    writeChatWorkspaceMemory({ chatFilter });
+  }, [chatFilter]);
+
+  useEffect(() => {
+    writeChatWorkspaceMemory({ mainTab });
+  }, [mainTab]);
+
+  useEffect(() => {
     if (!isAuthenticated) {
       router.push('/admin/login');
     }
   }, [isAuthenticated, router]);
 
-  // Fetch invoice collections whenever the tab is active or refreshTick changes
+  // Fetch call history whenever the calls tab is active or refreshTick changes
   useEffect(() => {
-    if (!isAuthenticated) return;
-    setLoadingCollections(true);
-    const url = collectionFilter === 'all'
-      ? `${botBaseUrl}/admin/invoice-collections?limit=200`
-      : `${botBaseUrl}/admin/invoice-collections?status=${collectionFilter}&limit=200`;
-    axios.get(url, axiosConfig)
-      .then((res) => setInvoiceCollections(res.data?.items ?? []))
-      .catch((err) => console.error('invoice-collections fetch error:', err))
-      .finally(() => setLoadingCollections(false));
-  }, [isAuthenticated, botBaseUrl, axiosConfig, collectionFilter, refreshTick]);
-
-  const markCollectionDone = async (id: string) => {
-    if (completingId) return;
-    setCompletingId(id);
-    try {
-      await axios.post(
-        `${botBaseUrl}/admin/invoice-collections/${id}/complete`,
-        null,
-        axiosConfig,
-      );
-      setInvoiceCollections((prev) =>
-        prev.map((c) => c.id === id ? { ...c, status: 'done' } : c)
-      );
-    } catch { } finally {
-      setCompletingId(null);
-    }
-  };
+    if (!isAuthenticated || mainTab !== 'calls') return;
+    setLoadingCalls(true);
+    const query = currentUser
+      ? `limit=100&username=${encodeURIComponent(currentUser)}`
+      : 'limit=100';
+    axios.get(`${botBaseUrl}/admin/calls/history?${query}`, axiosConfig)
+      .then((res) => setCallHistory(res.data?.items ?? []))
+      .catch((err) => console.error('calls/history fetch error:', err))
+      .finally(() => setLoadingCalls(false));
+  }, [isAuthenticated, botBaseUrl, axiosConfig, mainTab, refreshTick, currentUser]);
 
 
   useEffect(() => {
@@ -943,14 +1080,20 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
 
         if (items.length === 0) {
           setSelectedPhone('');
-        } else if (!selectedPhone && items.length > 0) {
-          setSelectedPhone(items[0].phone);
+        } else if (!selectedPhone && items.length > 0 && !mobileBackRef.current && !suppressAutoSelectRef.current) {
+          if (!isMobileViewport()) {
+            setSelectedPhone(items[0].phone);
+          }
         } else if (
           selectedPhone &&
           !items.find((item) => item.phone === selectedPhone) &&
           items.length > 0
         ) {
-          setSelectedPhone(items[0].phone);
+          if (!isMobileViewport()) {
+            setSelectedPhone(items[0].phone);
+          } else {
+            setSelectedPhone('');
+          }
         }
       } catch {
         if (!hasLoadedConversationsRef.current) {
@@ -1056,7 +1199,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
           };
         }
         const res = await axios.get<MessageResponse>(
-          `${botBaseUrl}/admin/chat/conversations/${selectedPhone}/messages?limit=700`,
+          `${botBaseUrl}/admin/chat/conversations/${selectedPhone}/messages?limit=10`,
           axiosConfig
         );
         const nextItems = Array.isArray(res.data?.items) ? res.data.items : [];
@@ -1088,6 +1231,63 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
 
     fetchMessages();
   }, [isAuthenticated, selectedPhone, botBaseUrl, axiosConfig, refreshTick]);
+
+  const olderLoadFailedRef = useRef(false);
+
+  const loadOlderMessages = async () => {
+    if (!selectedPhone || loadingOlder || !hasMoreMessages || messages.length === 0 || olderLoadFailedRef.current) return;
+    setLoadingOlder(true);
+    try {
+      const oldestMessage = messages[0];
+      const oldestDate = oldestMessage?.created_at;
+      const res = await axios.get<MessageResponse>(
+        `${botBaseUrl}/admin/chat/conversations/${selectedPhone}/messages?limit=10&before=${encodeURIComponent(oldestDate)}`,
+        axiosConfig
+      );
+      const olderItems = Array.isArray(res.data?.items) ? res.data.items : [];
+      if (olderItems.length === 0) {
+        setHasMoreMessages(false);
+      } else {
+        const container = messagesContainerRef.current;
+        const prevHeight = container?.scrollHeight || 0;
+        setMessages((prev) => [...olderItems, ...prev]);
+        requestAnimationFrame(() => {
+          if (container) {
+            container.scrollTop = container.scrollHeight - prevHeight;
+          }
+        });
+      }
+    } catch {
+      olderLoadFailedRef.current = true;
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
+  const handleMessagesScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    if (target.scrollTop < 50 && hasMoreMessages && !loadingOlder) {
+      loadOlderMessages();
+    }
+  };
+
+  const handleConversationListScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    if (mainTab !== 'chats') return;
+    writeChatWorkspaceMemory({ conversationScrollTop: event.currentTarget.scrollTop });
+  };
+
+  const restoreConversationListScroll = () => {
+    const container = conversationListRef.current;
+    if (!container) return;
+    const savedTop = readChatWorkspaceMemory().conversationScrollTop || 0;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (conversationListRef.current) {
+          conversationListRef.current.scrollTop = savedTop;
+        }
+      });
+    });
+  };
 
   useEffect(() => {
     if (!selectedPhone || !selectedConversation || !selectedConversation.unread_count) return;
@@ -1126,9 +1326,21 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   }, [selectedPhone, selectedConversation?.unread_count, botBaseUrl, axiosConfig]);
 
   useLayoutEffect(() => {
-    const snapshot = scrollSnapshotRef.current;
     const container = messagesContainerRef.current;
-    if (!snapshot || !container) return;
+    if (!container) return;
+
+    if (phoneChangedRef.current) {
+      phoneChangedRef.current = false;
+      scrollSnapshotRef.current = null;
+      container.scrollTop = container.scrollHeight;
+      return;
+    }
+
+    const snapshot = scrollSnapshotRef.current;
+    if (!snapshot) {
+      container.scrollTop = container.scrollHeight;
+      return;
+    }
 
     const distanceFromBottom =
       snapshot.scrollHeight - (snapshot.scrollTop + snapshot.clientHeight);
@@ -1144,6 +1356,8 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   }, [messages]);
 
   useEffect(() => {
+    phoneChangedRef.current = true;
+    olderLoadFailedRef.current = false;
     setMediaUrls((prev) => {
       Object.values(prev).forEach((url) => {
         try {
@@ -1153,8 +1367,12 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
       return {};
     });
     setMediaFailures({});
+    setHasMoreMessages(true);
     hasLoadedMessagesRef.current = false;
   }, [selectedPhone]);
+
+  const mediaUrlsRef = useRef(mediaUrls);
+  mediaUrlsRef.current = mediaUrls;
 
   useEffect(() => {
     if (!selectedPhone || messages.length === 0) return;
@@ -1162,27 +1380,37 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     let cancelled = false;
 
     const resolveMedia = async () => {
+      const currentUrls = mediaUrlsRef.current;
       const targets = messages
         .map((message) => ({ message, media: extractMessageMedia(message) }))
-        .filter((item) => item.media && !mediaUrls[item.message.id]);
+        .filter((item) => item.media && !currentUrls[item.message.id] && !mediaFailures[item.message.id]);
+
+      if (targets.length === 0) return;
 
       await Promise.all(
         targets.map(async (item) => {
           const media = item.media as MediaInfo;
           try {
-            if (media.directUrl) {
+            if (media.directUrl && media.kind !== 'audio') {
               if (cancelled) return;
               setMediaUrls((prev) => ({ ...prev, [item.message.id]: media.directUrl as string }));
               return;
             }
             if (!media.mediaId) {
+              if (media.directUrl) {
+                if (!cancelled) {
+                  setMediaUrls((prev) => ({ ...prev, [item.message.id]: media.directUrl as string }));
+                }
+                return;
+              }
               if (!cancelled) {
                 setMediaFailures((prev) => ({ ...prev, [item.message.id]: true }));
               }
               return;
             }
+            const mediaUrl = `${botBaseUrl}/admin/chat/media/${media.mediaId}${media.kind === 'audio' ? '?format=m4a' : ''}`;
             const response = await axios.get(
-              `${botBaseUrl}/admin/chat/media/${media.mediaId}`,
+              mediaUrl,
               {
                 ...axiosConfig,
                 responseType: 'blob',
@@ -1213,7 +1441,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     return () => {
       cancelled = true;
     };
-  }, [messages, selectedPhone, botBaseUrl, axiosConfig, mediaUrls]);
+  }, [messages, selectedPhone, botBaseUrl, axiosConfig, mediaFailures]);
 
   useEffect(() => {
     const id = setInterval(() => setRefreshTick((x) => x + 1), 120000);
@@ -1295,15 +1523,17 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     return [...byPhone.values()];
   }, [conversations]);
 
-  const filterCountsSafe = useMemo(
-    () => ({
-      all: uniqueConversations.length,
-      unread: uniqueConversations.filter(isUnreadConversation).length,
-      delivered: uniqueConversations.filter(isDeliveredConversation).length,
-      failed: uniqueConversations.filter(isFailedConversation).length,
-    }),
-    [uniqueConversations]
-  );
+  const filterCountsSafe = useMemo(() => {
+    let unread = 0;
+    let delivered = 0;
+    let failed = 0;
+    for (const conv of uniqueConversations) {
+      if (isUnreadConversation(conv)) unread++;
+      if (isDeliveredConversation(conv)) delivered++;
+      if (isFailedConversation(conv)) failed++;
+    }
+    return { all: uniqueConversations.length, unread, delivered, failed };
+  }, [uniqueConversations]);
 
   const filteredConversations = useMemo(() => {
     const key = search.trim().toLowerCase();
@@ -1320,6 +1550,14 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
       );
     });
   }, [uniqueConversations, search, chatFilter, contactDirectory]);
+
+  useLayoutEffect(() => {
+    if (mainTab !== 'chats') return;
+    if (selectedPhone && isMobileViewport()) return;
+    if (!shouldRestoreConversationListRef.current) return;
+    shouldRestoreConversationListRef.current = false;
+    restoreConversationListScroll();
+  }, [filteredConversations.length, loadingConversations, mainTab, selectedPhone]);
 
   const groupedMessages = useMemo(() => {
     const groups: Array<{ label: string; items: ChatMessage[] }> = [];
@@ -1623,7 +1861,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
       setDraftMessage('');
       setNewContactName('');
       setNewContactPhone('');
-      setNewContactMessage('');
+      setNewContactMessage('Namaste! MandiPlus se aapka swagat hai. Hum aapki kaise madad kar sakte hain?');
       setShowNewContactModal(false);
       setRefreshTick((x) => x + 1);
     } catch {
@@ -1631,6 +1869,31 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     } finally {
       setSavingContact(false);
     }
+  };
+
+  const handleCallButtonClick = () => {
+    if (!selectedPhone) return;
+    window.dispatchEvent(new CustomEvent('wa-initiate-call', { detail: { phone: selectedPhone } }));
+  };
+
+  const selectConversation = (phone: string) => {
+    const container = conversationListRef.current;
+    if (container && mainTab === 'chats') {
+      writeChatWorkspaceMemory({ conversationScrollTop: container.scrollTop, selectedPhone: phone });
+    } else {
+      writeChatWorkspaceMemory({ selectedPhone: phone });
+    }
+    mobileBackRef.current = false;
+    suppressAutoSelectRef.current = false;
+    shouldRestoreConversationListRef.current = true;
+    setSelectedPhone(phone);
+  };
+
+  const returnToConversationList = () => {
+    mobileBackRef.current = true;
+    suppressAutoSelectRef.current = true;
+    shouldRestoreConversationListRef.current = true;
+    setSelectedPhone('');
   };
 
   const filterButtons: Array<{
@@ -1671,7 +1934,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     ];
 
   return (
-    <div className={standalone ? `${isDark ? 'h-screen bg-[#0b141a] p-3 text-slate-100' : 'h-screen bg-[#edf1f5] p-3'}` : 'h-[calc(100vh-7.5rem)] py-5'}>
+    <div className={standalone ? `${isDark ? 'h-dvh bg-[#0b141a] p-0 lg:p-3 text-slate-100' : 'h-dvh bg-[#edf1f5] p-0 lg:p-3'}` : 'h-dvh lg:h-[calc(100vh-7.5rem)] py-0 lg:py-5'}>
 
       {error ? (
         <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -1680,18 +1943,20 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
       ) : null}
 
       <div
-        className={`grid h-full grid-cols-1 gap-3 ${standalone ? 'xl:grid-cols-[210px_360px_minmax(0,1fr)_300px]' : 'rounded-[28px] border border-slate-200 p-3 shadow-sm lg:grid-cols-[380px_1fr]'} ${currentTheme.shell}`}
+        className={`flex h-full gap-0 lg:gap-3 ${standalone ? 'lg:grid lg:grid-cols-[210px_360px_minmax(0,1fr)_300px]' : 'lg:rounded-[28px] lg:border lg:border-slate-200 lg:p-3 lg:shadow-sm lg:grid lg:grid-cols-[380px_1fr]'} ${currentTheme.shell}`}
       >
         {standalone ? (
-          <aside className={`flex h-full flex-col rounded-[24px] border shadow-sm ${isDark ? 'border-[#25323a] bg-[#111b21] text-slate-100' : 'border-slate-200 bg-white'}`}>
+          <aside className={`hidden lg:flex h-full flex-col rounded-[24px] border shadow-sm ${isDark ? 'border-[#25323a] bg-[#111b21] text-slate-100' : 'border-slate-200 bg-white'}`}>
             <div className={`px-4 py-5 ${isDark ? 'border-b border-[#25323a]' : 'border-b border-slate-200'}`}>
               <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-800">
-                  WA
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#25D366]">
+                  <svg className="h-6 w-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                  </svg>
                 </div>
                 <div>
-                  <p className={`text-base font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Inbox</p>
-                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>WhatsApp workspace</p>
+                  <p className={`text-base font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>MandiPlus</p>
+                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>WhatsApp Business</p>
                 </div>
               </div>
             </div>
@@ -1699,11 +1964,14 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
             <div className="space-y-1 px-3 py-4">
               {filterButtons.map((filter) => {
                 const active = chatFilter === filter.key;
-                return (
-                  <button
-                    key={`rail-${filter.key}`}
-                    type="button"
-                    onClick={() => setChatFilter(filter.key)}
+	                return (
+	                  <button
+	                    key={`rail-${filter.key}`}
+	                    type="button"
+	                    onClick={() => {
+	                      shouldRestoreConversationListRef.current = true;
+	                      setChatFilter(filter.key);
+	                    }}
                     className={`flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-sm transition ${active ? 'bg-emerald-600 text-white' : isDark ? 'text-slate-200 hover:bg-[#1f2c33]' : 'text-slate-700 hover:bg-slate-100'
                       }`}
                   >
@@ -1740,20 +2008,42 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               </div>
             </div>
 
-            <div className={`mt-auto px-4 py-4 ${isDark ? 'border-t border-[#25323a]' : 'border-t border-slate-200'}`}>
-              <div className={`rounded-2xl px-3 py-3 ${isDark ? 'bg-[#1a262d]' : 'bg-slate-50'}`}>
-                <p className={`text-xs font-medium ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>Live sync</p>
-                <p className={`mt-1 text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>New messages flow in automatically.</p>
-              </div>
-            </div>
+            <div className="mt-auto" />
           </aside>
         ) : null}
-        <aside className={`flex h-full flex-col overflow-hidden rounded-[24px] border ${standalone ? (isDark ? 'border-[#25323a] bg-[#111b21] shadow-sm' : 'border-slate-200 bg-white shadow-sm') : `border-slate-200 ${currentTheme.panel}`}`}>
-          {/* ── Main tab switcher ── */}
-          <div className={`flex border-b ${isDark && standalone ? 'border-[#25323a]' : 'border-slate-200'}`}>
-            <button
-              type="button"
-              onClick={() => setMainTab('chats')}
+        <aside className={`${selectedPhone ? 'hidden lg:flex' : 'flex'} h-full w-full lg:w-auto flex-col overflow-hidden lg:rounded-[24px] lg:border ${standalone ? (isDark ? 'lg:border-[#25323a] bg-[#111b21] lg:shadow-sm' : 'lg:border-slate-200 bg-white lg:shadow-sm') : `lg:border-slate-200 ${currentTheme.panel}`}`}>
+          {/* ── Mobile header (standalone only, visible on small screens) ── */}
+          {standalone && (
+            <div className={`flex lg:hidden items-center gap-3 px-4 py-3 ${isDark ? 'border-b border-[#25323a] bg-[#111b21]' : 'border-b border-slate-200 bg-white'}`} style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#25D366]">
+                <svg className="h-5 w-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className={`text-base font-semibold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>MandiPlus</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNewContactModal(true)}
+                className={`flex h-9 w-9 items-center justify-center rounded-full ${isDark ? 'text-slate-300 hover:bg-[#1f2c33]' : 'text-slate-600 hover:bg-slate-100'}`}
+                aria-label="New chat"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+              </button>
+            </div>
+          )}
+
+	          {/* ── Main tab switcher ── */}
+	          <div className={`flex border-b ${isDark && standalone ? 'border-[#25323a]' : 'border-slate-200'}`}>
+	            <button
+	              type="button"
+	              onClick={() => {
+	                shouldRestoreConversationListRef.current = true;
+	                setMainTab('chats');
+	              }}
               className={`flex-1 py-3 text-sm font-medium transition ${mainTab === 'chats'
                 ? (isDark && standalone ? 'border-b-2 border-emerald-500 text-emerald-400' : 'border-b-2 border-emerald-600 text-emerald-700')
                 : (isDark && standalone ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700')
@@ -1763,25 +2053,20 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
             </button>
             <button
               type="button"
-              onClick={() => setMainTab('invoice-details')}
-              className={`relative flex-1 py-3 text-sm font-medium transition ${mainTab === 'invoice-details'
+              onClick={() => setMainTab('calls')}
+              className={`relative flex-1 py-3 text-sm font-medium transition ${mainTab === 'calls'
                 ? (isDark && standalone ? 'border-b-2 border-emerald-500 text-emerald-400' : 'border-b-2 border-emerald-600 text-emerald-700')
                 : (isDark && standalone ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700')
                 }`}
             >
-              Invoice Details
-              {invoiceCollections.filter((c) => c.status === 'pending').length > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] font-bold text-white">
-                  {invoiceCollections.filter((c) => c.status === 'pending').length}
-                </span>
-              )}
+              Calls
             </button>
           </div>
 
-          <div className={`px-4 py-4 ${isDark && standalone ? 'border-b border-[#25323a]' : 'border-b border-slate-200'}`}>
+          <div className={`px-3 lg:px-4 py-3 lg:py-4 ${isDark && standalone ? 'border-b border-[#25323a]' : 'border-b border-slate-200'}`}>
             {mainTab === 'chats' ? (
               <>
-                <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="mb-2 lg:mb-3 hidden lg:flex items-center justify-between gap-3">
                   <div>
                     <p className={`text-lg font-semibold ${isDark && standalone ? 'text-slate-100' : 'text-slate-900'}`}>Chats</p>
                     <p className={`text-xs ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>Search by number, name, or preview</p>
@@ -1799,171 +2084,123 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                   )}
                 </div>
 
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search name, number, or message"
-                  className={`w-full rounded-2xl border px-4 py-3 text-sm outline-none transition focus:border-emerald-500 ${isDark && standalone ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500 focus:bg-[#1f2c33]' : 'border-slate-200 bg-slate-50 focus:bg-white'}`}
+	                <input
+	                  value={search}
+	                  onChange={(e) => {
+	                    shouldRestoreConversationListRef.current = true;
+	                    setSearch(e.target.value);
+	                  }}
+                  placeholder="Search..."
+                  className={`w-full rounded-full lg:rounded-2xl border px-4 py-2.5 lg:py-3 text-sm outline-none transition focus:border-emerald-500 ${isDark && standalone ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500 focus:bg-[#1f2c33]' : 'border-slate-200 bg-slate-50 focus:bg-white'}`}
                 />
 
-                {!standalone ? (
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {filterButtons.map((filter) => {
-                      const active = chatFilter === filter.key;
-                      return (
-                        <button
-                          key={filter.key}
-                          type="button"
-                          onClick={() => setChatFilter(filter.key)}
-                          className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium transition ${active
-                            ? `${filter.activeTone} border-transparent shadow-sm`
+                <div className={`mt-2 mt-3 flex flex-wrap gap-1.5 gap-2 ${standalone ? 'lg:hidden' : ''}`}>
+                  {filterButtons.map((filter) => {
+                    const active = chatFilter === filter.key;
+	                    return (
+	                      <button
+	                        key={filter.key}
+	                        type="button"
+	                        onClick={() => {
+	                          shouldRestoreConversationListRef.current = true;
+	                          setChatFilter(filter.key);
+	                        }}
+                        className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition ${active
+                          ? `${filter.activeTone} border-transparent shadow-sm`
+                          : standalone && isDark
+                            ? `border-[#31424c] bg-[#1a262d] ${filter.tone === 'text-slate-600' ? 'text-slate-300' : filter.tone}`
                             : `border-slate-200 bg-white hover:bg-slate-50 ${filter.tone}`
-                            }`}
-                        >
-                          <span>{filter.label}</span>
-                          <span className={`rounded-full px-2 py-0.5 ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'}`}>
-                            {filter.count}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
+                          }`}
+                      >
+                        <span>{filter.label}</span>
+                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${active ? 'bg-white/20 text-white' : standalone && isDark ? 'bg-[#233138] text-slate-400' : 'bg-slate-100 text-slate-700'}`}>
+                          {filter.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </>
             ) : (
-              /* Invoice Details header */
-              <>
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <p className={`text-lg font-semibold ${isDark && standalone ? 'text-slate-100' : 'text-slate-900'}`}>Invoice Details</p>
-                    <p className={`text-xs ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>Collected from WhatsApp</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setRefreshTick((x) => x + 1)}
-                    className={`rounded-xl px-3 py-2 text-xs font-medium transition ${isDark && standalone ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
-                  >
-                    Refresh
-                  </button>
+              /* Calls header */
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className={`text-lg font-semibold ${isDark && standalone ? 'text-slate-100' : 'text-slate-900'}`}>Calls</p>
+                  <p className={`text-xs ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>Recent call history</p>
                 </div>
-                <div className="flex gap-2">
-                  {(['pending', 'done', 'all'] as const).map((f) => (
-                    <button
-                      key={f}
-                      type="button"
-                      onClick={() => setCollectionFilter(f)}
-                      className={`rounded-full border px-3 py-1.5 text-xs font-medium capitalize transition ${collectionFilter === f
-                        ? 'border-transparent bg-emerald-600 text-white shadow-sm'
-                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                        }`}
-                    >
-                      {f}
-                    </button>
-                  ))}
-                </div>
-              </>
+                <button
+                  type="button"
+                  onClick={() => setRefreshTick((x) => x + 1)}
+                  className={`rounded-xl px-3 py-2 text-xs font-medium transition ${isDark && standalone ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                >
+                  Refresh
+                </button>
+              </div>
             )}
           </div>
 
-          <div className={`flex-1 overflow-y-auto ${standalone ? (isDark ? 'bg-[#111b21]' : 'bg-white') : 'bg-[#fcfdfd]'}`}>
-            {mainTab === 'invoice-details' ? (
-              /* ── Invoice Details card list ── */
-              loadingCollections ? (
-                <p className="p-4 text-sm text-slate-500">Loading...</p>
-              ) : invoiceCollections.length === 0 ? (
-                <p className="p-4 text-sm text-slate-400">No invoice details found.</p>
+	          <div
+	            ref={conversationListRef}
+	            onScroll={handleConversationListScroll}
+	            className={`flex-1 overflow-y-auto ${standalone ? (isDark ? 'bg-[#111b21]' : 'bg-white') : 'bg-[#fcfdfd]'}`}
+	          >
+            {mainTab === 'calls' ? (
+              /* ── Call history list ── */
+              loadingCalls ? (
+                <p className={`p-4 text-sm ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>Loading calls...</p>
+              ) : callHistory.length === 0 ? (
+                <p className={`p-4 text-sm ${isDark && standalone ? 'text-slate-400' : 'text-slate-400'}`}>No calls yet.</p>
               ) : (
-                <div className="divide-y">
-                  {invoiceCollections.map((col) => {
-                    const isSelected = selectedCollectionId === col.id;
-                    const isDone = col.status === 'done';
-                    return (
-                      <div
-                        key={col.id}
-                        className={`cursor-pointer px-4 py-3 transition hover:bg-emerald-50 ${isSelected ? 'bg-emerald-50 ring-1 ring-inset ring-emerald-200' : ''
+                <div className={`divide-y ${isDark && standalone ? 'divide-[#1a262d]' : 'divide-slate-100'}`}>
+                  {callHistory.map((call) => {
+                    const isMissed = call.status === 'missed';
+                    const isInbound = call.direction === 'inbound';
+                    const phone = isInbound ? call.from : call.to;
+                    const contactName = contactDirectory[phone]?.name || null;
+                    const initials = contactName
+                      ? contactName.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() || '').join('')
+                      : phone.slice(-2).toUpperCase();
+                    const timeLabel = new Date(call.started_at * 1000).toLocaleString('en-IN', {
+                      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+                    });
+                    const durationLabel = call.duration > 0
+                      ? call.duration >= 60
+                        ? `${Math.floor(call.duration / 60)}m ${call.duration % 60}s`
+                        : `${call.duration}s`
+                      : null;
+	                    return (
+	                      <button
+	                        key={call.call_id}
+	                        type="button"
+	                        onClick={() => selectConversation(phone)}
+                        className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${isDark && standalone
+                          ? 'bg-[#111b21] hover:bg-[#162229]'
+                          : 'bg-white hover:bg-slate-50'
                           }`}
-                        onClick={() => {
-                          setSelectedCollectionId(col.id);
-                          setSelectedPhone(col.phone);
-                        }}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-semibold text-slate-800">
-                              {col.display_name || col.phone}
-                            </p>
-                            <p className="text-xs text-slate-500">{col.phone}</p>
-                            <p className="mt-1 text-xs text-slate-400">
-                              {new Date(col.window_closed_at).toLocaleString('en-IN', {
-                                day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-                              })}
-                              {' · '}{col.message_count} msg{col.message_count !== 1 ? 's' : ''}
-                            </p>
-                          </div>
-                          <div className="flex flex-col items-end gap-2 shrink-0">
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${isDone
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-amber-100 text-amber-700'
-                              }`}>
-                              {isDone ? '✓ Done' : 'Pending'}
+                        {/* Avatar */}
+                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${isMissed ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-700'}`}>
+                          {initials}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className={`truncate text-sm font-medium ${isMissed ? (isDark && standalone ? 'text-rose-400' : 'text-rose-600') : (isDark && standalone ? 'text-slate-100' : 'text-slate-800')}`}>
+                            {contactName || formatPhone(phone)}
+                          </p>
+                          <div className="mt-0.5 flex items-center gap-1">
+                            {/* Direction arrow */}
+                            <svg className={`h-3.5 w-3.5 ${isMissed ? 'text-rose-400' : 'text-emerald-500'}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                              {isInbound
+                                ? <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 4.5l-15 15M4.5 4.5v10m0-10h10" />
+                                : <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 19.5l15-15M19.5 19.5V9.5m0 10h-10" />
+                              }
+                            </svg>
+                            <span className={`text-xs ${isMissed ? (isDark && standalone ? 'text-rose-400' : 'text-rose-500') : (isDark && standalone ? 'text-slate-400' : 'text-slate-500')}`}>
+                              {isMissed ? 'Missed call' : `${isInbound ? 'Incoming' : 'Outgoing'}${durationLabel ? ` · ${durationLabel}` : ''}`}
                             </span>
-                            {!isDone && (
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); markCollectionDone(col.id); }}
-                                disabled={completingId === col.id}
-                                className="rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-emerald-700 disabled:opacity-50"
-                              >
-                                {completingId === col.id ? '...' : 'Mark Done'}
-                              </button>
-                            )}
                           </div>
                         </div>
-
-                        {/* AI Draft panel — shown when card is selected */}
-                        {isSelected && col.ai_draft && !col.ai_draft.error && (
-                          <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3 shadow-sm" onClick={(e) => e.stopPropagation()}>
-                            <div className="mb-2 flex items-center justify-between">
-                              <p className="text-xs font-semibold text-slate-700">🤖 AI Invoice Draft</p>
-                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${col.ai_draft.confidence === 'high' ? 'bg-emerald-100 text-emerald-700'
-                                : col.ai_draft.confidence === 'medium' ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-rose-100 text-rose-700'
-                                }`}>
-                                {col.ai_draft.confidence ?? 'low'} confidence
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                              {col.ai_draft.commodity && <><span className="text-slate-400">Commodity</span><span className="font-medium text-slate-700">{col.ai_draft.commodity}</span></>}
-                              {col.ai_draft.quantity != null && <><span className="text-slate-400">Qty</span><span className="font-medium text-slate-700">{col.ai_draft.quantity} {col.ai_draft.unit || ''}</span></>}
-                              {col.ai_draft.rate != null && <><span className="text-slate-400">Rate</span><span className="font-medium text-slate-700">₹{col.ai_draft.rate}</span></>}
-                              {col.ai_draft.total_amount != null && <><span className="text-slate-400">Total</span><span className="font-medium text-emerald-700">₹{col.ai_draft.total_amount.toLocaleString('en-IN')}</span></>}
-                              {col.ai_draft.buyer_name && <><span className="text-slate-400">Buyer</span><span className="font-medium text-slate-700">{col.ai_draft.buyer_name}</span></>}
-                              {col.ai_draft.seller_name && <><span className="text-slate-400">Seller</span><span className="font-medium text-slate-700">{col.ai_draft.seller_name}</span></>}
-                              {col.ai_draft.vehicle_number && <><span className="text-slate-400">Vehicle</span><span className="font-medium text-slate-700">{col.ai_draft.vehicle_number}</span></>}
-                              {col.ai_draft.invoice_date && <><span className="text-slate-400">Date</span><span className="font-medium text-slate-700">{col.ai_draft.invoice_date}</span></>}
-                            </div>
-                            {col.ai_draft.notes && (
-                              <p className="mt-2 text-[11px] text-slate-500 italic">{col.ai_draft.notes}</p>
-                            )}
-                            {/* Missing fields warning */}
-                            {col.ai_draft.missing_fields && col.ai_draft.missing_fields.length > 0 && (
-                              <div className="mt-2 rounded-lg bg-amber-50 px-2.5 py-1.5">
-                                <p className="text-[11px] font-semibold text-amber-700">⚠ Missing: {col.ai_draft.missing_fields.join(', ')}</p>
-                              </div>
-                            )}
-                            {/* AI note for exec */}
-                            {col.ai_draft.ai_note && (
-                              <p className="mt-1.5 text-[11px] text-slate-500 italic">💬 {col.ai_draft.ai_note}</p>
-                            )}
-                          </div>
-                        )}
-                        {isSelected && col.ai_draft?.error && (
-                          <p className="mt-2 text-[11px] text-rose-400 italic">AI extraction unavailable</p>
-                        )}
-                        {isSelected && !col.ai_draft && (
-                          <p className="mt-2 text-[11px] text-slate-400 italic">AI draft processing...</p>
-                        )}
-                      </div>
+                        <span className={`shrink-0 text-[11px] ${isDark && standalone ? 'text-slate-500' : 'text-slate-400'}`}>{timeLabel}</span>
+                      </button>
                     );
                   })}
                 </div>
@@ -1978,12 +2215,12 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                 const conversationName = getDisplayName(conv);
                 const unread = isUnreadConversation(conv);
                 const showConversationTicks = conv.last_direction === 'outbound';
-                return (
-                  <button
-                    type="button"
-                    key={conv.phone}
-                    onClick={() => setSelectedPhone(conv.phone)}
-                    className={`flex w-full items-start gap-3 border-b px-4 py-3 text-left transition ${standalone && isDark
+	                return (
+	                  <button
+	                    type="button"
+	                    key={conv.phone}
+	                    onClick={() => selectConversation(conv.phone)}
+                    className={`flex w-full items-center gap-3 border-b px-3 lg:px-4 py-3 text-left transition active:scale-[0.98] ${standalone && isDark
                       ? active
                         ? 'border-[#25323a] bg-[#1a262d]'
                         : 'border-[#1a262d] bg-[#111b21] hover:bg-[#162229]'
@@ -2044,10 +2281,20 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
           </div>
         </aside>
 
-        <section className={`flex h-full flex-col overflow-hidden rounded-[24px] border ${standalone ? (isDark ? 'border-[#25323a] bg-[#111b21] shadow-sm' : 'border-slate-200 bg-white shadow-sm') : `border-slate-200 ${currentTheme.panel}`}`}>
-          <div className={`flex items-center justify-between px-4 py-3 ${standalone ? (isDark ? 'border-b border-[#25323a] bg-[#111b21]' : 'border-b border-slate-200 bg-white') : `border-b border-slate-200 ${currentTheme.topbar}`}`}>
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#d9fdd3] text-sm font-semibold text-emerald-900">
+        <section className={`${selectedPhone ? 'flex' : 'hidden lg:flex'} h-full w-full lg:w-auto flex-col overflow-hidden lg:rounded-[24px] lg:border ${standalone ? (isDark ? 'lg:border-[#25323a] bg-[#111b21] lg:shadow-sm' : 'lg:border-slate-200 bg-white lg:shadow-sm') : `lg:border-slate-200 ${currentTheme.panel}`}`}>
+          <div className={`flex items-center justify-between px-2 lg:px-4 py-3 ${standalone ? (isDark ? 'border-b border-[#25323a] bg-[#111b21]' : 'border-b border-slate-200 bg-white') : `border-b border-slate-200 ${currentTheme.topbar}`}`}>
+	            <div className="flex min-w-0 items-center gap-2 lg:gap-3">
+	              <button
+	                type="button"
+	                onClick={returnToConversationList}
+                className={`flex lg:hidden h-10 w-10 items-center justify-center rounded-full shrink-0 ${isDark && standalone ? 'text-slate-200 hover:bg-[#1f2c33]' : 'text-slate-600 hover:bg-slate-100'}`}
+                aria-label="Back to chats"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+              </button>
+              <div className={`flex h-10 w-10 lg:h-11 lg:w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${standalone && isDark ? 'bg-[#233138] text-slate-100' : 'bg-[#d9fdd3] text-emerald-900'}`}>
                 {selectedConversation
                   ? getConversationInitials({
                     ...selectedConversation,
@@ -2078,69 +2325,120 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                       ) : null}
                     </>
                   ) : (
-                    <span>Choose a chat from the left panel</span>
+                    <span className="hidden lg:inline">Choose a chat from the left panel</span>
                   )}
                 </div>
               </div>
             </div>
             {!standalone ? (
-              <div className="hidden items-center gap-2 sm:flex">
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.open('/whatsapp-chats', '_blank', 'noopener,noreferrer');
-                  }}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
-                >
-                  Open in new tab
-                </button>
-                {selectedConversation ? (
+              <div className="relative flex items-center gap-1">
+                {selectedConversation && (
                   <button
                     type="button"
-                    onClick={openDeleteConversationModal}
-                    disabled={deletingConversation}
-                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${deletePillClass} disabled:cursor-not-allowed disabled:opacity-60`}
+                    onClick={handleCallButtonClick}
+                    className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition hover:bg-emerald-50 hover:text-emerald-600"
+                    title="Call customer"
                   >
-                    {deletingConversation ? 'Deleting...' : 'Delete conversation'}
+                    <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+                    </svg>
                   </button>
-                ) : null}
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowHeaderMenu((v) => !v)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100"
+                >
+                  <MoreVertical className="h-5 w-5" />
+                </button>
+                {showHeaderMenu && (
+                  <div className="absolute right-0 top-11 z-20 w-48 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => { setShowHeaderMenu(false); window.open('/whatsapp-chats', '_blank', 'noopener,noreferrer'); }}
+                      className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+                    >
+                      Open in new tab
+                    </button>
+                    {selectedConversation && (
+                      <button
+                        type="button"
+                        onClick={() => { setShowHeaderMenu(false); openDeleteConversationModal(); }}
+                        disabled={deletingConversation}
+                        className="w-full rounded-lg px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-60"
+                      >
+                        Delete conversation
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ) : null}
             {standalone && selectedConversation ? (
-              <div className="flex items-center gap-2">
+              <div className="relative flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={openProfileModal}
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${isDark
-                    ? 'border border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]'
-                    : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  onClick={handleCallButtonClick}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full transition ${isDark
+                    ? 'text-slate-300 hover:bg-emerald-900/30 hover:text-emerald-400'
+                    : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-600'
+                    }`}
+                  title="Call customer"
+                >
+                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowHeaderMenu((v) => !v)}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full transition ${isDark
+                    ? 'text-slate-300 hover:bg-[#1f2c33]'
+                    : 'text-slate-600 hover:bg-slate-100'
                     }`}
                 >
-                  Edit profile
+                  <MoreVertical className="h-5 w-5" />
                 </button>
-                <button
-                  type="button"
-                  onClick={openDeleteConversationModal}
-                  disabled={deletingConversation}
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${deletePillClass} disabled:cursor-not-allowed disabled:opacity-60`}
-                >
-                  {deletingConversation ? 'Deleting...' : 'Delete conversation'}
-                </button>
+                {showHeaderMenu && (
+                  <div className={`absolute right-0 top-11 z-20 w-48 rounded-xl border p-1 shadow-lg ${isDark ? 'border-[#31424c] bg-[#111b21]' : 'border-slate-200 bg-white'}`}>
+                    <button
+                      type="button"
+                      onClick={() => { setShowHeaderMenu(false); openProfileModal(); }}
+                      className={`w-full rounded-lg px-3 py-2 text-left text-sm ${isDark ? 'text-slate-200 hover:bg-[#1f2c33]' : 'text-slate-700 hover:bg-slate-100'}`}
+                    >
+                      Contact info
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowHeaderMenu(false); openDeleteConversationModal(); }}
+                      disabled={deletingConversation}
+                      className={`w-full rounded-lg px-3 py-2 text-left text-sm ${isDark ? 'text-rose-300 hover:bg-[#2a1f22]' : 'text-rose-600 hover:bg-rose-50'} disabled:opacity-60`}
+                    >
+                      Delete conversation
+                    </button>
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
 
           <div
             ref={messagesContainerRef}
-            className="flex-1 overflow-y-auto px-4 py-4"
+            onScroll={handleMessagesScroll}
+            className="flex-1 overflow-y-auto px-2 lg:px-4 py-3 lg:py-4 overscroll-contain"
             style={{
               backgroundColor: currentTheme.pane,
               backgroundImage: currentTheme.wallpaper,
               backgroundRepeat: 'repeat',
             }}
           >
+            {loadingOlder && (
+              <div className="mb-3 flex justify-center">
+                <div className="rounded-full bg-white/90 px-3 py-1.5 text-xs text-slate-500 shadow-sm">Loading older messages...</div>
+              </div>
+            )}
             {!selectedPhone ? (
-              <p className="text-sm text-slate-500">Choose a chat from the left panel.</p>
+              <p className="hidden lg:block text-sm text-slate-500">Choose a chat from the left panel.</p>
             ) : loadingMessages && messages.length === 0 ? (
               <p className="text-sm text-slate-500">Loading messages...</p>
             ) : messages.length === 0 ? (
@@ -2166,11 +2464,14 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                       message.payload,
                       templatesByName
                     );
+                    const isVoiceCallEvent =
+                      /\[(?:unsupported|error)\].*(?:131051|Message type unknown)/i.test(messageText) ||
+                      message.message_type === 'call';
                     const hideMediaPlaceholder =
                       !!media && /^\[(image|video|audio|voice|document|sticker)\]/i.test(messageText.trim());
                     const hideLocationPlaceholder =
                       !!location && /^\[location\]/i.test(messageText.trim());
-                    const shouldRenderText = !(hideMediaPlaceholder || hideLocationPlaceholder);
+                    const shouldRenderText = !isVoiceCallEvent && !(hideMediaPlaceholder || hideLocationPlaceholder);
                     const bubbleClass = system
                       ? currentTheme.system
                       : incoming
@@ -2180,25 +2481,35 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                     return (
                       <div
                         key={message.id}
-                        className={`mb-3 flex ${incoming || system ? 'justify-start' : 'justify-end'}`}
+                        className={`group/msg mb-1.5 flex ${incoming || system ? 'justify-start' : 'justify-end'}`}
                       >
                         <div
-                          className={`max-w-[86%] rounded-2xl px-3 py-2 shadow-sm ${system ? 'border border-amber-200' : 'border border-black/5'
+                          className={`relative max-w-[85%] lg:max-w-[65%] rounded-lg px-2.5 py-1.5 shadow-sm ${system ? 'border border-amber-200' : ''
                             } ${bubbleClass}`}
                         >
-                          <div className="mb-2 flex items-start justify-between gap-3">
-                            <div className={`text-[11px] font-medium ${isDark && standalone ? 'text-slate-400' : 'text-slate-500'}`}>
-                              {messageMetaLabel(message)}
+                          {/* Three-dot menu on hover */}
+                          {!system && (
+                            <div className="absolute top-1 right-1 hidden group-hover/msg:block">
+                              <button
+                                type="button"
+                                onClick={() => setMsgMenuId(msgMenuId === message.id ? null : message.id)}
+                                className={`flex h-6 w-6 items-center justify-center rounded-full ${isDark && standalone ? 'bg-black/20 text-white/70 hover:bg-black/30' : 'bg-black/5 text-slate-500 hover:bg-black/10'}`}
+                              >
+                                <MoreVertical className="h-3.5 w-3.5" />
+                              </button>
+                              {msgMenuId === message.id && (
+                                <div className={`absolute right-0 top-7 z-30 w-36 rounded-lg border p-1 shadow-lg ${isDark && standalone ? 'border-[#31424c] bg-[#111b21]' : 'border-slate-200 bg-white'}`}>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setMsgMenuId(null); openDeleteMessageModal(message); }}
+                                    className={`w-full rounded-md px-3 py-1.5 text-left text-xs ${isDark && standalone ? 'text-rose-300 hover:bg-[#2a1f22]' : 'text-rose-600 hover:bg-rose-50'}`}
+                                  >
+                                    Delete message
+                                  </button>
+                                </div>
+                              )}
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => openDeleteMessageModal(message)}
-                              disabled={deletingMessageId === message.id}
-                              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold shadow-sm transition ${deletePillClass} disabled:cursor-not-allowed disabled:opacity-60`}
-                            >
-                              {deletingMessageId === message.id ? 'Deleting...' : 'Delete'}
-                            </button>
-                          </div>
+                          )}
                           {media ? (
                             <div className="mb-2">
                               {media.kind === 'image' || media.kind === 'sticker' ? (
@@ -2271,6 +2582,9 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                               {media.kind === 'audio' ? (
                                 mediaUrl ? (
                                   <div className="space-y-2">
+                                    <p className="text-xs font-medium text-slate-600">
+                                      {media.isVoice ? 'Voice note' : 'Audio message'}
+                                    </p>
                                     <audio src={mediaUrl} controls className="w-full min-w-[240px]" />
                                     <div className="flex flex-wrap gap-2">
                                       <button
@@ -2356,9 +2670,40 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                             </div>
                           ) : null}
 
-                          {shouldRenderText ? (
-                            <p className="whitespace-pre-wrap break-words text-sm leading-6">{messageText}</p>
+                          {isVoiceCallEvent ? (
+                            <div className="flex items-center gap-2 py-0.5">
+                              <svg className="h-4 w-4 shrink-0 opacity-70" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" />
+                              </svg>
+                              <span className="text-sm">WhatsApp Voice Call</span>
+                            </div>
+                          ) : shouldRenderText ? (
+                            <LinkifiedText text={messageText} />
                           ) : null}
+
+                          {/* URL buttons from template/interactive messages */}
+                          {(() => {
+                            const urlButtons = extractUrlButtons(message.payload);
+                            if (urlButtons.length === 0) return null;
+                            return (
+                              <div className="mt-2 flex flex-col gap-1 border-t border-black/10 pt-2">
+                                {urlButtons.map((btn, i) => (
+                                  <a
+                                    key={i}
+                                    href={btn.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:underline"
+                                  >
+                                    <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                                    </svg>
+                                    {btn.text}
+                                  </a>
+                                ))}
+                              </div>
+                            );
+                          })()}
 
                           <div className="mt-2 flex flex-wrap items-center justify-end gap-2 text-[11px] text-slate-500">
                             <span>{formatTime(message.created_at)}</span>
@@ -2380,8 +2725,8 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
             )}
           </div>
 
-          <form onSubmit={handleSendMessage} className={`border-t p-3 ${standalone ? (isDark ? 'border-[#25323a] bg-[#111b21]' : 'border-slate-200 bg-white') : `border-slate-200 ${currentTheme.topbar}`}`}>
-            <div className="flex items-center gap-2">
+          <form onSubmit={handleSendMessage} className={`border-t px-2 py-2 lg:p-3 ${standalone ? (isDark ? 'border-[#25323a] bg-[#111b21]' : 'border-slate-200 bg-white') : `border-slate-200 ${currentTheme.topbar}`}`} style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
+            <div className="flex items-center gap-1.5 lg:gap-2">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -2399,14 +2744,14 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                 onChange={(e) => setDraftMessage(e.target.value)}
                 placeholder={selectedPhone ? 'Type a message' : 'Select a conversation first'}
                 disabled={!selectedPhone || sendingMessage || sendingMedia}
-                className={`w-full rounded-full border px-4 py-3 text-sm outline-none focus:border-emerald-500 disabled:bg-slate-100 ${standalone && isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500 focus:bg-[#22323b]' : 'border-slate-200 bg-white'}`}
+                className={`min-w-0 flex-1 rounded-full border px-3 lg:px-4 py-2.5 lg:py-3 text-sm outline-none focus:border-emerald-500 disabled:bg-slate-100 ${standalone && isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-100 placeholder:text-slate-500 focus:bg-[#22323b]' : 'border-slate-200 bg-white'}`}
               />
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setShowActionMenu((v) => !v)}
                   disabled={!selectedPhone}
-                  className={`flex h-11 w-11 items-center justify-center rounded-full border text-lg leading-none disabled:cursor-not-allowed disabled:bg-slate-100 ${standalone && isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
+                  className={`flex h-10 w-10 lg:h-11 lg:w-11 shrink-0 items-center justify-center rounded-full border text-lg leading-none disabled:cursor-not-allowed disabled:bg-slate-100 ${standalone && isDark ? 'border-[#31424c] bg-[#1a262d] text-slate-200 hover:bg-[#22323b]' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'}`}
                 >
                   +
                 </button>
@@ -2450,16 +2795,19 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               <button
                 type="submit"
                 disabled={!selectedPhone || !draftMessage.trim() || sendingMessage || sendingMedia}
-                className="rounded-full bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                className="flex h-10 w-10 lg:h-11 lg:w-auto shrink-0 items-center justify-center rounded-full bg-emerald-600 lg:px-5 lg:py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
               >
-                {sendingMessage || sendingMedia ? 'Sending...' : 'Send'}
+                <svg className="h-5 w-5 lg:hidden" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                </svg>
+                <span className="hidden lg:inline">{sendingMessage || sendingMedia ? 'Sending...' : 'Send'}</span>
               </button>
             </div>
           </form>
         </section>
 
         {standalone ? (
-          <aside className={`flex h-full flex-col overflow-hidden rounded-[24px] border shadow-sm ${isDark ? 'border-[#25323a] bg-[#111b21] text-slate-100' : 'border-slate-200 bg-white'}`}>
+          <aside className={`hidden lg:flex h-full flex-col overflow-hidden rounded-[24px] border shadow-sm ${isDark ? 'border-[#25323a] bg-[#111b21] text-slate-100' : 'border-slate-200 bg-white'}`}>
             <div className={`px-5 py-5 text-center ${isDark ? 'border-b border-[#25323a]' : 'border-b border-slate-200'}`}>
               <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-slate-200 text-2xl font-semibold text-slate-600">
                 {selectedConversation
@@ -2485,43 +2833,32 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
             <div className="flex-1 overflow-y-auto px-5 py-4">
               {selectedConversation ? (
                 <>
+                  {/* Contact details */}
                   <div className={`space-y-3 rounded-2xl p-4 ${isDark ? 'bg-[#1a262d]' : 'bg-slate-50'}`}>
+                    {contactProfile?.status && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Status</span>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${isDark ? 'bg-emerald-900/40 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>{contactProfile.status}</span>
+                      </div>
+                    )}
+                    {contactProfile?.assigned_to && (
+                      <div className="flex items-center justify-between text-sm">
+                        <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Assigned to</span>
+                        <span className={`font-medium ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{contactProfile.assigned_to}</span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between text-sm">
-                      <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Direction</span>
-                      <span className={`font-medium capitalize ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{selectedConversation.last_direction || 'unknown'}</span>
+                      <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Last active</span>
+                      <span className={`font-medium ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{formatTime(selectedConversation.last_message_at)}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-3 text-sm">
-                      <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Last activity</span>
-                      <span className={`text-right font-medium ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{formatTime(selectedConversation.last_message_at)}</span>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Messages</span>
+                      <span className={`font-medium ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{selectedConversation.total_messages}</span>
                     </div>
-                  </div>
-
-                  {latestMessage ? (
-                    <div className={`mt-5 rounded-2xl border p-4 ${isDark ? 'border-[#25323a]' : 'border-slate-200'}`}>
-                      <p className={`text-xs font-medium uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Latest message</p>
-                      <p className={`mt-2 text-sm leading-6 ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>
-                        {previewText(
-                          latestMessage.text_content,
-                          latestMessage.message_type,
-                          latestMessage.payload,
-                          templatesByName
-                        )}
-                      </p>
-                    </div>
-                  ) : null}
-
-                  <div className={`mt-5 rounded-2xl border p-4 ${isDark ? 'border-[#25323a]' : 'border-slate-200'}`}>
-                    <p className={`text-xs font-medium uppercase tracking-wide ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Metadata</p>
-                    {contactMetadata.length === 0 ? (
-                      <p className={`mt-2 text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>No extra metadata available for this chat yet.</p>
-                    ) : (
-                      <div className="mt-3 space-y-3">
-                        {contactMetadata.map((row, index) => (
-                          <div key={`${row.key}:${row.value}:${index}`} className="flex items-start justify-between gap-3 text-sm">
-                            <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>{row.key}</span>
-                            <span className={`max-w-[55%] break-words text-right font-medium ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{row.value}</span>
-                          </div>
-                        ))}
+                    {contactProfile?.notes && (
+                      <div className="pt-2 border-t border-slate-200/50">
+                        <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Notes</p>
+                        <p className={`mt-1 text-sm ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{contactProfile.notes}</p>
                       </div>
                     )}
                   </div>
@@ -2723,7 +3060,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                   setShowNewContactModal(false);
                   setNewContactName('');
                   setNewContactPhone('');
-                  setNewContactMessage('');
+                  setNewContactMessage('Namaste! MandiPlus se aapka swagat hai. Hum aapki kaise madad kar sakte hain?');
                 }}
                 className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
               >

@@ -2,17 +2,45 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { trackVehicle, TrackingData } from '@/features/tracking/api';
+import {
+  getTrackingLinkContext,
+  sendTrackingLinkOtp,
+  trackVehicle,
+  TrackingData,
+  verifyTrackingLinkOtp,
+} from '@/features/tracking/api';
 
 // --- Types ---
 interface Message {
   text: string;
   sender: 'bot' | 'user';
+  kind?: 'text' | 'otp_unlock';
   isLocation?: boolean;
   mapsUrl?: string;
   status?: 'online' | 'offline' | 'unknown';
   locationData?: TrackingData;
   timestamp?: Date;
+}
+
+interface TrackingUnlockState {
+  token: string;
+  vehicleNumber: string;
+  maskedPhone: string;
+  otp: string;
+  cooldown: number;
+  status: 'sending' | 'otp_sent' | 'verifying';
+  error?: string;
+}
+
+const TRACKING_LINK_PREFIX = 'tlnk_';
+const TRACKING_ACCESS_SESSION_KEY = 'mandiplus:tracking-access:';
+
+function isTrackingLinkToken(value?: string | null): value is string {
+  return Boolean(value && value.startsWith(TRACKING_LINK_PREFIX));
+}
+
+function isAuthenticationError(message?: string | null): boolean {
+  return Boolean(message && /authentication required|unauthorized|401/i.test(message));
 }
 
 const TrackingPage = () => {
@@ -31,18 +59,99 @@ const TrackingPage = () => {
   const [inputValue, setInputValue] = useState<string>('');
   const [locationNames, setLocationNames] = useState<{[key: string]: string}>({});
   const [prefilledVehicleHandled, setPrefilledVehicleHandled] = useState(false);
+  const [trackingLinkToken, setTrackingLinkToken] = useState('');
+  const [trackingAccessToken, setTrackingAccessToken] = useState<string | null>(null);
+  const [unlockState, setUnlockState] = useState<TrackingUnlockState | null>(null);
 
   // --- Effects ---
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    if (!unlockState || unlockState.cooldown <= 0) return;
+    const timer = window.setTimeout(() => {
+      setUnlockState(prev =>
+        prev ? { ...prev, cooldown: Math.max(0, prev.cooldown - 1) } : prev,
+      );
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [unlockState]);
+
   // --- Handlers ---
+  const getTrackingAccessSessionKey = (token: string) =>
+    `${TRACKING_ACCESS_SESSION_KEY}${token.slice(0, 32)}`;
+
+  const startOtpUnlock = async (
+    token: string,
+    fallbackVehicle: string,
+  ) => {
+    if (unlockState?.token === token && unlockState.status !== 'sending') {
+      return;
+    }
+
+    const existingVehicle = unlockState?.vehicleNumber || fallbackVehicle.toUpperCase();
+    const existingMaskedPhone = unlockState?.maskedPhone || 'your registered number';
+
+    setUnlockState({
+      token,
+      vehicleNumber: existingVehicle,
+      maskedPhone: existingMaskedPhone,
+      otp: '',
+      cooldown: 0,
+      status: 'sending',
+    });
+
+    setMessages(prev => [
+      ...prev.slice(0, -1),
+      {
+        kind: 'otp_unlock',
+        text: 'OTP verification required',
+        sender: 'bot',
+        timestamp: new Date(),
+      },
+    ]);
+
+    try {
+      const context = await getTrackingLinkContext(token);
+      const otpResponse = await sendTrackingLinkOtp(token);
+      const vehicleNumber =
+        otpResponse.vehicleNumber || context.vehicleNumber || fallbackVehicle.toUpperCase();
+      setInputValue(vehicleNumber);
+      setUnlockState({
+        token,
+        vehicleNumber,
+        maskedPhone: otpResponse.maskedPhone || context.maskedPhone,
+        otp: '',
+        cooldown: 30,
+        status: 'otp_sent',
+      });
+    } catch (error: any) {
+      setUnlockState(prev =>
+        prev
+          ? {
+              ...prev,
+              status: 'otp_sent',
+              error:
+                error?.message ||
+                'Tracking link expired. Please request a fresh WhatsApp update.',
+            }
+          : prev,
+      );
+    }
+  };
+
   const submitTrackingLookup = async (
     vehicleNumRaw: string,
-    options?: { preserveInput?: boolean },
+    options?: {
+      preserveInput?: boolean;
+      accessToken?: string | null;
+      skipUserEcho?: boolean;
+      loadingText?: string;
+      trackingLinkTokenOverride?: string;
+    },
   ) => {
-    const vehicleNum = vehicleNumRaw.trim().toLowerCase();
+    const vehicleNum = vehicleNumRaw.trim().toUpperCase();
     if (!vehicleNum || isLoading) return;
 
     if (!options?.preserveInput) {
@@ -52,20 +161,33 @@ const TrackingPage = () => {
 
     setMessages(prev => [
       ...prev,
-      { 
-        text: vehicleNum.toUpperCase(), 
-        sender: 'user',
-        timestamp: new Date(),
-      },
-      { 
-        text: '🔍 Searching for vehicle...', 
+      ...(options?.skipUserEcho
+        ? []
+        : [
+            {
+              text: vehicleNum,
+              sender: 'user' as const,
+              timestamp: new Date(),
+            },
+          ]),
+      {
+        text: options?.loadingText || '🔍 Searching for vehicle...',
         sender: 'bot',
         timestamp: new Date(),
       },
     ]);
 
     try {
-      const response = await trackVehicle(vehicleNum);
+      const hasExplicitAccessToken =
+        options && Object.prototype.hasOwnProperty.call(options, 'accessToken');
+      const response = await trackVehicle(
+        vehicleNum,
+        hasExplicitAccessToken
+          ? { accessToken: options.accessToken }
+          : trackingAccessToken
+            ? { accessToken: trackingAccessToken }
+            : undefined,
+      );
       const data: TrackingData = response.data;
 
       const statusLabel =
@@ -177,10 +299,20 @@ const TrackingPage = () => {
         },
       ]);
     } catch (err: any) {
+      const errorMessage =
+        err?.message || 'Could not track this vehicle. Please check the number and try again.';
+      const tokenForUnlock = options?.trackingLinkTokenOverride || trackingLinkToken;
+      if (isAuthenticationError(errorMessage) && tokenForUnlock) {
+        await startOtpUnlock(tokenForUnlock, vehicleNum);
+        return;
+      }
+
       setMessages(prev => [
         ...prev.slice(0, -1),
         {
-          text: `❌ ${err?.message || 'Could not track this vehicle. Please check the number and try again.'}`,
+          text: isAuthenticationError(errorMessage)
+            ? '🔐 Please verify with the latest WhatsApp tracking link to view this live location.'
+            : `❌ ${errorMessage}`,
           sender: 'bot',
           timestamp: new Date(),
         },
@@ -196,15 +328,137 @@ const TrackingPage = () => {
     await submitTrackingLookup(inputValue);
   };
 
+  const handleOtpChange = (value: string) => {
+    const otp = value.replace(/\D/g, '').slice(0, 6);
+    setUnlockState(prev =>
+      prev ? { ...prev, otp, error: undefined } : prev,
+    );
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!unlockState || unlockState.status === 'verifying') return;
+    if (unlockState.otp.length < 4) {
+      setUnlockState(prev =>
+        prev ? { ...prev, error: 'OTP daalo to continue.' } : prev,
+      );
+      return;
+    }
+
+    setUnlockState(prev => (prev ? { ...prev, status: 'verifying', error: undefined } : prev));
+
+    try {
+      const response = await verifyTrackingLinkOtp(unlockState.token, unlockState.otp);
+      const accessToken = response.accessToken;
+      window.sessionStorage.setItem(
+        getTrackingAccessSessionKey(unlockState.token),
+        accessToken,
+      );
+      setTrackingAccessToken(accessToken);
+      setMessages(prev => [
+        ...prev.map(message =>
+          message.kind === 'otp_unlock'
+            ? {
+                text: `✅ OTP verified for ${unlockState.vehicleNumber}.`,
+                sender: 'bot' as const,
+                timestamp: new Date(),
+              }
+            : message,
+        ),
+        {
+          text: '••••••',
+          sender: 'user',
+          timestamp: new Date(),
+        },
+      ]);
+      const vehicleNumber = response.vehicleNumber || unlockState.vehicleNumber;
+      setUnlockState(null);
+      await submitTrackingLookup(vehicleNumber, {
+        accessToken,
+        skipUserEcho: true,
+        preserveInput: true,
+        loadingText: '✅ Verified. Fetching live tracking details...',
+      });
+    } catch (error: any) {
+      setUnlockState(prev =>
+        prev
+          ? {
+              ...prev,
+              status: 'otp_sent',
+              error: error?.message || 'OTP verify nahi ho paya.',
+            }
+          : prev,
+      );
+    }
+  };
+
+  const handleResendUnlockOtp = async () => {
+    if (!unlockState || unlockState.cooldown > 0 || unlockState.status === 'sending') {
+      return;
+    }
+    setUnlockState(prev => (prev ? { ...prev, status: 'sending', error: undefined } : prev));
+    try {
+      await sendTrackingLinkOtp(unlockState.token);
+      setUnlockState(prev =>
+        prev
+          ? {
+              ...prev,
+              status: 'otp_sent',
+              cooldown: 30,
+              otp: '',
+              error: undefined,
+            }
+          : prev,
+      );
+    } catch (error: any) {
+      setUnlockState(prev =>
+        prev
+          ? {
+              ...prev,
+              status: 'otp_sent',
+              error: error?.message || 'OTP resend nahi ho paya.',
+            }
+          : prev,
+      );
+    }
+  };
+
   useEffect(() => {
-    const vehicle =
-      searchParams.get('vehicle') ||
-      searchParams.get('v') ||
-      searchParams.get('truck') ||
-      '';
-    if (!vehicle || prefilledVehicleHandled || isLoading) return;
-    setInputValue(vehicle.toUpperCase());
+    const rawVehicle =
+      searchParams.get('vehicle') || searchParams.get('v') || searchParams.get('truck') || '';
+    const token = searchParams.get('t') || (isTrackingLinkToken(rawVehicle) ? rawVehicle : '');
+    const vehicle = token ? '' : rawVehicle;
+    if ((!vehicle && !token) || prefilledVehicleHandled || isLoading) return;
     setPrefilledVehicleHandled(true);
+
+    if (token) {
+      setTrackingLinkToken(token);
+      void getTrackingLinkContext(token)
+        .then(context => {
+          const cachedToken =
+            window.sessionStorage.getItem(getTrackingAccessSessionKey(token)) || null;
+          setTrackingAccessToken(cachedToken);
+          setInputValue(context.vehicleNumber);
+          return submitTrackingLookup(context.vehicleNumber, {
+            preserveInput: true,
+            accessToken: cachedToken,
+            trackingLinkTokenOverride: token,
+          });
+        })
+        .catch(error => {
+          setMessages(prev => [
+            ...prev,
+            {
+              text:
+                `❌ ${error?.message || 'Tracking link expired. Please request a fresh WhatsApp update.'}`,
+              sender: 'bot',
+              timestamp: new Date(),
+            },
+          ]);
+        });
+      return;
+    }
+
+    setInputValue(vehicle.toUpperCase());
     void submitTrackingLookup(vehicle, { preserveInput: true });
   }, [searchParams, prefilledVehicleHandled, isLoading]);
 
@@ -410,9 +664,82 @@ const openMapModal = async (message: Message) => {
                 </div>
               )}
 
-              <div className="text-gray-800">
-                {formatMessage(message.text)}
-              </div>
+              {message.kind === 'otp_unlock' && unlockState ? (
+                <div className="text-gray-800">
+                  <div className="mb-3 flex items-center gap-2 border-b border-emerald-100 pb-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#25D366]/15 text-[#075E54]">
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2h-1V7a5 5 0 00-10 0v4H6a2 2 0 00-2 2v6a2 2 0 002 2zm3-10V7a3 3 0 116 0v4" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-gray-900">Unlock live tracking</p>
+                      <p className="text-xs font-medium text-gray-600">{unlockState.vehicleNumber}</p>
+                    </div>
+                  </div>
+
+                  <p className="text-sm leading-relaxed text-gray-700">
+                    For safety, enter the OTP sent to{' '}
+                    <span className="font-semibold text-gray-900">{unlockState.maskedPhone}</span>.
+                  </p>
+
+                  <div className="mt-3">
+                    <input
+                      value={unlockState.otp}
+                      onChange={e => handleOtpChange(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          void handleVerifyOtp();
+                        }
+                      }}
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      disabled={unlockState.status === 'sending' || unlockState.status === 'verifying'}
+                      className="h-12 w-full rounded-xl border-2 border-emerald-200 bg-white px-4 text-center text-xl font-black tracking-[0.28em] text-gray-950 outline-none transition focus:border-[#25D366] focus:ring-4 focus:ring-[#25D366]/15 disabled:bg-gray-100"
+                      placeholder="000000"
+                    />
+                  </div>
+
+                  {unlockState.error ? (
+                    <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                      {unlockState.error}
+                    </p>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    onClick={() => void handleVerifyOtp()}
+                    disabled={
+                      unlockState.status === 'sending' ||
+                      unlockState.status === 'verifying' ||
+                      unlockState.otp.length < 4
+                    }
+                    className="mt-3 flex min-h-11 w-full items-center justify-center rounded-xl bg-[#25D366] px-4 py-2.5 text-sm font-bold text-[#063b1a] shadow-md transition hover:bg-[#35e277] active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500"
+                  >
+                    {unlockState.status === 'verifying'
+                      ? 'Verifying...'
+                      : unlockState.status === 'sending'
+                        ? 'Sending OTP...'
+                        : 'Verify & show tracking'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleResendUnlockOtp()}
+                    disabled={unlockState.cooldown > 0 || unlockState.status === 'sending'}
+                    className="mt-2 w-full text-center text-xs font-bold text-[#075E54] disabled:text-gray-400"
+                  >
+                    {unlockState.cooldown > 0
+                      ? `Resend OTP in ${unlockState.cooldown}s`
+                      : 'Resend OTP'}
+                  </button>
+                </div>
+              ) : (
+                <div className="text-gray-800">
+                  {formatMessage(message.text)}
+                </div>
+              )}
 
               {message.isLocation && message.mapsUrl && (
                 <div className="mt-3 space-y-2">
@@ -425,7 +752,7 @@ const openMapModal = async (message: Message) => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                    View on Google Maps
+                    View live map
                   </button>
                   
                   {message.locationData?.shareUrl && (

@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { adminApi } from '../api/admin.api';
+import { persistAdminAccountMobile } from '../adminAccountMobile';
 import {
     AdminAccessProfile,
     AdminSection,
@@ -13,7 +14,7 @@ type AdminContextType = {
     isAuthenticated: boolean;
     loading: boolean;
     accessProfile: AdminAccessProfile | null;
-    login: (email: string, password: string) => Promise<void>;
+    login: (email: string, password: string, redirectTo?: string) => Promise<void>;
     logout: () => void;
     canAccessSection: (section: AdminSection) => boolean;
 };
@@ -70,8 +71,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
     };
 
+    const applyAccessProfile = (profile: AdminAccessProfile | null) => {
+        setAccessProfile(profile);
+        persistAdminAccountMobile(profile?.account?.mobileNumber);
+    };
+
     const clearAdminAuthState = () => {
         localStorage.removeItem('adminToken');
+        persistAdminAccountMobile(null);
         adminApi.clearAuthToken();
         setIsAuthenticated(false);
         setAccessProfile(null);
@@ -121,7 +128,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
             localStorage.setItem('adminToken', token);
             adminApi.setAuthToken(token);
-            setAccessProfile(profile);
+            applyAccessProfile(profile);
             setIsAuthenticated(true);
             setLoading(false);
         };
@@ -167,7 +174,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         return () => clearInterval(timer);
     }, [pathname, warningShownForToken]);
 
-    const login = async (email: string, password: string) => {
+    const login = async (email: string, password: string, redirectTo?: string) => {
         try {
             const response = await adminApi.login(email, password);
             const token = response.data?.token;
@@ -178,11 +185,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
                 if (!profile) {
                     throw new Error('Admin access profile not available');
                 }
-                setAccessProfile(profile);
+                applyAccessProfile(profile);
                 setIsAuthenticated(true);
                 setShowSessionWarning(false);
                 setWarningShownForToken(null);
-                router.push(getFirstAllowedAdminPath(profile));
+                const target = redirectTo || getFirstAllowedAdminPath(profile);
+                router.push(target);
                 return;
             }
             throw new Error(response.message || 'Invalid admin credentials');
@@ -197,8 +205,62 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         router.push('/admin/login');
     };
 
-    const canAccessSection = (section: AdminSection) =>
-        Boolean(accessProfile?.allowedSections?.includes(section));
+    const canAccessSection = (section: AdminSection) => {
+        if (section === 'analytics') {
+            return Boolean(
+                accessProfile?.isFullAdmin ||
+                accessProfile?.allowedSections?.includes('reports'),
+            );
+        }
+
+        if (section === 'account-memberships') {
+            return Boolean(
+                accessProfile?.isFullAdmin ||
+                accessProfile?.allowedSections?.includes('app-customers') ||
+                accessProfile?.allowedSections?.includes('users'),
+            );
+        }
+
+        if (section === 'app-invoices' || section === 'app-quick-details') {
+            return Boolean(accessProfile?.allowedSections?.includes('insurance-forms'));
+        }
+
+        if (section === 'fssai-leads') {
+            return Boolean(accessProfile?.isFullAdmin);
+        }
+
+        if (section === 'team-logs') {
+            return true;
+        }
+
+        if (section === 'notifications') {
+            return Boolean(
+                accessProfile?.isFullAdmin ||
+                accessProfile?.allowedSections?.some((allowedSection) =>
+                    ['app-customers', 'app-invoices', 'insurance-payments', 'users'].includes(allowedSection),
+                ),
+            );
+        }
+
+        if (section === 'crm') {
+            return Boolean(
+                accessProfile?.isFullAdmin ||
+                accessProfile?.allowedSections?.includes('crm') ||
+                accessProfile?.allowedSections?.includes('insurance-payments') ||
+                accessProfile?.allowedSections?.includes('ledger'),
+            );
+        }
+
+        if (section === 'account-deletion') {
+            return Boolean(
+                accessProfile?.isFullAdmin ||
+                accessProfile?.allowedSections?.includes('account-deletion') ||
+                accessProfile?.allowedSections?.includes('users'),
+            );
+        }
+
+        return Boolean(accessProfile?.isFullAdmin || accessProfile?.allowedSections?.includes(section));
+    };
 
     return (
         <AdminContext.Provider value={{ isAuthenticated, loading, accessProfile, login, logout, canAccessSection }}>

@@ -1,62 +1,73 @@
-"use client";
-import React from 'react';
-import { useRouter } from "next/navigation";
-import { EnvelopeIcon } from "@heroicons/react/24/outline";
-import { FaWhatsapp } from "react-icons/fa";
+import Link from "next/link";
 
-const SupportPage = () => {
-  const router = useRouter();
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#e0d7fc] px-4">
-      <div className="bg-white rounded-3xl shadow-lg p-8 max-w-md w-full flex flex-col items-center relative">
-        <button
-          onClick={() => router.push("/")}
-          className="absolute left-4 top-4 flex items-center gap-1 text-[#4309ac] hover:text-[#350889] font-medium text-sm px-2 py-1 rounded-lg bg-[#f3f0fa] border border-[#e0d7fc] hover:bg-[#ede7fa] transition"
-          aria-label="Back to Home"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-        </button>
-        <h1 className="text-3xl font-bold text-[#4309ac] mb-4">Support</h1>
-        <p className="text-gray-700 text-lg mb-6 text-center">
-          <span className="font-semibold text-[#4309ac]">
-            All Insurance & Claim-related communication.
-            <br />
-            WhatsApp "Hi" to get started
-          </span>
-        </p>
-        <div className="flex flex-col items-center gap-4 w-full">
-          <a
-            href="tel:+919900186757"
-            className="flex items-center gap-3 bg-[#f3f0fa] border border-[#e0d7fc] rounded-xl px-4 py-3 w-full justify-center hover:bg-[#ede7fa] transition"
-          >
-            <div className="flex items-center gap-2">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5 text-[#4309ac] flex-shrink-0"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.494a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.494 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-              </svg>
-              <FaWhatsapp className="h-5 w-5 text-[#25D366] flex-shrink-0" />
-            </div>
-            <span className="text-[#4309ac] font-medium">+91 99001 86757</span>
-          </a>
-          <a
-            href="mailto:support@mandiplus.com"
-            className="flex items-center gap-3 bg-[#f3f0fa] border border-[#e0d7fc] rounded-xl px-4 py-3 w-full justify-center hover:bg-[#ede7fa] transition"
-          >
-            <EnvelopeIcon className="h-5 w-5 text-[#4309ac] flex-shrink-0" />
-            <span className="text-[#4309ac] font-medium">support@mandiplus.com</span>
-          </a>
-        </div>
-        <p className="text-gray-500 text-xs mt-6 text-center">
-          We are here to help you with your claims and support queries.
-        </p>
-      </div>
-    </div>
-  );
+const supportTopics = [
+  "OTP, sign-in, onboarding, and account access",
+  "Insurance requests, invoices, and policy documents",
+  "Payments, cancellations, and refund status",
+  "Vehicle tracking and claim-document uploads",
+  "Privacy questions and account deletion or recovery",
+];
+
+export const metadata = {
+  title: "MandiPlus Support",
+  description: "Contact MandiPlus support for app, payment, policy, claim, privacy, and account-deletion help.",
 };
 
-export default SupportPage;
+export default function SupportPage() {
+  return (
+    <main className="min-h-screen bg-[#f5f3fb] px-4 py-10 text-slate-900">
+      <div className="mx-auto max-w-2xl space-y-5">
+        <section className="rounded-3xl bg-white p-7 shadow-sm ring-1 ring-slate-200">
+          <p className="text-sm font-bold uppercase tracking-wider text-[#4309ac]">MandiPlus</p>
+          <h1 className="mt-2 text-3xl font-black">Customer support</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600">
+            Contact ENP FARMS PRIVATE LIMITED for help with the MandiPlus mobile app and the services available through it.
+          </p>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <a
+              className="rounded-2xl bg-[#4309ac] px-5 py-4 text-center font-bold text-white"
+              href="mailto:support@mandiplus.com"
+            >
+              support@mandiplus.com
+            </a>
+            <a
+              className="rounded-2xl border border-slate-300 bg-white px-5 py-4 text-center font-bold text-slate-900"
+              href="tel:+917676217658"
+            >
+              +91 76762 17658
+            </a>
+          </div>
+        </section>
+
+        <section className="rounded-3xl bg-white p-7 shadow-sm ring-1 ring-slate-200">
+          <h2 className="text-xl font-black">What we can help with</h2>
+          <ul className="mt-4 space-y-3 text-sm leading-6 text-slate-700">
+            {supportTopics.map((topic) => (
+              <li key={topic} className="flex gap-3">
+                <span aria-hidden className="mt-2 h-2 w-2 shrink-0 rounded-full bg-[#4309ac]" />
+                <span>{topic}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="rounded-3xl bg-white p-7 shadow-sm ring-1 ring-slate-200">
+          <h2 className="text-xl font-black">Account deletion</h2>
+          <p className="mt-3 text-sm leading-6 text-slate-600">
+            In the iOS app, open Profile → Security → Delete account. You can also use the web deletion page. A requested deletion has a seven-day recovery window; contact support before the scheduled date if you want to cancel it.
+          </p>
+          <Link className="mt-4 inline-flex font-bold text-[#4309ac] underline" href="/account-deletion">
+            Open account-deletion page
+          </Link>
+        </section>
+
+        <nav className="flex flex-wrap justify-center gap-4 pb-6 text-sm font-bold text-[#4309ac]">
+          <Link href="/privacy-policy">Privacy Policy</Link>
+          <Link href="/terms-and-conditions">Terms</Link>
+          <Link href="/refund-policy">Refund Policy</Link>
+        </nav>
+      </div>
+    </main>
+  );
+}

@@ -10,6 +10,7 @@ import {
   adminApi,
 } from '@/features/admin/api/admin.api';
 import SearchableSelect from '@/features/admin/components/SearchableSelect';
+import AsyncSearchableSelect from '@/features/admin/components/AsyncSearchableSelect';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 
 const GCA_LEDGER_OPTION = '__GCA__';
@@ -54,6 +55,9 @@ function getPaymentBadgeClasses(status?: string | null) {
   if (normalized === 'PAID') {
     return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   }
+  if (normalized === 'PARTIAL') {
+    return 'border-orange-200 bg-orange-50 text-orange-700';
+  }
   if (normalized === 'PENDING') {
     return 'border-amber-200 bg-amber-50 text-amber-700';
   }
@@ -93,13 +97,50 @@ function LedgerLoadingOverlay({ label }: { label: string }) {
   );
 }
 
-function LedgerDetailTable({ rows }: { rows: AdminMasterLedgerRow[] }) {
+function LedgerDetailTable({
+  rows,
+  selectedInvoiceIds,
+  onToggleRow,
+  onToggleAll,
+}: {
+  rows: AdminMasterLedgerRow[];
+  selectedInvoiceIds?: Set<string>;
+  onToggleRow?: (invoiceId: string, checked: boolean) => void;
+  onToggleAll?: (checked: boolean) => void;
+}) {
+  const selectable = Boolean(selectedInvoiceIds && onToggleRow && onToggleAll);
+  const allVisibleSelected =
+    selectable &&
+    rows.length > 0 &&
+    rows.every((row) => selectedInvoiceIds?.has(row.invoiceId));
+  const someVisibleSelected =
+    selectable && rows.some((row) => selectedInvoiceIds?.has(row.invoiceId));
+
   return (
-    <table className="min-w-[1500px] divide-y divide-slate-200 text-sm">
+    <table className="min-w-[1650px] divide-y divide-slate-200 text-sm">
       <thead className="sticky top-0 z-10 bg-slate-50">
         <tr>
+          {selectable ? (
+            <th className="w-12 px-4 py-3 text-left font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                checked={Boolean(allVisibleSelected)}
+                ref={(input) => {
+                  if (input) {
+                    input.indeterminate = Boolean(
+                      someVisibleSelected && !allVisibleSelected,
+                    );
+                  }
+                }}
+                onChange={(event) => onToggleAll?.(event.target.checked)}
+                aria-label="Select all visible ledger rows"
+                className="h-4 w-4 rounded border-slate-300 text-sky-600"
+              />
+            </th>
+          ) : null}
           <th className="px-4 py-3 text-left font-semibold text-slate-700">Invoice Number</th>
           <th className="px-4 py-3 text-left font-semibold text-slate-700">Invoice Date</th>
+          <th className="px-4 py-3 text-left font-semibold text-slate-700">Insured Person</th>
           <th className="px-4 py-3 text-right font-semibold text-slate-700">Premium Amount</th>
           <th className="px-4 py-3 text-right font-semibold text-slate-700">Paid Amount</th>
           <th className="px-4 py-3 text-right font-semibold text-slate-700">Pending Amount</th>
@@ -112,17 +153,33 @@ function LedgerDetailTable({ rows }: { rows: AdminMasterLedgerRow[] }) {
       <tbody className="divide-y divide-slate-100 bg-white">
         {rows.length === 0 ? (
           <tr>
-            <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+            <td colSpan={selectable ? 11 : 10} className="px-4 py-8 text-center text-slate-500">
               No ledger rows found.
             </td>
           </tr>
         ) : (
           rows.map((row) => (
             <tr key={row.invoiceId}>
+              {selectable ? (
+                <td className="px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(selectedInvoiceIds?.has(row.invoiceId))}
+                    onChange={(event) =>
+                      onToggleRow?.(row.invoiceId, event.target.checked)
+                    }
+                    aria-label={`Select ${row.invoiceNumber || row.invoiceId}`}
+                    className="h-4 w-4 rounded border-slate-300 text-sky-600"
+                  />
+                </td>
+              ) : null}
               <td className="px-4 py-3 font-medium text-slate-900">
                 {row.invoiceNumber || '-'}
               </td>
               <td className="px-4 py-3 text-slate-700">{formatDate(row.invoiceDate)}</td>
+              <td className="px-4 py-3 text-slate-700">
+                {row.insuredPersonName || row.sourceUserName || '-'}
+              </td>
               <td className="px-4 py-3 text-right text-slate-900">
                 {formatCurrency(row.premiumAmount)}
               </td>
@@ -184,6 +241,13 @@ export default function AdminLedgerPage() {
   const [jumpPageInput, setJumpPageInput] = useState('1');
   const [pageSize, setPageSize] = useState(25);
   const [exportingType, setExportingType] = useState('');
+  const [ledgerReloadKey, setLedgerReloadKey] = useState(0);
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set());
+  const [bulkStatusModal, setBulkStatusModal] = useState<{
+    status: 'PAID' | 'PENDING';
+  } | null>(null);
+  const [bulkRemark, setBulkRemark] = useState('');
+  const [bulkUpdating, setBulkUpdating] = useState(false);
 
   const isGcaSelected = selectedMasterId === GCA_LEDGER_OPTION;
 
@@ -242,50 +306,24 @@ export default function AdminLedgerPage() {
         setGcaAggregateRows([]);
 
         if (selectedMasterId === GCA_LEDGER_OPTION) {
-          const gcaMasterUsers = masterUsers.filter(
-            (user) => String(user.unionMember || '').toUpperCase() === 'GCA',
-          );
-
-          if (gcaMasterUsers.length === 0) {
+          const summaryResponse = await adminApi.getGcaLedgerSummary();
+          if (!summaryResponse.success || !Array.isArray(summaryResponse.data)) {
+            setError(summaryResponse.message || 'Failed to load GCA ledger summary');
             setGcaAggregateRows([]);
             return;
           }
 
-          const results = await Promise.allSettled(
-            gcaMasterUsers.map(async (user) => {
-              const response = await adminApi.getMasterUserLedger(user.id);
-              if (!response.success || !response.data) {
-                throw new Error(
-                  response.message || `Failed to load ledger for ${user.name || 'user'}`,
-                );
-              }
-
-              const payload = response.data;
-              return {
-                userId: user.id,
-                name: payload.masterUser.name || user.name || 'User',
-                mobileNumber: payload.masterUser.mobileNumber || user.mobileNumber || '-',
-                state: payload.masterUser.state || user.state || null,
-                totalInvoices: payload.summary.totalInvoices || 0,
-                totalPremiumAmount: payload.summary.totalPremiumAmount || 0,
-                totalPaidAmount: payload.summary.totalPaidAmount || 0,
-                totalPendingAmount: payload.summary.totalPendingAmount || 0,
-                ledger: payload,
-              };
-            }),
-          );
-
-          const successfulRows = results
-            .filter((result) => result.status === 'fulfilled')
-            .map((result) => (result as PromiseFulfilledResult<GcaAggregateLedgerRow>).value)
-            .sort((left, right) =>
-              String(left.name || '').localeCompare(String(right.name || '')),
-            );
-
-          const failedCount = results.filter((result) => result.status === 'rejected').length;
-          if (failedCount > 0) {
-            setError(`Failed to load ${failedCount} GCA member ledger${failedCount > 1 ? 's' : ''}.`);
-          }
+          const successfulRows: GcaAggregateLedgerRow[] = summaryResponse.data.map((row) => ({
+            userId: row.userId,
+            name: row.name,
+            mobileNumber: row.mobileNumber,
+            state: row.state || null,
+            totalInvoices: row.totalInvoices,
+            totalPremiumAmount: row.totalPremiumAmount,
+            totalPaidAmount: row.totalPaidAmount,
+            totalPendingAmount: row.totalPendingAmount,
+            ledger: null as any,
+          }));
 
           setGcaAggregateRows(successfulRows);
           return;
@@ -307,7 +345,7 @@ export default function AdminLedgerPage() {
     };
 
     void loadLedger();
-  }, [masterUsers, selectedMasterId]);
+  }, [selectedMasterId, ledgerReloadKey]);
 
   const filteredRows = useMemo(() => {
     const rows = ledger?.rows || [];
@@ -328,6 +366,7 @@ export default function AdminLedgerPage() {
 
       const haystack = [
         row.invoiceNumber,
+        row.insuredPersonName,
         row.sourceUserName,
         row.sourceUserMobile,
         row.walletDebitReference,
@@ -372,9 +411,20 @@ export default function AdminLedgerPage() {
     return filteredGcaRows.slice(start, start + pageSize);
   }, [currentPage, filteredGcaRows, pageSize]);
 
+  const selectedLedgerRows = useMemo(
+    () => filteredRows.filter((row) => selectedInvoiceIds.has(row.invoiceId)),
+    [filteredRows, selectedInvoiceIds],
+  );
+
+  const selectedCount = selectedInvoiceIds.size;
+
   useEffect(() => {
     setCurrentPage(1);
   }, [selectedMasterId, searchTerm, statusFilter, pageSize]);
+
+  useEffect(() => {
+    setSelectedInvoiceIds(new Set());
+  }, [selectedMasterId, searchTerm, statusFilter, pageSize, ledgerReloadKey]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -544,6 +594,7 @@ export default function AdminLedgerPage() {
     const headers = [
       'Invoice Number',
       'Invoice Date',
+      'Insured Person',
       'Premium Amount',
       'Paid Amount',
       'Pending Amount',
@@ -555,6 +606,7 @@ export default function AdminLedgerPage() {
     const exportRows = rows.map((row) => [
       row.invoiceNumber || '-',
       formatDate(row.invoiceDate),
+      row.insuredPersonName || row.sourceUserName || '-',
       row.premiumAmount.toFixed(2),
       row.paidAmount.toFixed(2),
       row.pendingAmount.toFixed(2),
@@ -610,6 +662,74 @@ export default function AdminLedgerPage() {
     }
   };
 
+  const toggleLedgerRowSelection = (invoiceId: string, checked: boolean) => {
+    setSelectedInvoiceIds((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(invoiceId);
+      } else {
+        next.delete(invoiceId);
+      }
+      return next;
+    });
+  };
+
+  const toggleVisibleLedgerRows = (checked: boolean) => {
+    setSelectedInvoiceIds((current) => {
+      const next = new Set(current);
+      paginatedRows.forEach((row) => {
+        if (checked) {
+          next.add(row.invoiceId);
+        } else {
+          next.delete(row.invoiceId);
+        }
+      });
+      return next;
+    });
+  };
+
+  const openBulkStatusModal = (status: 'PAID' | 'PENDING') => {
+    if (selectedCount === 0) {
+      setError('Select at least one ledger row first');
+      return;
+    }
+    setError('');
+    setBulkRemark('');
+    setBulkStatusModal({ status });
+  };
+
+  const submitBulkStatusUpdate = async () => {
+    if (!bulkStatusModal) return;
+    const remarks = bulkRemark.trim();
+    if (!remarks) {
+      setError('Remark is required before updating selected rows');
+      return;
+    }
+
+    try {
+      setBulkUpdating(true);
+      setError('');
+      const response = await adminApi.updateLedgerPaymentStatus({
+        invoiceIds: Array.from(selectedInvoiceIds),
+        paymentStatus: bulkStatusModal.status,
+        remarks,
+      });
+
+      if (!response.success) {
+        throw new Error(response.message || 'Failed to update selected rows');
+      }
+
+      setBulkStatusModal(null);
+      setBulkRemark('');
+      setSelectedInvoiceIds(new Set());
+      setLedgerReloadKey((value) => value + 1);
+    } catch (updateError: any) {
+      setError(updateError?.message || 'Failed to update selected rows');
+    } finally {
+      setBulkUpdating(false);
+    }
+  };
+
   return (
     <div className="py-6">
       <div className="w-full px-2 sm:px-3 lg:px-4 xl:px-6">
@@ -623,20 +743,27 @@ export default function AdminLedgerPage() {
               <div>
                 <h1 className="text-2xl font-semibold text-slate-900">Ledger</h1>
                 <p className="mt-1 text-sm text-slate-500">
-                  Combined ledger for verified master users, including merged child users and duplicate-invoice filtering.
+                  View ledger and invoice history for verified users.
                 </p>
               </div>
 
               <div className="grid w-full gap-3 sm:grid-cols-2 lg:w-auto lg:grid-cols-[320px_220px_220px]">
-                <SearchableSelect
-                  label="Verified Master User"
+                <AsyncSearchableSelect
+                  label="Select User"
                   value={selectedMasterId}
                   onChange={setSelectedMasterId}
-                  disabled={loadingMasters || masterUsers.length === 0}
+                  disabled={loadingMasters}
                   placeholder="Select verified master user"
                   searchPlaceholder="Search verified user by name or mobile"
                   emptyMessage="No users found"
-                  options={masterUserOptions}
+                  onSearch={async (q) => {
+                    const res = await adminApi.searchUsers(q, 100, { verified: true });
+                    if (!res.success || !Array.isArray(res.data)) return [];
+                    const gcaOption = { value: GCA_LEDGER_OPTION, label: 'GCA | All GCA Members' };
+                    const userOptions = res.data
+                      .map((u) => ({ value: u.id, label: `${u.name || ''} | ${u.mobileNumber || ''}` }));
+                    return [gcaOption, ...userOptions];
+                  }}
                 />
 
                 <label className="text-sm text-slate-600">
@@ -723,9 +850,9 @@ export default function AdminLedgerPage() {
                     {selectedMaster.mobileNumber} | {formatState(selectedMaster.state)}
                   </p>
                 </div>
-                <p className="text-sm text-slate-500">
+                {/* <p className="text-sm text-slate-500">
                   Linked users: <span className="font-semibold text-slate-800">{ledger?.linkedUsers.length || 0}</span>
-                </p>
+                </p> */}
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
@@ -754,8 +881,30 @@ export default function AdminLedgerPage() {
                 >
                   {exportingType === 'individual-pdf' ? 'Generating...' : 'Download PDF'}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => openBulkStatusModal('PAID')}
+                  disabled={loadingLedger || selectedCount === 0 || bulkUpdating}
+                  className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Mark Paid
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openBulkStatusModal('PENDING')}
+                  disabled={loadingLedger || selectedCount === 0 || bulkUpdating}
+                  className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Mark Pending
+                </button>
+                {selectedCount > 0 ? (
+                  <span className="inline-flex items-center rounded-md bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700">
+                    {selectedCount} selected
+                  </span>
+                ) : null}
               </div>
 
+              {/* Linked users chips hidden — merge UI removed
               <div className="mt-4 flex flex-wrap gap-2">
                 {(ledger?.linkedUsers || []).map((user) => (
                   <span
@@ -771,6 +920,7 @@ export default function AdminLedgerPage() {
                   </span>
                 ))}
               </div>
+              */}
             </div>
           ) : null}
 
@@ -862,7 +1012,12 @@ export default function AdminLedgerPage() {
                           <td className="px-4 py-3">
                             <button
                               type="button"
-                              onClick={() => setGcaLedgerModal(row.ledger)}
+                              onClick={async () => {
+                                const response = await adminApi.getMasterUserLedger(row.userId);
+                                if (response.success && response.data) {
+                                  setGcaLedgerModal(response.data);
+                                }
+                              }}
                               className="rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700"
                             >
                               View
@@ -874,7 +1029,12 @@ export default function AdminLedgerPage() {
                   </tbody>
                 </table>
               ) : (
-                <LedgerDetailTable rows={paginatedRows} />
+                <LedgerDetailTable
+                  rows={paginatedRows}
+                  selectedInvoiceIds={selectedInvoiceIds}
+                  onToggleRow={toggleLedgerRowSelection}
+                  onToggleAll={toggleVisibleLedgerRows}
+                />
               )}
             </div>
 
@@ -972,6 +1132,81 @@ export default function AdminLedgerPage() {
           </div>
         </div>
       </div>
+
+      {bulkStatusModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h3 className="text-lg font-semibold text-slate-900">
+                Mark {selectedCount} row{selectedCount === 1 ? '' : 's'} as{' '}
+                {bulkStatusModal.status}
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Add a remark so this manual ledger update has a clear reason.
+              </p>
+            </div>
+
+            <div className="space-y-4 px-5 py-4">
+              <div className="max-h-32 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                {selectedLedgerRows.slice(0, 8).map((row) => (
+                  <div key={row.invoiceId} className="flex justify-between gap-3 py-1">
+                    <span className="font-medium text-slate-800">
+                      {row.invoiceNumber || row.invoiceId}
+                    </span>
+                    <span>{row.insuredPersonName || row.sourceUserName || '-'}</span>
+                  </div>
+                ))}
+                {selectedLedgerRows.length > 8 ? (
+                  <div className="pt-1 text-slate-500">
+                    +{selectedLedgerRows.length - 8} more selected
+                  </div>
+                ) : null}
+              </div>
+
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Remark</span>
+                <textarea
+                  value={bulkRemark}
+                  onChange={(event) => setBulkRemark(event.target.value)}
+                  rows={4}
+                  placeholder={
+                    bulkStatusModal.status === 'PAID'
+                      ? 'Example: Payment verified manually from bank statement'
+                      : 'Example: Reverted because payment was not received'
+                  }
+                  className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                />
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkStatusModal(null);
+                  setBulkRemark('');
+                }}
+                disabled={bulkUpdating}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitBulkStatusUpdate}
+                disabled={bulkUpdating || !bulkRemark.trim()}
+                className={`rounded-md px-3 py-1.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${
+                  bulkStatusModal.status === 'PAID'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-amber-600 hover:bg-amber-700'
+                }`}
+              >
+                {bulkUpdating ? 'Updating...' : `Mark ${bulkStatusModal.status}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {gcaLedgerModal ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
