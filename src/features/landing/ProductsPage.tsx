@@ -3,6 +3,7 @@ import {
   Boxes,
   ChartNoAxesCombined,
   Landmark,
+  Package,
   ScanSearch,
   ShieldCheck,
   Store,
@@ -56,6 +57,12 @@ const PRODUCT_GROUPS = [
   {
     category: "Logistics & Tech",
     products: [
+      {
+        name: "MandiPlus Go",
+        description:
+          "MandiPlus is building smarter crates, boxes, packaging and handling solutions for mandis, designed to protect commodities and reduce damage. With our rental and pay-per-use model, mandis can access everything they need without buying or maintaining infrastructure.",
+        icon: Package,
+      },
       {
         name: "Logistics Management",
         description: "Truck source karo. Shipment live track karo.",
