@@ -168,12 +168,14 @@ export default function PartnerDetailPage() {
     };
   });
   const [paymentSlip, setPaymentSlip] = useState<File | null>(null);
+  const [paymentInvoice, setPaymentInvoice] = useState<File | null>(null);
   const [expandedPaymentId, setExpandedPaymentId] = useState<string | null>(null);
   const [paymentCommissions, setPaymentCommissions] = useState<
     Record<string, SettledCommissionPage>
   >({});
   const [loadingPaymentCommissions, setLoadingPaymentCommissions] = useState(false);
   const slipInputRef = useRef<HTMLInputElement | null>(null);
+  const invoiceInputRef = useRef<HTMLInputElement | null>(null);
   const userPickerRef = useRef<HTMLDivElement | null>(null);
   const userListRef = useRef<HTMLDivElement | null>(null);
   const userRequestRef = useRef(0);
@@ -471,6 +473,7 @@ export default function PartnerDetailPage() {
         amount,
         notes: paymentForm.notes.trim() || undefined,
         slip: paymentSlip,
+        invoice: paymentInvoice,
       });
       if (!response.success) {
         toast.error(response.message ?? "Failed to record payment");
@@ -485,7 +488,9 @@ export default function PartnerDetailPage() {
       );
       setPaymentForm((prev) => ({ ...prev, amount: "", notes: "" }));
       setPaymentSlip(null);
+      setPaymentInvoice(null);
       if (slipInputRef.current) slipInputRef.current.value = "";
+      if (invoiceInputRef.current) invoiceInputRef.current.value = "";
       // Settling changes the commission statuses the metrics are built from.
       setPaymentCommissions({});
       setExpandedPaymentId(null);
@@ -1314,6 +1319,9 @@ export default function PartnerDetailPage() {
                     slip={paymentSlip}
                     onSlipChange={setPaymentSlip}
                     slipInputRef={slipInputRef}
+                    invoice={paymentInvoice}
+                    onInvoiceChange={setPaymentInvoice}
+                    invoiceInputRef={invoiceInputRef}
                     onSave={() => void savePayment()}
                     onDelete={(payment) => void removePayment(payment)}
                     expandedPaymentId={expandedPaymentId}
@@ -1371,6 +1379,9 @@ function PaymentsPanel({
   slip,
   onSlipChange,
   slipInputRef,
+  invoice,
+  onInvoiceChange,
+  invoiceInputRef,
   onSave,
   onDelete,
   expandedPaymentId,
@@ -1390,6 +1401,9 @@ function PaymentsPanel({
   slip: File | null;
   onSlipChange: (file: File | null) => void;
   slipInputRef: React.RefObject<HTMLInputElement | null>;
+  invoice: File | null;
+  onInvoiceChange: (file: File | null) => void;
+  invoiceInputRef: React.RefObject<HTMLInputElement | null>;
   onSave: () => void;
   onDelete: (payment: ChannelPartnerPaymentPayload) => void;
   expandedPaymentId: string | null;
@@ -1414,7 +1428,7 @@ function PaymentsPanel({
           </span>
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
+        <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           <label className="block">
             <span className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-400">Month</span>
             <select
@@ -1471,12 +1485,28 @@ function PaymentsPanel({
             </div>
           </label>
 
+          <label className="block">
+            <span className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-400">
+              Payment invoice <span className="font-medium normal-case tracking-normal text-slate-400">(optional)</span>
+            </span>
+            <div className="flex items-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2">
+              <UploadCloud className="h-4 w-4 shrink-0 text-slate-400" />
+              <input
+                ref={invoiceInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(event) => onInvoiceChange(event.target.files?.[0] ?? null)}
+                className="w-full text-xs text-slate-600 file:mr-2 file:rounded-lg file:border-0 file:bg-slate-100 file:px-2.5 file:py-1 file:text-xs file:font-semibold file:text-slate-700"
+              />
+            </div>
+          </label>
+
           <div className="flex items-end">
             <button
               type="button"
               onClick={onSave}
               disabled={saving}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-50 lg:w-auto"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-50"
             >
               <BadgeIndianRupee className="h-4 w-4" />
               {saving ? "Saving..." : "Save Payment"}
@@ -1493,7 +1523,9 @@ function PaymentsPanel({
 
         <p className="mt-3 text-xs text-slate-500">
           Saving marks every commission on that month&apos;s invoices as paid, and the Paid Commission
-          metric moves with it.{slip ? ` Attached: ${slip.name}` : ""}
+          metric moves with it.
+          {slip ? ` Slip: ${slip.name}.` : ""}
+          {invoice ? ` Invoice: ${invoice.name}.` : ""}
         </p>
       </div>
 
@@ -1505,7 +1537,7 @@ function PaymentsPanel({
             <Th>Amount Paid</Th>
             <Th>Month&apos;s Commission</Th>
             <Th>Settled</Th>
-            <Th>Slip</Th>
+            <Th>Documents</Th>
             <Th>Recorded</Th>
             <Th>Actions</Th>
           </tr>
@@ -1535,17 +1567,33 @@ function PaymentsPanel({
                     {row.settledCount} of {row.commissionCount}
                   </Td>
                   <Td>
-                    {row.slipUrl ? (
-                      <a
-                        href={row.slipUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(event) => event.stopPropagation()}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700"
-                      >
-                        <Paperclip className="h-3.5 w-3.5" />
-                        View
-                      </a>
+                    {row.slipUrl || row.invoiceUrl ? (
+                      <div className="flex flex-col gap-1">
+                        {row.slipUrl ? (
+                          <a
+                            href={row.slipUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(event) => event.stopPropagation()}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700"
+                          >
+                            <Paperclip className="h-3.5 w-3.5" />
+                            Slip
+                          </a>
+                        ) : null}
+                        {row.invoiceUrl ? (
+                          <a
+                            href={row.invoiceUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(event) => event.stopPropagation()}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700"
+                          >
+                            <Paperclip className="h-3.5 w-3.5" />
+                            Invoice
+                          </a>
+                        ) : null}
+                      </div>
                     ) : (
                       <span className="text-xs text-slate-400">-</span>
                     )}
