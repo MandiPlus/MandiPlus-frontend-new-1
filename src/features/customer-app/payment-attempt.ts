@@ -2,6 +2,7 @@ import type {
   CustomerAppPricing,
   CustomerInvoiceDraft,
 } from "./api";
+import { tenderCoconutTiers } from "./api";
 
 const CUSTOMER_INVOICE_PAYMENT_ATTEMPT_KEY =
   "mandiplus:customer-invoice-payment-attempt:v2";
@@ -52,8 +53,9 @@ export function customerInvoicePaymentFingerprint(
     normalizePhone(draft.insuredPartyPhone),
     draft.note.trim(),
     pricing?.pricingVersion ?? null,
-    pricing?.amount25Ton ?? null,
-    pricing?.amount30Ton ?? null,
+    tenderCoconutTiers(pricing)
+      .map((tier) => `${tier.tonnage}:${tier.amount}`)
+      .join(","),
   ]);
 }
 

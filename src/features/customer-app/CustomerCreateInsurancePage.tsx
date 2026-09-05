@@ -60,6 +60,12 @@ import {
   type CustomerLiveTranscriptionToken,
   type InvoiceVoiceTargetField,
 } from "./api";
+import {
+  isSelectedVehicleTonnage,
+  normalizeVehicleTonnage,
+  tenderCoconutTierAmount,
+  tenderCoconutTiers,
+} from "./api";
 import { CustomerAppShell } from "./CustomerAppShell";
 import { canonicalizeCommodityLabel } from "./commodity-normalization";
 import { CustomerQuestionnaireVoiceSession } from "./customer-live-transcription";
@@ -127,6 +133,12 @@ type InvoiceExtractionTask = {
 
 const DEFAULT_TENDER_COCONUT_PRICING: CustomerAppPricing["tenderCoconut"] = {
   pricingVersion: 1,
+  tiers: [
+    { tonnage: 20, amount: 120000 },
+    { tonnage: 25, amount: 130000 },
+    { tonnage: 30, amount: 140000 },
+  ],
+  amount20Ton: 120000,
   amount25Ton: 130000,
   amount30Ton: 140000,
   updatedAt: null,
@@ -166,10 +178,17 @@ function missingVoiceEndSilenceMillis(key: MissingDetailKey) {
   }
 }
 
-const TENDER_TONNAGE_CHOICES = [
-  { value: "25", label: "25 ton", compactLabel: "25t" },
-  { value: "30", label: "30 ton", compactLabel: "30t" },
-] as const;
+// Bundled fallback only. The rendered list comes from the backend pricing
+// tiers, so another truck size ships without a web deploy.
+function tenderTonnageChoices(
+  pricing?: CustomerAppPricing["tenderCoconut"] | null,
+) {
+  return tenderCoconutTiers(pricing).map((tier) => ({
+    value: String(tier.tonnage),
+    label: `${tier.tonnage} ton`,
+    compactLabel: `${tier.tonnage}t`,
+  }));
+}
 
 const POMEGRANATE_QUESTION_LABELS: Partial<
   Record<MissingDetailKey, QuestionLabelMap>
@@ -572,6 +591,7 @@ export default function CustomerCreateInsurancePage() {
     () => resolveInvoiceAmountBreakdown(draft, pricing),
     [draft, pricing],
   );
+  const tonnageChoices = useMemo(() => tenderTonnageChoices(pricing), [pricing]);
   const total = amountBreakdown.totalAmount;
   const paymentDrafts = useMemo(() => {
     if (!batchDrafts.length) return [draft];
@@ -2590,7 +2610,7 @@ export default function CustomerCreateInsurancePage() {
               <div className={styles.inlineTonnageField}>
                 <span>Tonnage</span>
                 <div className={styles.inlineTonnage}>
-                  {TENDER_TONNAGE_CHOICES.map((choice) => (
+                  {tonnageChoices.map((choice) => (
                     <button
                       key={choice.value}
                       type="button"
@@ -2660,8 +2680,7 @@ export default function CustomerCreateInsurancePage() {
                   <span className={styles.amountBreakdownLogisticsLabel}>
                     <span>
                       Logistics cost
-                      {draft.vehicleTonnage === "25" ||
-                      draft.vehicleTonnage === "30"
+                      {isSelectedVehicleTonnage(draft.vehicleTonnage, pricing)
                         ? ` (${draft.vehicleTonnage} ton)`
                         : ""}
                     </span>
@@ -2905,7 +2924,7 @@ export default function CustomerCreateInsurancePage() {
 
             {activeMissingKey === "vehicleTonnage" ? (
               <div className={styles.missingTonnageChoices}>
-                {TENDER_TONNAGE_CHOICES.map((choice) => (
+                {tonnageChoices.map((choice) => (
                   <button
                     key={choice.value}
                     type="button"
@@ -3471,7 +3490,7 @@ function isMissingDetailAnswered(key: MissingDetailKey, value: string) {
     return Number(clean) > 0;
   }
   if (key === "vehicleTonnage") {
-    return clean === "25" || clean === "30";
+    return Boolean(normalizeVehicleTonnage(clean));
   }
   return Boolean(clean);
 }
@@ -3491,8 +3510,7 @@ function validateDraft(draft: CustomerInvoiceDraft) {
   if (!draft.vehicleNumber.trim()) return "Vehicle number add karein.";
   if (
     isTenderCoconutProduct(draft.product) &&
-    draft.vehicleTonnage !== "25" &&
-    draft.vehicleTonnage !== "30"
+    !normalizeVehicleTonnage(draft.vehicleTonnage)
   ) {
     return "Vehicle tonnage chunein.";
   }
@@ -3610,11 +3628,7 @@ function resolveInvoiceAmountBreakdown(
         ? calculated
         : 0;
   const configuredLogistics = isTenderCoconutProduct(draft.product)
-    ? draft.vehicleTonnage === "25"
-      ? Number(pricing.amount25Ton || 0)
-      : draft.vehicleTonnage === "30"
-        ? Number(pricing.amount30Ton || 0)
-        : 0
+    ? tenderCoconutTierAmount(pricing, draft.vehicleTonnage)
     : 0;
   const logistics =
     draft.includeLogistics !== false ? configuredLogistics : 0;
@@ -3721,7 +3735,7 @@ function phoneInput(value: string) {
 }
 
 function tonnage(value: unknown) {
-  return String(value || "").match(/\b(25|30)\b/)?.[1] || "";
+  return String(value || "").match(/\b(\d{1,3})\b/)?.[1] || "";
 }
 
 function formatDraftSavedAt(value: string) {
