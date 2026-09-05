@@ -1,7 +1,9 @@
 import Image from "next/image";
 import {
+  Boxes,
   ChartNoAxesCombined,
   Landmark,
+  ScanSearch,
   ShieldCheck,
   Store,
   Truck,
@@ -16,6 +18,18 @@ const PRODUCT_GROUPS = [
   {
     category: "Risk & Insurance",
     products: [
+      {
+        name: "AI-Powered Quality Assessment",
+        description:
+          "We are building AI-powered quality assessment for farmers, mandis, traders and large FPOs—using multiple layers of intelligence to make commodity transactions more accurate, transparent and trusted.",
+        icon: ScanSearch,
+      },
+      {
+        name: "Smart Commodity Management",
+        description:
+          "Manage commodities, inventory, billing and transactions in one simple platform—built specifically for the everyday needs of farmers, mandis, traders and FPOs.",
+        icon: Boxes,
+      },
       {
         name: "Transit Risk Insurance",
         description:
