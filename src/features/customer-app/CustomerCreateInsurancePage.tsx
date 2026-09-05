@@ -61,9 +61,6 @@ import {
   type InvoiceVoiceTargetField,
 } from "./api";
 import {
-  NO_PREMIUM_DISCOUNT,
-  PremiumDiscount,
-  applyPremiumDiscount,
   isSelectedVehicleTonnage,
   normalizeVehicleTonnage,
   tenderCoconutTierAmount,
@@ -540,8 +537,6 @@ export default function CustomerCreateInsurancePage() {
   const [notice, setNotice] = useState("");
   const [paymentRetryPromptOpen, setPaymentRetryPromptOpen] = useState(false);
   const [paymentStatusChecking, setPaymentStatusChecking] = useState(false);
-  const [premiumDiscount, setPremiumDiscount] =
-    useState<PremiumDiscount>(NO_PREMIUM_DISCOUNT);
   const [pricing, setPricing] =
     useState<CustomerAppPricing["tenderCoconut"]>(
       DEFAULT_TENDER_COCONUT_PRICING,
@@ -604,7 +599,9 @@ export default function CustomerCreateInsurancePage() {
       index === activeFileIndex ? draft : batchDraft,
     );
   }, [activeFileIndex, batchDrafts, draft]);
-  const premiumBeforeDiscount = useMemo(
+  // The premium discount is a customer-app promotion. Web invoices are
+  // charged the full premium, and the backend prices them that way too.
+  const payablePremium = useMemo(
     () =>
       Number(
         paymentDrafts
@@ -617,28 +614,6 @@ export default function CustomerCreateInsurancePage() {
       ),
     [paymentDrafts, premiumPerLakh, pricing],
   );
-  // Discount each invoice and then sum, exactly as the backend does. Taking
-  // the discount off the batch total instead can round a paisa differently and
-  // leave the previewed amount disagreeing with the charge.
-  const payablePremium = useMemo(
-    () =>
-      Number(
-        paymentDrafts
-          .reduce(
-            (sum, paymentDraft) =>
-              sum +
-              applyPremiumDiscount(
-                customerInvoicePremium(paymentDraft, pricing, premiumPerLakh),
-                premiumDiscount,
-              ),
-            0,
-          )
-          .toFixed(2),
-      ),
-    [paymentDrafts, premiumDiscount, premiumPerLakh, pricing],
-  );
-  const showPremiumDiscount =
-    payablePremium < premiumBeforeDiscount && premiumBeforeDiscount > 0;
   const totalInvoiceValue = useMemo(
     () =>
       Number(
@@ -951,9 +926,6 @@ export default function CustomerCreateInsurancePage() {
           pricingResult.value?.tenderCoconut
         ) {
           setPricing(pricingResult.value.tenderCoconut);
-          setPremiumDiscount(
-            pricingResult.value.premiumDiscount || NO_PREMIUM_DISCOUNT,
-          );
         }
       },
     );
@@ -1812,10 +1784,7 @@ export default function CustomerCreateInsurancePage() {
             sum +
             (Number.isFinite(storedPremium) && storedPremium >= 0
               ? storedPremium
-              : applyPremiumDiscount(
-                  customerInvoicePremium(item, pricing, premiumPerLakh),
-                  premiumDiscount,
-                ))
+              : customerInvoicePremium(item, pricing, premiumPerLakh))
           );
         }, 0);
         router.replace(
@@ -1842,13 +1811,10 @@ export default function CustomerCreateInsurancePage() {
               const storedPremium = Number(createdInvoice?.premiumAmount);
               return Number.isFinite(storedPremium) && storedPremium >= 0
                 ? storedPremium
-                : applyPremiumDiscount(
-                    customerInvoicePremium(
-                      paymentDrafts[draftIndex],
-                      pricing,
-                      premiumPerLakh,
-                    ),
-                    premiumDiscount,
+                : customerInvoicePremium(
+                    paymentDrafts[draftIndex],
+                    pricing,
+                    premiumPerLakh,
                   );
             })()
           : sum;
@@ -2445,16 +2411,7 @@ export default function CustomerCreateInsurancePage() {
                         <span className={styles.invoiceReceiptAmounts}>
                           <strong>
                             {itemTotal > 0
-                              ? money(
-                                  applyPremiumDiscount(
-                                    customerInvoicePremium(
-                                      item,
-                                      pricing,
-                                      premiumPerLakh,
-                                    ),
-                                    premiumDiscount,
-                                  ),
-                                )
+                              ? money(customerInvoicePremium(item, pricing, premiumPerLakh))
                               : "—"}
                           </strong>
                           <span>
@@ -2485,22 +2442,8 @@ export default function CustomerCreateInsurancePage() {
               </div>
               <div className={styles.invoiceOverviewPayable}>
                 <span>Premium payable</span>
-                <strong>
-                  {showPremiumDiscount ? (
-                    <>
-                      <s className={styles.premiumStrikethrough}>
-                        {payableMoney(premiumBeforeDiscount)}
-                      </s>{" "}
-                    </>
-                  ) : null}
-                  {payableMoney(payablePremium)}
-                </strong>
+                <strong>{payableMoney(payablePremium)}</strong>
               </div>
-              {showPremiumDiscount ? (
-                <p className={styles.premiumDiscountCaption}>
-                  {premiumDiscount.percent}% discount applied
-                </p>
-              ) : null}
             </section>
           </>
         ) : (
@@ -2805,14 +2748,6 @@ export default function CustomerCreateInsurancePage() {
       </main>
 
       <div className={styles.stickyPay}>
-        {showPremiumDiscount ? (
-          <p className={styles.premiumDiscountCaption}>
-            <s className={styles.premiumStrikethrough}>
-              {payableMoney(premiumBeforeDiscount)}
-            </s>{" "}
-            {premiumDiscount.percent}% discount applied
-          </p>
-        ) : null}
         <button
           type="button"
           className={styles.wideButton}

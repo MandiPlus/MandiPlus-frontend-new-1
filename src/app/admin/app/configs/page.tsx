@@ -195,10 +195,16 @@ export default function AppConfigsPage() {
         <div className="grid gap-1">
           <h2 className="text-sm font-semibold text-slate-950">
             Insurance premium discount
+            <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">
+              Mobile app only
+            </span>
           </h2>
           <p className="text-xs text-slate-600">
-            Applied to the premium at invoice creation. The customer sees the
-            full premium struck through and pays the discounted amount.
+            Applied to the premium at invoice creation, for invoices raised from
+            the customer mobile app. Those customers see the full premium struck
+            through and pay the discounted amount. Invoices raised here in the
+            admin console, or from the customer web app, are always charged the
+            full premium.
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-[160px_auto] sm:items-end">
@@ -223,7 +229,8 @@ export default function AppConfigsPage() {
         </div>
         {discountPreview ? (
           <p className="text-xs text-slate-600">
-            Preview — a {money(discountPreview.before)} premium becomes{" "}
+            Preview — in the mobile app, a {money(discountPreview.before)}{" "}
+            premium becomes{" "}
             <span className="line-through">{money(discountPreview.before)}</span>{" "}
             <strong className="text-slate-950">
               {money(discountPreview.after)}
@@ -232,7 +239,7 @@ export default function AppConfigsPage() {
           </p>
         ) : (
           <p className="text-xs text-slate-600">
-            No discount is applied. Customers pay the full premium.
+            No discount is applied. Every customer pays the full premium.
           </p>
         )}
         <div>
