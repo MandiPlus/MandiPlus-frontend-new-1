@@ -1525,9 +1525,13 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         if (inv.isVerified && !inv.isRejected) return;
         setModalInvoice(inv);
         setModalType('verify');
-        setModalTitle('Verify invoice?');
-        setModalMessage('This will mark the invoice as verified.');
-        setModalPrimaryLabel('Verify');
+        setModalTitle(inv.isRejected ? 'Verify rejected invoice?' : 'Verify invoice?');
+        setModalMessage(
+            inv.isRejected
+                ? `This will clear the rejection${inv.rejectionReason ? ` ("${inv.rejectionReason}")` : ''} and mark the invoice as verified.`
+                : 'This will mark the invoice as verified.',
+        );
+        setModalPrimaryLabel(inv.isRejected ? 'Clear rejection & verify' : 'Verify');
         setModalSecondaryLabel('Cancel');
         setModalOpen(true);
     };
@@ -3120,7 +3124,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                                                                         className={`${active ? 'bg-gray-100' : ''} flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700`}
                                                                                     >
                                                                                         <RotateCcw className="w-4 h-4 text-emerald-600" />
-                                                                                        Verify
+                                                                                        Verify (clear rejection)
                                                                                     </button>
                                                                                 )}
                                                                             </Menu.Item>
@@ -3475,7 +3479,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                                                             className={`${active ? 'bg-gray-100' : ''} flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-gray-700`}
                                                                         >
                                                                             <RotateCcw className="w-4 h-4 text-emerald-600" />
-                                                                            Verify
+                                                                            Verify (clear rejection)
                                                                         </button>
                                                                     )}
                                                                 </Menu.Item>
