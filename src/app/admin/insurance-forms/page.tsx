@@ -411,7 +411,9 @@ const extractPdfText = async (file: File): Promise<string> => {
 
 const EXPORTABLE_INVOICE_COLUMNS = [
     { key: 'invoiceNumber', label: 'Invoice Number' },
-    { key: 'invoiceDate', label: 'Invoice Date' },
+    // Only the generated-on date is exported - it is what the date filter
+    // ranges over, and invoiceDate can be back-dated.
+    { key: 'createdAt', label: 'Created At (IST)' },
     { key: 'invoiceType', label: 'Invoice Type' },
     { key: 'supplierName', label: 'Supplier Name' },
     { key: 'supplierAddress', label: 'Supplier Address' },
@@ -443,7 +445,6 @@ const EXPORTABLE_INVOICE_COLUMNS = [
     { key: 'rejectionReason', label: 'Rejection Reason' },
     { key: 'insuranceStatus', label: 'Insurance Status' },
     { key: 'insuranceUploadedAt', label: 'Insurance Uploaded At' },
-    { key: 'createdAt', label: 'Created At' },
 ] as const;
 
 export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFormsPageProps) {
