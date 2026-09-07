@@ -2696,6 +2696,8 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                         <input
                             type="date"
                             name="startDate"
+                            title="Created from (IST)"
+                            aria-label="Created from"
                             value={filters.startDate}
                             onChange={handleFilterChange}
                             className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
@@ -2704,6 +2706,8 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                         <input
                             type="date"
                             name="endDate"
+                            title="Created to (IST)"
+                            aria-label="Created to"
                             value={filters.endDate}
                             onChange={handleFilterChange}
                             className="border border-gray-300 rounded-md p-2 text-sm focus:ring-green-500 focus:border-green-500 w-full"
