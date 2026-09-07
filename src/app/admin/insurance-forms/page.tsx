@@ -411,9 +411,8 @@ const extractPdfText = async (file: File): Promise<string> => {
 
 const EXPORTABLE_INVOICE_COLUMNS = [
     { key: 'invoiceNumber', label: 'Invoice Number' },
-    // Only the generated-on date is exported - it is what the date filter
-    // ranges over, and invoiceDate can be back-dated.
-    { key: 'createdAt', label: 'Created At (IST)' },
+    { key: 'createdAt', label: 'Created At' },
+    { key: 'invoiceDate', label: 'Invoice Date' },
     { key: 'invoiceType', label: 'Invoice Type' },
     { key: 'supplierName', label: 'Supplier Name' },
     { key: 'supplierAddress', label: 'Supplier Address' },
