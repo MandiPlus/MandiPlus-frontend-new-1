@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Bar,
@@ -589,9 +589,8 @@ export default function GrowthPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {campaigns.map((campaign) => (
-                      <>
+                      <Fragment key={campaign.id}>
                         <tr
-                          key={campaign.id}
                           onClick={() => void toggleCampaign(campaign.id)}
                           className={`cursor-pointer hover:bg-gray-50 ${
                             expandedId === campaign.id ? 'bg-gray-50' : ''
@@ -648,7 +647,7 @@ export default function GrowthPage() {
                           <Td muted>{dateTime(campaign.launchedAt)}</Td>
                         </tr>
                         {expandedId === campaign.id ? (
-                          <tr key={`${campaign.id}-detail`}>
+                          <tr>
                             <td colSpan={11} className="p-0">
                               {detailLoading || !detail ? (
                                 <div className="border-t border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
@@ -660,7 +659,7 @@ export default function GrowthPage() {
                             </td>
                           </tr>
                         ) : null}
-                      </>
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
