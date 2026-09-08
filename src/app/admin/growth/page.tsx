@@ -38,6 +38,15 @@ const rupees = (paise: number | null | undefined) => {
 const pct = (value: number | null | undefined) =>
   value === null || value === undefined ? '—' : `${value}%`;
 
+/** Stored as a bare 91XXXXXXXXXX; shown the way it would be dialled. */
+const phoneNumber = (raw: string) => {
+  const digits = (raw || '').replace(/\D/g, '');
+  const local = digits.length > 10 ? digits.slice(-10) : digits;
+  const country = digits.slice(0, digits.length - local.length);
+  const spaced = local.length === 10 ? `${local.slice(0, 5)} ${local.slice(5)}` : local;
+  return country ? `+${country} ${spaced}` : spaced;
+};
+
 const dateTime = (value: string | null) =>
   value
     ? new Date(value).toLocaleString('en-IN', {
@@ -296,8 +305,18 @@ function CampaignDetailPanel({ campaign }: { campaign: GrowthCampaignDetail }) {
                   className="rounded-lg border border-gray-100 bg-gray-50 p-2"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium text-gray-900">
-                      {reply.name || reply.phone}
+                    <span className="flex min-w-0 items-baseline gap-2">
+                      <span className="truncate text-sm font-medium text-gray-900">
+                        {reply.name || phoneNumber(reply.phone)}
+                      </span>
+                      {reply.name ? (
+                        <a
+                          href={`tel:+${reply.phone}`}
+                          className="shrink-0 text-xs text-gray-500 hover:text-[#4309ac] hover:underline"
+                        >
+                          {phoneNumber(reply.phone)}
+                        </a>
+                      ) : null}
                     </span>
                     <span className="shrink-0 text-[11px] text-gray-500">
                       +{reply.hoursAfterLaunch}h
