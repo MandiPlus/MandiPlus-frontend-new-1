@@ -31,6 +31,7 @@ import {
   TrashIcon,
   Cog6ToothIcon,
   MegaphoneIcon,
+  RocketLaunchIcon,
 } from '@heroicons/react/24/outline';
 
 export const ADMIN_SECTIONS = [
@@ -70,6 +71,7 @@ export const ADMIN_SECTIONS = [
   'analytics',
   'crm',
   'promo',
+  'growth',
 ] as const;
 
 export type AdminSection = (typeof ADMIN_SECTIONS)[number];
@@ -140,6 +142,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'AI Reports', href: '/admin/reports', icon: SparklesIcon, section: 'reports' },
   { name: 'CRM', href: '/crm', icon: PhoneIcon, section: 'crm' },
   { name: 'Promo Links', href: '/promo', icon: MegaphoneIcon, section: 'promo' },
+  { name: 'Growth', href: '/admin/growth', icon: RocketLaunchIcon, section: 'growth' },
 ];
 
 export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
@@ -183,12 +186,13 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   },
   {
     name: 'Communications',
-    sections: ['chat-logs', 'call-routing', 'promo'],
+    sections: ['chat-logs', 'call-routing', 'promo', 'growth'],
   },
 ];
 
 export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/dashboard': 'dashboard',
+  '/admin/growth': 'growth',
   '/admin/users': 'users',
   '/admin/ledger': 'ledger',
   '/admin/app-customers': 'app-customers',

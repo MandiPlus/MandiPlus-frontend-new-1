@@ -1912,6 +1912,125 @@ export interface PromoLinkRow {
   createdAt: string;
 }
 
+// ---------------- Growth / campaign analytics ----------------
+
+export interface GrowthFunnel {
+  targeted: number;
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  pending: number;
+  reacted: number;
+  replied: number;
+  engaged: number;
+  rateBasis: 'delivered' | 'sent';
+  deliveryRate: number | null;
+  readRate: number | null;
+  replyRate: number | null;
+  engagementRate: number | null;
+  failureRate: number | null;
+}
+
+export interface GrowthCampaign {
+  id: string;
+  name: string;
+  slug: string;
+  objective: string | null;
+  templateName: string;
+  templateLanguage: string;
+  templateCategory: string;
+  mediaType: string | null;
+  audienceLabel: string | null;
+  status: string;
+  launchedAt: string | null;
+  trackingComplete: boolean;
+  trackingNote: string | null;
+  funnel: GrowthFunnel;
+  cost: {
+    perMessagePaise: number;
+    sentMessages: number;
+    totalPaiseExGst: number;
+    totalPaiseIncGst: number;
+    costPerReplyPaise: number | null;
+    costPerEngagedPaise: number | null;
+  };
+}
+
+export interface GrowthCampaignDetail extends GrowthCampaign {
+  replyWindowHours: number;
+  readCurve: { hoursAfterLaunch: number; reads: number }[];
+  segments: {
+    dimension: string;
+    value: string;
+    targeted: number;
+    delivered: number;
+    read: number;
+    engaged: number;
+  }[];
+  replies: {
+    at: string;
+    phone: string;
+    name: string | null;
+    messageType: string;
+    content: string | null;
+    hoursAfterLaunch: number;
+    isReaction: boolean;
+  }[];
+  failures: { phone: string; name: string | null; errorText: string | null }[];
+  conversions: {
+    windowDays: number;
+    convertedRecipients: number;
+    invoices: number;
+    premiumPaise: number;
+    claims: number;
+    baselineConvertedRecipients: number;
+    baselineInvoices: number;
+    holdoutSize: number;
+    holdoutConverted: number;
+    liftPct: number | null;
+    significant: boolean;
+  };
+}
+
+export interface GrowthTemplateStat {
+  templateName: string;
+  sends: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  deliveryRate: number | null;
+  readRate: number | null;
+  failureRate: number | null;
+  replyRate: number | null;
+  lastSentAt: string | null;
+}
+
+export interface GrowthOverview {
+  windowDays: number;
+  totals: {
+    outboundTemplates: number;
+    delivered: number;
+    read: number;
+    failed: number;
+    inboundMessages: number;
+    uniqueInboundContacts: number;
+    deliveryRate: number | null;
+    readRate: number | null;
+    failureRate: number | null;
+  };
+  trend: {
+    day: string;
+    sends: number;
+    delivered: number;
+    read: number;
+    failed: number;
+    inbound: number;
+  }[];
+  failureReasons: { reason: string; count: number }[];
+  campaignCount: number;
+}
+
 // ----------------------------------------
 
 const API_BASE_URL =
@@ -6680,6 +6799,56 @@ class AdminApi {
       return response.data;
     } catch (error: any) {
       return { success: false, message: this.getAxiosErrorMessage(error, 'Failed to remove call log') };
+    }
+  };
+
+  public getGrowthOverview = async (
+    days: number,
+  ): Promise<GrowthOverview | null> => {
+    try {
+      const response = await this.client.get("/admin/growth/overview", {
+        params: { days },
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Growth overview failed", error);
+      return null;
+    }
+  };
+
+  public getGrowthTemplates = async (
+    days: number,
+  ): Promise<GrowthTemplateStat[]> => {
+    try {
+      const response = await this.client.get("/admin/growth/templates", {
+        params: { days },
+      });
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      console.error("Growth templates failed", error);
+      return [];
+    }
+  };
+
+  public getGrowthCampaigns = async (): Promise<GrowthCampaign[]> => {
+    try {
+      const response = await this.client.get("/admin/growth/campaigns");
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      console.error("Growth campaigns failed", error);
+      return [];
+    }
+  };
+
+  public getGrowthCampaign = async (
+    id: string,
+  ): Promise<GrowthCampaignDetail | null> => {
+    try {
+      const response = await this.client.get(`/admin/growth/campaigns/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error("Growth campaign detail failed", error);
+      return null;
     }
   };
 }
