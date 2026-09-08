@@ -19,7 +19,11 @@ export default function AdminAccessGate({
   const router = useRouter();
   const { isAuthenticated, loading, accessProfile, canAccessSection } = useAdmin();
 
-  const isCrmRoute = pathname === '/crm' || pathname.startsWith('/crm/');
+  const isCrmRoute =
+    pathname === '/crm' ||
+    pathname.startsWith('/crm/') ||
+    pathname === '/leads' ||
+    pathname.startsWith('/leads/');
 
   useEffect(() => {
     if (loading) return;
@@ -62,8 +66,8 @@ export default function AdminAccessGate({
   if (isCrmRoute && !isAuthenticated) {
     return (
       <AdminLoginForm
-        title="MandiPlus CRM Sign in"
-        subtitle="Sign in to access the CRM portal"
+        title={pathname.startsWith('/leads') ? 'MandiPlus Leads Sign in' : 'MandiPlus CRM Sign in'}
+        subtitle={pathname.startsWith('/leads') ? 'Sign in to access the Leads portal' : 'Sign in to access the CRM portal'}
         defaultRedirect={pathname}
       />
     );
