@@ -122,11 +122,53 @@ export async function getLeadReport(
   return response.data;
 }
 
+export interface LeadViewerInfo {
+  assigneeUserId: string | null;
+  assigneeName: string | null;
+  isManager: boolean;
+  dailyTarget: number;
+}
+
+export interface TodayPlan {
+  userId: string | null;
+  name: string | null;
+  target: number;
+  covered: number;
+  callsToday: number;
+  remaining: number;
+  pending: number;
+  sections: {
+    overdue: LeadRecord[];
+    dueToday: LeadRecord[];
+    retry: LeadRecord[];
+    fresh: LeadRecord[];
+  };
+  queue: LeadRecord[];
+}
+
+export async function getTodayPlan(userId?: string): Promise<TodayPlan> {
+  const response = await axios.get(`${API_BASE_URL}/leads/admin/today`, {
+    params: userId ? { userId } : undefined,
+    headers: getAdminHeaders(),
+  });
+  return response.data;
+}
+
+export async function setDailyTarget(userId: string, dailyTarget: number) {
+  const response = await axios.patch(
+    `${API_BASE_URL}/leads/admin/targets/${userId}`,
+    { dailyTarget },
+    { headers: { ...getAdminHeaders(), 'Content-Type': 'application/json' } },
+  );
+  return response.data;
+}
+
 export async function getLeadsBootstrap(): Promise<{
   team: LeadTeamMember[];
   batches: LeadBatchSummary[];
   commodities: LeadCommodity[];
   regions: string[];
+  viewer: LeadViewerInfo;
 }> {
   const response = await axios.get(`${API_BASE_URL}/leads/admin/bootstrap`, {
     headers: getAdminHeaders(),

@@ -18,7 +18,9 @@ import {
   getLeadReport,
   getLeads,
   getLeadsBootstrap,
+  getTodayPlan,
   logLeadCall,
+  setDailyTarget,
   updateLead,
   type LeadBatchSummary,
   type LeadCommodity,
@@ -27,6 +29,8 @@ import {
   type LeadReport,
   type LeadStatus,
   type LeadTeamMember,
+  type LeadViewerInfo,
+  type TodayPlan,
 } from "@/features/leads/api";
 
 const ACCENT = "#4309ac";
@@ -52,7 +56,7 @@ const DISPOSITIONS: LeadStatus[] = [
   "INVALID",
 ];
 
-type Tab = "leads" | "mandiplus" | "converted" | "closed" | "reports";
+type Tab = "today" | "leads" | "mandiplus" | "converted" | "closed" | "reports";
 
 const ACTIVE_STATUSES: LeadStatus[] = [
   "NEW",
@@ -106,7 +110,7 @@ export default function LeadsPage() {
   const [regions, setRegions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [tab, setTab] = useState<Tab>("leads");
+  const [tab, setTab] = useState<Tab>("today");
   const [viewAs, setViewAs] = useState<string>("");
   const [viewAsResolved, setViewAsResolved] = useState(false);
   const [search, setSearch] = useState("");
@@ -127,6 +131,13 @@ export default function LeadsPage() {
   const [callFollowUpDate, setCallFollowUpDate] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const [viewer, setViewer] = useState<LeadViewerInfo | null>(null);
+  const [plan, setPlan] = useState<TodayPlan | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planFor, setPlanFor] = useState<string>("");
+  const [focusIndex, setFocusIndex] = useState<number | null>(null);
+  const [targetDraft, setTargetDraft] = useState<string>("");
+
   const [report, setReport] = useState<LeadReport | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportFrom, setReportFrom] = useState(() =>
@@ -144,7 +155,13 @@ export default function LeadsPage() {
       setCommodities(bootstrap.commodities);
       setBatches(bootstrap.batches);
       setRegions(bootstrap.regions);
+      setViewer(bootstrap.viewer);
       setLeads(data);
+      if (bootstrap.viewer && !bootstrap.viewer.isManager) {
+        // A caller only ever receives their own leads, so no client filter.
+        setViewAs("");
+        setViewAsResolved(true);
+      }
     } catch {
       toast.error("Could not load leads");
     } finally {
@@ -169,13 +186,14 @@ export default function LeadsPage() {
   // First visit: default to the signed-in person's own leads, matched on mobile.
   useEffect(() => {
     if (viewAsResolved || !team.length) return;
+    if (viewer && !viewer.isManager) return;
     const mine = last10(accessProfile?.account?.mobileNumber);
     const match = mine
       ? team.find((member) => last10(member.mobileNumber) === mine)
       : undefined;
     if (match) setViewAs(match.id);
     setViewAsResolved(true);
-  }, [accessProfile, team, viewAsResolved]);
+  }, [accessProfile, team, viewAsResolved, viewer]);
 
   useEffect(() => {
     if (tab !== "reports") return;
@@ -195,6 +213,28 @@ export default function LeadsPage() {
       cancelled = true;
     };
   }, [tab, reportFrom, reportTo]);
+
+  const loadPlan = useCallback(
+    async (userId?: string) => {
+      setPlanLoading(true);
+      try {
+        const data = await getTodayPlan(userId || undefined);
+        setPlan(data);
+        setTargetDraft(String(data.target));
+      } catch {
+        toast.error("Could not load today's plan");
+      } finally {
+        setPlanLoading(false);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (tab !== "today" || !viewer) return;
+    if (viewer.isManager && !planFor) return;
+    loadPlan(viewer.isManager ? planFor : undefined);
+  }, [tab, viewer, planFor, loadPlan]);
 
   const changeViewAs = (value: string) => {
     setViewAs(value);
@@ -355,6 +395,65 @@ export default function LeadsPage() {
       await refreshLeads();
     } catch {
       toast.error("Could not reassign");
+    }
+  };
+
+  const focusQueue = plan?.queue ?? [];
+  const focusLead =
+    focusIndex !== null ? (focusQueue[focusIndex] ?? null) : null;
+
+  const startFocus = () => {
+    if (!focusQueue.length) return;
+    setFocusIndex(0);
+    setCallDisposition(null);
+    setCallNote("");
+    setCallFollowUpDate("");
+  };
+
+  const submitFocusCall = async () => {
+    if (!focusLead || !callDisposition) return;
+    if (callDisposition === "FOLLOW_UP" && !callFollowUpDate) {
+      toast.error("Pick a follow-up date");
+      return;
+    }
+    setSaving(true);
+    try {
+      await logLeadCall(focusLead.id, {
+        disposition: callDisposition,
+        note: callNote.trim() || undefined,
+        nextFollowUpAt:
+          callDisposition === "FOLLOW_UP" ? callFollowUpDate : undefined,
+      });
+      setCallDisposition(null);
+      setCallNote("");
+      setCallFollowUpDate("");
+      setFocusIndex((i) => (i === null ? null : i + 1));
+      // The plan and the board move on in the background; the queue in hand
+      // stays put so the caller is never re-ordered mid-session.
+      refreshLeads();
+      getTodayPlan(viewer?.isManager ? planFor || undefined : undefined)
+        .then((data) => setPlan((prev) => (prev ? { ...data, queue: prev.queue } : data)))
+        .catch(() => undefined);
+    } catch {
+      toast.error("Could not log the call");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveTarget = async () => {
+    const value = Number(targetDraft);
+    const userId = plan?.userId;
+    if (!userId || !Number.isFinite(value) || value < 1 || value > 500) {
+      toast.error("Target must be between 1 and 500");
+      return;
+    }
+    try {
+      await setDailyTarget(userId, Math.round(value));
+      await loadPlan(viewer?.isManager ? planFor : undefined);
+      toast.success("Target updated");
+    } catch {
+      toast.error("Could not update the target");
     }
   };
 
@@ -546,6 +645,7 @@ export default function LeadsPage() {
           <div className="flex w-max min-w-full gap-1 border-b border-gray-100">
             {(
               [
+                ["today", "Today"],
                 ["leads", "Leads"],
                 ["mandiplus", "On Mandiplus"],
                 ["converted", "Converted"],
@@ -565,9 +665,9 @@ export default function LeadsPage() {
                 style={tab === key ? { borderColor: ACCENT } : undefined}
               >
                 {label}
-                {key !== "reports" && (
+                {key !== "reports" && key !== "today" && (
                   <span className="ml-1.5 text-xs tabular-nums text-gray-400">
-                    {tabCounts[key]}
+                    {tabCounts[key as keyof typeof tabCounts]}
                   </span>
                 )}
               </button>
@@ -575,7 +675,157 @@ export default function LeadsPage() {
           </div>
         </nav>
 
-        {tab === "reports" ? (
+        {tab === "today" ? (
+          <section className="py-5">
+            {viewer?.isManager && (
+              <select
+                aria-label="Whose day"
+                value={planFor}
+                onChange={(e) => setPlanFor(e.target.value)}
+                className={`${selectClass} mb-4`}
+              >
+                <option value="">Pick a team member</option>
+                {team.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {viewer?.isManager && !planFor ? (
+              <p className="py-16 text-center text-sm text-gray-400">
+                Pick a team member to see their day
+              </p>
+            ) : planLoading || !plan ? (
+              <div className="space-y-3">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="h-20 animate-pulse rounded-2xl bg-gray-50" />
+                ))}
+              </div>
+            ) : (
+              <>
+                <div className="rounded-2xl border border-gray-100 p-4 sm:flex sm:items-center sm:gap-4">
+                  <div className="flex items-center gap-4 sm:flex-1">
+                    <ProgressRing value={plan.covered} max={plan.target} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-base font-semibold">
+                        {plan.covered} of {plan.target} covered today
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {plan.callsToday} {plan.callsToday === 1 ? "call" : "calls"} made
+                        {" · "}
+                        {plan.pending} left in the queue
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={startFocus}
+                    disabled={!plan.queue.length}
+                    className="mt-4 h-12 w-full shrink-0 rounded-full px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 sm:mt-0 sm:h-11 sm:w-auto"
+                    style={{ backgroundColor: ACCENT }}
+                  >
+                    {plan.queue.length ? "Start calling" : "All done"}
+                  </button>
+                </div>
+
+                {viewer?.isManager && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <label className="text-xs text-gray-500" htmlFor="target">
+                      Daily target
+                    </label>
+                    <input
+                      id="target"
+                      type="number"
+                      min={1}
+                      max={500}
+                      value={targetDraft}
+                      onChange={(e) => setTargetDraft(e.target.value)}
+                      className="h-9 w-20 rounded-full border border-gray-200 px-3 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#4309ac]/30"
+                    />
+                    <button
+                      type="button"
+                      onClick={saveTarget}
+                      className="h-9 rounded-full border border-gray-200 px-4 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      Save
+                    </button>
+                  </div>
+                )}
+
+                {plan.queue.length === 0 ? (
+                  <p className="py-16 text-center text-sm text-gray-400">
+                    Nothing left to call today
+                  </p>
+                ) : (
+                  <div className="mt-6 space-y-6">
+                    {(
+                      [
+                        ["overdue", "Overdue callbacks", "text-red-600"],
+                        ["dueToday", "Due today", "text-amber-600"],
+                        ["retry", "Try again", "text-orange-600"],
+                        ["fresh", "New leads", "text-gray-900"],
+                      ] as const
+                    ).map(([key, label, tone]) => {
+                      const list = plan.sections[key];
+                      if (!list.length) return null;
+                      return (
+                        <div key={key}>
+                          <h2 className={`mb-2 text-sm font-semibold ${tone}`}>
+                            {label}
+                            <span className="ml-1.5 text-xs font-normal tabular-nums text-gray-400">
+                              {list.length}
+                            </span>
+                          </h2>
+                          <div className="divide-y divide-gray-100">
+                            {list.map((lead) => (
+                              <div
+                                key={lead.id}
+                                className="flex items-center justify-between gap-3 py-3"
+                              >
+                                <div className="min-w-0">
+                                  <p className="truncate font-medium">
+                                    {lead.displayName}
+                                  </p>
+                                  <p className="truncate text-xs text-gray-400">
+                                    {lead.phones[0]?.e164.replace("+91", "") ?? "—"}
+                                    {lead.attemptCount > 0
+                                      ? ` · ${lead.attemptCount} ${lead.attemptCount === 1 ? "attempt" : "attempts"}`
+                                      : ""}
+                                  </p>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1.5">
+                                  {lead.phones[0] && (
+                                    <a
+                                      href={`tel:${lead.phones[0].e164}`}
+                                      aria-label="Call"
+                                      className="flex size-10 items-center justify-center rounded-full border border-gray-200 text-gray-600 active:bg-gray-50"
+                                    >
+                                      <Phone className="size-4" />
+                                    </a>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => openCallSheet(lead)}
+                                    className="h-10 rounded-full px-4 text-sm font-medium text-white"
+                                    style={{ backgroundColor: ACCENT }}
+                                  >
+                                    Log
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        ) : tab === "reports" ? (
           <section className="py-5">
             <div className="mb-5 flex flex-wrap items-center gap-2">
               <input
@@ -765,19 +1015,21 @@ export default function LeadsPage() {
             </section>
 
             <section className="flex flex-wrap items-center gap-2 pb-4">
-              <select
-                aria-label="Team member"
-                value={viewAs}
-                onChange={(e) => changeViewAs(e.target.value)}
-                className={`${selectClass} ${viewAs ? "border-[#4309ac]/40 text-[#4309ac]" : ""}`}
-              >
-                <option value="">Everyone</option>
-                {team.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.name}
-                  </option>
-                ))}
-              </select>
+              {viewer?.isManager && (
+                <select
+                  aria-label="Team member"
+                  value={viewAs}
+                  onChange={(e) => changeViewAs(e.target.value)}
+                  className={`${selectClass} ${viewAs ? "border-[#4309ac]/40 text-[#4309ac]" : ""}`}
+                >
+                  <option value="">Everyone</option>
+                  {team.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name}
+                    </option>
+                  ))}
+                </select>
+              )}
               <div className="relative min-w-0 flex-1 basis-40">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-gray-400" />
                 <input
@@ -1133,6 +1385,176 @@ export default function LeadsPage() {
         )}
       </main>
 
+      {focusLead && (
+        <div className="fixed inset-0 z-40 flex flex-col bg-white">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+            <div className="text-sm tabular-nums text-gray-500">
+              {(focusIndex ?? 0) + 1} of {focusQueue.length}
+            </div>
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={() => setFocusIndex(null)}
+              className="flex size-9 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-5 pb-6 pt-6">
+            <h2 className="text-xl font-semibold">{focusLead.displayName}</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              {[
+                focusLead.region,
+                commodityLabel(focusLead.commodityCode),
+                focusLead.role
+                  ? focusLead.role.charAt(0) + focusLead.role.slice(1).toLowerCase()
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+            {focusLead.attemptCount > 0 && (
+              <p className="mt-1 text-xs text-gray-400">
+                {focusLead.attemptCount}{" "}
+                {focusLead.attemptCount === 1 ? "previous attempt" : "previous attempts"}
+              </p>
+            )}
+            {focusLead.review && (
+              <p className="mt-3 rounded-2xl bg-gray-50 p-3 text-sm text-gray-600">
+                {focusLead.review}
+              </p>
+            )}
+
+            <div className="mt-5 flex gap-2">
+              {focusLead.phones[0] && (
+                <a
+                  href={`tel:${focusLead.phones[0].e164}`}
+                  className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl text-base font-semibold text-white"
+                  style={{ backgroundColor: ACCENT }}
+                >
+                  <Phone className="size-5" />
+                  {focusLead.phones[0].e164.replace("+91", "")}
+                </a>
+              )}
+              {focusLead.phones[0] && !focusLead.phones[0].isLandline && (
+                <a
+                  href={`https://wa.me/${focusLead.phones[0].e164.replace("+", "")}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label="WhatsApp"
+                  className="flex size-14 items-center justify-center rounded-2xl border border-gray-200 text-emerald-600"
+                >
+                  <MessageCircle className="size-5" />
+                </a>
+              )}
+            </div>
+            {focusLead.phones.length > 1 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {focusLead.phones.slice(1).map((phone) => (
+                  <a
+                    key={phone.e164}
+                    href={`tel:${phone.e164}`}
+                    className="rounded-full border border-gray-200 px-3 py-1.5 text-xs tabular-nums text-gray-600"
+                  >
+                    {phone.e164.replace("+91", "")}
+                    {phone.isLandline ? " · landline" : ""}
+                  </a>
+                ))}
+              </div>
+            )}
+
+            <p className="mb-2 mt-6 text-xs font-medium text-gray-400">
+              How did it go?
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {DISPOSITIONS.map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  onClick={() => setCallDisposition(status)}
+                  className={`h-12 rounded-full border text-sm font-medium ${
+                    callDisposition === status
+                      ? "border-transparent text-white"
+                      : "border-gray-200 text-gray-700"
+                  }`}
+                  style={
+                    callDisposition === status
+                      ? { backgroundColor: ACCENT }
+                      : undefined
+                  }
+                >
+                  {STATUS_META[status].label}
+                </button>
+              ))}
+            </div>
+            {callDisposition === "FOLLOW_UP" && (
+              <input
+                type="date"
+                aria-label="Follow-up date"
+                value={callFollowUpDate}
+                onChange={(e) => setCallFollowUpDate(e.target.value)}
+                min={new Date().toISOString().slice(0, 10)}
+                className="mt-3 h-12 w-full rounded-full border border-gray-200 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#4309ac]/30"
+              />
+            )}
+            <textarea
+              value={callNote}
+              onChange={(e) => setCallNote(e.target.value)}
+              placeholder="Note (optional)"
+              rows={2}
+              className="mt-3 w-full rounded-2xl border border-gray-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#4309ac]/30"
+            />
+          </div>
+
+          <div
+            className="border-t border-gray-100 px-5 pt-3"
+            style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+          >
+            <button
+              type="button"
+              disabled={!callDisposition || saving}
+              onClick={submitFocusCall}
+              className="h-12 w-full rounded-full text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ backgroundColor: ACCENT }}
+            >
+              {saving
+                ? "Saving…"
+                : (focusIndex ?? 0) + 1 < focusQueue.length
+                  ? "Save and next"
+                  : "Save and finish"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFocusIndex((i) => (i === null ? null : i + 1))}
+              className="mt-1 h-10 w-full rounded-full text-sm text-gray-500"
+            >
+              Skip
+            </button>
+          </div>
+        </div>
+      )}
+
+      {focusIndex !== null && !focusLead && (
+        <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-white px-6 text-center">
+          <p className="text-lg font-semibold">Queue finished</p>
+          <p className="text-sm text-gray-500">
+            {plan ? `${plan.covered} of ${plan.target} covered today` : ""}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setFocusIndex(null);
+              loadPlan(viewer?.isManager ? planFor : undefined);
+            }}
+            className="h-11 rounded-full px-6 text-sm font-semibold text-white"
+            style={{ backgroundColor: ACCENT }}
+          >
+            Done
+          </button>
+        </div>
+      )}
+
       {callLead && (
         <div
           className="fixed inset-0 z-30 flex items-end justify-center bg-black/20 sm:items-center sm:p-4"
@@ -1217,4 +1639,36 @@ export default function LeadsPage() {
 
 function FragmentRow({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
+}
+
+function ProgressRing({ value, max }: { value: number; max: number }) {
+  const pct = max > 0 ? Math.min(1, value / max) : 0;
+  const r = 26;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">
+      <circle cx="32" cy="32" r={r} fill="none" stroke="#f1f1f4" strokeWidth="6" />
+      <circle
+        cx="32"
+        cy="32"
+        r={r}
+        fill="none"
+        stroke={ACCENT}
+        strokeWidth="6"
+        strokeLinecap="round"
+        strokeDasharray={`${c * pct} ${c}`}
+        transform="rotate(-90 32 32)"
+      />
+      <text
+        x="32"
+        y="36"
+        textAnchor="middle"
+        fontSize="15"
+        fontWeight="600"
+        fill="#111"
+      >
+        {Math.round(pct * 100)}%
+      </text>
+    </svg>
+  );
 }
