@@ -137,9 +137,10 @@ export interface TodayPlan {
   callsToday: number;
   remaining: number;
   pending: number;
+  scheduledLater: number;
   sections: {
-    overdue: LeadRecord[];
-    dueToday: LeadRecord[];
+    dueNow: LeadRecord[];
+    laterToday: LeadRecord[];
     retry: LeadRecord[];
     fresh: LeadRecord[];
   };

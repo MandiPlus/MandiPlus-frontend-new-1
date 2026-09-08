@@ -88,12 +88,29 @@ function followUpBucket(lead: LeadRecord): "overdue" | "today" | null {
   return null;
 }
 
-function formatDate(value: string | null) {
+/** "6:00 pm" for today, "9 Sep, 6:00 pm" otherwise. */
+function formatWhen(value: string | null) {
   if (!value) return "—";
-  return new Date(value).toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "short",
+  const d = new Date(value);
+  const time = d.toLocaleTimeString("en-IN", {
+    hour: "numeric",
+    minute: "2-digit",
   });
+  if (startOfDay(d).getTime() === startOfDay(new Date()).getTime()) return time;
+  return `${d.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}, ${time}`;
+}
+
+/** A local datetime-local value ("2026-09-09T18:00") for an offset from now. */
+function localInputValue(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function atTime(dayOffset: number, hour: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + dayOffset);
+  d.setHours(hour, 0, 0, 0);
+  return d;
 }
 
 function last10(value: string | null | undefined) {
@@ -235,6 +252,24 @@ export default function LeadsPage() {
     if (viewer.isManager && !planFor) return;
     loadPlan(viewer.isManager ? planFor : undefined);
   }, [tab, viewer, planFor, loadPlan]);
+
+  // Keeps the day honest: a 6pm callback climbs into "Call now" on its own,
+  // without the caller thinking to reload.
+  useEffect(() => {
+    if (tab !== "today" || !viewer) return;
+    if (viewer.isManager && !planFor) return;
+    if (focusIndex !== null) return;
+    const target = viewer.isManager ? planFor : undefined;
+    const tick = () => {
+      if (document.visibilityState === "visible") loadPlan(target);
+    };
+    const timer = window.setInterval(tick, 60_000);
+    window.addEventListener("focus", tick);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", tick);
+    };
+  }, [tab, viewer, planFor, focusIndex, loadPlan]);
 
   const changeViewAs = (value: string) => {
     setViewAs(value);
@@ -413,7 +448,7 @@ export default function LeadsPage() {
   const submitFocusCall = async () => {
     if (!focusLead || !callDisposition) return;
     if (callDisposition === "FOLLOW_UP" && !callFollowUpDate) {
-      toast.error("Pick a follow-up date");
+      toast.error("Pick a follow-up time");
       return;
     }
     setSaving(true);
@@ -422,7 +457,9 @@ export default function LeadsPage() {
         disposition: callDisposition,
         note: callNote.trim() || undefined,
         nextFollowUpAt:
-          callDisposition === "FOLLOW_UP" ? callFollowUpDate : undefined,
+          callDisposition === "FOLLOW_UP"
+            ? new Date(callFollowUpDate).toISOString()
+            : undefined,
       });
       setCallDisposition(null);
       setCallNote("");
@@ -457,6 +494,49 @@ export default function LeadsPage() {
     }
   };
 
+  const followUpChips: { label: string; value: Date }[] = (() => {
+    const now = new Date();
+    const chips: { label: string; value: Date }[] = [
+      { label: "In 2 hours", value: new Date(now.getTime() + 2 * 60 * 60 * 1000) },
+    ];
+    if (now.getHours() < 17) chips.push({ label: "Today 6pm", value: atTime(0, 18) });
+    chips.push({ label: "Tomorrow 11am", value: atTime(1, 11) });
+    chips.push({ label: "Tomorrow 5pm", value: atTime(1, 17) });
+    return chips;
+  })();
+
+  const renderFollowUpPicker = () => (
+    <div className="mt-3">
+      <div className="mb-2 flex flex-wrap gap-2">
+        {followUpChips.map((chip) => {
+          const value = localInputValue(chip.value);
+          const active = callFollowUpDate === value;
+          return (
+            <button
+              key={chip.label}
+              type="button"
+              onClick={() => setCallFollowUpDate(value)}
+              className={`h-9 rounded-full border px-3 text-xs font-medium ${
+                active ? "border-transparent text-white" : "border-gray-200 text-gray-700"
+              }`}
+              style={active ? { backgroundColor: ACCENT } : undefined}
+            >
+              {chip.label}
+            </button>
+          );
+        })}
+      </div>
+      <input
+        type="datetime-local"
+        aria-label="Follow-up time"
+        value={callFollowUpDate}
+        onChange={(e) => setCallFollowUpDate(e.target.value)}
+        min={localInputValue(new Date())}
+        className="h-12 w-full rounded-full border border-gray-200 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#4309ac]/30"
+      />
+    </div>
+  );
+
   const openCallSheet = (lead: LeadRecord) => {
     setCallLead(lead);
     setCallDisposition(null);
@@ -467,7 +547,7 @@ export default function LeadsPage() {
   const submitCall = async () => {
     if (!callLead || !callDisposition) return;
     if (callDisposition === "FOLLOW_UP" && !callFollowUpDate) {
-      toast.error("Pick a follow-up date");
+      toast.error("Pick a follow-up time");
       return;
     }
     setSaving(true);
@@ -476,7 +556,9 @@ export default function LeadsPage() {
         disposition: callDisposition,
         note: callNote.trim() || undefined,
         nextFollowUpAt:
-          callDisposition === "FOLLOW_UP" ? callFollowUpDate : undefined,
+          callDisposition === "FOLLOW_UP"
+            ? new Date(callFollowUpDate).toISOString()
+            : undefined,
       });
       setCallLead(null);
       await refreshLeads();
@@ -715,7 +797,10 @@ export default function LeadsPage() {
                       <p className="text-xs text-gray-500">
                         {plan.callsToday} {plan.callsToday === 1 ? "call" : "calls"} made
                         {" · "}
-                        {plan.pending} left in the queue
+                        {plan.pending} to call now
+                        {plan.scheduledLater > 0
+                          ? ` · ${plan.scheduledLater} later today`
+                          : ""}
                       </p>
                     </div>
                   </div>
@@ -762,8 +847,8 @@ export default function LeadsPage() {
                   <div className="mt-6 space-y-6">
                     {(
                       [
-                        ["overdue", "Overdue callbacks", "text-red-600"],
-                        ["dueToday", "Due today", "text-amber-600"],
+                        ["dueNow", "Call now", "text-red-600"],
+                        ["laterToday", "Later today", "text-amber-600"],
                         ["retry", "Try again", "text-orange-600"],
                         ["fresh", "New leads", "text-gray-900"],
                       ] as const
@@ -789,6 +874,18 @@ export default function LeadsPage() {
                                     {lead.displayName}
                                   </p>
                                   <p className="truncate text-xs text-gray-400">
+                                    {lead.nextFollowUpAt && (
+                                      <span
+                                        className={
+                                          key === "laterToday"
+                                            ? "font-medium text-amber-600"
+                                            : "font-medium text-red-600"
+                                        }
+                                      >
+                                        {formatWhen(lead.nextFollowUpAt)}
+                                        {" · "}
+                                      </span>
+                                    )}
                                     {lead.phones[0]?.e164.replace("+91", "") ?? "—"}
                                     {lead.attemptCount > 0
                                       ? ` · ${lead.attemptCount} ${lead.attemptCount === 1 ? "attempt" : "attempts"}`
@@ -1217,7 +1314,7 @@ export default function LeadsPage() {
                                       : ""
                                 }`}
                               >
-                                {formatDate(lead.nextFollowUpAt)}
+                                {formatWhen(lead.nextFollowUpAt)}
                               </span>
                             )}
                             <ChevronDown
@@ -1336,7 +1433,7 @@ export default function LeadsPage() {
                                         : "text-gray-500"
                                   }`}
                                 >
-                                  {formatDate(lead.nextFollowUpAt)}
+                                  {formatWhen(lead.nextFollowUpAt)}
                                 </span>
                               </td>
                               <td className="border-b border-gray-50 px-3 py-3 text-gray-600">
@@ -1488,16 +1585,7 @@ export default function LeadsPage() {
                 </button>
               ))}
             </div>
-            {callDisposition === "FOLLOW_UP" && (
-              <input
-                type="date"
-                aria-label="Follow-up date"
-                value={callFollowUpDate}
-                onChange={(e) => setCallFollowUpDate(e.target.value)}
-                min={new Date().toISOString().slice(0, 10)}
-                className="mt-3 h-12 w-full rounded-full border border-gray-200 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#4309ac]/30"
-              />
-            )}
+            {callDisposition === "FOLLOW_UP" && renderFollowUpPicker()}
             <textarea
               value={callNote}
               onChange={(e) => setCallNote(e.target.value)}
@@ -1604,16 +1692,7 @@ export default function LeadsPage() {
                 </button>
               ))}
             </div>
-            {callDisposition === "FOLLOW_UP" && (
-              <input
-                type="date"
-                aria-label="Follow-up date"
-                value={callFollowUpDate}
-                onChange={(e) => setCallFollowUpDate(e.target.value)}
-                min={new Date().toISOString().slice(0, 10)}
-                className="mt-3 h-11 w-full rounded-full border border-gray-200 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#4309ac]/30"
-              />
-            )}
+            {callDisposition === "FOLLOW_UP" && renderFollowUpPicker()}
             <textarea
               value={callNote}
               onChange={(e) => setCallNote(e.target.value)}
