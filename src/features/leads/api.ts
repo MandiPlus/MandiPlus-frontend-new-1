@@ -769,3 +769,16 @@ export async function fetchRecording(callSid: string): Promise<string> {
   return URL.createObjectURL(response.data);
 }
 
+
+/** One lead, typed in by hand. Available to callers, not just managers. */
+export async function addLead(payload: {
+  name: string;
+  phone: string;
+  commodityCode?: string;
+  region?: string;
+}): Promise<{ inserted: number; merged: number; invalidPhones: string[] }> {
+  const response = await axios.post(`${API_BASE_URL}/leads/admin/add`, payload, {
+    headers: { ...getAdminHeaders(), 'Content-Type': 'application/json' },
+  });
+  return response.data;
+}

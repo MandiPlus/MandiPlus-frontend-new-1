@@ -15,6 +15,7 @@ import "react-toastify/dist/ReactToastify.css";
 import { useAdmin } from "@/features/admin/context/AdminContext";
 import BuyerDetailsSheet from "@/features/leads/components/BuyerDetailsSheet";
 import CommandCenter from "@/features/leads/components/CommandCenter";
+import AddLeadForm from "@/features/leads/components/AddLeadForm";
 import CallsBoard from "@/features/leads/components/CallsBoard";
 import LeadCallHistory from "@/features/leads/components/LeadCallHistory";
 import OverviewBoard from "@/features/leads/components/OverviewBoard";
@@ -691,7 +692,7 @@ export default function LeadsPage() {
     ["closed", "Closed"],
     ["calls", "Calls"],
     ["reports", "Reports"],
-    ...(viewer?.isManager ? ([["ingest", "Add data"]] as [Tab, string][]) : []),
+    ["ingest", "Add data"],
   ];
   const sectionCount = (key: Tab) =>
     key === "reports" ||
@@ -924,14 +925,26 @@ export default function LeadsPage() {
             />
           </div>
         ) : tab === "ingest" ? (
-          <IngestPanel
-            team={team}
-            commodities={commodities}
-            onImported={() => {
-              refreshLeads();
-              loadAll();
-            }}
-          />
+          viewer && !viewer.isManager ? (
+            <div className="py-6">
+              <AddLeadForm
+                commodities={commodities}
+                onAdded={() => {
+                  refreshLeads();
+                  loadAll();
+                }}
+              />
+            </div>
+          ) : (
+            <IngestPanel
+              team={team}
+              commodities={commodities}
+              onImported={() => {
+                refreshLeads();
+                loadAll();
+              }}
+            />
+          )
         ) : tab === "today" ? (
           <section className="py-5">
             <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
