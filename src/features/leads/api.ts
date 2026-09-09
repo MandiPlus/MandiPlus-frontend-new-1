@@ -431,3 +431,69 @@ export async function ingestLeads(payload: IngestPayload): Promise<{
   );
   return response.data;
 }
+
+export interface CommandAlert {
+  key: string;
+  severity: 'red' | 'amber' | 'fire';
+  count: number;
+  label: string;
+  detail?: string;
+}
+
+export interface CommandCenterData {
+  kpis: {
+    totalLeads: number;
+    platformUsers: number;
+    callsToday: number;
+    callsYesterday: number;
+    connectsToday: number;
+    connectsYesterday: number;
+    hot: number;
+    converted: number;
+  };
+  runway: {
+    freshRemaining: number;
+    dailyCapacity: number;
+    days: number | null;
+  };
+  attention: CommandAlert[];
+  funnel: {
+    stages: { key: string; label: string; count: number }[];
+    worstDrop: string | null;
+    inFollowUp: number;
+  };
+  team: TeamMemberDay[];
+  teamTotals: { target: number; covered: number; callsToday: number };
+  quality: {
+    levels: { level: number; count: number }[];
+    sources: {
+      source: string;
+      leads: number;
+      wrongNumbers: number;
+      confirmed: number;
+      warm: number;
+    }[];
+  };
+  campaign: {
+    audienceReady: number;
+    sent: number;
+    sentToday: number;
+    hotAudience: number;
+  };
+  opportunities: {
+    id: string;
+    name: string;
+    status: LeadStatus;
+    assignee: string | null;
+    dailyVehicles: number | null;
+    buyingVolume: string | null;
+    mandi: string | null;
+  }[];
+}
+
+export async function getCommandCenter(): Promise<CommandCenterData> {
+  const response = await axios.get(`${API_BASE_URL}/leads/admin/command`, {
+    headers: getAdminHeaders(),
+  });
+  return response.data;
+}

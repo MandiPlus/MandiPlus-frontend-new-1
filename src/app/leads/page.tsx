@@ -14,10 +14,12 @@ import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useAdmin } from "@/features/admin/context/AdminContext";
 import BuyerDetailsSheet from "@/features/leads/components/BuyerDetailsSheet";
+import CommandCenter from "@/features/leads/components/CommandCenter";
 import IngestPanel from "@/features/leads/components/IngestPanel";
 import {
   getLeadEvents,
   getLeadReport,
+  getCommandCenter,
   getLeads,
   getLeadsBootstrap,
   getTodayPlan,
@@ -32,6 +34,7 @@ import {
   REJECTION_REASONS,
   VERIFICATION_LEVELS,
   type LeadTeamMember,
+  type CommandCenterData,
   type LeadViewerInfo,
   type RejectionReason,
   type TodayPlan,
@@ -177,6 +180,8 @@ export default function LeadsPage() {
   const [plan, setPlan] = useState<TodayPlan | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
   const [planFor, setPlanFor] = useState<string>("");
+  const [command, setCommand] = useState<CommandCenterData | null>(null);
+  const [commandLoading, setCommandLoading] = useState(false);
   const [focusIndex, setFocusIndex] = useState<number | null>(null);
 
   const [report, setReport] = useState<LeadReport | null>(null);
@@ -270,10 +275,25 @@ export default function LeadsPage() {
     [],
   );
 
+  const loadCommand = useCallback(async () => {
+    setCommandLoading(true);
+    try {
+      setCommand(await getCommandCenter());
+    } catch {
+      toast.error("Could not load the command center");
+    } finally {
+      setCommandLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (tab !== "today" || !viewer) return;
+    if (viewer.isManager && !planFor) {
+      loadCommand();
+      return;
+    }
     loadPlan(viewer.isManager ? planFor : undefined);
-  }, [tab, viewer, planFor, loadPlan]);
+  }, [tab, viewer, planFor, loadPlan, loadCommand]);
 
   // Keeps the day honest: a 6pm callback climbs into "Call now" on its own,
   // without the caller thinking to reload.
@@ -282,7 +302,9 @@ export default function LeadsPage() {
     if (focusIndex !== null) return;
     const target = viewer.isManager ? planFor : undefined;
     const tick = () => {
-      if (document.visibilityState === "visible") loadPlan(target);
+      if (document.visibilityState !== "visible") return;
+      if (viewer.isManager && !planFor) loadCommand();
+      else loadPlan(target);
     };
     const timer = window.setInterval(tick, 60_000);
     window.addEventListener("focus", tick);
@@ -290,7 +312,7 @@ export default function LeadsPage() {
       window.clearInterval(timer);
       window.removeEventListener("focus", tick);
     };
-  }, [tab, viewer, planFor, focusIndex, loadPlan]);
+  }, [tab, viewer, planFor, focusIndex, loadPlan, loadCommand]);
 
   const changeViewAs = (value: string) => {
     setViewAs(value);
@@ -866,7 +888,17 @@ export default function LeadsPage() {
               </select>
             )}
 
-            {planLoading || !plan ? (
+            {viewer?.isManager && !planFor ? (
+              commandLoading || !command ? (
+                <div className="space-y-3">
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className="h-20 animate-pulse rounded-2xl bg-gray-50" />
+                  ))}
+                </div>
+              ) : (
+                <CommandCenter data={command} onPickMember={setPlanFor} />
+              )
+            ) : planLoading || !plan ? (
               <div className="space-y-3">
                 {[...Array(3)].map((_, i) => (
                   <div key={i} className="h-20 animate-pulse rounded-2xl bg-gray-50" />
@@ -908,55 +940,7 @@ export default function LeadsPage() {
                   )}
                 </div>
 
-                {plan.scope === "team" ? (
-                  <div className="mt-6 space-y-3">
-                    {(plan.members ?? []).length === 0 ? (
-                      <p className="py-10 text-center text-sm text-gray-400">
-                        Nobody has leads assigned yet
-                      </p>
-                    ) : (
-                      (plan.members ?? []).map((member) => (
-                        <button
-                          key={member.userId}
-                          type="button"
-                          onClick={() => setPlanFor(member.userId)}
-                          className="w-full rounded-2xl border border-gray-100 p-4 text-left hover:border-gray-200"
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="font-medium">{member.name}</p>
-                            <p className="text-sm tabular-nums text-gray-500">
-                              {member.covered}/{member.target}
-                            </p>
-                          </div>
-                          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
-                            <div
-                              className="h-full rounded-full"
-                              style={{
-                                backgroundColor: ACCENT,
-                                width: `${member.target > 0 ? Math.min(100, (member.covered / member.target) * 100) : 0}%`,
-                              }}
-                            />
-                          </div>
-                          <p className="mt-2 flex flex-wrap gap-x-3 text-xs text-gray-500">
-                            {member.overdue > 0 && (
-                              <span className="font-medium text-red-600">
-                                {member.overdue} overdue
-                              </span>
-                            )}
-                            {member.dueToday > 0 && (
-                              <span className="text-amber-600">
-                                {member.dueToday} due today
-                              </span>
-                            )}
-                            {member.hot > 0 && <span>{member.hot} interested</span>}
-                            <span>{member.fresh} new</span>
-                            <span>{member.callsToday} calls today</span>
-                          </p>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                ) : plan.queue.length === 0 ? (
+                {plan.queue.length === 0 ? (
                   <p className="py-16 text-center text-sm text-gray-400">
                     Nothing left to call today
                   </p>
