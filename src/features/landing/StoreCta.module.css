@@ -1,0 +1,20 @@
+/*
+ * Which store button is visible, keyed off the data-os attribute app/layout.tsx stamps on
+ * <html> before the first paint.
+ *
+ * Both rules hide rather than show, so each button keeps whatever `display` its own visual
+ * class gives it (inline-flex for the hero and services buttons, flex in the mobile bar) and
+ * nothing here has to know about that. The selectors carry an element+attribute plus a class,
+ * which outranks the single-class button styles without needing !important.
+ *
+ * The default — no attribute, e.g. scripting disabled — leaves the Play Store link showing,
+ * which is the right fallback for a mandi audience that is overwhelmingly on Android.
+ */
+
+:global(html:not([data-os="ios"])) .iosOnly {
+  display: none;
+}
+
+:global(html[data-os="ios"]) .androidOnly {
+  display: none;
+}

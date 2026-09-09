@@ -19,6 +19,7 @@ import { AuthProvider } from "@/features/auth/context/AuthContext";
 import ConsentGuard from "@/shared/components/ConsentGuard";
 import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration";
 import InstallPrompt from "@/components/InstallPrompt";
+import { APP_STORE_ID } from "@/features/landing/landingData";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -89,6 +90,18 @@ const notoBengali = Noto_Sans_Bengali({
   preload: false,
 });
 
+/**
+ * Runs before the first paint, so the download buttons are already correct on the very first
+ * frame — no flash of the wrong store, and the page stays statically cached because nothing is
+ * decided from the User-Agent on the server.
+ *
+ * iPadOS is the catch: since iPadOS 13 an iPad reports itself as "Macintosh" and its
+ * navigator.platform is "MacIntel", exactly like a desktop Mac. Touch points are what separate
+ * them — a Mac reports 0/1, an iPad reports 5. Anything not identified as iOS falls through to
+ * the Play Store, which is also what a visitor with scripting disabled gets.
+ */
+const OS_PROBE = `(function(){try{var n=navigator,u=n.userAgent||"";if(/iPad|iPhone|iPod/.test(u)||(/Mac/.test(u)&&n.maxTouchPoints>1))document.documentElement.setAttribute("data-os","ios")}catch(e){}})()`;
+
 export const metadata: Metadata = {
   title: "MandiPlus",
   description:
@@ -99,6 +112,8 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "MandiPlus",
   },
+  // Safari's native Smart App Banner; costs nothing and outranks anything we could draw.
+  other: { "apple-itunes-app": `app-id=${APP_STORE_ID}` },
   icons: {
     icon: [
       { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
@@ -124,6 +139,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <script dangerouslySetInnerHTML={{ __html: OS_PROBE }} />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
