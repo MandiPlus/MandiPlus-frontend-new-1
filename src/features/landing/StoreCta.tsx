@@ -5,8 +5,8 @@ import { APP_STORE_URL, PLAY_STORE_URL } from "@/features/landing/landingData";
  * A download button that points at the right store for the device.
  *
  * Both links are rendered and CSS hides the wrong one, keyed off the data-os attribute that
- * app/layout.tsx stamps on <html> before the first paint. That combination is what makes the
- * switch instant:
+ * app/layout.tsx stamps on <html> before the first paint — "apple" covering iPhone, iPad and
+ * Mac alike. That combination is what makes the switch instant:
  *   - deciding on the client inside an effect would paint the wrong store first and swap,
  *   - deciding on the server from the User-Agent would make this page render per request and
  *     drop out of the CDN.
@@ -64,7 +64,7 @@ export default function StoreCta({
         href={APP_STORE_URL}
         target="_blank"
         rel="noopener noreferrer"
-        className={`${className} ${styles.iosOnly}`}
+        className={`${className} ${styles.appleOnly}`}
       >
         <AppleIcon size={iconSize} />
         {children}
