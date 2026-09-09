@@ -14,12 +14,38 @@ function getAdminHeaders() {
 export type LeadStatus =
   | 'NEW'
   | 'CONTACTED'
-  | 'FOLLOW_UP'
+  | 'CONFIRMED_BUYER'
   | 'INTERESTED'
+  | 'FOLLOW_UP'
+  | 'DEMO_BOOKED'
   | 'CONVERTED'
   | 'NOT_INTERESTED'
   | 'NOT_REACHABLE'
+  | 'NOT_RELEVANT'
   | 'INVALID';
+
+export type RejectionReason =
+  | 'NO_REQUIREMENT'
+  | 'ALREADY_USING_SOFTWARE'
+  | 'TOO_EXPENSIVE'
+  | 'NOT_DECISION_MAKER'
+  | 'WRONG_BUSINESS'
+  | 'NOT_ACTIVE'
+  | 'DOES_NOT_NEED_BILLING'
+  | 'NOT_INTERESTED'
+  | 'OTHER';
+
+export const REJECTION_REASONS: { value: RejectionReason; label: string }[] = [
+  { value: 'NO_REQUIREMENT', label: 'No requirement' },
+  { value: 'ALREADY_USING_SOFTWARE', label: 'Already using software' },
+  { value: 'TOO_EXPENSIVE', label: 'Too expensive' },
+  { value: 'NOT_DECISION_MAKER', label: 'Not decision maker' },
+  { value: 'WRONG_BUSINESS', label: 'Wrong business' },
+  { value: 'NOT_ACTIVE', label: 'Not active' },
+  { value: 'DOES_NOT_NEED_BILLING', label: 'Does not need billing' },
+  { value: 'NOT_INTERESTED', label: 'Not interested' },
+  { value: 'OTHER', label: 'Other' },
+];
 
 export interface LeadPhone {
   e164: string;
@@ -44,6 +70,9 @@ export interface LeadRecord {
   batchLabel: string | null;
   attemptCount: number;
   nextFollowUpAt: string | null;
+  rejectionReason: RejectionReason | null;
+  demoAt: string | null;
+  warmupSentAt: string | null;
   lastActivityAt: string | null;
   createdAt: string;
   phones: LeadPhone[];
@@ -240,7 +269,13 @@ export async function updateLead(
 
 export async function logLeadCall(
   id: string,
-  payload: { disposition: LeadStatus; note?: string; nextFollowUpAt?: string },
+  payload: {
+    disposition: LeadStatus;
+    note?: string;
+    nextFollowUpAt?: string;
+    rejectionReason?: RejectionReason;
+    demoAt?: string;
+  },
 ): Promise<LeadRecord> {
   const response = await axios.post(
     `${API_BASE_URL}/leads/admin/${id}/call`,

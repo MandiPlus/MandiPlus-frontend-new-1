@@ -28,8 +28,10 @@ import {
   type LeadRecord,
   type LeadReport,
   type LeadStatus,
+  REJECTION_REASONS,
   type LeadTeamMember,
   type LeadViewerInfo,
+  type RejectionReason,
   type TodayPlan,
 } from "@/features/leads/api";
 
@@ -38,23 +40,34 @@ const ACCENT = "#4309ac";
 const STATUS_META: Record<LeadStatus, { label: string; className: string }> = {
   NEW: { label: "New", className: "bg-gray-100 text-gray-700" },
   CONTACTED: { label: "Contacted", className: "bg-blue-50 text-blue-700" },
-  FOLLOW_UP: { label: "Follow-up", className: "bg-amber-50 text-amber-700" },
+  CONFIRMED_BUYER: {
+    label: "Confirmed buyer",
+    className: "bg-emerald-50 text-emerald-700",
+  },
   INTERESTED: { label: "Interested", className: "bg-purple-50 text-[#4309ac]" },
-  CONVERTED: { label: "Converted", className: "bg-emerald-50 text-emerald-700" },
+  FOLLOW_UP: { label: "Follow-up", className: "bg-amber-50 text-amber-700" },
+  DEMO_BOOKED: { label: "Demo booked", className: "bg-blue-50 text-blue-700" },
+  CONVERTED: { label: "Customer", className: "bg-emerald-100 text-emerald-800" },
   NOT_INTERESTED: { label: "Not interested", className: "bg-gray-100 text-gray-500" },
-  NOT_REACHABLE: { label: "Not reachable", className: "bg-orange-50 text-orange-700" },
-  INVALID: { label: "Invalid", className: "bg-red-50 text-red-600" },
+  NOT_REACHABLE: { label: "Not connected", className: "bg-orange-50 text-orange-700" },
+  NOT_RELEVANT: { label: "Not relevant", className: "bg-gray-100 text-gray-500" },
+  INVALID: { label: "Wrong number", className: "bg-red-50 text-red-600" },
 };
 
+// The PRD's after-call outcomes, in its order.
 const DISPOSITIONS: LeadStatus[] = [
-  "CONTACTED",
-  "FOLLOW_UP",
+  "CONFIRMED_BUYER",
   "INTERESTED",
+  "FOLLOW_UP",
+  "DEMO_BOOKED",
   "CONVERTED",
   "NOT_INTERESTED",
   "NOT_REACHABLE",
   "INVALID",
+  "NOT_RELEVANT",
 ];
+
+const NEEDS_REASON: LeadStatus[] = ["NOT_INTERESTED", "NOT_RELEVANT"];
 
 type Tab = "today" | "leads" | "mandiplus" | "converted" | "closed" | "reports";
 
@@ -146,6 +159,8 @@ export default function LeadsPage() {
   const [callDisposition, setCallDisposition] = useState<LeadStatus | null>(null);
   const [callNote, setCallNote] = useState("");
   const [callFollowUpDate, setCallFollowUpDate] = useState("");
+  const [callReason, setCallReason] = useState<RejectionReason | "">("");
+  const [callDemoAt, setCallDemoAt] = useState("");
   const [saving, setSaving] = useState(false);
 
   const [viewer, setViewer] = useState<LeadViewerInfo | null>(null);
@@ -444,24 +459,11 @@ export default function LeadsPage() {
   };
 
   const submitFocusCall = async () => {
-    if (!focusLead || !callDisposition) return;
-    if (callDisposition === "FOLLOW_UP" && !callFollowUpDate) {
-      toast.error("Pick a follow-up time");
-      return;
-    }
+    if (!focusLead || outcomeIncomplete) return;
     setSaving(true);
     try {
-      await logLeadCall(focusLead.id, {
-        disposition: callDisposition,
-        note: callNote.trim() || undefined,
-        nextFollowUpAt:
-          callDisposition === "FOLLOW_UP"
-            ? new Date(callFollowUpDate).toISOString()
-            : undefined,
-      });
-      setCallDisposition(null);
-      setCallNote("");
-      setCallFollowUpDate("");
+      await logLeadCall(focusLead.id, outcomePayload());
+      resetOutcome();
       setFocusIndex((i) => (i === null ? null : i + 1));
       // The plan and the board move on in the background; the queue in hand
       // stays put so the caller is never re-ordered mid-session.
@@ -535,29 +537,86 @@ export default function LeadsPage() {
     </div>
   );
 
-  const openCallSheet = (lead: LeadRecord) => {
-    setCallLead(lead);
+  const resetOutcome = () => {
     setCallDisposition(null);
     setCallNote("");
     setCallFollowUpDate("");
+    setCallReason("");
+    setCallDemoAt("");
   };
 
+  const openCallSheet = (lead: LeadRecord) => {
+    setCallLead(lead);
+    resetOutcome();
+  };
+
+  /** The PRD's rule: no call is finished until the outcome is complete. */
+  const outcomeIncomplete =
+    !callDisposition ||
+    (callDisposition === "FOLLOW_UP" && !callFollowUpDate) ||
+    (callDisposition === "DEMO_BOOKED" && !callDemoAt) ||
+    (NEEDS_REASON.includes(callDisposition) && !callReason);
+
+  const outcomePayload = () => ({
+    disposition: callDisposition as LeadStatus,
+    note: callNote.trim() || undefined,
+    nextFollowUpAt:
+      callDisposition === "FOLLOW_UP"
+        ? new Date(callFollowUpDate).toISOString()
+        : undefined,
+    demoAt:
+      callDisposition === "DEMO_BOOKED"
+        ? new Date(callDemoAt).toISOString()
+        : undefined,
+    rejectionReason: callReason || undefined,
+  });
+
+  const renderOutcomeExtras = () => (
+    <>
+      {callDisposition === "FOLLOW_UP" && renderFollowUpPicker()}
+      {callDisposition === "DEMO_BOOKED" && (
+        <input
+          type="datetime-local"
+          aria-label="Demo time"
+          value={callDemoAt}
+          onChange={(e) => setCallDemoAt(e.target.value)}
+          min={localInputValue(new Date())}
+          className="mt-3 h-12 w-full rounded-full border border-gray-200 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#4309ac]/30"
+        />
+      )}
+      {callDisposition && NEEDS_REASON.includes(callDisposition) && (
+        <div className="mt-3">
+          <p className="mb-2 text-xs font-medium text-gray-400">Why?</p>
+          <div className="flex flex-wrap gap-2">
+            {REJECTION_REASONS.map((reason) => {
+              const active = callReason === reason.value;
+              return (
+                <button
+                  key={reason.value}
+                  type="button"
+                  onClick={() => setCallReason(reason.value)}
+                  className={`h-9 rounded-full border px-3 text-xs font-medium ${
+                    active
+                      ? "border-transparent text-white"
+                      : "border-gray-200 text-gray-700"
+                  }`}
+                  style={active ? { backgroundColor: ACCENT } : undefined}
+                >
+                  {reason.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   const submitCall = async () => {
-    if (!callLead || !callDisposition) return;
-    if (callDisposition === "FOLLOW_UP" && !callFollowUpDate) {
-      toast.error("Pick a follow-up time");
-      return;
-    }
+    if (!callLead || outcomeIncomplete) return;
     setSaving(true);
     try {
-      await logLeadCall(callLead.id, {
-        disposition: callDisposition,
-        note: callNote.trim() || undefined,
-        nextFollowUpAt:
-          callDisposition === "FOLLOW_UP"
-            ? new Date(callFollowUpDate).toISOString()
-            : undefined,
-      });
+      await logLeadCall(callLead.id, outcomePayload());
       setCallLead(null);
       await refreshLeads();
     } catch {
@@ -1635,7 +1694,7 @@ export default function LeadsPage() {
                 </button>
               ))}
             </div>
-            {callDisposition === "FOLLOW_UP" && renderFollowUpPicker()}
+            {renderOutcomeExtras()}
             <textarea
               value={callNote}
               onChange={(e) => setCallNote(e.target.value)}
@@ -1651,7 +1710,7 @@ export default function LeadsPage() {
           >
             <button
               type="button"
-              disabled={!callDisposition || saving}
+              disabled={outcomeIncomplete || saving}
               onClick={submitFocusCall}
               className="h-12 w-full rounded-full text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
               style={{ backgroundColor: ACCENT }}
@@ -1742,7 +1801,7 @@ export default function LeadsPage() {
                 </button>
               ))}
             </div>
-            {callDisposition === "FOLLOW_UP" && renderFollowUpPicker()}
+            {renderOutcomeExtras()}
             <textarea
               value={callNote}
               onChange={(e) => setCallNote(e.target.value)}
@@ -1752,7 +1811,7 @@ export default function LeadsPage() {
             />
             <button
               type="button"
-              disabled={!callDisposition || saving}
+              disabled={outcomeIncomplete || saving}
               onClick={submitCall}
               className="mt-4 h-12 w-full rounded-full text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
               style={{ backgroundColor: ACCENT }}
