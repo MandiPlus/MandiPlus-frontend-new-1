@@ -43,6 +43,14 @@ const profitTranslations = [
 
 const featureShowcase = [
   {
+    id: "bharat",
+    name: "Bharat",
+    subtitle: "Mandis se ek stronger Bharat tak.",
+    wideImage: "/images/landing/feature-bharat-wide.webp",
+    mobileImage: "/images/landing/feature-bharat-mobile.webp",
+    alt: "Union Agriculture Minister Shri Shivraj Singh Chouhan on how MandiPlus reduces losses and protects farmers and traders",
+  },
+  {
     id: "insurance",
     name: "Insurance",
     subtitle: "Maal route par covered.",
@@ -67,6 +75,9 @@ const featureShowcase = [
     alt: "A mandi trader photographing damaged produce for claim support",
   },
 ] as const;
+
+/** How long each showcase frame holds before the next one slides in. */
+const FEATURE_ROTATE_MS = 4000;
 
 const appPreviewScreens = [
   {
@@ -151,11 +162,13 @@ const LandingPage = () => {
   const router = useRouter();
   const { user, loading } = useAuth();
   const [activeFeature, setActiveFeature] = useState(0);
+  const [showcaseOnScreen, setShowcaseOnScreen] = useState(false);
   const [featureCycleKey, setFeatureCycleKey] = useState(0);
   const [activeAppScreen, setActiveAppScreen] = useState(0);
   const [translationIndex, setTranslationIndex] = useState(0);
   const [showMobileBar, setShowMobileBar] = useState(false);
   const heroCtaRef = useRef<HTMLDivElement>(null);
+  const showcaseRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!loading && user) {
@@ -177,17 +190,40 @@ const LandingPage = () => {
     return () => window.clearInterval(interval);
   }, []);
 
+  // Rewind to the first frame every time the showcase comes back into view, so a visitor
+  // scrolling past always meets the same opening image rather than whatever the timer had
+  // wandered to. Rotating only while it is on screen is what makes that hold true.
   useEffect(() => {
+    const el = showcaseRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setShowcaseOnScreen(entry.isIntersecting);
+        if (entry.isIntersecting) {
+          setActiveFeature(0);
+          setFeatureCycleKey((key) => key + 1);
+        }
+      },
+      { threshold: 0.35 },
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [loading, user]);
+
+  useEffect(() => {
+    if (!showcaseOnScreen) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       return;
     }
 
     const interval = window.setInterval(() => {
       setActiveFeature((current) => (current + 1) % featureShowcase.length);
-    }, 1800);
+    }, FEATURE_ROTATE_MS);
 
     return () => window.clearInterval(interval);
-  }, [featureCycleKey]);
+  }, [featureCycleKey, showcaseOnScreen]);
 
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -308,7 +344,11 @@ const LandingPage = () => {
 
       <FilmsSection />
 
-      <section id="products" className={styles.showcaseSection}>
+      <section
+        id="products"
+        ref={showcaseRef}
+        className={styles.showcaseSection}
+      >
         <div className={`${styles.container} ${styles.showcaseContainer}`}>
           <div
             className={styles.showcaseTabs}
