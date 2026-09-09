@@ -456,6 +456,12 @@ export interface CommandCenterData {
     dailyCapacity: number;
     days: number | null;
   };
+  trend: {
+    day: string;
+    calls: number;
+    connects: number;
+    interested: number;
+  }[];
   attention: CommandAlert[];
   funnel: {
     stages: { key: string; label: string; count: number }[];
