@@ -106,7 +106,7 @@ export default function PrivacyPolicyPage() {
             For privacy questions, access or correction requests, or deletion recovery, email{" "}
             <a className="font-bold text-[#4309ac] underline" href="mailto:support@mandiplus.com">support@mandiplus.com</a>{" "}
             or call{" "}
-            <a className="font-bold text-[#4309ac] underline" href="tel:+917676217658">+91 76762 17658</a>.
+            <a className="font-bold text-[#4309ac] underline" href="tel:+919606995351">+91 96069 95351</a>.
           </p>
           <p className="mt-3">
             ENP FARMS PRIVATE LIMITED, SY No. 38, 1 No. 51/4, CMC Katha Post, Glass Factory Layout, Electronic City, Andapura, Karnataka 560099, India.

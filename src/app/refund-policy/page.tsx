@@ -51,7 +51,7 @@ const RefundPolicyPage = () => {
               All claim-related communication must be made via email at{" "}
               <a href="mailto:support@mandiplus.com" className="text-[#4309ac] hover:underline font-medium">support@mandiplus.com</a>
               {" "}or by calling{" "}
-              <a href="tel:+917676217658" className="text-[#4309ac] hover:underline font-medium">+91 76762 17658</a>.
+              <a href="tel:+919606995351" className="text-[#4309ac] hover:underline font-medium">+91 96069 95351</a>.
             </p>
           </div>
 

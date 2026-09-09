@@ -1,7 +1,7 @@
 export const PLAY_STORE_URL =
   "https://play.google.com/store/apps/details?id=com.mandiplus.customer";
 
-export const CALL_URL = "tel:+917676217658";
+export const CALL_URL = "tel:+919606995351";
 
 // Hero "Call karein" button — sales line traders dial straight from the landing page.
 export const HERO_CALL_NUMBER = "+91 96069 95351";
@@ -32,8 +32,8 @@ export const COMPANY_INFO = {
     "Glass Factory Layout, Electronic City, Anandapur,",
     "Andapura, Karnataka 560099",
   ],
-  phone: "7676217658",
-  phoneHref: "tel:+917676217658",
+  phone: "9606995351",
+  phoneHref: "tel:+919606995351",
 };
 
 export const SOCIAL_LINKS = [
@@ -210,3 +210,63 @@ export const EXPANSION_PRODUCTS = [
     summary: "Price, supply and market signals across the mandi network.",
   },
 ];
+
+/**
+ * The team band above the footer. Portraits are pre-normalised web assets, not the raw
+ * studio files: one shared 4:5 crop with the hair line pinned at 8.5% of frame height, so a
+ * row of three shows aligned eye lines and one matched background plate.
+ * Re-generate with scripts/build-team-portraits.py after adding or replacing a shot.
+ */
+export type TeamMember = {
+  /** Also the portrait basename in /images/landing/team. */
+  id: string;
+  name: string;
+  role: string;
+};
+
+export const TEAM: TeamMember[] = [
+  { id: "bharath", name: "Bharath", role: "Founder & Managing Director" },
+  { id: "manat", name: "Manat Choudhary", role: "Founder & CEO" },
+  { id: "nikhil", name: "Nikhil", role: "Operations Team" },
+  { id: "abhishrey", name: "Abhishrey", role: "Lead of Growth" },
+  { id: "nikhilc", name: "Nikhil Chaoudhary", role: "Sales & Relationships Head, Andhra Pradesh" },
+  { id: "ashok", name: "Ashok", role: "Sales & Relationships Lead, Delhi" },
+  { id: "om", name: "Om", role: "Engineering" },
+  { id: "vikash", name: "Vikash", role: "Operations Team" },
+  { id: "jaya", name: "Jaya", role: "Operations Team" },
+  { id: "sanjay", name: "Sanjay", role: "Public Outreach" },
+  { id: "deepam", name: "Deepam", role: "Financial Risk" },
+  { id: "krithik", name: "Krithik", role: "UI/UX Designer" },
+];
+
+/**
+ * The landing film — mandi traders at Azadpur vouching for MandiPlus on camera, with the
+ * settled claim amounts shown on screen.
+ *
+ * Delivered from Cloudinary rather than /public: it is two minutes long, so the encode is far
+ * too heavy to ship from the app origin, and Cloudinary can negotiate codec (`f_auto:video`)
+ * and cut the poster straight out of the film (`so_<seconds>`) so the still can never drift
+ * out of sync with the footage.
+ *
+ * Re-upload with mandiplus/src/scripts/upload-landing-film.ts. Tune weight by editing the
+ * transform strings below — the derived rendition is regenerated on first request.
+ */
+const FILM_CLOUD = "https://res.cloudinary.com/dgxuvxyy0/video/upload";
+const FILM_ASSET = "landing/yay";
+/** Second the poster is cut from — the first clean frame of the trader speaking. */
+const FILM_POSTER_AT = 6;
+
+export const LANDING_FILM = {
+  /** Held under the film so the first paint is never an empty box. */
+  poster: `${FILM_CLOUD}/so_${FILM_POSTER_AT},f_auto,q_auto,w_1280,c_limit/${FILM_ASSET}.jpg`,
+  /** One rung per breakpoint. Picked in JS, because `media` on a <source> is unreliable here. */
+  srcWide: `${FILM_CLOUD}/f_auto:video,q_auto:eco,br_600k,w_1280,c_limit/${FILM_ASSET}.mp4`,
+  srcNarrow: `${FILM_CLOUD}/f_auto:video,q_auto:eco,br_400k,w_854,c_limit/${FILM_ASSET}.mp4`,
+  seconds: 87,
+  /** Split so the second line can carry the hero's violet, the same way "नफा तुमचा." does. */
+  title: {
+    lead: "Apni Tareef Toh Sab Karte Hain…",
+    accent: "Ek Baar Mandi Wale Ki Bhi Sun Lo",
+  },
+  label: "Azadpur Mandi ke traders MandiPlus ke baare mein.",
+};
