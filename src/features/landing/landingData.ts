@@ -1,6 +1,16 @@
 export const PLAY_STORE_URL =
   "https://play.google.com/store/apps/details?id=com.mandiplus.customer";
 
+/**
+ * The store a visitor is sent to is chosen by the pre-paint script in app/layout.tsx, which
+ * stamps data-os="ios" on <html> before the first frame. Both links are rendered and CSS hides
+ * the wrong one, so there is no flash and the page stays statically cacheable — reading the
+ * User-Agent on the server would force this page to render per-request and lose the CDN.
+ */
+export const APP_STORE_ID = "6802538866";
+export const APP_STORE_URL =
+  `https://apps.apple.com/in/app/mandi-plus/id${APP_STORE_ID}`;
+
 export const CALL_URL = "tel:+919606995351";
 
 // Hero "Call karein" button — sales line traders dial straight from the landing page.

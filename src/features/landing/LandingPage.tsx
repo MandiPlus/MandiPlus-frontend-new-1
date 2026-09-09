@@ -19,6 +19,7 @@ import {
 import { useAuth } from "@/features/auth/context/AuthContext";
 import SiteChrome from "@/features/landing/SiteChrome";
 import FilmsSection from "@/features/landing/FilmsSection";
+import StoreCta from "@/features/landing/StoreCta";
 import TeamSection from "@/features/landing/TeamSection";
 import styles from "@/features/landing/LandingPage.module.css";
 import {
@@ -26,7 +27,6 @@ import {
   COMPANY_INFO,
   HERO_CALL_NUMBER,
   HERO_CALL_URL,
-  PLAY_STORE_URL,
   SOCIAL_LINKS,
 } from "@/features/landing/landingData";
 
@@ -90,18 +90,6 @@ const appPreviewScreens = [
     alt: "MandiPlus trip insurance, vehicle tracking and claims support",
   },
 ] as const;
-
-const PlayStoreIcon = ({ size = 16 }: { size?: number }) => (
-  <svg
-    viewBox="0 0 512 512"
-    aria-hidden="true"
-    width={size}
-    height={size}
-    fill="currentColor"
-  >
-    <path d="M325.3 234.3 104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l265.6-265.6L47 0zm425.2 225.6-58.9-34.1-65.7 65.7 65.7 65.7 60.1-34.1c17.9-10.4 17.9-36.8-1.2-47.2zM104.6 499l280.8-161.2-60.1-60.1L104.6 499z" />
-  </svg>
-);
 
 const FooterSocialIcon = ({ id }: { id: string }) => {
   const props = { size: 16, strokeWidth: 1.8, "aria-hidden": true } as const;
@@ -167,7 +155,7 @@ const LandingPage = () => {
   const [activeAppScreen, setActiveAppScreen] = useState(0);
   const [translationIndex, setTranslationIndex] = useState(0);
   const [showMobileBar, setShowMobileBar] = useState(false);
-  const heroCtaRef = useRef<HTMLAnchorElement>(null);
+  const heroCtaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!loading && user) {
@@ -280,17 +268,8 @@ const LandingPage = () => {
                 </span>
               </div>
 
-              <div className={styles.heroActions}>
-                <a
-                  ref={heroCtaRef}
-                  href={PLAY_STORE_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={styles.primaryCta}
-                >
-                  <PlayStoreIcon />
-                  Get the app
-                </a>
+              <div ref={heroCtaRef} className={styles.heroActions}>
+                <StoreCta className={styles.primaryCta}>Get the app</StoreCta>
                 <Link href="/login" className={styles.heroLogin}>
                   Login
                 </Link>
@@ -432,15 +411,7 @@ const LandingPage = () => {
             <p className={styles.servicesSubtitle}>
               Load details, insurance, tracking, claims
             </p>
-            <a
-              href={PLAY_STORE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={styles.servicesCta}
-            >
-              <PlayStoreIcon size={16} />
-              Download the app
-            </a>
+            <StoreCta className={styles.servicesCta}>Download the app</StoreCta>
           </header>
 
           <div className={styles.servicesStage}>
@@ -517,9 +488,7 @@ const LandingPage = () => {
 
       {showMobileBar ? (
         <div className={styles.mobileBar}>
-          <a href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer">
-            <PlayStoreIcon size={14} /> Get the app
-          </a>
+          <StoreCta iconSize={14}>Get the app</StoreCta>
           <a href={CALL_URL}>
             <Phone size={14} aria-hidden="true" /> Contact us
           </a>
