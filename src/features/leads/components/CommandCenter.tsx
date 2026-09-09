@@ -13,13 +13,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import {
-  AlertTriangle,
-  Flame,
-  PhoneCall,
-  PhoneForwarded,
-  Trophy,
-} from "lucide-react";
+import { AlertTriangle, Flame, PhoneCall, PhoneForwarded, Target } from "lucide-react";
 import type { CommandCenterData, TeamMemberDay } from "../api";
 
 const ACCENT = "#4309ac";
@@ -113,17 +107,9 @@ export default function CommandCenter({
   data: CommandCenterData;
   onPickMember: (userId: string) => void;
 }) {
-  const {
-    kpis,
-    attention,
-    funnel,
-    team,
-    quality,
-    campaign,
-    opportunities,
-    runway,
-    trend,
-  } = data;
+  const { kpis, attention, team, teamTotals } = data;
+  const overdue =
+    attention.find((a) => a.key === "overdueFollowups")?.count ?? 0;
 
   const delta = (today: number, yesterday: number) => {
     const diff = today - yesterday;
@@ -141,35 +127,8 @@ export default function CommandCenter({
     kpis.callsToday > 0
       ? Math.round((kpis.connectsToday / kpis.callsToday) * 100)
       : 0;
-  const verified = quality.levels
-    .filter((l) => l.level >= 2)
-    .reduce((acc, l) => acc + l.count, 0);
-  const totalLeads = quality.levels.reduce((acc, l) => acc + l.count, 0);
-  const wrongNumbers = quality.sources.reduce((a, s) => a + s.wrongNumbers, 0);
-
   const shown = attention.slice(0, 5);
   const overflow = attention.length - shown.length;
-
-  // Stages are nested, so each bar is a share of the one above it.
-  const funnelData = funnel.stages.map((stage, i) => {
-    const prev = i > 0 ? funnel.stages[i - 1].count : null;
-    const raw = prev && prev > 0 ? Math.round((stage.count / prev) * 100) : null;
-    return {
-      stage: stage.label,
-      key: stage.key,
-      count: stage.count,
-      rate: raw !== null && raw <= 100 ? raw : null,
-      leaking: funnel.worstDrop === stage.key,
-    };
-  });
-
-  const trendData = trend.map((d) => ({
-    ...d,
-    label: new Date(`${d.day}T00:00:00`).toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-    }),
-  }));
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -192,22 +151,30 @@ export default function CommandCenter({
           }
         />
         <Stat
-          label="Hot leads"
-          value={kpis.hot}
-          icon={Flame}
-          note={<span className="text-slate-500">interested or confirmed</span>}
+          label="Covered"
+          value={`${teamTotals.covered}/${teamTotals.target}`}
+          icon={Target}
+          note={
+            <span className="text-slate-500">
+              {Math.max(0, teamTotals.target - teamTotals.covered)} left today
+            </span>
+          }
         />
         <Stat
-          label="Converted"
-          value={kpis.converted}
-          icon={Trophy}
-          tone={kpis.converted > 0 ? "emerald" : "slate"}
-          note={<span className="text-slate-500">on MandiPlus</span>}
+          label="Overdue"
+          value={overdue}
+          icon={Flame}
+          tone={overdue > 0 ? "rose" : "slate"}
+          note={
+            <span className="text-slate-500">
+              {overdue > 0 ? "promises already missed" : "nothing missed"}
+            </span>
+          }
         />
       </div>
 
       {/* Needs attention — the reason a manager opens this screen */}
-      <div className="lg:col-span-5">
+      <div className="lg:col-span-6">
         {shown.length === 0 ? (
           <div className="flex h-full items-center rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 shadow-sm">
             <p className="text-sm font-semibold text-emerald-700">
@@ -249,155 +216,8 @@ export default function CommandCenter({
         )}
       </div>
 
-      {/* Two weeks of calling */}
-      <Card
-        title="Calling activity"
-        subtitle="Last 14 days"
-        className="lg:col-span-7"
-      >
-        <div className="h-52">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart
-              data={trendData}
-              margin={{ top: 4, right: 8, left: -18, bottom: 0 }}
-            >
-              <defs>
-                <linearGradient id="gCalls" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={ACCENT} stopOpacity={0.28} />
-                  <stop offset="100%" stopColor={ACCENT} stopOpacity={0.02} />
-                </linearGradient>
-                <linearGradient id="gConnects" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={TEAL} stopOpacity={0.24} />
-                  <stop offset="100%" stopColor={TEAL} stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke={GRID} vertical={false} />
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 10, fill: "#64748b" }}
-                tickLine={false}
-                axisLine={{ stroke: GRID }}
-                interval="preserveStartEnd"
-                minTickGap={18}
-              />
-              <YAxis
-                tick={{ fontSize: 10, fill: "#64748b" }}
-                tickLine={false}
-                axisLine={false}
-                allowDecimals={false}
-                width={38}
-              />
-              <Tooltip {...TOOLTIP} />
-              <Area
-                type="monotone"
-                dataKey="calls"
-                name="Calls"
-                stroke={ACCENT}
-                strokeWidth={2}
-                fill="url(#gCalls)"
-                isAnimationActive={false}
-              />
-              <Area
-                type="monotone"
-                dataKey="connects"
-                name="Connected"
-                stroke={TEAL}
-                strokeWidth={2}
-                fill="url(#gConnects)"
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="mt-2 flex gap-4 text-xs text-slate-500">
-          <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full" style={{ background: ACCENT }} />
-            Calls
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="size-2 rounded-full" style={{ background: TEAL }} />
-            Connected
-          </span>
-        </div>
-      </Card>
-
-      {/* Where leads die */}
-      <Card
-        title="Calling funnel"
-        subtitle={
-          funnel.worstDrop
-            ? `Weakest step: ${funnelData.find((f) => f.leaking)?.stage}`
-            : "Every stage is a share of the one above it"
-        }
-        className="lg:col-span-7"
-      >
-        <div className="h-52">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={funnelData}
-              layout="vertical"
-              margin={{ top: 0, right: 46, left: 6, bottom: 0 }}
-            >
-              <CartesianGrid stroke={GRID} horizontal={false} />
-              <XAxis type="number" hide />
-              <YAxis
-                type="category"
-                dataKey="stage"
-                width={78}
-                tick={{ fontSize: 11, fill: "#475569" }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <Tooltip {...TOOLTIP} cursor={{ fill: "#f8fafc" }} />
-              <Bar
-                dataKey="count"
-                name="Leads"
-                radius={[0, 6, 6, 0]}
-                barSize={18}
-                minPointSize={4}
-                isAnimationActive={false}
-              >
-                {funnelData.map((row, i) => (
-                  <Cell
-                    key={row.key}
-                    fill={row.leaking ? RED : ACCENT}
-                    fillOpacity={row.leaking ? 0.9 : 1 - i * 0.13}
-                  />
-                ))}
-                <LabelList
-                  dataKey="count"
-                  position="right"
-                  offset={8}
-                  style={{ fontSize: 11, fontWeight: 600, fill: "#334155" }}
-                />
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-          {funnelData
-            .filter((row) => row.rate !== null)
-            .map((row) => (
-              <span key={row.key}>
-                {row.stage}{" "}
-                <span
-                  className={`font-semibold tabular-nums ${row.leaking ? "text-orange-700" : "text-slate-700"}`}
-                >
-                  {row.rate}%
-                </span>
-              </span>
-            ))}
-        </div>
-        {funnel.worstDrop && (
-          <p className="mt-2 text-xs font-medium text-orange-700">
-            Leads die at {funnelData.find((f) => f.leaking)?.stage} — worth a
-            listen to those calls
-          </p>
-        )}
-      </Card>
-
       {/* The team, as a table: these rows exist to be compared */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-5 lg:row-span-2">
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-6">
         <div className="border-b border-slate-100 px-4 py-3">
           <h3 className="text-sm font-semibold text-slate-900">Team today</h3>
           <p className="mt-0.5 text-xs text-slate-500">
@@ -468,84 +288,6 @@ export default function CommandCenter({
         </div>
       </div>
 
-      {/* High-value buyers */}
-      {opportunities.length > 0 && (
-        <Card
-          title="High-value buyers in play"
-          subtitle="Biggest vehicles a day, still open"
-          className="lg:col-span-4"
-        >
-          <div className="divide-y divide-slate-50">
-            {opportunities.slice(0, 5).map((opp) => (
-              <div key={opp.id} className="flex items-center justify-between py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-900">
-                    {opp.name}
-                  </p>
-                  <p className="truncate text-xs text-slate-500">
-                    {[
-                      opp.dailyVehicles ? `${opp.dailyVehicles} vehicles/day` : null,
-                      opp.buyingVolume,
-                      opp.mandi,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </p>
-                </div>
-                <p className="shrink-0 text-xs text-slate-400">
-                  {opp.assignee ?? "—"}
-                </p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {/* Supply, quality, campaign */}
-      {/* Static class names: Tailwind cannot extract an interpolated one. */}
-      <div
-        className={`grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-1 ${
-          opportunities.length > 0 ? "lg:col-span-3" : "lg:col-span-7"
-        }`}
-      >
-        <Card>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Data runway
-          </p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
-            {runway.days !== null
-              ? `${runway.days} ${runway.days === 1 ? "day" : "days"}`
-              : "—"}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            {runway.freshRemaining} fresh leads left
-          </p>
-        </Card>
-        <Card>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Data quality
-          </p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
-            {totalLeads > 0 ? Math.round((verified / totalLeads) * 100) : 0}%
-            <span className="ml-1 text-sm font-medium text-slate-400">verified</span>
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            {wrongNumbers} wrong numbers found
-          </p>
-        </Card>
-        <Card>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Campaign
-          </p>
-          <p className="mt-2 text-2xl font-semibold tracking-tight tabular-nums text-slate-900">
-            {campaign.sent}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            intro sent · {campaign.hotAudience} turned hot ·{" "}
-            {campaign.audienceReady} ready
-          </p>
-        </Card>
-      </div>
     </div>
   );
 }

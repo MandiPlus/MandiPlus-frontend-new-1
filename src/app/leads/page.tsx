@@ -15,6 +15,7 @@ import "react-toastify/dist/ReactToastify.css";
 import { useAdmin } from "@/features/admin/context/AdminContext";
 import BuyerDetailsSheet from "@/features/leads/components/BuyerDetailsSheet";
 import CommandCenter from "@/features/leads/components/CommandCenter";
+import OverviewBoard from "@/features/leads/components/OverviewBoard";
 import IngestPanel from "@/features/leads/components/IngestPanel";
 import {
   getLeadEvents,
@@ -80,6 +81,7 @@ type Tab =
   | "mandiplus"
   | "converted"
   | "closed"
+  | "overall"
   | "reports"
   | "ingest";
 
@@ -654,6 +656,7 @@ export default function LeadsPage() {
 
   const sections: [Tab, string][] = [
     ["today", "Today"],
+    ...(viewer?.isManager ? ([["overall", "Overall"]] as [Tab, string][]) : []),
     ["leads", "Leads"],
     ["mandiplus", "On Mandiplus"],
     ["converted", "Converted"],
@@ -662,7 +665,7 @@ export default function LeadsPage() {
     ...(viewer?.isManager ? ([["ingest", "Add data"]] as [Tab, string][]) : []),
   ];
   const sectionCount = (key: Tab) =>
-    key === "reports" || key === "today" || key === "ingest"
+    key === "reports" || key === "today" || key === "ingest" || key === "overall"
       ? null
       : tabCounts[key as keyof typeof tabCounts];
 
@@ -867,7 +870,9 @@ export default function LeadsPage() {
           </div>
         </nav>
 
-        {tab === "ingest" ? (
+        {tab === "overall" ? (
+          <OverviewBoard />
+        ) : tab === "ingest" ? (
           <IngestPanel
             team={team}
             commodities={commodities}

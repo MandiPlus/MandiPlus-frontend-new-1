@@ -503,3 +503,54 @@ export async function getCommandCenter(): Promise<CommandCenterData> {
   });
   return response.data;
 }
+
+export interface OverviewData {
+  totals: {
+    calls: number;
+    connects: number;
+    hot: number;
+    converted: number;
+    leads_added: number;
+    connectRate: number;
+  };
+  funnel: {
+    stages: { key: string; label: string; count: number }[];
+    worstDrop: string | null;
+    inFollowUp: number;
+  };
+  trend: { day: string; calls: number; connects: number; interested: number }[];
+  quality: {
+    levels: { level: number; count: number }[];
+    sources: {
+      source: string;
+      leads: number;
+      wrongNumbers: number;
+      confirmed: number;
+      warm: number;
+    }[];
+  };
+  campaign: { audienceReady: number; sent: number; hotAudience: number };
+  opportunities: {
+    id: string;
+    name: string;
+    status: LeadStatus;
+    assignee: string | null;
+    dailyVehicles: number | null;
+    buyingVolume: string | null;
+    mandi: string | null;
+  }[];
+  runway: { freshRemaining: number; dailyCapacity: number; days: number | null };
+  callers: { userId: string; name: string }[];
+}
+
+export async function getOverview(params: {
+  from?: string;
+  to?: string;
+  userId?: string;
+}): Promise<OverviewData> {
+  const response = await axios.get(`${API_BASE_URL}/leads/admin/overview`, {
+    params,
+    headers: getAdminHeaders(),
+  });
+  return response.data;
+}
