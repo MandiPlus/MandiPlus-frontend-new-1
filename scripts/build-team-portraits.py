@@ -3,7 +3,7 @@ Normalise the studio headshots into one consistent set of web portraits.
 
 Framing is PROPORTIONAL, not a fixed pixel box. The shots were taken at different distances and
 resolutions, so a shared 800x1000 crop measured in source pixels cut the MandiPlus wordmark off
-nine of the twelve chests. Every crop is now derived from two landmarks measured per photo:
+most of the chests. Every crop is now derived from two landmarks measured per photo:
 
     hair top  -> pinned at HAIR_AT of the frame height
     logo foot -> pinned at LOGO_AT of the frame height
@@ -15,7 +15,7 @@ landmarks measure cleanly on every shot. It also happens to normalise head size 
 within a couple of percent of each other.
 
 Two corrections run before the crop:
-  * canvas extension — top for the tight frames, bottom for the two whose chest runs past the
+  * canvas extension — top for the tight frames, bottom for those whose chest runs past the
     frame edge. Both regions are near-flat (studio sweep above, black tee below), so the ramp is
     continued with a damped slope plus matched grain and the seam is invisible.
   * background match — the plates run 172..228 in luminance and drift cool, so a feathered
@@ -36,7 +36,7 @@ GEOM = {
     "bharath":   ("bharath-on-plate.png",  48, 542, 1036),
     "manat":     ("manattt.jpeg",          64, 623, 1019),
     "nikhil":    ("nikhilv1.jpeg",         51, 626, 1035),
-    "abhishrey": ("abhishrey.jpeg",        61, 516,  844),
+    "abhishrey": ("abhishreynew.jpeg",     91, 637, 1183),
     "nikhilc":   ("balasainikhil.jpeg",    79, 521,  878),
     "ashok":     ("ashok.jpeg",            86, 640, 1079),
     "om":        ("omi.jpeg",              79, 637, 1007),
@@ -45,6 +45,7 @@ GEOM = {
     "sanjay":    ("sanjayv1.jpeg",        108, 619, 1142),
     "deepam":    ("deepamv1.jpeg",         70, 626, 1168),
     "krithik":   ("krithik.jpeg",          52, 513,  827),
+    "tauqeer":   ("tauqeer.jpeg",          55, 626, 1157),
 }
 
 HAIR_AT, LOGO_AT = 0.085, 0.88   # where the two landmarks sit in the output frame
