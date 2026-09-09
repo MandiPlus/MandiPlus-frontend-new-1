@@ -13,6 +13,7 @@ import {
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useAdmin } from "@/features/admin/context/AdminContext";
+import BuyerDetailsSheet from "@/features/leads/components/BuyerDetailsSheet";
 import {
   getLeadEvents,
   getLeadReport,
@@ -29,6 +30,7 @@ import {
   type LeadReport,
   type LeadStatus,
   REJECTION_REASONS,
+  VERIFICATION_LEVELS,
   type LeadTeamMember,
   type LeadViewerInfo,
   type RejectionReason,
@@ -160,6 +162,7 @@ export default function LeadsPage() {
   const [callNote, setCallNote] = useState("");
   const [callFollowUpDate, setCallFollowUpDate] = useState("");
   const [callReason, setCallReason] = useState<RejectionReason | "">("");
+  const [detailsLead, setDetailsLead] = useState<LeadRecord | null>(null);
   const [callDemoAt, setCallDemoAt] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -462,8 +465,11 @@ export default function LeadsPage() {
     if (!focusLead || outcomeIncomplete) return;
     setSaving(true);
     try {
+      const wasConfirmed = callDisposition === "CONFIRMED_BUYER";
+      const lead = focusLead;
       await logLeadCall(focusLead.id, outcomePayload());
       resetOutcome();
+      if (wasConfirmed) setDetailsLead(lead);
       setFocusIndex((i) => (i === null ? null : i + 1));
       // The plan and the board move on in the background; the queue in hand
       // stays put so the caller is never re-ordered mid-session.
@@ -616,8 +622,11 @@ export default function LeadsPage() {
     if (!callLead || outcomeIncomplete) return;
     setSaving(true);
     try {
+      const wasConfirmed = callDisposition === "CONFIRMED_BUYER";
+      const lead = callLead;
       await logLeadCall(callLead.id, outcomePayload());
       setCallLead(null);
+      if (wasConfirmed) setDetailsLead(lead);
       await refreshLeads();
     } catch {
       toast.error("Could not log the call");
@@ -1590,6 +1599,18 @@ export default function LeadsPage() {
           </>
         )}
       </main>
+
+      {detailsLead && (
+        <BuyerDetailsSheet
+          lead={detailsLead}
+          commodities={commodities}
+          onClose={() => setDetailsLead(null)}
+          onSaved={() => {
+            refreshLeads();
+            if (tab === "today") loadPlan(viewer?.isManager ? planFor : undefined);
+          }}
+        />
+      )}
 
       {focusLead && (
         <div className="fixed inset-0 z-40 flex flex-col bg-white">

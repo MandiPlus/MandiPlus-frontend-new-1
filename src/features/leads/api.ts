@@ -71,6 +71,8 @@ export interface LeadRecord {
   attemptCount: number;
   nextFollowUpAt: string | null;
   rejectionReason: RejectionReason | null;
+  source: string;
+  verificationLevel: number;
   demoAt: string | null;
   warmupSentAt: string | null;
   lastActivityAt: string | null;
@@ -283,4 +285,86 @@ export async function logLeadCall(
     { headers: { ...getAdminHeaders(), 'Content-Type': 'application/json' } },
   );
   return response.data.lead;
+}
+
+export interface LeadProfile {
+  shop_name: string | null;
+  contact_person: string | null;
+  city: string | null;
+  mandi: string | null;
+  market_area: string | null;
+  shop_number: string | null;
+  product: string | null;
+  additional_products: string | null;
+  business_type: string | null;
+  business_activity: string | null;
+  daily_vehicles: number | null;
+  weekly_vehicles: number | null;
+  buying_volume: string | null;
+  notes: string | null;
+}
+
+export const BUSINESS_TYPES = [
+  { value: 'BUYER', label: 'Buyer' },
+  { value: 'TRADER', label: 'Trader' },
+  { value: 'WHOLESALER', label: 'Wholesaler' },
+  { value: 'COMMISSION_AGENT', label: 'Commission agent' },
+  { value: 'SUPPLIER', label: 'Supplier' },
+  { value: 'OTHER', label: 'Other' },
+];
+
+export const BUSINESS_ACTIVITY = [
+  { value: 'ACTIVE', label: 'Active' },
+  { value: 'INACTIVE', label: 'Inactive' },
+  { value: 'SEASONAL', label: 'Seasonal' },
+];
+
+export const VERIFICATION_LEVELS: Record<number, string> = {
+  1: 'Raw',
+  2: 'Contact verified',
+  3: 'Buyer verified',
+  4: 'Fully verified',
+};
+
+export async function getLeadProfile(id: string): Promise<LeadProfile | null> {
+  const response = await axios.get(
+    `${API_BASE_URL}/leads/admin/${id}/profile`,
+    { headers: getAdminHeaders() },
+  );
+  return response.data.profile;
+}
+
+export async function saveLeadProfile(
+  id: string,
+  payload: Record<string, unknown>,
+): Promise<{ verificationLevel: number }> {
+  const response = await axios.patch(
+    `${API_BASE_URL}/leads/admin/${id}/profile`,
+    payload,
+    { headers: { ...getAdminHeaders(), 'Content-Type': 'application/json' } },
+  );
+  return response.data;
+}
+
+export interface MarketContactInput {
+  name: string;
+  mobile: string;
+  shopName?: string;
+  product?: string;
+  businessType?: string;
+  mandi?: string;
+  city?: string;
+  relationship?: string;
+}
+
+export async function addMarketContacts(
+  id: string,
+  contacts: MarketContactInput[],
+): Promise<{ created: number; duplicates: number; invalid: string[] }> {
+  const response = await axios.post(
+    `${API_BASE_URL}/leads/admin/${id}/contacts`,
+    { contacts },
+    { headers: { ...getAdminHeaders(), 'Content-Type': 'application/json' } },
+  );
+  return response.data;
 }
