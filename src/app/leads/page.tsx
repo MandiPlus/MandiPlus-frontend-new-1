@@ -393,10 +393,15 @@ export default function LeadsPage() {
   const tabCounts = useMemo(() => {
     const counts = { leads: 0, mandiplus: 0, converted: 0, closed: 0 };
     for (const lead of baseFiltered) {
-      if (lead.status === "CONVERTED") counts.converted += 1;
-      else if (lead.matchedUserId) counts.mandiplus += 1;
-      else if (CLOSED_STATUSES.includes(lead.status)) counts.closed += 1;
-      else counts.leads += 1;
+      // Tabs are views, not a partition: a lead who is already a customer is
+      // counted in both All Leads and On Mandiplus, exactly as it is shown.
+      if (lead.status === "CONVERTED") {
+        counts.converted += 1;
+      } else {
+        if (CLOSED_STATUSES.includes(lead.status)) counts.closed += 1;
+        else counts.leads += 1;
+        if (lead.matchedUserId) counts.mandiplus += 1;
+      }
     }
     return counts;
   }, [baseFiltered]);
@@ -404,15 +409,17 @@ export default function LeadsPage() {
   const visible = useMemo(() => {
     const inTab = baseFiltered.filter((lead) => {
       if (tab === "converted") return lead.status === "CONVERTED";
+      // On Mandiplus is a filtered view of leads who are already customers,
+      // not a place they get moved to - they stay in All Leads as well.
       if (tab === "mandiplus")
         return !!lead.matchedUserId && lead.status !== "CONVERTED";
-      if (tab === "closed")
-        return !lead.matchedUserId && CLOSED_STATUSES.includes(lead.status);
-      // All Leads is everything not converted, not on Mandiplus and not
-      // closed - a remainder rather than an allowlist, so a status nobody
-      // thought about shows up here instead of vanishing from the board.
+      if (tab === "closed") return CLOSED_STATUSES.includes(lead.status);
+      // All Leads means all of them: everything not converted and not closed.
+      // A remainder rather than an allowlist, so a status nobody thought
+      // about shows up here instead of vanishing. Being an existing customer
+      // no longer hides a lead either - someone who adds a trader expects to
+      // find them in the list they just added them to.
       return (
-        !lead.matchedUserId &&
         lead.status !== "CONVERTED" &&
         !CLOSED_STATUSES.includes(lead.status)
       );
@@ -1463,6 +1470,12 @@ export default function LeadsPage() {
                           >
                             {STATUS_META[lead.status].label}
                           </span>
+                          {lead.matchedUserId && (
+                            <span className="inline-flex shrink-0 rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">
+                              On Mandiplus
+                            </span>
+                          )}
+
                         </div>
                         {/* Two rows on a phone: the number and its shortcuts,
                             then the two actions side by side. One row could not
@@ -1642,6 +1655,12 @@ export default function LeadsPage() {
                                 >
                                   {STATUS_META[lead.status].label}
                                 </span>
+                                {lead.matchedUserId && (
+                                  <span className="inline-flex shrink-0 rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">
+                                    On Mandiplus
+                                  </span>
+                                )}
+
                               </td>
                               <td className="border-b border-gray-50 px-3 py-3">
                                 <span
