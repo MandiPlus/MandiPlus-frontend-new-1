@@ -249,7 +249,6 @@ export default function LeadsPage() {
 
   useEffect(() => {
     if (tab !== "today" || !viewer) return;
-    if (viewer.isManager && !planFor) return;
     loadPlan(viewer.isManager ? planFor : undefined);
   }, [tab, viewer, planFor, loadPlan]);
 
@@ -257,7 +256,6 @@ export default function LeadsPage() {
   // without the caller thinking to reload.
   useEffect(() => {
     if (tab !== "today" || !viewer) return;
-    if (viewer.isManager && !planFor) return;
     if (focusIndex !== null) return;
     const target = viewer.isManager ? planFor : undefined;
     const tick = () => {
@@ -766,7 +764,7 @@ export default function LeadsPage() {
                 onChange={(e) => setPlanFor(e.target.value)}
                 className={`${selectClass} mb-4`}
               >
-                <option value="">Pick a team member</option>
+                <option value="">Whole team</option>
                 {team.map((member) => (
                   <option key={member.id} value={member.id}>
                     {member.name}
@@ -775,11 +773,7 @@ export default function LeadsPage() {
               </select>
             )}
 
-            {viewer?.isManager && !planFor ? (
-              <p className="py-16 text-center text-sm text-gray-400">
-                Pick a team member to see their day
-              </p>
-            ) : planLoading || !plan ? (
+            {planLoading || !plan ? (
               <div className="space-y-3">
                 {[...Array(3)].map((_, i) => (
                   <div key={i} className="h-20 animate-pulse rounded-2xl bg-gray-50" />
@@ -793,6 +787,7 @@ export default function LeadsPage() {
                     <div className="min-w-0 flex-1">
                       <p className="text-base font-semibold">
                         {plan.covered} of {plan.target} covered today
+                        {plan.scope === "team" ? " (team)" : ""}
                       </p>
                       <p className="text-xs text-gray-500">
                         {plan.callsToday} {plan.callsToday === 1 ? "call" : "calls"} made
@@ -801,21 +796,26 @@ export default function LeadsPage() {
                         {plan.scheduledLater > 0
                           ? ` · ${plan.scheduledLater} later today`
                           : ""}
+                        {plan.scope === "member" && plan.nextAction
+                          ? ` · next: ${plan.nextAction}`
+                          : ""}
                       </p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={startFocus}
-                    disabled={!plan.queue.length}
-                    className="mt-4 h-12 w-full shrink-0 rounded-full px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 sm:mt-0 sm:h-11 sm:w-auto"
-                    style={{ backgroundColor: ACCENT }}
-                  >
-                    {plan.queue.length ? "Start calling" : "All done"}
-                  </button>
+                  {plan.scope === "member" && (
+                    <button
+                      type="button"
+                      onClick={startFocus}
+                      disabled={!plan.queue.length}
+                      className="mt-4 h-12 w-full shrink-0 rounded-full px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 sm:mt-0 sm:h-11 sm:w-auto"
+                      style={{ backgroundColor: ACCENT }}
+                    >
+                      {plan.queue.length ? "Start calling" : "All done"}
+                    </button>
+                  )}
                 </div>
 
-                {viewer?.isManager && (
+                {viewer?.isManager && plan.scope === "member" && (
                   <div className="mt-3 flex items-center gap-2">
                     <label className="text-xs text-gray-500" htmlFor="target">
                       Daily target
@@ -839,7 +839,55 @@ export default function LeadsPage() {
                   </div>
                 )}
 
-                {plan.queue.length === 0 ? (
+                {plan.scope === "team" ? (
+                  <div className="mt-6 space-y-3">
+                    {(plan.members ?? []).length === 0 ? (
+                      <p className="py-10 text-center text-sm text-gray-400">
+                        Nobody has leads assigned yet
+                      </p>
+                    ) : (
+                      (plan.members ?? []).map((member) => (
+                        <button
+                          key={member.userId}
+                          type="button"
+                          onClick={() => setPlanFor(member.userId)}
+                          className="w-full rounded-2xl border border-gray-100 p-4 text-left hover:border-gray-200"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="font-medium">{member.name}</p>
+                            <p className="text-sm tabular-nums text-gray-500">
+                              {member.covered}/{member.target}
+                            </p>
+                          </div>
+                          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                backgroundColor: ACCENT,
+                                width: `${member.target > 0 ? Math.min(100, (member.covered / member.target) * 100) : 0}%`,
+                              }}
+                            />
+                          </div>
+                          <p className="mt-2 flex flex-wrap gap-x-3 text-xs text-gray-500">
+                            {member.overdue > 0 && (
+                              <span className="font-medium text-red-600">
+                                {member.overdue} overdue
+                              </span>
+                            )}
+                            {member.dueToday > 0 && (
+                              <span className="text-amber-600">
+                                {member.dueToday} due today
+                              </span>
+                            )}
+                            {member.hot > 0 && <span>{member.hot} interested</span>}
+                            <span>{member.fresh} new</span>
+                            <span>{member.callsToday} calls today</span>
+                          </p>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                ) : plan.queue.length === 0 ? (
                   <p className="py-16 text-center text-sm text-gray-400">
                     Nothing left to call today
                   </p>
@@ -847,10 +895,12 @@ export default function LeadsPage() {
                   <div className="mt-6 space-y-6">
                     {(
                       [
-                        ["dueNow", "Call now", "text-red-600"],
+                        ["overdue", "Overdue follow-ups", "text-red-600"],
+                        ["dueNow", "Due now", "text-red-600"],
                         ["laterToday", "Later today", "text-amber-600"],
-                        ["retry", "Try again", "text-orange-600"],
+                        ["hot", "Interested", "text-[#4309ac]"],
                         ["fresh", "New leads", "text-gray-900"],
+                        ["recall", "Not connected", "text-orange-600"],
                       ] as const
                     ).map(([key, label, tone]) => {
                       const list = plan.sections[key];
@@ -874,22 +924,22 @@ export default function LeadsPage() {
                                     {lead.displayName}
                                   </p>
                                   <p className="truncate text-xs text-gray-400">
-                                    {lead.nextFollowUpAt && (
+                                    {(lead.reason || lead.nextFollowUpAt) && (
                                       <span
                                         className={
                                           key === "laterToday"
                                             ? "font-medium text-amber-600"
-                                            : "font-medium text-red-600"
+                                            : key === "overdue" || key === "dueNow"
+                                              ? "font-medium text-red-600"
+                                              : "font-medium text-gray-600"
                                         }
                                       >
-                                        {formatWhen(lead.nextFollowUpAt)}
+                                        {lead.reason ??
+                                          formatWhen(lead.nextFollowUpAt)}
                                         {" · "}
                                       </span>
                                     )}
                                     {lead.phones[0]?.e164.replace("+91", "") ?? "—"}
-                                    {lead.attemptCount > 0
-                                      ? ` · ${lead.attemptCount} ${lead.attemptCount === 1 ? "attempt" : "attempts"}`
-                                      : ""}
                                   </p>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1.5">

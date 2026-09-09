@@ -129,7 +129,26 @@ export interface LeadViewerInfo {
   dailyTarget: number;
 }
 
+export interface QueuedLead extends LeadRecord {
+  tier?: string;
+  reason?: string;
+}
+
+export interface TeamMemberDay {
+  userId: string;
+  name: string;
+  target: number;
+  covered: number;
+  callsToday: number;
+  overdue: number;
+  dueToday: number;
+  hot: number;
+  fresh: number;
+  openLeads: number;
+}
+
 export interface TodayPlan {
+  scope: 'member' | 'team';
   userId: string | null;
   name: string | null;
   target: number;
@@ -138,13 +157,17 @@ export interface TodayPlan {
   remaining: number;
   pending: number;
   scheduledLater: number;
+  nextAction: string | null;
+  members?: TeamMemberDay[];
   sections: {
-    dueNow: LeadRecord[];
-    laterToday: LeadRecord[];
-    retry: LeadRecord[];
-    fresh: LeadRecord[];
+    overdue: QueuedLead[];
+    dueNow: QueuedLead[];
+    laterToday: QueuedLead[];
+    hot: QueuedLead[];
+    fresh: QueuedLead[];
+    recall: QueuedLead[];
   };
-  queue: LeadRecord[];
+  queue: QueuedLead[];
 }
 
 export async function getTodayPlan(userId?: string): Promise<TodayPlan> {
