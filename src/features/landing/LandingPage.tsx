@@ -41,13 +41,20 @@ const profitTranslations = [
   { lang: "bn", text: "লাভ আপনার।" },
 ];
 
+/**
+ * The Minister frame opens the rotation but stays out of the tab strip: the header reads
+ * "Insurance · Tracking · Claims" only. It keeps its dot, so the indicator row always has an
+ * active state and the frame stays reachable by hand.
+ */
+const COVER_FRAME_ID = "bharat";
+
 const featureShowcase = [
   {
     id: "bharat",
     name: "Bharat",
     subtitle: "Mandis se ek stronger Bharat tak.",
     wideImage: "/images/landing/feature-bharat-wide.webp",
-    mobileImage: "/images/landing/feature-bharat-mobile.webp",
+    mobileImage: "/images/landing/feature-bharat-mobile-v2.webp",
     alt: "Union Agriculture Minister Shri Shivraj Singh Chouhan on how MandiPlus reduces losses and protects farmers and traders",
   },
   {
@@ -355,9 +362,12 @@ const LandingPage = () => {
             role="tablist"
             aria-label="MandiPlus services"
           >
-            {featureShowcase.map((feature, index) => (
+            {featureShowcase
+              .map((feature, index) => ({ feature, index }))
+              .filter(({ feature }) => feature.id !== COVER_FRAME_ID)
+              .map(({ feature, index }, position) => (
               <span key={feature.id} className={styles.showcaseTabItem}>
-                {index > 0 ? (
+                {position > 0 ? (
                   <span className={styles.showcaseSeparator} aria-hidden="true">
                     ·
                   </span>
@@ -401,10 +411,12 @@ const LandingPage = () => {
                   className={`${styles.showcaseSlide} ${positionClass}`}
                   aria-hidden={activeFeature !== index}
                 >
-                  <div className={styles.showcaseMobileCopy}>
-                    <h2>{feature.name}</h2>
-                    <p>{feature.subtitle}</p>
-                  </div>
+                  {feature.id !== COVER_FRAME_ID ? (
+                    <div className={styles.showcaseMobileCopy}>
+                      <h2>{feature.name}</h2>
+                      <p>{feature.subtitle}</p>
+                    </div>
+                  ) : null}
 
                   <Image
                     src={feature.wideImage}
