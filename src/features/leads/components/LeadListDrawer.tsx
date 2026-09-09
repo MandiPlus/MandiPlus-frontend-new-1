@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { toast } from "react-toastify";
 import { getOverviewLeads, type OverviewLead } from "../api";
+import PlaceCallButton from "./PlaceCallButton";
 
 const STATUS_LABEL: Record<string, string> = {
   NEW: "New",
@@ -148,12 +149,14 @@ export default function LeadListDrawer({
                     </td>
                     <td className="whitespace-nowrap border-b border-slate-50 px-2 py-2.5 tabular-nums text-slate-600">
                       {l.phone ? (
-                        <a
-                          href={`tel:${l.phone}`}
-                          className="hover:text-[#4309ac]"
-                        >
-                          {l.phone.replace("+91", "")}
-                        </a>
+                        <PlaceCallButton
+                          leadId={l.id}
+                          phone={l.phone}
+                          compact
+                          icon={false}
+                          label={l.phone.replace("+91", "")}
+                          className="tabular-nums"
+                        />
                       ) : (
                         "—"
                       )}
