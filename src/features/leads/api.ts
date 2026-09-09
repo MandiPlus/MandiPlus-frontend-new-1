@@ -268,6 +268,8 @@ export async function logLeadCall(
     nextFollowUpAt?: string;
     rejectionReason?: RejectionReason;
     demoAt?: string;
+    /** Stitches this disposition to the recording of the call it describes. */
+    callSid?: string;
   },
 ): Promise<LeadRecord> {
   const response = await axios.post(
@@ -643,3 +645,127 @@ export async function getOverview(params: {
   });
   return response.data;
 }
+
+// ─── Calls (Exotel click-to-call) ────────────────────────────────────
+
+/** An internal team member who can be filtered on. */
+export interface OverviewCaller {
+  userId: string;
+  name: string;
+}
+
+export interface PlacedCall {
+  callSid: string;
+  ringingOn: string;
+  leadPhone: string;
+}
+
+export interface CallStatus {
+  callSid: string;
+  status: string | null;
+  durationSeconds: number | null;
+  talkSeconds: number | null;
+  answeredAt: string | null;
+  hasRecording: boolean;
+}
+
+export type CallOutcome =
+  | 'connected'
+  | 'lead_no_answer'
+  | 'caller_no_answer'
+  | 'failed';
+
+export interface CallRecord {
+  callSid: string;
+  at: string;
+  direction: string;
+  status: string | null;
+  durationSeconds: number | null;
+  talkSeconds: number | null;
+  answeredAt: string | null;
+  hasRecording: boolean;
+  outcome: CallOutcome;
+  placedBy: string | null;
+  leadId: string;
+  leadName: string;
+  leadPhone: string | null;
+  region: string | null;
+  mandi: string | null;
+  shopName: string | null;
+  commodityCode: string | null;
+  leadStatus: LeadStatus;
+  assignee: string | null;
+  disposition: string | null;
+  note: string | null;
+}
+
+export interface CallsPage {
+  limit: number;
+  offset: number;
+  total: number;
+  hasMore: boolean;
+}
+
+export interface CallsSummary {
+  total: number;
+  connected: number;
+  connectRate: number;
+  talkSeconds: number;
+  avgTalkSeconds: number;
+  recordings: number;
+}
+
+/** Rings the caller's own phone first, then the lead. */
+export async function placeLeadCall(
+  leadId: string,
+  phone?: string,
+): Promise<PlacedCall> {
+  const response = await axios.post(
+    `${API_BASE_URL}/leads/admin/${leadId}/place-call`,
+    phone ? { phone } : {},
+    { headers: getAdminHeaders() },
+  );
+  return response.data;
+}
+
+export async function getCallStatus(callSid: string): Promise<CallStatus | null> {
+  const response = await axios.get(
+    `${API_BASE_URL}/leads/admin/calls/status/${callSid}`,
+    { headers: getAdminHeaders() },
+  );
+  return response.data?.call ?? null;
+}
+
+export async function getCalls(params: {
+  from?: string;
+  to?: string;
+  userId?: string;
+  commodityCode?: string;
+  outcome?: string;
+  leadId?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ calls: CallRecord[]; summary: CallsSummary; page: CallsPage }> {
+  const response = await axios.get(`${API_BASE_URL}/leads/admin/calls`, {
+    params,
+    headers: getAdminHeaders(),
+  });
+  return response.data;
+}
+
+/**
+ * Recordings sit behind our Exotel credentials and are streamed by the backend.
+ * An <audio src> sends no headers, and putting the admin token in the URL would
+ * write it into every access log between here and Render - so the audio is
+ * fetched as a blob with the header and played from an object URL.
+ *
+ * Revoke the returned URL when the player unmounts or the blob leaks.
+ */
+export async function fetchRecording(callSid: string): Promise<string> {
+  const response = await axios.get(
+    `${API_BASE_URL}/leads/admin/calls/${callSid}/recording`,
+    { headers: getAdminHeaders(), responseType: 'blob' },
+  );
+  return URL.createObjectURL(response.data);
+}
+

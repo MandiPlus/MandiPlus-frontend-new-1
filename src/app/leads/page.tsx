@@ -15,7 +15,10 @@ import "react-toastify/dist/ReactToastify.css";
 import { useAdmin } from "@/features/admin/context/AdminContext";
 import BuyerDetailsSheet from "@/features/leads/components/BuyerDetailsSheet";
 import CommandCenter from "@/features/leads/components/CommandCenter";
+import CallsBoard from "@/features/leads/components/CallsBoard";
+import LeadCallHistory from "@/features/leads/components/LeadCallHistory";
 import OverviewBoard from "@/features/leads/components/OverviewBoard";
+import PlaceCallButton from "@/features/leads/components/PlaceCallButton";
 import IngestPanel from "@/features/leads/components/IngestPanel";
 import {
   getLeadEvents,
@@ -82,15 +85,30 @@ type Tab =
   | "converted"
   | "closed"
   | "overall"
+  | "calls"
   | "reports"
   | "ingest";
 
+/**
+ * The three buckets below must together cover every LeadStatus. A status in
+ * none of them belongs to no tab and the lead becomes invisible on the board -
+ * which is exactly what happened to CONFIRMED_BUYER, DEMO_BOOKED and
+ * NOT_RELEVANT, hiding a confirmed buyer from everyone.
+ */
 const ACTIVE_STATUSES: LeadStatus[] = [
   "NEW",
   "CONTACTED",
   "FOLLOW_UP",
   "INTERESTED",
+  "CONFIRMED_BUYER",
+  "DEMO_BOOKED",
   "NOT_REACHABLE",
+];
+
+const CLOSED_STATUSES: LeadStatus[] = [
+  "NOT_INTERESTED",
+  "NOT_RELEVANT",
+  "INVALID",
 ];
 
 function startOfDay(d: Date) {
@@ -176,6 +194,9 @@ export default function LeadsPage() {
   const [callReason, setCallReason] = useState<RejectionReason | "">("");
   const [detailsLead, setDetailsLead] = useState<LeadRecord | null>(null);
   const [callDemoAt, setCallDemoAt] = useState("");
+  /** Set when the outcome sheet was opened by an Exotel call ending, so the
+   *  disposition is stitched to the recording of the call it describes. */
+  const [callSid, setCallSid] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const [viewer, setViewer] = useState<LeadViewerInfo | null>(null);
@@ -373,8 +394,8 @@ export default function LeadsPage() {
     for (const lead of baseFiltered) {
       if (lead.status === "CONVERTED") counts.converted += 1;
       else if (lead.matchedUserId) counts.mandiplus += 1;
-      else if (ACTIVE_STATUSES.includes(lead.status)) counts.leads += 1;
-      else counts.closed += 1;
+      else if (CLOSED_STATUSES.includes(lead.status)) counts.closed += 1;
+      else counts.leads += 1;
     }
     return counts;
   }, [baseFiltered]);
@@ -385,11 +406,15 @@ export default function LeadsPage() {
       if (tab === "mandiplus")
         return !!lead.matchedUserId && lead.status !== "CONVERTED";
       if (tab === "closed")
-        return (
-          !lead.matchedUserId &&
-          (lead.status === "NOT_INTERESTED" || lead.status === "INVALID")
-        );
-      return !lead.matchedUserId && ACTIVE_STATUSES.includes(lead.status);
+        return !lead.matchedUserId && CLOSED_STATUSES.includes(lead.status);
+      // All Leads is everything not converted, not on Mandiplus and not
+      // closed - a remainder rather than an allowlist, so a status nobody
+      // thought about shows up here instead of vanishing from the board.
+      return (
+        !lead.matchedUserId &&
+        lead.status !== "CONVERTED" &&
+        !CLOSED_STATUSES.includes(lead.status)
+      );
     });
     const rank = (lead: LeadRecord) => {
       const bucket = followUpBucket(lead);
@@ -557,6 +582,7 @@ export default function LeadsPage() {
   );
 
   const resetOutcome = () => {
+    setCallSid(null);
     setCallDisposition(null);
     setCallNote("");
     setCallFollowUpDate("");
@@ -564,9 +590,10 @@ export default function LeadsPage() {
     setCallDemoAt("");
   };
 
-  const openCallSheet = (lead: LeadRecord) => {
+  const openCallSheet = (lead: LeadRecord, sid?: string) => {
     setCallLead(lead);
     resetOutcome();
+    if (sid) setCallSid(sid);
   };
 
   /** The PRD's rule: no call is finished until the outcome is complete. */
@@ -588,6 +615,7 @@ export default function LeadsPage() {
         ? new Date(callDemoAt).toISOString()
         : undefined,
     rejectionReason: callReason || undefined,
+    callSid: callSid || undefined,
   });
 
   const renderOutcomeExtras = () => (
@@ -661,11 +689,16 @@ export default function LeadsPage() {
     ["mandiplus", "On Mandiplus"],
     ["converted", "Converted"],
     ["closed", "Closed"],
+    ["calls", "Calls"],
     ["reports", "Reports"],
     ...(viewer?.isManager ? ([["ingest", "Add data"]] as [Tab, string][]) : []),
   ];
   const sectionCount = (key: Tab) =>
-    key === "reports" || key === "today" || key === "ingest" || key === "overall"
+    key === "reports" ||
+    key === "today" ||
+    key === "ingest" ||
+    key === "overall" ||
+    key === "calls"
       ? null
       : tabCounts[key as keyof typeof tabCounts];
 
@@ -680,14 +713,15 @@ export default function LeadsPage() {
             <p className="mb-1 text-xs font-medium text-gray-400">All numbers</p>
             <div className="flex flex-wrap gap-2">
               {lead.phones.map((phone) => (
-                <a
+                <PlaceCallButton
                   key={phone.e164}
-                  href={`tel:${phone.e164}`}
-                  className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs tabular-nums text-gray-600 hover:border-gray-300"
-                >
-                  {phone.e164.replace("+91", "")}
-                  {phone.isLandline ? " · landline" : ""}
-                </a>
+                  leadId={lead.id}
+                  phone={phone.e164}
+                  compact
+                  label={`${phone.e164.replace("+91", "")}${phone.isLandline ? " · landline" : ""}`}
+                  className="tabular-nums"
+                  onEnded={(sid) => openCallSheet(lead, sid)}
+                />
               ))}
             </div>
           </div>
@@ -744,7 +778,12 @@ export default function LeadsPage() {
         </div>
       </div>
       <div>
-        <p className="mb-2 text-xs font-medium text-gray-400">History</p>
+        <p className="mb-2 text-xs font-medium text-gray-400">
+          Calls &amp; recordings
+        </p>
+        <LeadCallHistory leadId={lead.id} />
+
+        <p className="mb-2 mt-4 text-xs font-medium text-gray-400">History</p>
         {eventsLoading ? (
           <div className="h-16 animate-pulse rounded-xl bg-gray-100" />
         ) : events.length === 0 ? (
@@ -872,6 +911,18 @@ export default function LeadsPage() {
 
         {tab === "overall" ? (
           <OverviewBoard />
+        ) : tab === "calls" ? (
+          <div className="py-5">
+            <CallsBoard
+              commodities={commodities}
+              callers={team.map((t) => ({ userId: t.id, name: t.name }))}
+              isManager={Boolean(viewer?.isManager)}
+              onOpenLead={(leadId) => {
+                setTab("leads");
+                setExpandedId(leadId);
+              }}
+            />
+          </div>
         ) : tab === "ingest" ? (
           <IngestPanel
             team={team}
@@ -1034,13 +1085,13 @@ export default function LeadsPage() {
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1.5">
                                   {lead.phones[0] && (
-                                    <a
-                                      href={`tel:${lead.phones[0].e164}`}
-                                      aria-label="Call"
-                                      className="flex size-10 items-center justify-center rounded-full border border-gray-200 text-gray-600 active:bg-gray-50"
-                                    >
-                                      <Phone className="size-4" />
-                                    </a>
+                                    <PlaceCallButton
+                                      leadId={lead.id}
+                                      phone={lead.phones[0].e164}
+                                      label=""
+                                      className="size-10 justify-center !px-0"
+                                      onEnded={(sid) => openCallSheet(lead, sid)}
+                                    />
                                   )}
                                   <button
                                     type="button"
@@ -1400,44 +1451,53 @@ export default function LeadsPage() {
                             {STATUS_META[lead.status].label}
                           </span>
                         </div>
-                        <div className="mt-2.5 flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            {primary && (
-                              <>
+                        {/* Two rows on a phone: the number and its shortcuts,
+                            then the two actions side by side. One row could not
+                            hold four controls without pushing Log call off the
+                            screen. */}
+                        <div className="mt-2.5 space-y-2">
+                          {primary && (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="flex h-10 items-center gap-2 rounded-full border border-gray-200 pl-3 pr-4 text-sm tabular-nums text-gray-700">
+                                <Phone className="size-4 text-gray-400" />
+                                {primary.e164.replace("+91", "")}
+                              </span>
+                              {!primary.isLandline && (
                                 <a
-                                  href={`tel:${primary.e164}`}
-                                  className="flex h-10 items-center gap-2 rounded-full border border-gray-200 pl-3 pr-4 text-sm tabular-nums text-gray-700 active:bg-gray-50"
+                                  href={`https://wa.me/${primary.e164.replace("+", "")}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  aria-label="WhatsApp"
+                                  className="flex size-10 items-center justify-center rounded-full border border-gray-200 text-emerald-600 active:bg-emerald-50"
                                 >
-                                  <Phone className="size-4 text-gray-400" />
-                                  {primary.e164.replace("+91", "")}
+                                  <MessageCircle className="size-4" />
                                 </a>
-                                {!primary.isLandline && (
-                                  <a
-                                    href={`https://wa.me/${primary.e164.replace("+", "")}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    aria-label="WhatsApp"
-                                    className="flex size-10 items-center justify-center rounded-full border border-gray-200 text-emerald-600 active:bg-emerald-50"
-                                  >
-                                    <MessageCircle className="size-4" />
-                                  </a>
-                                )}
-                                {lead.phones.length > 1 && (
-                                  <span className="text-xs text-gray-400">
-                                    +{lead.phones.length - 1}
-                                  </span>
-                                )}
-                              </>
+                              )}
+                              {lead.phones.length > 1 && (
+                                <span className="text-xs text-gray-400">
+                                  +{lead.phones.length - 1}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          <div className="flex items-stretch gap-2">
+                            {primary && (
+                              <PlaceCallButton
+                                leadId={lead.id}
+                                phone={primary.e164}
+                                className="h-10 flex-1 justify-center"
+                                onEnded={(sid) => openCallSheet(lead, sid)}
+                              />
                             )}
+                            <button
+                              type="button"
+                              onClick={() => openCallSheet(lead)}
+                              className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full px-4 text-sm font-medium text-white"
+                              style={{ backgroundColor: ACCENT }}
+                            >
+                              <PhoneCall className="size-3.5" /> Log call
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => openCallSheet(lead)}
-                            className="flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-medium text-white"
-                            style={{ backgroundColor: ACCENT }}
-                          >
-                            <PhoneCall className="size-3.5" /> Log call
-                          </button>
                         </div>
                         <div
                           onClick={() => toggleExpand(lead)}
@@ -1525,13 +1585,14 @@ export default function LeadsPage() {
                                     <span className="tabular-nums text-gray-700">
                                       {primary.e164.replace("+91", "")}
                                     </span>
-                                    <a
-                                      href={`tel:${primary.e164}`}
-                                      aria-label="Call"
-                                      className="flex size-7 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
-                                    >
-                                      <Phone className="size-3.5" />
-                                    </a>
+                                    <PlaceCallButton
+                                      leadId={lead.id}
+                                      phone={primary.e164}
+                                      compact
+                                      onEnded={(sid) =>
+                                        openCallSheet(lead, sid)
+                                      }
+                                    />
                                     {!primary.isLandline && (
                                       <a
                                         href={`https://wa.me/${primary.e164.replace("+", "")}`}
@@ -1684,14 +1745,14 @@ export default function LeadsPage() {
 
             <div className="mt-5 flex gap-2">
               {focusLead.phones[0] && (
-                <a
-                  href={`tel:${focusLead.phones[0].e164}`}
-                  className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl text-base font-semibold text-white"
-                  style={{ backgroundColor: ACCENT }}
-                >
-                  <Phone className="size-5" />
-                  {focusLead.phones[0].e164.replace("+91", "")}
-                </a>
+                <PlaceCallButton
+                  leadId={focusLead.id}
+                  phone={focusLead.phones[0].e164}
+                  variant="primary"
+                  label={focusLead.phones[0].e164.replace("+91", "")}
+                  className="h-14 flex-1 justify-center rounded-2xl text-base font-semibold tabular-nums"
+                  onEnded={(sid) => openCallSheet(focusLead, sid)}
+                />
               )}
               {focusLead.phones[0] && !focusLead.phones[0].isLandline && (
                 <a
@@ -1708,14 +1769,15 @@ export default function LeadsPage() {
             {focusLead.phones.length > 1 && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {focusLead.phones.slice(1).map((phone) => (
-                  <a
+                  <PlaceCallButton
                     key={phone.e164}
-                    href={`tel:${phone.e164}`}
-                    className="rounded-full border border-gray-200 px-3 py-1.5 text-xs tabular-nums text-gray-600"
-                  >
-                    {phone.e164.replace("+91", "")}
-                    {phone.isLandline ? " · landline" : ""}
-                  </a>
+                    leadId={focusLead.id}
+                    phone={phone.e164}
+                    compact
+                    label={phone.e164.replace("+91", "")}
+                    className="tabular-nums"
+                    onEnded={(sid) => openCallSheet(focusLead, sid)}
+                  />
                 ))}
               </div>
             )}

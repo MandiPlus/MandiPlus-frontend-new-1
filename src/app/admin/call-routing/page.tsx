@@ -6,6 +6,13 @@ import { useAdmin } from '@/features/admin/context/AdminContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
 
+/** Placing a call is an authenticated action - it rings a real person. */
+function authHeaders(): Record<string, string> {
+    const token =
+        typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 type CallAgent = {
   id: string;
   name: string;
@@ -77,14 +84,15 @@ export default function CallRoutingPage() {
   const [loading, setLoading] = useState(true);
   const [outboundPhone, setOutboundPhone] = useState('');
   const [calling, setCalling] = useState(false);
+  const [callError, setCallError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [playingCallSid, setPlayingCallSid] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
       const [agentsRes, logsRes] = await Promise.all([
-        fetch(`${API_BASE}/exotel/agents`),
-        fetch(`${API_BASE}/exotel/call-logs?limit=50`),
+        fetch(`${API_BASE}/exotel/agents`, { headers: authHeaders() }),
+        fetch(`${API_BASE}/exotel/call-logs?limit=50`, { headers: authHeaders() }),
       ]);
       const agentsData = await agentsRes.json();
       const logsData = await logsRes.json();
@@ -138,22 +146,25 @@ export default function CallRoutingPage() {
 
   const makeOutboundCall = async () => {
     if (!outboundPhone.trim()) return;
-    const defaultAgent = agents.find((a) => a.isDefault) || agents[0];
-    if (!defaultAgent) return;
     setCalling(true);
+    setCallError(null);
     try {
-      await fetch(`${API_BASE}/exotel/outbound`, {
+      // Your own phone rings first - the number comes from your admin
+      // profile, so the call log names whoever actually spoke.
+      const res = await fetch(`${API_BASE}/exotel/outbound`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agentPhone: defaultAgent.phone,
-          customerPhone: outboundPhone.trim(),
-        }),
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ customerPhone: outboundPhone.trim() }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCallError(data?.message || 'Could not place the call');
+        return;
+      }
       setOutboundPhone('');
       setTimeout(fetchData, 3000);
-    } catch (err) {
-      console.error('Failed to make outbound call:', err);
+    } catch {
+      setCallError('Could not reach the server');
     } finally {
       setCalling(false);
     }
@@ -165,7 +176,7 @@ export default function CallRoutingPage() {
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-gray-900">Call Routing</h1>
           <p className="mt-1 text-sm text-gray-600">
-            Manage agents, view call logs, and make outbound calls via Exotel (080-472-85284)
+            Manage agents, view call logs, and place calls via Exotel (080-4749-2990). Calls placed from the Leads board show up here too.
           </p>
         </div>
 
@@ -212,26 +223,30 @@ export default function CallRoutingPage() {
         {/* Outbound Call */}
         <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-800 mb-3">Make Outbound Call</h2>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <input
               type="text"
+              inputMode="tel"
               placeholder="Enter customer phone number"
               value={outboundPhone}
               onChange={(e) => setOutboundPhone(e.target.value)}
-              className="flex-1 max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:ring-1 focus:ring-violet-500 sm:max-w-xs sm:flex-1"
               onKeyDown={(e) => e.key === 'Enter' && makeOutboundCall()}
             />
             <button
               onClick={makeOutboundCall}
               disabled={calling || !outboundPhone.trim()}
-              className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              className="w-full rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition sm:w-auto"
             >
               {calling ? 'Calling...' : 'Call'}
             </button>
           </div>
           <p className="mt-2 text-xs text-gray-500">
-            Caller ID shown: 080-472-85284 • Agent picks up first, then customer is connected
+            Caller ID shown: 080-4749-2990 • Your phone rings first, then the customer is connected • Recorded
           </p>
+          {callError && (
+            <p className="mt-2 text-xs font-medium text-red-600">{callError}</p>
+          )}
         </div>
 
         {/* Call Logs */}
@@ -246,7 +261,7 @@ export default function CallRoutingPage() {
               {syncing ? 'Syncing...' : 'Sync Recordings'}
             </button>
           </div>
-          <div className="overflow-x-auto">
+          <div className="hidden overflow-x-auto md:block">
             <table className="min-w-full divide-y divide-gray-200 text-sm">
               <thead className="bg-gray-50">
                 <tr>
@@ -339,6 +354,77 @@ export default function CallRoutingPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Phones get the same rows as cards - an eight-column table does
+              not survive a 375px screen. */}
+          <ul className="divide-y divide-gray-100 md:hidden">
+            {loading ? (
+              <li className="px-4 py-10 text-center text-sm text-gray-500">
+                Loading call logs...
+              </li>
+            ) : callLogs.length === 0 ? (
+              <li className="px-4 py-10 text-center text-sm text-gray-500">
+                No call logs yet.
+              </li>
+            ) : (
+              callLogs.map((log) => {
+                const badge = getStatusBadge(log.status);
+                return (
+                  <li key={log.id} className="px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-gray-900">
+                          {log.callerName || formatPhone(log.callerPhone)}
+                        </p>
+                        {log.callerName && (
+                          <p className="truncate text-xs text-gray-500">
+                            {formatPhone(log.callerPhone)}
+                          </p>
+                        )}
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-medium ${badge.classes}`}
+                      >
+                        {badge.label}
+                      </span>
+                    </div>
+                    <p className="mt-1 flex flex-wrap gap-x-2 text-xs text-gray-500">
+                      <span>{timeAgo(log.createdAt)}</span>
+                      {log.agentName && <span>· {log.agentName}</span>}
+                      <span>
+                        ·{' '}
+                        {formatDuration(
+                          log.conversationSeconds || log.durationSeconds,
+                        )}
+                      </span>
+                      <span>
+                        · {log.direction === 'inbound' ? 'Inbound' : 'Outbound'}
+                      </span>
+                    </p>
+                    {log.status === 'completed' && (
+                      <div className="mt-2">
+                        {playingCallSid === log.callSid ? (
+                          <audio
+                            controls
+                            autoPlay
+                            src={`${API_BASE}/exotel/recording-proxy/${log.callSid}`}
+                            className="h-8 w-full max-w-full"
+                          />
+                        ) : (
+                          <button
+                            onClick={() => playRecording(log)}
+                            className="rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700"
+                          >
+                            ▶ Play recording
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                );
+              })
+            )}
+          </ul>
         </div>
       </div>
     </div>
