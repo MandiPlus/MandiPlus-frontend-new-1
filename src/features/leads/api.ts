@@ -384,9 +384,22 @@ export interface IngestPreview {
   rows: IngestPreviewRow[];
 }
 
+export interface IngestLeadItem {
+  name: string;
+  phones: string[];
+  region?: string;
+  mandi?: string;
+  commodityCode?: string;
+  role?: string;
+  review?: string;
+}
+
 export interface IngestPayload {
   batchLabel: string;
-  rawText: string;
+  /** Sent when the box was typed or pasted into. */
+  rawText?: string;
+  /** Sent instead of rawText when rows came from a file. */
+  leads?: IngestLeadItem[];
   source?: string;
   assignMode?: 'AUTO' | 'MANUAL' | 'UNASSIGNED';
   assigneeUserIds?: string[];
@@ -394,6 +407,42 @@ export interface IngestPayload {
   defaultMandi?: string;
   defaultCommodityCode?: string;
   defaultRole?: string;
+}
+
+export interface ExtractionResult {
+  leads: IngestLeadItem[];
+  rawText: string;
+  warnings: string[];
+  meta: {
+    model: string;
+    files: { name: string; kind: string; detail: string }[];
+    mapping: string[];
+    returned: number;
+    kept: number;
+  };
+}
+
+/** Reads a PDF, spreadsheet, CSV, or photo into candidate leads. Writes nothing. */
+export async function extractLeads(
+  files: File[],
+  hints: {
+    defaultRegion?: string;
+    defaultMandi?: string;
+    defaultCommodityCode?: string;
+    defaultRole?: string;
+  },
+): Promise<ExtractionResult> {
+  const form = new FormData();
+  files.forEach((file) => form.append('files', file));
+  Object.entries(hints).forEach(([key, value]) => {
+    if (value) form.append(key, value);
+  });
+  const response = await axios.post(
+    `${API_BASE_URL}/leads/admin/ingest/extract`,
+    form,
+    { headers: getAdminHeaders(), timeout: 180000 },
+  );
+  return response.data;
 }
 
 export const LEAD_SOURCES = [
