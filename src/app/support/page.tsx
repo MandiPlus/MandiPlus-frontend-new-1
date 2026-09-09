@@ -33,9 +33,9 @@ export default function SupportPage() {
             </a>
             <a
               className="rounded-2xl border border-slate-300 bg-white px-5 py-4 text-center font-bold text-slate-900"
-              href="tel:+917676217658"
+              href="tel:+919606995351"
             >
-              +91 76762 17658
+              +91 96069 95351
             </a>
           </div>
         </section>

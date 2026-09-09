@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/features/auth/context/AuthContext";
 import SiteChrome from "@/features/landing/SiteChrome";
+import FilmsSection from "@/features/landing/FilmsSection";
+import TeamSection from "@/features/landing/TeamSection";
 import styles from "@/features/landing/LandingPage.module.css";
 import {
   CALL_URL,
@@ -325,6 +327,8 @@ const LandingPage = () => {
         </div>
       </section>
 
+      <FilmsSection />
+
       <section id="products" className={styles.showcaseSection}>
         <div className={`${styles.container} ${styles.showcaseContainer}`}>
           <div
@@ -507,6 +511,8 @@ const LandingPage = () => {
         </div>
       </section>
 
+      <TeamSection />
+
       <SiteFooter />
 
       {showMobileBar ? (
@@ -586,7 +592,7 @@ export function SiteFooter() {
           </div>
           <nav className={styles.footerLinks} aria-label="Footer navigation">
             <Link href="/products" className={styles.footerLink}>Products</Link>
-            <Link href="/pricing" className={styles.footerLink}>Pricing</Link>
+            <Link href="/pricing" className={styles.footerLink}>Service charges</Link>
             <Link href="/support" className={styles.footerLink}>Support</Link>
             <Link href="/privacy-policy" className={styles.footerLink}>Privacy</Link>
             <Link href="/terms-and-conditions" className={styles.footerLink}>Terms</Link>
