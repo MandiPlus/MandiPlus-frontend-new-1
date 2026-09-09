@@ -359,3 +359,75 @@ export async function addMarketContacts(
   );
   return response.data;
 }
+
+export type IngestVerdict =
+  | 'NEW'
+  | 'EXISTING_LEAD'
+  | 'EXISTING_CUSTOMER'
+  | 'DUPLICATE_IN_PASTE'
+  | 'INVALID';
+
+export interface IngestPreviewRow {
+  name: string;
+  phones: string[];
+  verdict: IngestVerdict;
+  detail: string | null;
+}
+
+export interface IngestPreview {
+  parsed: number;
+  willCreate: number;
+  willMerge: number;
+  alreadyCustomers: number;
+  duplicatesInPaste: number;
+  invalid: number;
+  rows: IngestPreviewRow[];
+}
+
+export interface IngestPayload {
+  batchLabel: string;
+  rawText: string;
+  source?: string;
+  assignMode?: 'AUTO' | 'MANUAL' | 'UNASSIGNED';
+  assigneeUserIds?: string[];
+  defaultRegion?: string;
+  defaultMandi?: string;
+  defaultCommodityCode?: string;
+  defaultRole?: string;
+}
+
+export const LEAD_SOURCES = [
+  { value: 'SCRAPED_DATA', label: 'Scraped data' },
+  { value: 'FIELD_TEAM', label: 'Field team' },
+  { value: 'COORDINATOR', label: 'Coordinator' },
+  { value: 'EXISTING_CUSTOMER', label: 'Existing customer' },
+  { value: 'CUSTOMER_REFERENCE', label: 'Customer reference' },
+  { value: 'SALES_EXECUTIVE', label: 'Sales executive' },
+  { value: 'MANUAL_ENTRY', label: 'Manual entry' },
+];
+
+export async function previewIngest(
+  payload: IngestPayload,
+): Promise<IngestPreview> {
+  const response = await axios.post(
+    `${API_BASE_URL}/leads/admin/ingest/preview`,
+    payload,
+    { headers: { ...getAdminHeaders(), 'Content-Type': 'application/json' } },
+  );
+  return response.data;
+}
+
+export async function ingestLeads(payload: IngestPayload): Promise<{
+  inserted: number;
+  merged: number;
+  matchedCustomers: number;
+  assignments: Record<string, number>;
+  invalidPhones: string[];
+}> {
+  const response = await axios.post(
+    `${API_BASE_URL}/leads/admin/ingest`,
+    payload,
+    { headers: { ...getAdminHeaders(), 'Content-Type': 'application/json' } },
+  );
+  return response.data;
+}

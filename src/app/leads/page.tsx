@@ -14,6 +14,7 @@ import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useAdmin } from "@/features/admin/context/AdminContext";
 import BuyerDetailsSheet from "@/features/leads/components/BuyerDetailsSheet";
+import IngestPanel from "@/features/leads/components/IngestPanel";
 import {
   getLeadEvents,
   getLeadReport,
@@ -70,7 +71,14 @@ const DISPOSITIONS: LeadStatus[] = [
 
 const NEEDS_REASON: LeadStatus[] = ["NOT_INTERESTED", "NOT_RELEVANT"];
 
-type Tab = "today" | "leads" | "mandiplus" | "converted" | "closed" | "reports";
+type Tab =
+  | "today"
+  | "leads"
+  | "mandiplus"
+  | "converted"
+  | "closed"
+  | "reports"
+  | "ingest";
 
 const ACTIVE_STATUSES: LeadStatus[] = [
   "NEW",
@@ -780,6 +788,9 @@ export default function LeadsPage() {
                 ["converted", "Converted"],
                 ["closed", "Closed"],
                 ["reports", "Reports"],
+                ...(viewer?.isManager
+                  ? ([["ingest", "Add data"]] as [Tab, string][])
+                  : []),
               ] as [Tab, string][]
             ).map(([key, label]) => (
               <button
@@ -794,7 +805,7 @@ export default function LeadsPage() {
                 style={tab === key ? { borderColor: ACCENT } : undefined}
               >
                 {label}
-                {key !== "reports" && key !== "today" && (
+                {key !== "reports" && key !== "today" && key !== "ingest" && (
                   <span className="ml-1.5 text-xs tabular-nums text-gray-400">
                     {tabCounts[key as keyof typeof tabCounts]}
                   </span>
@@ -804,7 +815,16 @@ export default function LeadsPage() {
           </div>
         </nav>
 
-        {tab === "today" ? (
+        {tab === "ingest" ? (
+          <IngestPanel
+            team={team}
+            commodities={commodities}
+            onImported={() => {
+              refreshLeads();
+              loadAll();
+            }}
+          />
+        ) : tab === "today" ? (
           <section className="py-5">
             {viewer && (
               <p className="mb-3 text-xs text-gray-500">
