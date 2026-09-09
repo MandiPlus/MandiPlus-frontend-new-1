@@ -540,7 +540,47 @@ export interface OverviewData {
     mandi: string | null;
   }[];
   runway: { freshRemaining: number; dailyCapacity: number; days: number | null };
+  batches: {
+    id: string;
+    label: string;
+    createdAt: string;
+    leads: number;
+    called: number;
+    warm: number;
+    wrongNumbers: number;
+    source: string;
+  }[];
   callers: { userId: string; name: string }[];
+}
+
+export interface OverviewLead {
+  id: string;
+  name: string;
+  phone: string | null;
+  region: string | null;
+  commodityCode: string | null;
+  role: string | null;
+  status: LeadStatus;
+  attemptCount: number;
+  nextFollowUpAt: string | null;
+  source: string;
+  verificationLevel: number;
+  assignee: string | null;
+  batch: string | null;
+}
+
+export async function getOverviewLeads(params: {
+  metric: string;
+  from?: string;
+  to?: string;
+  userId?: string;
+  batchId?: string;
+}): Promise<{ metric: string; count: number; leads: OverviewLead[] }> {
+  const response = await axios.get(
+    `${API_BASE_URL}/leads/admin/overview/leads`,
+    { params, headers: getAdminHeaders() },
+  );
+  return response.data;
 }
 
 export async function getOverview(params: {

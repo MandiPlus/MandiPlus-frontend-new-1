@@ -17,6 +17,7 @@ import {
 import { Flame, PhoneCall, PhoneForwarded, Trophy, Users } from "lucide-react";
 import { toast } from "react-toastify";
 import { getOverview, type OverviewData } from "../api";
+import LeadListDrawer from "./LeadListDrawer";
 
 const ACCENT = "#4309ac";
 const TEAL = "#0f766e";
@@ -77,14 +78,25 @@ function Stat({
   value,
   icon: Icon,
   note,
+  onOpen,
 }: {
   label: string;
   value: string | number;
   icon: React.ComponentType<{ className?: string }>;
   note?: string;
+  onOpen?: () => void;
 }) {
+  const Tag = onOpen ? "button" : "div";
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <Tag
+      type={onOpen ? "button" : undefined}
+      onClick={onOpen}
+      className={`rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm ${
+        onOpen
+          ? "cursor-pointer transition-colors hover:border-[#4309ac]/40 hover:bg-slate-50/60"
+          : ""
+      }`}
+    >
       <div className="mb-3 flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           {label}
@@ -95,7 +107,10 @@ function Stat({
         {value}
       </div>
       {note && <p className="mt-2 text-xs text-slate-500">{note}</p>}
-    </div>
+      {onOpen && (
+        <p className="mt-1 text-xs font-medium text-[#4309ac]">See the leads →</p>
+      )}
+    </Tag>
   );
 }
 
@@ -108,6 +123,19 @@ export default function OverviewBoard() {
   const [userId, setUserId] = useState("");
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [drill, setDrill] = useState<{
+    metric: string;
+    title: string;
+    batchId?: string;
+  } | null>(null);
+
+  const window_ = (() => {
+    const to = new Date();
+    const from = rangeDays
+      ? new Date(Date.now() - (rangeDays - 1) * 86400000)
+      : null;
+    return { from: from ? iso(from) : undefined, to: iso(to) };
+  })();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -219,19 +247,42 @@ export default function OverviewBoard() {
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-5 lg:col-span-12">
-            <Stat label="Leads" value={data.totals.leads_added} icon={Users} />
-            <Stat label="Calls" value={data.totals.calls} icon={PhoneCall} />
+            <Stat
+              label="Leads"
+              value={data.totals.leads_added}
+              icon={Users}
+              onOpen={() => setDrill({ metric: "leads", title: "Leads added" })}
+            />
+            <Stat
+              label="Calls"
+              value={data.totals.calls}
+              icon={PhoneCall}
+              onOpen={() => setDrill({ metric: "calls", title: "Leads called" })}
+            />
             <Stat
               label="Connected"
               value={data.totals.connects}
               icon={PhoneForwarded}
               note={`${data.totals.connectRate}% answered`}
+              onOpen={() =>
+                setDrill({ metric: "connects", title: "Leads we reached" })
+              }
             />
-            <Stat label="Hot leads" value={data.totals.hot} icon={Flame} />
+            <Stat
+              label="Hot leads"
+              value={data.totals.hot}
+              icon={Flame}
+              onOpen={() =>
+                setDrill({ metric: "hot", title: "Interested and confirmed" })
+              }
+            />
             <Stat
               label="Converted"
               value={data.totals.converted}
               icon={Trophy}
+              onOpen={() =>
+                setDrill({ metric: "converted", title: "Now customers" })
+              }
             />
           </div>
 
@@ -382,47 +433,80 @@ export default function OverviewBoard() {
 
           <Card
             title="Where leads come from"
-            subtitle="How many turn warm"
+            subtitle="Each import, and what it turned into"
             className="lg:col-span-5"
           >
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400">
-                  <th className="py-2 font-semibold">Source</th>
-                  <th className="py-2 text-right font-semibold">Leads</th>
-                  <th className="py-2 text-right font-semibold">Warm</th>
-                  <th className="py-2 text-right font-semibold">Wrong no.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.quality.sources.map((s) => (
-                  <tr key={s.source} className="border-t border-slate-50">
-                    <td className="py-2 capitalize text-slate-700">
-                      {s.source.toLowerCase().replace(/_/g, " ")}
-                    </td>
-                    <td className="py-2 text-right tabular-nums text-slate-600">
-                      {s.leads}
-                    </td>
-                    <td className="py-2 text-right tabular-nums font-semibold text-slate-900">
-                      {s.warm}
-                    </td>
-                    <td className="py-2 text-right tabular-nums text-slate-500">
-                      {s.wrongNumbers}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {(data.batches ?? []).length === 0 ? (
+              <p className="py-6 text-center text-sm text-slate-400">
+                No imports in this window
+              </p>
+            ) : (
+              <div className="divide-y divide-slate-50">
+                {(data.batches ?? []).map((b) => {
+                  const workedPct =
+                    b.leads > 0 ? Math.round((b.called / b.leads) * 100) : 0;
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() =>
+                        setDrill({
+                          metric: "leads",
+                          title: b.label,
+                          batchId: b.id,
+                        })
+                      }
+                      className="w-full py-2.5 text-left transition-colors hover:bg-slate-50/60"
+                    >
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className="truncate text-sm font-medium text-slate-900">
+                          {b.label}
+                        </p>
+                        <p className="shrink-0 text-sm font-semibold tabular-nums text-slate-900">
+                          {b.leads}
+                        </p>
+                      </div>
+                      {/* How far through the batch the team has got. */}
+                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            backgroundColor: ACCENT,
+                            width: `${workedPct}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="mt-1.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
+                        <span>{workedPct}% called</span>
+                        {b.warm > 0 && (
+                          <span className="font-medium text-emerald-700">
+                            {b.warm} warm
+                          </span>
+                        )}
+                        {b.wrongNumbers > 0 && (
+                          <span className="text-orange-700">
+                            {b.wrongNumbers} wrong numbers
+                          </span>
+                        )}
+                        <span className="capitalize text-slate-400">
+                          {b.source.toLowerCase().replace(/_/g, " ")}
+                        </span>
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </Card>
 
-          {data.opportunities.length > 0 && (
+          {(data.opportunities ?? []).length > 0 && (
             <Card
               title="High-value buyers in play"
               subtitle="Biggest vehicles a day, still open"
               className="lg:col-span-4"
             >
               <div className="divide-y divide-slate-50">
-                {data.opportunities.slice(0, 6).map((o) => (
+                {(data.opportunities ?? []).slice(0, 6).map((o) => (
                   <div
                     key={o.id}
                     className="flex items-center justify-between py-2"
@@ -492,6 +576,18 @@ export default function OverviewBoard() {
             </Card>
           </div>
         </div>
+      )}
+
+      {drill && (
+        <LeadListDrawer
+          title={drill.title}
+          metric={drill.metric}
+          batchId={drill.batchId}
+          from={window_.from}
+          to={window_.to}
+          userId={userId || undefined}
+          onClose={() => setDrill(null)}
+        />
       )}
     </section>
   );

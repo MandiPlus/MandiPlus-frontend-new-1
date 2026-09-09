@@ -655,9 +655,9 @@ export default function LeadsPage() {
   };
 
   const sections: [Tab, string][] = [
-    ["today", "Today"],
     ...(viewer?.isManager ? ([["overall", "Overall"]] as [Tab, string][]) : []),
-    ["leads", "Leads"],
+    ["today", "Today"],
+    ["leads", "All Leads"],
     ["mandiplus", "On Mandiplus"],
     ["converted", "Converted"],
     ["closed", "Closed"],
