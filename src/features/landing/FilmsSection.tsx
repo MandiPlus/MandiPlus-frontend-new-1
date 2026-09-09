@@ -25,8 +25,10 @@ export default function FilmsSection() {
   const [onScreen, setOnScreen] = useState(false);
   const [muted, setMuted] = useState(true);
   const [motionOk, setMotionOk] = useState(true);
-  /** Set once the viewer works the control themselves — after that we stop touching sound. */
-  const wantsSilence = useRef(false);
+  /** The muted-playback sound invitation: big and centred first, then the corner pill. */
+  const [prompt, setPrompt] = useState<"big" | "pill">("big");
+  /** True once the viewer mutes on purpose — after that we stop touching sound. */
+  const [userMuted, setUserMuted] = useState(false);
 
   useEffect(() => {
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -82,7 +84,7 @@ export default function FilmsSection() {
     // Try with sound first. If the browser refuses — the usual case on a cold visit — fall
     // straight back to muted so the film still runs rather than sitting frozen.
     const start = async () => {
-      if (!wantsSilence.current) {
+      if (!userMuted) {
         video.muted = false;
         try {
           await video.play();
@@ -106,7 +108,7 @@ export default function FilmsSection() {
     return () => {
       cancelled = true;
     };
-  }, [src, onScreen, motionOk]);
+  }, [src, onScreen, motionOk, userMuted]);
 
   // Any gesture anywhere on the page is a moment the browser will allow audio, so take it —
   // unless the viewer has already asked for quiet.
@@ -116,15 +118,24 @@ export default function FilmsSection() {
   // the one chance to turn sound on and it never re-armed. It now unhooks only once sound is
   // genuinely playing.
   useEffect(() => {
-    if (!muted || wantsSilence.current) return;
+    if (!muted || userMuted) return;
 
-    const EVENTS = ["pointerdown", "touchstart", "keydown", "click"] as const;
+    // pointerup and touchend matter most: on a phone, activation is granted at the END of a
+    // tap, so a touchstart-only listener asks a moment too early, is refused, and the granted
+    // moment slips past. keydown covers keyboards; the rest are belt and braces.
+    const EVENTS = [
+      "pointerup",
+      "touchend",
+      "pointerdown",
+      "keydown",
+      "click",
+    ] as const;
     const detach = () =>
       EVENTS.forEach((e) => document.removeEventListener(e, unmute, true));
 
     function unmute() {
       const video = videoRef.current;
-      if (!video || wantsSilence.current) return;
+      if (!video) return;
 
       // Done inside the gesture, which is exactly when the autoplay policy relents.
       video.muted = false;
@@ -143,11 +154,20 @@ export default function FilmsSection() {
 
     EVENTS.forEach((e) => document.addEventListener(e, unmute, true));
     return detach;
-  }, [muted]);
+  }, [muted, userMuted]);
+
+  // Hold the big invitation for the first few seconds of muted playback, then step aside.
+  // It never returns once dismissed — and never shows at all for a viewer who muted on
+  // purpose.
+  useEffect(() => {
+    if (!muted) return;
+    const id = window.setTimeout(() => setPrompt("pill"), 5000);
+    return () => window.clearTimeout(id);
+  }, [muted, src]);
 
   const toggleSound = () => {
     const next = !muted;
-    wantsSilence.current = next;
+    setUserMuted(next);
     applyMuted(next);
     if (!next) void videoRef.current?.play().catch(() => {});
   };
@@ -182,7 +202,9 @@ export default function FilmsSection() {
 
           <button
             type="button"
-            className={styles.sound}
+            className={`${styles.sound} ${
+              muted && prompt === "big" && !userMuted ? styles.soundBig : ""
+            }`}
             onClick={toggleSound}
             aria-pressed={!muted}
             aria-label={muted ? "Awaaz chalu karein" : "Awaaz band karein"}
