@@ -234,8 +234,8 @@ export const TEAM: TeamMember[] = [
   { id: "om", name: "Om", role: "Engineering" },
   { id: "vikash", name: "Vikash", role: "Operations Team" },
   { id: "jaya", name: "Jaya", role: "Operations Team" },
-  { id: "sanjay", name: "Sanjay", role: "Public Outreach" },
-  { id: "deepam", name: "Deepam", role: "Financial Risk" },
+  { id: "sanjay", name: "Sanjay", role: "Operations Team" },
+  { id: "deepam", name: "Deepam", role: "Underwriter" },
   { id: "krithik", name: "Krithik", role: "UI/UX Designer" },
 ];
 
