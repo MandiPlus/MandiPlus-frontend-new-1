@@ -108,26 +108,42 @@ export default function FilmsSection() {
     };
   }, [src, onScreen, motionOk]);
 
-  // The first real gesture anywhere on the page is the moment the browser will finally allow
-  // audio, so take it — unless the viewer has already asked for quiet.
+  // Any gesture anywhere on the page is a moment the browser will allow audio, so take it —
+  // unless the viewer has already asked for quiet.
+  //
+  // Deliberately NOT `{ once: true }`: that removes the listener the first time it fires, even
+  // when this handler bails out early, so a tap while the film was still buffering used to burn
+  // the one chance to turn sound on and it never re-armed. It now unhooks only once sound is
+  // genuinely playing.
   useEffect(() => {
     if (!muted || wantsSilence.current) return;
 
-    const unmute = () => {
-      const video = videoRef.current;
-      if (!video || wantsSilence.current || !onScreen || video.paused) return;
-      video.muted = false;
-      setMuted(false);
-    };
+    const EVENTS = ["pointerdown", "touchstart", "keydown", "click"] as const;
+    const detach = () =>
+      EVENTS.forEach((e) => document.removeEventListener(e, unmute, true));
 
-    const opts = { once: true, capture: true } as const;
-    document.addEventListener("pointerdown", unmute, opts);
-    document.addEventListener("keydown", unmute, opts);
-    return () => {
-      document.removeEventListener("pointerdown", unmute, opts);
-      document.removeEventListener("keydown", unmute, opts);
-    };
-  }, [muted, onScreen]);
+    function unmute() {
+      const video = videoRef.current;
+      if (!video || wantsSilence.current) return;
+
+      // Done inside the gesture, which is exactly when the autoplay policy relents.
+      video.muted = false;
+      const started = video.paused ? video.play() : Promise.resolve();
+      void started
+        .then(() => {
+          // Some browsers answer a disallowed unmute by pausing rather than rejecting.
+          if (video.paused || video.muted) throw new Error("still blocked");
+          setMuted(false);
+          detach();
+        })
+        .catch(() => {
+          video.muted = true; // keep it running silently and wait for the next gesture
+        });
+    }
+
+    EVENTS.forEach((e) => document.addEventListener(e, unmute, true));
+    return detach;
+  }, [muted]);
 
   const toggleSound = () => {
     const next = !muted;
