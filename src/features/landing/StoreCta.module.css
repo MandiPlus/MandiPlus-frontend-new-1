@@ -1,6 +1,7 @@
 /*
  * Which store button is visible, keyed off the data-os attribute app/layout.tsx stamps on
- * <html> before the first paint.
+ * <html> before the first paint. "apple" covers iPhone, iPad and Mac — a Mac cannot install
+ * from Google Play, so sending it there was worse than sending it to the App Store listing.
  *
  * Both rules hide rather than show, so each button keeps whatever `display` its own visual
  * class gives it (inline-flex for the hero and services buttons, flex in the mobile bar) and
@@ -11,10 +12,10 @@
  * which is the right fallback for a mandi audience that is overwhelmingly on Android.
  */
 
-:global(html:not([data-os="ios"])) .iosOnly {
+:global(html:not([data-os="apple"])) .appleOnly {
   display: none;
 }
 
-:global(html[data-os="ios"]) .androidOnly {
+:global(html[data-os="apple"]) .androidOnly {
   display: none;
 }

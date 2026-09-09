@@ -95,12 +95,18 @@ const notoBengali = Noto_Sans_Bengali({
  * frame — no flash of the wrong store, and the page stays statically cached because nothing is
  * decided from the User-Agent on the server.
  *
- * iPadOS is the catch: since iPadOS 13 an iPad reports itself as "Macintosh" and its
- * navigator.platform is "MacIntel", exactly like a desktop Mac. Touch points are what separate
- * them — a Mac reports 0/1, an iPad reports 5. Anything not identified as iOS falls through to
- * the Play Store, which is also what a visitor with scripting disabled gets.
+ * This matches every Apple platform, not just iOS: a desktop Mac reports 0 touch points, so an
+ * iOS-only rule sent Mac visitors to the Play Store for an app they cannot install. iPadOS is
+ * the other half of the same problem — since iPadOS 13 an iPad reports itself as "Macintosh"
+ * with navigator.platform "MacIntel", indistinguishable from a Mac. Treating the whole Apple
+ * family as one case makes both correct and removes the need to tell them apart.
+ *
+ * Anything else falls through to the Play Store, which is also what a visitor with scripting
+ * disabled gets.
  */
-const OS_PROBE = `(function(){try{var n=navigator,u=n.userAgent||"";if(/iPad|iPhone|iPod/.test(u)||(/Mac/.test(u)&&n.maxTouchPoints>1))document.documentElement.setAttribute("data-os","ios")}catch(e){}})()`;
+const OS_PROBE = `(function(){try{var u=(navigator.userAgent||"");\
+if(/iPad|iPhone|iPod|Macintosh|Mac OS X/.test(u))\
+document.documentElement.setAttribute("data-os","apple")}catch(e){}})()`;
 
 export const metadata: Metadata = {
   title: "MandiPlus",
