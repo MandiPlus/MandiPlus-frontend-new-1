@@ -776,7 +776,13 @@ export async function addLead(payload: {
   phone: string;
   commodityCode?: string;
   region?: string;
-}): Promise<{ inserted: number; merged: number; invalidPhones: string[] }> {
+}): Promise<{
+  inserted: number;
+  merged: number;
+  /** They were already a Mandiplus customer - still added, still yours. */
+  matchedCustomers: number;
+  invalidPhones: string[];
+}> {
   const response = await axios.post(`${API_BASE_URL}/leads/admin/add`, payload, {
     headers: { ...getAdminHeaders(), 'Content-Type': 'application/json' },
   });

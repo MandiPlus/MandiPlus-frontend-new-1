@@ -64,6 +64,13 @@ export default function AddLeadForm({
       });
       if (result.merged > 0) {
         toast.info("We already had that number - added to the existing lead");
+      } else if (result.matchedCustomers > 0) {
+        // They are already a customer, so the lead lives under On Mandiplus
+        // rather than the calling list. Say so, or it looks like nothing
+        // happened.
+        toast.success(
+          `${name.trim()} added - already on Mandiplus, find them under "On Mandiplus"`,
+        );
       } else {
         toast.success(`${name.trim()} added to your leads`);
       }

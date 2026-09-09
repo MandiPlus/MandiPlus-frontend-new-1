@@ -153,6 +153,17 @@ export default function IngestPanel({
     }
   };
 
+  /**
+   * Every row the import will actually act on. Gating on new leads alone meant
+   * a list of people who are already on Mandiplus, or already leads, left the
+   * Import button dead with no explanation - the import was refused for rows
+   * it would have handled perfectly well. A merge enriches the lead we hold,
+   * and an existing customer is worth recording as one.
+   */
+  const willImport = preview
+    ? preview.willCreate + preview.willMerge + preview.alreadyCustomers
+    : 0;
+
   const runImport = async () => {
     if (assignMode === "MANUAL" && assignees.length === 0) {
       toast.error("Pick who gets these leads");
@@ -164,13 +175,22 @@ export default function IngestPanel({
       const split = Object.entries(result.assignments ?? {})
         .map(([id, n]) => `${team.find((m) => m.id === id)?.name ?? "?"} ${n}`)
         .join(" · ");
+      // Lead with the total. "0 added · 1 already customers" reads as a
+      // failure when the import did exactly what was asked of it.
+      const handled =
+        result.inserted + result.merged + (result.matchedCustomers ?? 0);
+      const detail = [
+        result.inserted ? `${result.inserted} new` : null,
+        result.merged ? `${result.merged} merged into existing leads` : null,
+        result.matchedCustomers
+          ? `${result.matchedCustomers} already on Mandiplus`
+          : null,
+        split || null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
       toast.success(
-        `${result.inserted} added` +
-          (result.merged ? ` · ${result.merged} merged` : "") +
-          (result.matchedCustomers
-            ? ` · ${result.matchedCustomers} already customers`
-            : "") +
-          (split ? ` · ${split}` : ""),
+        `Imported ${handled}${detail ? ` — ${detail}` : ""}`,
       );
       setRawText("");
       setExtracted(null);
@@ -435,11 +455,11 @@ export default function IngestPanel({
           <button
             type="button"
             onClick={runImport}
-            disabled={busy || !preview || preview.willCreate === 0}
+            disabled={busy || !preview || willImport === 0}
             className="h-11 flex-1 rounded-full text-sm font-semibold text-white disabled:opacity-40"
             style={{ backgroundColor: ACCENT }}
           >
-            {preview ? `Import ${preview.willCreate}` : "Import"}
+            {preview ? `Import ${willImport}` : "Import"}
           </button>
         </div>
       </div>
