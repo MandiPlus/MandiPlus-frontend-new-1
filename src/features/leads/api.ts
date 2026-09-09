@@ -156,8 +156,8 @@ export async function getLeadReport(
 export interface LeadViewerInfo {
   assigneeUserId: string | null;
   assigneeName: string | null;
+  adminName: string | null;
   isManager: boolean;
-  dailyTarget: number;
 }
 
 export interface QueuedLead extends LeadRecord {
@@ -206,15 +206,6 @@ export async function getTodayPlan(userId?: string): Promise<TodayPlan> {
     params: userId ? { userId } : undefined,
     headers: getAdminHeaders(),
   });
-  return response.data;
-}
-
-export async function setDailyTarget(userId: string, dailyTarget: number) {
-  const response = await axios.patch(
-    `${API_BASE_URL}/leads/admin/targets/${userId}`,
-    { dailyTarget },
-    { headers: { ...getAdminHeaders(), 'Content-Type': 'application/json' } },
-  );
   return response.data;
 }
 

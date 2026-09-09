@@ -21,7 +21,6 @@ import {
   getLeadsBootstrap,
   getTodayPlan,
   logLeadCall,
-  setDailyTarget,
   updateLead,
   type LeadBatchSummary,
   type LeadCommodity,
@@ -171,7 +170,6 @@ export default function LeadsPage() {
   const [planLoading, setPlanLoading] = useState(false);
   const [planFor, setPlanFor] = useState<string>("");
   const [focusIndex, setFocusIndex] = useState<number | null>(null);
-  const [targetDraft, setTargetDraft] = useState<string>("");
 
   const [report, setReport] = useState<LeadReport | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
@@ -255,7 +253,6 @@ export default function LeadsPage() {
       try {
         const data = await getTodayPlan(userId || undefined);
         setPlan(data);
-        setTargetDraft(String(data.target));
       } catch {
         toast.error("Could not load today's plan");
       } finally {
@@ -481,22 +478,6 @@ export default function LeadsPage() {
       toast.error("Could not log the call");
     } finally {
       setSaving(false);
-    }
-  };
-
-  const saveTarget = async () => {
-    const value = Number(targetDraft);
-    const userId = plan?.userId;
-    if (!userId || !Number.isFinite(value) || value < 1 || value > 500) {
-      toast.error("Target must be between 1 and 500");
-      return;
-    }
-    try {
-      await setDailyTarget(userId, Math.round(value));
-      await loadPlan(viewer?.isManager ? planFor : undefined);
-      toast.success("Target updated");
-    } catch {
-      toast.error("Could not update the target");
     }
   };
 
@@ -825,6 +806,30 @@ export default function LeadsPage() {
 
         {tab === "today" ? (
           <section className="py-5">
+            {viewer && (
+              <p className="mb-3 text-xs text-gray-500">
+                {viewer.isManager ? (
+                  <>
+                    Signed in as{" "}
+                    <span className="font-medium text-gray-700">
+                      {viewer.adminName ?? "admin"}
+                    </span>{" "}
+                    · manager view, so you can see the whole team. A caller
+                    signing in with their own account only ever sees their own
+                    leads.
+                  </>
+                ) : (
+                  <>
+                    Signed in as{" "}
+                    <span className="font-medium text-gray-700">
+                      {viewer.assigneeName}
+                    </span>{" "}
+                    · you only see leads assigned to you.
+                  </>
+                )}
+              </p>
+            )}
+
             {viewer?.isManager && (
               <select
                 aria-label="Whose day"
@@ -882,30 +887,6 @@ export default function LeadsPage() {
                     </button>
                   )}
                 </div>
-
-                {viewer?.isManager && plan.scope === "member" && (
-                  <div className="mt-3 flex items-center gap-2">
-                    <label className="text-xs text-gray-500" htmlFor="target">
-                      Daily target
-                    </label>
-                    <input
-                      id="target"
-                      type="number"
-                      min={1}
-                      max={500}
-                      value={targetDraft}
-                      onChange={(e) => setTargetDraft(e.target.value)}
-                      className="h-9 w-20 rounded-full border border-gray-200 px-3 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-[#4309ac]/30"
-                    />
-                    <button
-                      type="button"
-                      onClick={saveTarget}
-                      className="h-9 rounded-full border border-gray-200 px-4 text-sm text-gray-700 hover:bg-gray-50"
-                    >
-                      Save
-                    </button>
-                  </div>
-                )}
 
                 {plan.scope === "team" ? (
                   <div className="mt-6 space-y-3">
