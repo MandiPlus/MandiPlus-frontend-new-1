@@ -652,6 +652,20 @@ export default function LeadsPage() {
     return item ? `${item.emoji ?? ""} ${item.label}`.trim() : code;
   };
 
+  const sections: [Tab, string][] = [
+    ["today", "Today"],
+    ["leads", "Leads"],
+    ["mandiplus", "On Mandiplus"],
+    ["converted", "Converted"],
+    ["closed", "Closed"],
+    ["reports", "Reports"],
+    ...(viewer?.isManager ? ([["ingest", "Add data"]] as [Tab, string][]) : []),
+  ];
+  const sectionCount = (key: Tab) =>
+    key === "reports" || key === "today" || key === "ingest"
+      ? null
+      : tabCounts[key as keyof typeof tabCounts];
+
   const selectClass =
     "h-9 rounded-full border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#4309ac]/30";
 
@@ -778,7 +792,7 @@ export default function LeadsPage() {
       <ToastContainer position="bottom-right" autoClose={2500} hideProgressBar />
 
       <header className="sticky top-0 z-20 border-b border-gray-100 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
+        <div className="mx-auto flex h-14 max-w-[1400px] items-center justify-between px-4">
           <div className="flex items-center gap-3">
             <div
               className="flex size-8 items-center justify-center rounded-lg text-sm font-bold text-white"
@@ -799,22 +813,38 @@ export default function LeadsPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 pb-24">
-        <nav className="-mx-4 overflow-x-auto px-4">
+      <div className="mx-auto flex max-w-[1400px] gap-6">
+        <aside className="hidden shrink-0 border-r border-gray-100 py-5 pr-5 lg:block lg:w-52">
+          <nav className="sticky top-20 flex flex-col gap-0.5">
+            {sections.map(([key, label]) => {
+              const count = sectionCount(key);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setTab(key)}
+                  className={`flex h-9 items-center justify-between rounded-lg px-3 text-sm transition-colors ${
+                    tab === key
+                      ? "bg-[#4309ac]/8 font-medium text-[#4309ac]"
+                      : "text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {label}
+                  {count !== null && (
+                    <span className="text-xs tabular-nums text-gray-400">
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+
+      <main className="min-w-0 flex-1 px-4 pb-24 lg:pl-0">
+        <nav className="-mx-4 overflow-x-auto px-4 lg:hidden">
           <div className="flex w-max min-w-full gap-1 border-b border-gray-100">
-            {(
-              [
-                ["today", "Today"],
-                ["leads", "Leads"],
-                ["mandiplus", "On Mandiplus"],
-                ["converted", "Converted"],
-                ["closed", "Closed"],
-                ["reports", "Reports"],
-                ...(viewer?.isManager
-                  ? ([["ingest", "Add data"]] as [Tab, string][])
-                  : []),
-              ] as [Tab, string][]
-            ).map(([key, label]) => (
+            {sections.map(([key, label]) => (
               <button
                 key={key}
                 type="button"
@@ -827,9 +857,9 @@ export default function LeadsPage() {
                 style={tab === key ? { borderColor: ACCENT } : undefined}
               >
                 {label}
-                {key !== "reports" && key !== "today" && key !== "ingest" && (
+                {sectionCount(key) !== null && (
                   <span className="ml-1.5 text-xs tabular-nums text-gray-400">
-                    {tabCounts[key as keyof typeof tabCounts]}
+                    {sectionCount(key)}
                   </span>
                 )}
               </button>
@@ -848,8 +878,9 @@ export default function LeadsPage() {
           />
         ) : tab === "today" ? (
           <section className="py-5">
+            <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
             {viewer && (
-              <p className="mb-3 text-xs text-gray-500">
+              <p className="text-xs text-gray-500">
                 {viewer.isManager ? (
                   <>
                     Signed in as{" "}
@@ -877,7 +908,7 @@ export default function LeadsPage() {
                 aria-label="Whose day"
                 value={planFor}
                 onChange={(e) => setPlanFor(e.target.value)}
-                className={`${selectClass} mb-4`}
+                className={selectClass}
               >
                 <option value="">Whole team</option>
                 {team.map((member) => (
@@ -887,6 +918,7 @@ export default function LeadsPage() {
                 ))}
               </select>
             )}
+            </div>
 
             {viewer?.isManager && !planFor ? (
               commandLoading || !command ? (
@@ -906,7 +938,7 @@ export default function LeadsPage() {
               </div>
             ) : (
               <>
-                <div className="rounded-2xl border border-gray-100 p-4 sm:flex sm:items-center sm:gap-4">
+                <div className="rounded-2xl border border-gray-100 p-4 sm:flex sm:items-center sm:gap-4 lg:max-w-3xl">
                   <div className="flex items-center gap-4 sm:flex-1">
                     <ProgressRing value={plan.covered} max={plan.target} />
                     <div className="min-w-0 flex-1">
@@ -966,11 +998,11 @@ export default function LeadsPage() {
                               {list.length}
                             </span>
                           </h2>
-                          <div className="divide-y divide-gray-100">
+                          <div className="divide-y divide-gray-100 lg:grid lg:grid-cols-2 lg:gap-3 lg:divide-y-0 xl:grid-cols-3">
                             {list.map((lead) => (
                               <div
                                 key={lead.id}
-                                className="flex items-center justify-between gap-3 py-3"
+                                className="flex items-center justify-between gap-3 py-3 lg:rounded-2xl lg:border lg:border-gray-100 lg:px-4 lg:py-3"
                               >
                                 <div className="min-w-0">
                                   <p className="truncate font-medium">
@@ -1086,7 +1118,9 @@ export default function LeadsPage() {
                   ))}
                 </div>
 
-                <h2 className="mt-8 mb-3 text-sm font-semibold text-gray-900">
+                <div className="mt-8 grid gap-6 xl:grid-cols-12">
+                <div className="xl:col-span-8">
+                <h2 className="mb-3 text-sm font-semibold text-gray-900">
                   Team
                 </h2>
                 <div className="space-y-3 md:hidden">
@@ -1153,7 +1187,9 @@ export default function LeadsPage() {
                   </table>
                 </div>
 
-                <h2 className="mt-8 mb-3 text-sm font-semibold text-gray-900">
+                </div>
+                <div className="xl:col-span-4">
+                <h2 className="mb-3 text-sm font-semibold text-gray-900">
                   By day
                 </h2>
                 {report.perDay.length === 0 ? (
@@ -1186,6 +1222,8 @@ export default function LeadsPage() {
                     </tbody>
                   </table>
                 )}
+                </div>
+                </div>
               </>
             )}
           </section>
@@ -1584,6 +1622,7 @@ export default function LeadsPage() {
           </>
         )}
       </main>
+      </div>
 
       {detailsLead && (
         <BuyerDetailsSheet

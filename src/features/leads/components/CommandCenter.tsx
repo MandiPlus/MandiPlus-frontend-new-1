@@ -55,8 +55,11 @@ export default function CommandCenter({
   const overflow = attention.length - shown.length;
 
   return (
-    <div className="space-y-5">
+    // Twelve columns on desktop so the whole board lands in one screen; a
+    // single stack below that, which is what a phone wants anyway.
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 xl:gap-6">
       {/* 1 — what needs a human, or the good news that nothing does */}
+      <div className="lg:col-span-6 lg:row-start-2 xl:col-span-5">
       {shown.length === 0 ? (
         <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
           <p className="text-sm font-medium text-emerald-700">
@@ -91,9 +94,10 @@ export default function CommandCenter({
           )}
         </div>
       )}
+      </div>
 
       {/* 2 — today, in four numbers */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:col-span-12 lg:row-start-1">
         {[
           {
             label: "Calls today",
@@ -119,7 +123,7 @@ export default function CommandCenter({
       </div>
 
       {/* 3 — the funnel, with the leak named */}
-      <div className="rounded-2xl border border-gray-100 p-4">
+      <div className="rounded-2xl border border-gray-100 p-4 lg:col-span-6 lg:row-start-2 xl:col-span-7">
         <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
           Calling funnel
         </p>
@@ -174,50 +178,81 @@ export default function CommandCenter({
         )}
       </div>
 
-      {/* 4 — the team, one card each */}
-      <div className="space-y-3">
-        {team.map((member: TeamMemberDay) => (
-          <button
-            key={member.userId}
-            type="button"
-            onClick={() => onPickMember(member.userId)}
-            className="w-full rounded-2xl border border-gray-100 p-4 text-left hover:border-gray-200"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <p className="font-medium">{member.name}</p>
-              <p className="text-sm tabular-nums text-gray-500">
-                {member.covered}/{member.target}
-              </p>
-            </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
-              <div
-                className="h-full rounded-full"
-                style={{
-                  backgroundColor: ACCENT,
-                  width: `${member.target > 0 ? Math.min(100, (member.covered / member.target) * 100) : 0}%`,
-                }}
-              />
-            </div>
-            <p className="mt-2 flex flex-wrap gap-x-3 text-xs text-gray-500">
-              {member.overdue > 0 && (
-                <span className="font-medium text-red-600">
-                  {member.overdue} overdue
-                </span>
-              )}
-              {member.dueToday > 0 && (
-                <span className="text-amber-600">{member.dueToday} due today</span>
-              )}
-              {member.hot > 0 && <span>{member.hot} interested</span>}
-              <span>{member.fresh} new</span>
-              <span>{member.callsToday} calls today</span>
-            </p>
-          </button>
-        ))}
+      {/* 4 — the team. A table, not cards: these rows exist to be compared,
+           and cards flatten exactly the ranking a manager is looking for. */}
+      <div className="rounded-2xl border border-gray-100 lg:col-span-6 lg:row-start-3 xl:col-span-5">
+        <p className="border-b border-gray-100 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+          Team today
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full border-separate border-spacing-0 text-[13px]">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wide text-gray-400">
+                <th className="whitespace-nowrap px-3 py-2 font-semibold">Caller</th>
+                <th className="whitespace-nowrap px-1.5 py-2 font-semibold">Done</th>
+                <th className="px-1.5 py-2 text-right font-semibold">Overdue</th>
+                <th className="px-1.5 py-2 text-right font-semibold">Due</th>
+                <th className="px-1.5 py-2 text-right font-semibold">Hot</th>
+                <th className="px-1.5 py-2 text-right font-semibold">New</th>
+                <th className="px-3 py-2 text-right font-semibold">Calls</th>
+              </tr>
+            </thead>
+            <tbody>
+              {team.map((member: TeamMemberDay) => {
+                const pct =
+                  member.target > 0
+                    ? Math.min(100, (member.covered / member.target) * 100)
+                    : 0;
+                return (
+                  <tr
+                    key={member.userId}
+                    onClick={() => onPickMember(member.userId)}
+                    className="cursor-pointer border-t border-gray-50 hover:bg-gray-50/70"
+                  >
+                    <td className="whitespace-nowrap px-3 py-2.5 font-medium">{member.name}</td>
+                    <td className="px-1.5 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-10 shrink-0 overflow-hidden rounded-full bg-gray-100">
+                          <div
+                            className="h-full rounded-full"
+                            style={{ backgroundColor: ACCENT, width: `${pct}%` }}
+                          />
+                        </div>
+                        <span className="tabular-nums text-gray-500">
+                          {member.covered}/{member.target}
+                        </span>
+                      </div>
+                    </td>
+                    <td
+                      className={`px-1.5 py-2.5 text-right tabular-nums ${member.overdue > 0 ? "font-semibold text-red-600" : "text-gray-300"}`}
+                    >
+                      {member.overdue || "—"}
+                    </td>
+                    <td
+                      className={`px-1.5 py-2.5 text-right tabular-nums ${member.dueToday > 0 ? "text-amber-600" : "text-gray-300"}`}
+                    >
+                      {member.dueToday || "—"}
+                    </td>
+                    <td className="px-1.5 py-2.5 text-right tabular-nums text-gray-600">
+                      {member.hot || "—"}
+                    </td>
+                    <td className="px-1.5 py-2.5 text-right tabular-nums text-gray-600">
+                      {member.fresh}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-gray-600">
+                      {member.callsToday}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* 5 — high-value buyers worth a manager's own eyes */}
       {opportunities.length > 0 && (
-        <div className="rounded-2xl border border-gray-100 p-4">
+        <div className="rounded-2xl border border-gray-100 p-4 lg:col-span-6 lg:row-start-3 xl:col-span-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
             High-value buyers in play
           </p>
@@ -244,7 +279,7 @@ export default function CommandCenter({
       )}
 
       {/* 6 — supply and quality, side by side */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-span-12 lg:row-start-4 lg:grid-cols-3 xl:col-span-3 xl:row-start-3 xl:grid-cols-1">
         <div className="rounded-2xl border border-gray-100 px-4 py-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
             Data runway
@@ -277,10 +312,9 @@ export default function CommandCenter({
               .join(" · ")}
           </p>
         </div>
-      </div>
 
-      {/* 7 — campaign centre */}
-      <div className="rounded-2xl border border-gray-100 p-4">
+        {/* campaign centre, third tile in the same stack */}
+        <div className="rounded-2xl border border-gray-100 p-4">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
           Campaign centre
         </p>
@@ -295,6 +329,7 @@ export default function CommandCenter({
               <p className="text-[11px] text-gray-400">{cell.label}</p>
             </div>
           ))}
+        </div>
         </div>
       </div>
     </div>

@@ -119,7 +119,8 @@ export default function IngestPanel({
     "h-10 w-full rounded-2xl border border-gray-200 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#4309ac]/30";
 
   return (
-    <section className="py-5">
+    <section className="grid gap-5 py-5 xl:grid-cols-12">
+      <div className="xl:col-span-5">
       <textarea
         value={rawText}
         onChange={(e) => {
@@ -264,9 +265,17 @@ export default function IngestPanel({
           {preview ? `Import ${preview.willCreate}` : "Import"}
         </button>
       </div>
+      </div>
 
+      <div className="xl:col-span-7">
+      {!preview && (
+        <p className="hidden rounded-2xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-400 xl:block">
+          Paste a list and press “Check the list” — what it would create, merge
+          or skip appears here before anything is written.
+        </p>
+      )}
       {preview && (
-        <div className="mt-5">
+        <div className="xl:mt-0">
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
             <span className="font-semibold text-emerald-700">
               {preview.willCreate} new
@@ -311,6 +320,7 @@ export default function IngestPanel({
           </div>
         </div>
       )}
+      </div>
     </section>
   );
 }
