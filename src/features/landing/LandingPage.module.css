@@ -178,20 +178,6 @@
   letter-spacing: 0.01em;
 }
 
-.heroBadges {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 14px;
-}
-
-.heroBadgeDivider {
-  width: 1px;
-  align-self: stretch;
-  min-height: 34px;
-  background: color-mix(in srgb, var(--ink) 18%, transparent);
-}
-
 .heroBadge {
   display: inline-flex;
   align-items: center;
@@ -1990,14 +1976,6 @@
   .heroTitle {
     margin-top: 18px;
     font-size: clamp(3rem, 13.2vw, 3.4rem);
-  }
-
-  .heroBadges {
-    gap: 10px;
-  }
-
-  .heroBadgeDivider {
-    min-height: 26px;
   }
 
   .heroBadge {
