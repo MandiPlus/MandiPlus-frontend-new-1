@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Volume2, VolumeX } from "lucide-react";
+import { Play, Volume2, VolumeX } from "lucide-react";
 import styles from "@/features/landing/FilmsSection.module.css";
 import { LANDING_FILM } from "@/features/landing/landingData";
 
@@ -11,9 +11,10 @@ import { LANDING_FILM } from "@/features/landing/landingData";
  * On sound: every current browser refuses `play()` on an unmuted video until the page has been
  * interacted with, so "autoplay with sound" cannot be guaranteed by anyone. What happens here is
  * the closest the platform allows —
- *   1. try unmuted first, which succeeds for a visitor who has already clicked something,
- *   2. otherwise fall back to muted playback so the film still runs, and
- *   3. unmute on the very first tap/keypress anywhere on the page.
+ *   1. start muted immediately (with sound instead when the page already holds activation),
+ *   2. upgrade to sound on the very first tap/keypress anywhere on the page, and
+ *   3. if even the muted start is refused — Low Power Mode, reduced motion — surface a large
+ *      centred "Video chalayein" control so the recovery tap is obvious.
  * A visible control always shows the current state, both so the viewer knows sound is coming
  * and so it can be switched off again (WCAG 1.4.2 — audio over three seconds needs a stop).
  */
@@ -21,9 +22,21 @@ export default function FilmsSection() {
   const sectionRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  // React sets the muted PROPERTY but never renders the ATTRIBUTE, and iOS checks the
+  // attribute when deciding whether a video may start unattended — the known reason a muted
+  // video autoplays everywhere except iPhones. Written here, before iOS ever evaluates it.
+  const attachVideo = useCallback((el: HTMLVideoElement | null) => {
+    videoRef.current = el;
+    if (el) {
+      el.muted = true;
+      el.setAttribute("muted", "");
+    }
+  }, []);
+
   const [src, setSrc] = useState<string | null>(null);
   const [onScreen, setOnScreen] = useState(false);
   const [muted, setMuted] = useState(true);
+  const [playing, setPlaying] = useState(false);
   const [motionOk, setMotionOk] = useState(true);
   /** The muted-playback sound invitation: big and centred first, then the corner pill. */
   const [prompt, setPrompt] = useState<"big" | "pill">("big");
@@ -81,10 +94,14 @@ export default function FilmsSection() {
     }
 
     let cancelled = false;
-    // Try with sound first. If the browser refuses — the usual case on a cold visit — fall
-    // straight back to muted so the film still runs rather than sitting frozen.
+    // Lead with sound only when the page already holds real user activation — on a cold
+    // visit ask for the guaranteed muted start straight away, rather than opening with a
+    // doomed request that some WebKit builds answer by stalling the element for a beat.
+    const hasActivation =
+      (navigator as Navigator & { userActivation?: { hasBeenActive?: boolean } })
+        .userActivation?.hasBeenActive === true;
     const start = async () => {
-      if (!userMuted) {
+      if (!userMuted && hasActivation) {
         video.muted = false;
         try {
           await video.play();
@@ -188,34 +205,51 @@ export default function FilmsSection() {
 
         <div className={styles.frame}>
           <video
-            ref={videoRef}
+            ref={attachVideo}
             className={styles.film}
             src={src ?? undefined}
             poster={LANDING_FILM.poster}
             preload={src ? "metadata" : "none"}
             muted={muted}
+            autoPlay={motionOk}
             playsInline
             controls={false}
             aria-label={LANDING_FILM.label}
             onClick={toggleSound}
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
           />
 
           <button
             type="button"
             className={`${styles.sound} ${
-              muted && prompt === "big" && !userMuted ? styles.soundBig : ""
+              (!playing || (muted && prompt === "big")) && !userMuted
+                ? styles.soundBig
+                : ""
             }`}
             onClick={toggleSound}
             aria-pressed={!muted}
-            aria-label={muted ? "Awaaz chalu karein" : "Awaaz band karein"}
+            aria-label={
+              !playing
+                ? "Video chalayein"
+                : muted
+                  ? "Awaaz chalu karein"
+                  : "Awaaz band karein"
+            }
           >
-            {muted ? (
+            {!playing ? (
+              <Play size={18} strokeWidth={2} aria-hidden="true" />
+            ) : muted ? (
               <VolumeX size={18} strokeWidth={2} aria-hidden="true" />
             ) : (
               <Volume2 size={18} strokeWidth={2} aria-hidden="true" />
             )}
             <span className={styles.soundText}>
-              {muted ? "Awaaz chalu karein" : "Awaaz"}
+              {!playing
+                ? "Video chalayein"
+                : muted
+                  ? "Awaaz chalu karein"
+                  : "Awaaz"}
             </span>
           </button>
         </div>
