@@ -118,9 +118,16 @@ function Stat({
  * Everything cumulative. Deliberately separate from Today: a lifetime count
  * beside a count since this morning invites a comparison that means nothing.
  */
-export default function OverviewBoard() {
+export default function OverviewBoard({
+  commodityLabels = {},
+}: {
+  /** code -> display label, from the bootstrap list. Codes minted by Add data
+   *  are not in it, so the select falls back to the code itself. */
+  commodityLabels?: Record<string, string>;
+}) {
   const [rangeDays, setRangeDays] = useState<number | null>(30);
   const [userId, setUserId] = useState("");
+  const [commodityCode, setCommodityCode] = useState("");
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [drill, setDrill] = useState<{
@@ -149,6 +156,7 @@ export default function OverviewBoard() {
           from: from ? iso(from) : undefined,
           to: iso(to),
           userId: userId || undefined,
+          commodityCode: commodityCode || undefined,
         }),
       );
     } catch {
@@ -156,7 +164,7 @@ export default function OverviewBoard() {
     } finally {
       setLoading(false);
     }
-  }, [rangeDays, userId]);
+  }, [rangeDays, userId, commodityCode]);
 
   useEffect(() => {
     load();
@@ -164,6 +172,19 @@ export default function OverviewBoard() {
 
   const selectClass =
     "h-9 rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#4309ac]/30";
+
+  const commodityName = (code: string) =>
+    commodityLabels[code] ?? code.toLowerCase().replace(/_/g, " ");
+
+  // Narrowing to one caller can drop the selected commodity out of the list.
+  // Keeping it as an option means the filter still reads as applied instead of
+  // silently showing an empty select over filtered numbers.
+  const commodityOptions = (() => {
+    const list = data?.commodities ?? [];
+    return commodityCode && !list.some((c) => c.code === commodityCode)
+      ? [...list, { code: commodityCode, leads: 0 }]
+      : list;
+  })();
 
   const funnelData = (data?.funnel.stages ?? []).map((stage, i, arr) => {
     const prev = i > 0 ? arr[i - 1].count : null;
@@ -230,6 +251,20 @@ export default function OverviewBoard() {
           {(data?.callers ?? []).map((c) => (
             <option key={c.userId} value={c.userId}>
               {c.name}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Commodity"
+          value={commodityCode}
+          onChange={(e) => setCommodityCode(e.target.value)}
+          className={`${selectClass} ${commodityCode ? "border-[#4309ac]/40 text-[#4309ac]" : ""}`}
+        >
+          <option value="">All commodities</option>
+          {commodityOptions.map((c) => (
+            <option key={c.code} value={c.code}>
+              {commodityName(c.code)}
+              {c.leads ? ` (${c.leads})` : ""}
             </option>
           ))}
         </select>
@@ -586,6 +621,7 @@ export default function OverviewBoard() {
           from={window_.from}
           to={window_.to}
           userId={userId || undefined}
+          commodityCode={commodityCode || undefined}
           onClose={() => setDrill(null)}
         />
       )}

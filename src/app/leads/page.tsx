@@ -82,6 +82,8 @@ const NEEDS_REASON: LeadStatus[] = ["NOT_INTERESTED", "NOT_RELEVANT"];
 type Tab =
   | "today"
   | "leads"
+  | "interested"
+  | "followups"
   | "mandiplus"
   | "converted"
   | "closed"
@@ -132,6 +134,32 @@ function followUpBucket(lead: LeadRecord): "overdue" | "today" | null {
   if (due < today) return "overdue";
   if (due.getTime() === today.getTime()) return "today";
   return null;
+}
+
+/**
+ * The warm pipeline. Deliberately the same three statuses the Overall board
+ * counts as "hot", so the sidebar number and that card can never disagree.
+ */
+const WARM_STATUSES: LeadStatus[] = [
+  "INTERESTED",
+  "CONFIRMED_BUYER",
+  "DEMO_BOOKED",
+];
+
+function isWarm(lead: LeadRecord): boolean {
+  return WARM_STATUSES.includes(lead.status);
+}
+
+/**
+ * A promise to call back that is still outstanding: a time was set, or the
+ * caller marked follow-up without picking one yet. Overdue counts - a missed
+ * promise is the most urgent thing on the board, not something to hide.
+ */
+function isFollowUp(lead: LeadRecord): boolean {
+  if (lead.status === "CONVERTED" || CLOSED_STATUSES.includes(lead.status)) {
+    return false;
+  }
+  return !!lead.nextFollowUpAt || lead.status === "FOLLOW_UP";
 }
 
 /** "6:00 pm" for today, "9 Sep, 6:00 pm" otherwise. */
@@ -391,15 +419,27 @@ export default function LeadsPage() {
   ]);
 
   const tabCounts = useMemo(() => {
-    const counts = { leads: 0, mandiplus: 0, converted: 0, closed: 0 };
+    const counts = {
+      leads: 0,
+      interested: 0,
+      followups: 0,
+      mandiplus: 0,
+      converted: 0,
+      closed: 0,
+    };
     for (const lead of baseFiltered) {
       // Tabs are views, not a partition: a lead who is already a customer is
       // counted in both All Leads and On Mandiplus, exactly as it is shown.
+      // Interested and Followups overlap the same way - a warm lead with a
+      // callback booked belongs in both, and moving it out of one would hide
+      // it from whoever looks in the other.
       if (lead.status === "CONVERTED") {
         counts.converted += 1;
       } else {
         if (CLOSED_STATUSES.includes(lead.status)) counts.closed += 1;
         else counts.leads += 1;
+        if (isWarm(lead)) counts.interested += 1;
+        if (isFollowUp(lead)) counts.followups += 1;
         if (lead.matchedUserId) counts.mandiplus += 1;
       }
     }
@@ -409,6 +449,8 @@ export default function LeadsPage() {
   const visible = useMemo(() => {
     const inTab = baseFiltered.filter((lead) => {
       if (tab === "converted") return lead.status === "CONVERTED";
+      if (tab === "interested") return isWarm(lead);
+      if (tab === "followups") return isFollowUp(lead);
       // On Mandiplus is a filtered view of leads who are already customers,
       // not a place they get moved to - they stay in All Leads as well.
       if (tab === "mandiplus")
@@ -431,6 +473,21 @@ export default function LeadsPage() {
       if (lead.status === "NEW") return 2;
       return 3;
     };
+    // A follow-up list is a diary, so it reads by due time: the ones already
+    // missed first, then the rest of the day, then later. Newest-first would
+    // bury this morning's overdue promise under a callback booked for Friday.
+    if (tab === "followups") {
+      return inTab.sort((a, b) => {
+        const at = a.nextFollowUpAt
+          ? new Date(a.nextFollowUpAt).getTime()
+          : Infinity;
+        const bt = b.nextFollowUpAt
+          ? new Date(b.nextFollowUpAt).getTime()
+          : Infinity;
+        if (at !== bt) return at - bt;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+    }
     return inTab.sort((a, b) => {
       const diff = rank(a) - rank(b);
       if (diff !== 0) return diff;
@@ -690,10 +747,20 @@ export default function LeadsPage() {
     return item ? `${item.emoji ?? ""} ${item.label}`.trim() : code;
   };
 
+  const commodityLabels = useMemo(
+    () =>
+      Object.fromEntries(
+        commodities.map((c) => [c.code, `${c.emoji ?? ""} ${c.label}`.trim()]),
+      ),
+    [commodities],
+  );
+
   const sections: [Tab, string][] = [
     ...(viewer?.isManager ? ([["overall", "Overall"]] as [Tab, string][]) : []),
     ["today", "Today"],
     ["leads", "All Leads"],
+    ["interested", "Interested"],
+    ["followups", "Followups"],
     ["mandiplus", "On Mandiplus"],
     ["converted", "Converted"],
     ["closed", "Closed"],
@@ -918,7 +985,7 @@ export default function LeadsPage() {
         </nav>
 
         {tab === "overall" ? (
-          <OverviewBoard />
+          <OverviewBoard commodityLabels={commodityLabels} />
         ) : tab === "calls" ? (
           <div className="py-5">
             <CallsBoard

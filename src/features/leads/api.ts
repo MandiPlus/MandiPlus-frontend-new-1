@@ -602,6 +602,8 @@ export interface OverviewData {
     source: string;
   }[];
   callers: { userId: string; name: string }[];
+  /** Codes present on leads, so a custom one from Add data is selectable too. */
+  commodities: { code: string; leads: number }[];
 }
 
 export interface OverviewLead {
@@ -626,6 +628,7 @@ export async function getOverviewLeads(params: {
   to?: string;
   userId?: string;
   batchId?: string;
+  commodityCode?: string;
 }): Promise<{ metric: string; count: number; leads: OverviewLead[] }> {
   const response = await axios.get(
     `${API_BASE_URL}/leads/admin/overview/leads`,
@@ -638,6 +641,7 @@ export async function getOverview(params: {
   from?: string;
   to?: string;
   userId?: string;
+  commodityCode?: string;
 }): Promise<OverviewData> {
   const response = await axios.get(`${API_BASE_URL}/leads/admin/overview`, {
     params,

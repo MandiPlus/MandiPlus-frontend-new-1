@@ -31,6 +31,7 @@ export default function LeadListDrawer({
   to,
   userId,
   batchId,
+  commodityCode,
   onClose,
 }: {
   title: string;
@@ -39,6 +40,7 @@ export default function LeadListDrawer({
   to?: string;
   userId?: string;
   batchId?: string;
+  commodityCode?: string;
   onClose: () => void;
 }) {
   const [leads, setLeads] = useState<OverviewLead[]>([]);
@@ -47,7 +49,7 @@ export default function LeadListDrawer({
   const [query, setQuery] = useState("");
 
   useEffect(() => {
-    getOverviewLeads({ metric, from, to, userId, batchId })
+    getOverviewLeads({ metric, from, to, userId, batchId, commodityCode })
       .then((res) => {
         // A shape we did not expect should show as empty, not crash the page.
         setLeads(Array.isArray(res?.leads) ? res.leads : []);
@@ -55,7 +57,7 @@ export default function LeadListDrawer({
       })
       .catch(() => toast.error("Could not load those leads"))
       .finally(() => setLoading(false));
-  }, [metric, from, to, userId, batchId]);
+  }, [metric, from, to, userId, batchId, commodityCode]);
 
   const q = query.trim().toLowerCase();
   const visible = q
