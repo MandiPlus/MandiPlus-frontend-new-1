@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toast } from "react-toastify";
 import axios from "axios";
-import { Plus } from "lucide-react";
+import { Plus, Flame } from "lucide-react";
 import { addLead, type LeadCommodity } from "../api";
 
 const STATES = [
@@ -46,6 +46,7 @@ export default function AddLeadForm({
   const [phone, setPhone] = useState("");
   const [commodityCode, setCommodityCode] = useState("");
   const [region, setRegion] = useState("");
+  const [isHot, setIsHot] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const digits = phone.replace(/\D/g, "");
@@ -61,6 +62,7 @@ export default function AddLeadForm({
         phone: phone.trim(),
         commodityCode: commodityCode || undefined,
         region: region || undefined,
+        isHot,
       });
       if (result.merged > 0) {
         toast.info("We already had that number - added to the existing lead");
@@ -78,6 +80,7 @@ export default function AddLeadForm({
       setPhone("");
       setCommodityCode("");
       setRegion("");
+      setIsHot(false);
       onAdded?.();
     } catch (err) {
       const message =
@@ -182,6 +185,25 @@ export default function AddLeadForm({
             ))}
           </select>
         </div>
+
+        {/* A judgement made at the door: worth ringing before the rest of
+            the list, said before anyone has spoken to them. */}
+        <button
+          type="button"
+          onClick={() => setIsHot(!isHot)}
+          aria-pressed={isHot}
+          className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+            isHot
+              ? "border-orange-200 bg-orange-50 text-orange-700"
+              : "border-gray-200 text-gray-600"
+          }`}
+        >
+          <Flame className={`size-4 ${isHot ? "" : "text-gray-400"}`} />
+          Hot lead
+          <span className="ml-auto text-xs font-normal text-gray-400">
+            {isHot ? "calls first" : "tap to mark"}
+          </span>
+        </button>
 
         <button
           type="button"

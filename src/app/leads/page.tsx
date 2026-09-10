@@ -88,6 +88,7 @@ type Tab =
   | "converted"
   | "closed"
   | "overall"
+  | "hot"
   | "calls"
   | "reports"
   | "ingest";
@@ -107,6 +108,13 @@ const ACTIVE_STATUSES: LeadStatus[] = [
   "DEMO_BOOKED",
   "NOT_REACHABLE",
 ];
+
+/**
+ * Marked hot when added - a judgement made before anyone called. Deliberately
+ * not status based: Interested already covers leads a call proved warm, and
+ * two tabs showing the same set would be worse than one.
+ */
+const isHotLead = (lead: LeadRecord) => lead.isHot === true;
 
 const CLOSED_STATUSES: LeadStatus[] = [
   "NOT_INTERESTED",
@@ -426,6 +434,7 @@ export default function LeadsPage() {
       mandiplus: 0,
       converted: 0,
       closed: 0,
+      hot: 0,
     };
     for (const lead of baseFiltered) {
       // Tabs are views, not a partition: a lead who is already a customer is
@@ -441,6 +450,7 @@ export default function LeadsPage() {
         if (isWarm(lead)) counts.interested += 1;
         if (isFollowUp(lead)) counts.followups += 1;
         if (lead.matchedUserId) counts.mandiplus += 1;
+        if (isHotLead(lead)) counts.hot += 1;
       }
     }
     return counts;
@@ -448,6 +458,8 @@ export default function LeadsPage() {
 
   const visible = useMemo(() => {
     const inTab = baseFiltered.filter((lead) => {
+      if (tab === "hot")
+        return lead.status !== "CONVERTED" && isHotLead(lead);
       if (tab === "converted") return lead.status === "CONVERTED";
       if (tab === "interested") return isWarm(lead);
       if (tab === "followups") return isFollowUp(lead);
@@ -758,6 +770,7 @@ export default function LeadsPage() {
   const sections: [Tab, string][] = [
     ...(viewer?.isManager ? ([["overall", "Overall"]] as [Tab, string][]) : []),
     ["today", "Today"],
+    ["hot", "Hot leads"],
     ["leads", "All Leads"],
     ["interested", "Interested"],
     ["followups", "Followups"],

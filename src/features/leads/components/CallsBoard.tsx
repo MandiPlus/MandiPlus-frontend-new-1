@@ -378,7 +378,7 @@ export default function CallsBoard({
                         <span className="text-gray-300">not logged</span>
                       )}
                     </td>
-                    <td className="border-b border-gray-50 py-2.5 pl-3 pr-5">
+                    <td className="w-[280px] min-w-[280px] border-b border-gray-50 py-2.5 pl-3 pr-5">
                       {c.hasRecording ? (
                         <RecordingPlayer callSid={c.callSid} />
                       ) : (

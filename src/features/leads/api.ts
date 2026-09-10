@@ -73,6 +73,8 @@ export interface LeadRecord {
   rejectionReason: RejectionReason | null;
   source: string;
   verificationLevel: number;
+  /** Marked worth calling first, before anyone has spoken to them. */
+  isHot: boolean;
   demoAt: string | null;
   warmupSentAt: string | null;
   lastActivityAt: string | null;
@@ -405,6 +407,8 @@ export interface IngestPayload {
   source?: string;
   assignMode?: 'AUTO' | 'MANUAL' | 'UNASSIGNED';
   assigneeUserIds?: string[];
+  /** Marks every lead in this import as worth calling first. */
+  markHot?: boolean;
   defaultRegion?: string;
   defaultMandi?: string;
   defaultCommodityCode?: string;
@@ -780,6 +784,7 @@ export async function addLead(payload: {
   phone: string;
   commodityCode?: string;
   region?: string;
+  isHot?: boolean;
 }): Promise<{
   inserted: number;
   merged: number;
