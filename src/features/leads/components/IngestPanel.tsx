@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { toast } from "react-toastify";
-import { FileSpreadsheet, Paperclip, Sparkles, X } from "lucide-react";
+import { FileSpreadsheet, Flame, Paperclip, Sparkles, X } from "lucide-react";
 import { FALLBACK_INDIA_STATES } from "@/features/reference";
 import {
   LEAD_SOURCES,
@@ -70,6 +70,7 @@ export default function IngestPanel({
   const [otherCommodity, setOtherCommodity] = useState("");
   const [role, setRole] = useState("");
   const [source, setSource] = useState("SCRAPED_DATA");
+  const [markHot, setMarkHot] = useState(false);
   const [assignMode, setAssignMode] = useState<"AUTO" | "MANUAL" | "UNASSIGNED">(
     "AUTO",
   );
@@ -110,6 +111,7 @@ export default function IngestPanel({
     source,
     assignMode,
     assigneeUserIds: assignMode === "MANUAL" ? assignees : undefined,
+    markHot,
     ...defaults(),
   });
 
@@ -195,6 +197,7 @@ export default function IngestPanel({
       setRawText("");
       setExtracted(null);
       setPreview(null);
+      setMarkHot(false);
       onImported();
     } catch (error: any) {
       toast.error(error?.response?.data?.message ?? "Import failed");
@@ -443,7 +446,24 @@ export default function IngestPanel({
           )}
         </div>
 
-        <div className="mt-4 flex gap-2">
+        <button
+          type="button"
+          onClick={() => setMarkHot(!markHot)}
+          aria-pressed={markHot}
+          className={`mt-4 flex w-full items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition-colors ${
+            markHot
+              ? "border-orange-200 bg-orange-50 text-orange-700"
+              : "border-gray-200 text-gray-600"
+          }`}
+        >
+          <Flame className={`size-4 ${markHot ? "" : "text-gray-400"}`} />
+          Hot leads
+          <span className="ml-auto text-xs font-normal text-gray-400">
+            {markHot ? "this import calls first" : "tap to mark this import"}
+          </span>
+        </button>
+
+        <div className="mt-3 flex gap-2">
           <button
             type="button"
             onClick={runPreview}
