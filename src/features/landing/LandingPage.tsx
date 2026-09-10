@@ -140,13 +140,7 @@ const FooterSocialIcon = ({ id }: { id: string }) => {
   }
 };
 
-const HeroBadge = ({
-  top,
-  bottom,
-}: {
-  top: React.ReactNode;
-  bottom: React.ReactNode;
-}) => (
+const HeroBadge = () => (
   <div className={styles.heroBadge}>
     <Image
       src="/images/landing/olive-leaves.svg"
@@ -157,8 +151,8 @@ const HeroBadge = ({
       className={styles.heroBadgeLeaves}
     />
     <p>
-      {top}
-      <span>{bottom}</span>
+      India&apos;s #1 agri tech
+      <span>insurance app</span>
     </p>
     <Image
       src="/images/landing/olive-leaves.svg"
@@ -168,14 +162,6 @@ const HeroBadge = ({
       aria-hidden="true"
       className={`${styles.heroBadgeLeaves} ${styles.heroBadgeLeavesFlipped}`}
     />
-  </div>
-);
-
-const HeroBadges = () => (
-  <div className={styles.heroBadges}>
-    <HeroBadge top={<>India&apos;s #1 agri tech</>} bottom="insurance app" />
-    <span className={styles.heroBadgeDivider} aria-hidden="true" />
-    <HeroBadge top="10 CR+" bottom="claims settled" />
   </div>
 );
 
@@ -299,7 +285,7 @@ const LandingPage = () => {
 
           <div className={styles.heroGrid}>
             <div className={styles.heroCopyColumn}>
-              <HeroBadges />
+              <HeroBadge />
               <h1 className={styles.heroTitle}>
                 <span>Risk humara.</span>
                 <span className="sr-only"> Munafa aapka.</span>
@@ -316,10 +302,10 @@ const LandingPage = () => {
 
               <div
                 className={styles.claimProof}
-                aria-label="₹1 crore plus worth of claims covered"
+                aria-label="₹10 crore plus worth of claims covered"
               >
                 <ShieldCheck size={19} strokeWidth={2} aria-hidden="true" />
-                <strong>₹1 Cr+</strong>
+                <strong>₹10 Cr+</strong>
                 <span className={styles.claimProofLabel}>
                   worth of claims covered
                 </span>

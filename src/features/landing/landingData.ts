@@ -30,7 +30,7 @@ export const MUNAFA_TRANSLATIONS = [
 ];
 
 export const CLAIMS_STAT = {
-  value: "₹1 Cr+",
+  value: "₹10 Cr+",
   label: "claims settled",
   labelLong: "claims settled for mandi traders",
 };
