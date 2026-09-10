@@ -450,7 +450,11 @@ export default function LeadsPage() {
         if (isWarm(lead)) counts.interested += 1;
         if (isFollowUp(lead)) counts.followups += 1;
         if (lead.matchedUserId) counts.mandiplus += 1;
-        if (isHotLead(lead)) counts.hot += 1;
+        // Counted in the same branch that excludes closed and converted, so
+        // the badge cannot disagree with the list.
+        if (!CLOSED_STATUSES.includes(lead.status) && isHotLead(lead)) {
+          counts.hot += 1;
+        }
       }
     }
     return counts;
@@ -458,8 +462,15 @@ export default function LeadsPage() {
 
   const visible = useMemo(() => {
     const inTab = baseFiltered.filter((lead) => {
+      // A lead marked hot that a call then closed is not hot any more. The
+      // tag records a judgement made before the call; the disposition made
+      // after it wins.
       if (tab === "hot")
-        return lead.status !== "CONVERTED" && isHotLead(lead);
+        return (
+          lead.status !== "CONVERTED" &&
+          !CLOSED_STATUSES.includes(lead.status) &&
+          isHotLead(lead)
+        );
       if (tab === "converted") return lead.status === "CONVERTED";
       if (tab === "interested") return isWarm(lead);
       if (tab === "followups") return isFollowUp(lead);
