@@ -140,7 +140,13 @@ const FooterSocialIcon = ({ id }: { id: string }) => {
   }
 };
 
-const HeroBadge = () => (
+const HeroBadge = ({
+  top,
+  bottom,
+}: {
+  top: React.ReactNode;
+  bottom: React.ReactNode;
+}) => (
   <div className={styles.heroBadge}>
     <Image
       src="/images/landing/olive-leaves.svg"
@@ -151,8 +157,8 @@ const HeroBadge = () => (
       className={styles.heroBadgeLeaves}
     />
     <p>
-      India&apos;s #1 agri tech
-      <span>insurance app</span>
+      {top}
+      <span>{bottom}</span>
     </p>
     <Image
       src="/images/landing/olive-leaves.svg"
@@ -162,6 +168,14 @@ const HeroBadge = () => (
       aria-hidden="true"
       className={`${styles.heroBadgeLeaves} ${styles.heroBadgeLeavesFlipped}`}
     />
+  </div>
+);
+
+const HeroBadges = () => (
+  <div className={styles.heroBadges}>
+    <HeroBadge top={<>India&apos;s #1 agri tech</>} bottom="insurance app" />
+    <span className={styles.heroBadgeDivider} aria-hidden="true" />
+    <HeroBadge top="10 CR+" bottom="claims settled" />
   </div>
 );
 
@@ -285,7 +299,7 @@ const LandingPage = () => {
 
           <div className={styles.heroGrid}>
             <div className={styles.heroCopyColumn}>
-              <HeroBadge />
+              <HeroBadges />
               <h1 className={styles.heroTitle}>
                 <span>Risk humara.</span>
                 <span className="sr-only"> Munafa aapka.</span>
