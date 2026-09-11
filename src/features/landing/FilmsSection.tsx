@@ -20,6 +20,7 @@ import { LANDING_FILM } from "@/features/landing/landingData";
  */
 export default function FilmsSection() {
   const sectionRef = useRef<HTMLElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // React sets the muted PROPERTY but never renders the ATTRIBUTE, and iOS checks the
@@ -150,9 +151,18 @@ export default function FilmsSection() {
     const detach = () =>
       EVENTS.forEach((e) => document.removeEventListener(e, unmute, true));
 
-    function unmute() {
+    function unmute(event: Event) {
       const video = videoRef.current;
       if (!video) return;
+      // A tap on the film itself belongs to the frame's own control. Handling it here too
+      // meant one tap ran both handlers — pointerup unmuted, then the click toggle saw
+      // "already unmuted" and muted it straight back. That was the tap-twice bug.
+      if (
+        event.target instanceof Node &&
+        frameRef.current?.contains(event.target)
+      ) {
+        return;
+      }
 
       // Done inside the gesture, which is exactly when the autoplay policy relents.
       video.muted = false;
@@ -183,10 +193,14 @@ export default function FilmsSection() {
   }, [muted, src]);
 
   const toggleSound = () => {
-    const next = !muted;
-    setUserMuted(next);
-    applyMuted(next);
-    if (!next) void videoRef.current?.play().catch(() => {});
+    const video = videoRef.current;
+    if (!video) return;
+    // Read the element, not state: state can lag the same tap's earlier handlers. Anything
+    // not already playing with sound means the viewer wants it on — never the other way.
+    const enable = video.muted || video.paused;
+    setUserMuted(!enable);
+    applyMuted(!enable);
+    if (enable) void video.play().catch(() => {});
   };
 
   return (
@@ -203,7 +217,7 @@ export default function FilmsSection() {
           </span>
         </h2>
 
-        <div className={styles.frame}>
+        <div ref={frameRef} className={styles.frame}>
           <video
             ref={attachVideo}
             className={styles.film}
