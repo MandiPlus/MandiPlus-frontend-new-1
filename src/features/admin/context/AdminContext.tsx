@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { usePathname, useRouter } from 'next/navigation';
 import { adminApi } from '../api/admin.api';
 import { persistAdminAccountMobile } from '../adminAccountMobile';
+import { installAccessRevocationGuard } from '../accessRevocationGuard';
 import {
     AdminAccessProfile,
     AdminSection,
@@ -94,6 +95,14 @@ export function AdminProvider({ children }: { children: ReactNode }) {
         }
         router.push('/admin-session-expired');
     };
+
+    // Pages that fetch() directly bypass the axios 401 interceptor, so catch a
+    // revoked token wherever it surfaces and end the session there and then.
+    useEffect(() => {
+        installAccessRevocationGuard(() => {
+            forceAdminSessionExpired();
+        });
+    }, []);
 
     useEffect(() => {
         const initAdminAccess = async () => {
