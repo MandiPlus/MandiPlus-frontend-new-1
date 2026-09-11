@@ -263,9 +263,9 @@ export const TEAM: TeamMember[] = [
  * transform strings below — the derived rendition is regenerated on first request.
  */
 const FILM_CLOUD = "https://res.cloudinary.com/dgxuvxyy0/video/upload";
-const FILM_ASSET = "landing/yay";
+const FILM_ASSET = "landing/mandi-wale";
 /** Second the poster is cut from — the first clean frame of the trader speaking. */
-const FILM_POSTER_AT = 6;
+const FILM_POSTER_AT = 25;
 
 export const LANDING_FILM = {
   /** Held under the film so the first paint is never an empty box. */
@@ -273,7 +273,7 @@ export const LANDING_FILM = {
   /** One rung per breakpoint. Picked in JS, because `media` on a <source> is unreliable here. */
   srcWide: `${FILM_CLOUD}/f_auto:video,q_auto:eco,br_600k,w_1280,c_limit/${FILM_ASSET}.mp4`,
   srcNarrow: `${FILM_CLOUD}/f_auto:video,q_auto:eco,br_400k,w_854,c_limit/${FILM_ASSET}.mp4`,
-  seconds: 87,
+  seconds: 121,
   /** Split so the second line can carry the hero's violet, the same way "नफा तुमचा." does. */
   title: {
     lead: "Apni Tareef Toh Sab Karte Hain…",
