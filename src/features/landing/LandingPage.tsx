@@ -329,7 +329,7 @@ const LandingPage = () => {
 
             <div className={styles.heroVisual}>
               <Image
-                src="/images/landing/hero-mandi-traders.webp"
+                src="/images/landing/hero-claim-received-bgmatch.webp"
                 alt="A MandiPlus trader showing a successful claim status to two fellow mandi users"
                 fill
                 priority
@@ -337,7 +337,7 @@ const LandingPage = () => {
                 className={`${styles.heroIllustration} ${styles.heroIllustrationDesktop}`}
               />
               <Image
-                src="/images/landing/hero-mandi-traders.webp"
+                src="/images/landing/hero-claim-received-mobile-bgmatch.webp"
                 alt="A MandiPlus trader showing a successful claim status to two fellow mandi users"
                 fill
                 priority
