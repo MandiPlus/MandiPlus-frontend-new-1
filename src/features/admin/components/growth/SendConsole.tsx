@@ -105,6 +105,8 @@ export default function SendConsole({
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [log, setLog] = useState<GrowthSendLogEntry[]>([]);
 
   const template = useMemo(
@@ -125,7 +127,10 @@ export default function SendConsole({
   );
 
   const loadTemplates = useCallback(async () => {
-    setTemplates(await adminApi.getGrowthCatalog());
+    const catalog = await adminApi.getGrowthCatalog();
+    setTemplates(catalog);
+    setCatalogLoaded(true);
+    return catalog;
   }, []);
 
   const loadLog = useCallback(async () => {
@@ -230,20 +235,36 @@ export default function SendConsole({
     }
   };
 
-  const syncTemplates = async () => {
+  const syncTemplates = useCallback(async () => {
     setSyncing(true);
+    setSyncError(null);
     try {
       const outcome = await adminApi.syncGrowthCatalog();
-      setResult(
-        `${outcome.synced} templates synced from Meta, ${outcome.approved} approved.`,
-      );
-      await loadTemplates();
+      const catalog = await loadTemplates();
+      if (catalog.length === 0) {
+        setSyncError(
+          outcome.synced === 0
+            ? 'Meta returned no templates for this WhatsApp account.'
+            : `Meta returned ${outcome.synced} templates but none are approved yet.`,
+        );
+      }
     } catch (error) {
-      setResult(`Sync failed: ${errorText(error)}`);
+      // Shown under the dropdown it explains, not at the bottom of the form.
+      setSyncError(errorText(error));
     } finally {
       setSyncing(false);
     }
-  };
+  }, [loadTemplates]);
+
+  // An empty picker is never what anyone wants to look at: the first visit
+  // fetches from Meta on its own instead of waiting to be told to.
+  useEffect(() => {
+    if (catalogLoaded && templates.length === 0 && !syncing && !syncError) {
+      void syncTemplates();
+    }
+    // Runs once the first catalog read settles; a failure stops the retry.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogLoaded]);
 
   return (
     <div className="space-y-4">
@@ -278,9 +299,14 @@ export default function SendConsole({
                 </option>
               ))}
             </select>
-            {templates.length === 0 ? (
+            {syncing && templates.length === 0 ? (
               <p className="mt-1 text-xs text-gray-500">
-                No templates cached yet — sync from Meta first.
+                Fetching templates from Meta…
+              </p>
+            ) : null}
+            {syncError ? (
+              <p className="mt-1 rounded bg-red-50 px-2 py-1 text-xs text-red-700">
+                Couldn’t load templates: {syncError}
               </p>
             ) : null}
             {template ? (
