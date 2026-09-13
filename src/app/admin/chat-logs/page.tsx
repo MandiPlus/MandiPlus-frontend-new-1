@@ -64,10 +64,20 @@ type MessageResponse = {
   items: ChatMessage[];
 };
 
-type TemplateComponent = {
+type TemplateButton = {
   type?: string;
   text?: string;
+  url?: string;
 };
+
+type TemplateComponent = {
+  type?: string;
+  format?: string;
+  text?: string;
+  buttons?: TemplateButton[];
+};
+
+type TemplateHeaderMediaType = 'image' | 'video' | 'document';
 
 type TemplateItem = {
   name: string;
@@ -75,6 +85,7 @@ type TemplateItem = {
   language?: string;
   category?: string;
   components?: TemplateComponent[];
+  reusable_header_media?: { type: TemplateHeaderMediaType; sent_at?: string | null } | null;
 };
 
 type TemplateListResponse = {
@@ -528,15 +539,59 @@ function WhatsappTicks({
   );
 }
 
-function extractBodyPlaceholders(template: TemplateItem): number {
-  const bodyComponent = (template.components || []).find(
-    (comp) => (comp.type || '').toUpperCase() === 'BODY'
-  );
-  const text = bodyComponent?.text || '';
-  const matches = [...text.matchAll(/\{\{(\d+)\}\}/g)];
+function countPlaceholders(text?: string): number {
+  const matches = [...(text || '').matchAll(/\{\{(\d+)\}\}/g)];
   if (matches.length === 0) return 0;
   const maxIndex = Math.max(...matches.map((m) => Number(m[1] || 0)));
   return Number.isFinite(maxIndex) ? maxIndex : 0;
+}
+
+function findTemplateComponent(template: TemplateItem, type: string): TemplateComponent | undefined {
+  return (template.components || []).find((comp) => (comp.type || '').toUpperCase() === type);
+}
+
+function extractBodyPlaceholders(template: TemplateItem): number {
+  return countPlaceholders(findTemplateComponent(template, 'BODY')?.text);
+}
+
+function templateHeaderMediaType(template: TemplateItem): TemplateHeaderMediaType | null {
+  const format = (findTemplateComponent(template, 'HEADER')?.format || '').toLowerCase();
+  return format === 'image' || format === 'video' || format === 'document' ? format : null;
+}
+
+function templateHeaderTextPlaceholders(template: TemplateItem): number {
+  const header = findTemplateComponent(template, 'HEADER');
+  return (header?.format || '').toUpperCase() === 'TEXT' ? countPlaceholders(header?.text) : 0;
+}
+
+// Buttons whose link carries a {{1}} — Meta rejects the send unless each gets a value.
+function templateDynamicUrlButtons(template: TemplateItem): TemplateButton[] {
+  return (findTemplateComponent(template, 'BUTTONS')?.buttons || []).filter(
+    (button) => (button.type || '').toUpperCase() === 'URL' && countPlaceholders(button.url) > 0
+  );
+}
+
+const TEMPLATE_HEADER_ACCEPT: Record<TemplateHeaderMediaType, string> = {
+  image: 'image/jpeg,image/png',
+  video: 'video/mp4,video/3gpp',
+  document: 'application/pdf',
+};
+
+function normalizeContactPhone(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  return digits.length === 10 ? `91${digits}` : digits;
+}
+
+function describeTemplateSendError(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data as
+      | { detail?: unknown; error?: { message?: string; error_data?: { details?: string } } }
+      | undefined;
+    if (typeof data?.detail === 'string' && data.detail) return data.detail;
+    const metaMessage = [data?.error?.message, data?.error?.error_data?.details].filter(Boolean).join(' — ');
+    if (metaMessage) return `WhatsApp rejected the template: ${metaMessage}`;
+  }
+  return 'Template send failed. Check your connection and try again.';
 }
 
 function templateBodyPreview(template: TemplateItem): string {
@@ -916,6 +971,11 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   const [templates, setTemplates] = useState<TemplateItem[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateItem | null>(null);
   const [templateVars, setTemplateVars] = useState<string[]>([]);
+  const [templateHeaderVars, setTemplateHeaderVars] = useState<string[]>([]);
+  const [templateButtonVars, setTemplateButtonVars] = useState<string[]>([]);
+  const [templateHeaderFile, setTemplateHeaderFile] = useState<File | null>(null);
+  const [templateTargetPhone, setTemplateTargetPhone] = useState('');
+  const [templateComposeNew, setTemplateComposeNew] = useState(false);
   const [sendingTemplate, setSendingTemplate] = useState(false);
 
   // Calls tab
@@ -1629,16 +1689,34 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
     }
   };
 
-  const openTemplateModal = () => {
-    if (!selectedPhone) {
+  const selectTemplate = (template: TemplateItem | null) => {
+    setSelectedTemplate(template);
+    setTemplateHeaderVars(Array(template ? templateHeaderTextPlaceholders(template) : 0).fill(''));
+    setTemplateButtonVars(Array(template ? templateDynamicUrlButtons(template).length : 0).fill(''));
+    setTemplateHeaderFile(null);
+    setTemplateError('');
+  };
+
+  // Without a phone this opens in "new chat" mode, where the number is typed in the modal.
+  const openTemplateModal = (newChatPhone?: string) => {
+    const composeNew = newChatPhone !== undefined;
+    if (!composeNew && !selectedPhone) {
       setError('Select a conversation first.');
       return;
     }
     setShowActionMenu(false);
+    setTemplateComposeNew(composeNew);
+    setTemplateTargetPhone(composeNew ? newChatPhone : selectedPhone);
     setShowTemplateModal(true);
-    setSelectedTemplate(null);
+    selectTemplate(null);
     setTemplateVars([]);
     setTemplateSearch('');
+  };
+
+  const closeTemplateModal = () => {
+    setShowTemplateModal(false);
+    selectTemplate(null);
+    setTemplateVars([]);
   };
 
   const openFilePicker = () => {
@@ -1795,34 +1873,71 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
   };
 
   const handleSendTemplate = async () => {
-    if (!selectedPhone || !selectedTemplate || sendingTemplate) return;
-    if (templateVars.some((v) => !v.trim())) {
+    if (!selectedTemplate || sendingTemplate) return;
+    const phone = normalizeContactPhone(templateTargetPhone);
+    if (phone.length < 10) {
+      setTemplateError('Enter a valid WhatsApp number.');
+      return;
+    }
+    if ([...templateVars, ...templateHeaderVars, ...templateButtonVars].some((v) => !v.trim())) {
       setTemplateError('Please fill all template variables.');
+      return;
+    }
+    const headerMediaType = templateHeaderMediaType(selectedTemplate);
+    if (headerMediaType && !templateHeaderFile && !selectedTemplate.reusable_header_media) {
+      setTemplateError(`Attach a ${headerMediaType} for this template's header.`);
       return;
     }
 
     try {
       setSendingTemplate(true);
       setTemplateError('');
+
+      let headerMediaId: string | undefined;
+      if (headerMediaType && templateHeaderFile) {
+        const formData = new FormData();
+        formData.append('file', templateHeaderFile);
+        const upload = await axios.post<{ ok: boolean; media_id: string }>(
+          `${botBaseUrl}/admin/chat/template-media`,
+          formData,
+          { headers: { ...(axiosConfig.headers || {}) } }
+        );
+        headerMediaId = upload.data.media_id;
+      }
+
       await axios.post(
         `${botBaseUrl}/admin/chat/send-template`,
         {
-          phone: selectedPhone,
+          phone,
           template_name: selectedTemplate.name,
           language_code: selectedTemplate.language || 'en',
           body_parameters: templateVars.map((v) => v.trim()),
+          header_text_parameters: templateHeaderVars.map((v) => v.trim()),
+          button_url_parameters: templateButtonVars.map((v) => v.trim()),
+          ...(headerMediaId ? { header_media_id: headerMediaId } : {}),
         },
         axiosConfig
       );
-      setShowTemplateModal(false);
-      setSelectedTemplate(null);
-      setTemplateVars([]);
+      closeTemplateModal();
+      if (phone !== selectedPhone) setSelectedPhone(phone);
       setRefreshTick((x) => x + 1);
-    } catch {
-      setTemplateError('Template send failed. Check template params and WhatsApp policy window.');
+    } catch (err) {
+      setTemplateError(describeTemplateSendError(err));
     } finally {
       setSendingTemplate(false);
     }
+  };
+
+  const handleNewContactTemplate = () => {
+    const phone = normalizeContactPhone(newContactPhone);
+    const name = newContactName.trim();
+    if (phone && name) {
+      setContactDirectory((prev) => ({ ...prev, [phone]: { name } }));
+    }
+    setShowNewContactModal(false);
+    setNewContactName('');
+    setNewContactPhone('');
+    openTemplateModal(phone);
   };
 
   const handleCreateContactAndSend = async () => {
@@ -2766,7 +2881,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                     </button>
                     <button
                       type="button"
-                      onClick={openTemplateModal}
+                      onClick={() => openTemplateModal()}
                       className={`w-full rounded-xl px-3 py-2 text-left text-sm ${standalone && isDark ? 'text-slate-200 hover:bg-[#1f2c33]' : 'text-slate-700 hover:bg-slate-100'}`}
                     >
                       Template Message
@@ -3017,7 +3132,9 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
           <div className="w-full max-w-lg rounded-[28px] bg-white shadow-2xl">
             <div className="border-b border-slate-200 px-5 py-4">
               <p className="text-base font-semibold text-slate-900">New Contact</p>
-              <p className="text-sm text-slate-500">Save a name and send the first message from here.</p>
+              <p className="text-sm text-slate-500">
+                Save a name and send the first message. A number that hasn&apos;t messaged you in 24 hours can only receive a template.
+              </p>
             </div>
 
             <div className="space-y-4 px-5 py-5">
@@ -3068,6 +3185,14 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               </button>
               <button
                 type="button"
+                onClick={handleNewContactTemplate}
+                disabled={savingContact}
+                className="rounded-full border border-emerald-600 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Send template
+              </button>
+              <button
+                type="button"
                 onClick={handleCreateContactAndSend}
                 disabled={savingContact}
                 className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
@@ -3083,8 +3208,21 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
           <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-[28px] bg-white shadow-2xl">
             <div className="border-b border-slate-200 px-5 py-4">
-              <p className="text-sm font-semibold text-slate-900">Template Message</p>
-              <p className="text-xs text-slate-500">Send to {formatPhone(selectedPhone)}</p>
+              <p className="text-sm font-semibold text-slate-900">
+                {templateComposeNew ? 'New chat — Template Message' : 'Template Message'}
+              </p>
+              {templateComposeNew ? (
+                <input
+                  value={templateTargetPhone}
+                  onChange={(e) => setTemplateTargetPhone(e.target.value)}
+                  inputMode="tel"
+                  autoFocus
+                  placeholder="WhatsApp number, e.g. 919876543210"
+                  className="mt-2 w-full max-w-xs rounded-2xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                />
+              ) : (
+                <p className="text-xs text-slate-500">Send to {formatPhone(templateTargetPhone)}</p>
+              )}
             </div>
 
             <div className="grid max-h-[72vh] grid-cols-1 gap-0 overflow-hidden md:grid-cols-[320px_1fr]">
@@ -3104,12 +3242,13 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                     <p className="p-3 text-sm text-slate-500">No templates found.</p>
                   ) : (
                     templates.map((tpl) => {
-                      const active = selectedTemplate?.name === tpl.name;
+                      const active =
+                        selectedTemplate?.name === tpl.name && selectedTemplate?.language === tpl.language;
                       return (
                         <button
                           key={`${tpl.name}_${tpl.language || 'en'}`}
                           type="button"
-                          onClick={() => setSelectedTemplate(tpl)}
+                          onClick={() => selectTemplate(tpl)}
                           className={`w-full border-b border-slate-100 px-3 py-3 text-left ${active ? 'bg-emerald-50' : 'hover:bg-slate-50'
                             }`}
                         >
@@ -3154,6 +3293,74 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
                     ) : (
                       <p className="text-xs text-slate-500">This template has no body variables.</p>
                     )}
+
+                    {templateHeaderVars.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Header Variables
+                        </p>
+                        {templateHeaderVars.map((value, idx) => (
+                          <input
+                            key={`header_var_${idx + 1}`}
+                            value={value}
+                            onChange={(e) =>
+                              setTemplateHeaderVars((prev) => prev.map((v, i) => (i === idx ? e.target.value : v)))
+                            }
+                            placeholder={`Header {{${idx + 1}}}`}
+                            className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {(() => {
+                      const mediaType = templateHeaderMediaType(selectedTemplate);
+                      if (!mediaType) return null;
+                      const reusable = selectedTemplate.reusable_header_media;
+                      return (
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Header {mediaType}
+                          </p>
+                          <input
+                            type="file"
+                            accept={TEMPLATE_HEADER_ACCEPT[mediaType]}
+                            onChange={(e) => setTemplateHeaderFile(e.target.files?.[0] || null)}
+                            className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-full file:border-0 file:bg-emerald-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-emerald-700 hover:file:bg-emerald-100"
+                          />
+                          <p className="text-xs text-slate-500">
+                            {templateHeaderFile
+                              ? `${templateHeaderFile.name} will be uploaded with the message.`
+                              : reusable
+                                ? `Optional — leave empty to reuse the ${mediaType} from the last campaign send${reusable.sent_at ? ` (${new Date(reusable.sent_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })})` : ''}.`
+                                : `Required — no recent campaign ${mediaType} to reuse for this template.`}
+                          </p>
+                        </div>
+                      );
+                    })()}
+
+                    {templateButtonVars.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Button Links
+                        </p>
+                        {templateDynamicUrlButtons(selectedTemplate).map((button, idx) => (
+                          <div key={`button_var_${idx}`}>
+                            <label className="mb-1 block text-xs text-slate-600">
+                              {button.text || 'Button'} — {button.url}
+                            </label>
+                            <input
+                              value={templateButtonVars[idx] || ''}
+                              onChange={(e) =>
+                                setTemplateButtonVars((prev) => prev.map((v, i) => (i === idx ? e.target.value : v)))
+                              }
+                              placeholder="Value for {{1}}"
+                              className="w-full rounded-2xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 )}
 
@@ -3168,10 +3375,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
             <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-4">
               <button
                 type="button"
-                onClick={() => {
-                  setShowTemplateModal(false);
-                  setTemplateError('');
-                }}
+                onClick={closeTemplateModal}
                 className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
               >
                 Cancel
@@ -3179,7 +3383,7 @@ export function AdminChatLogsView({ standalone = false }: { standalone?: boolean
               <button
                 type="button"
                 onClick={handleSendTemplate}
-                disabled={!selectedTemplate || sendingTemplate}
+                disabled={!selectedTemplate || !templateTargetPhone.trim() || sendingTemplate}
                 className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-300"
               >
                 {sendingTemplate ? 'Sending...' : 'Send Template'}
