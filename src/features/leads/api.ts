@@ -409,6 +409,10 @@ export interface IngestPayload {
   assigneeUserIds?: string[];
   /** Marks every lead in this import as worth calling first. */
   markHot?: boolean;
+  /** What lets us message these people, recorded when the list arrives. */
+  consentBasis?: string;
+  /** Share of the list held back as a control group, 0–50. */
+  holdoutPct?: number;
   defaultRegion?: string;
   defaultMandi?: string;
   defaultCommodityCode?: string;

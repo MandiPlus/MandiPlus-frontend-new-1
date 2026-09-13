@@ -1912,6 +1912,232 @@ export interface PromoLinkRow {
   createdAt: string;
 }
 
+// ---------------- Growth / data tab + send console ----------------
+
+export interface GrowthDataSummary {
+  batches: number;
+  leads: number;
+  knownContacts: number;
+  reachable: number;
+  notOnWhatsapp: number;
+  capped: number;
+  optedOut: number;
+  windowOpen: number;
+  batchesWithoutConsent: number;
+  notOnWhatsappRate: number | null;
+}
+
+export interface GrowthBatch {
+  id: string;
+  label: string;
+  source: string | null;
+  consentBasis: string | null;
+  consentNote: string | null;
+  consentCapturedAt: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  leads: number;
+  phones: number;
+  holdout: number;
+  insertedCount: number;
+  mergedCount: number;
+  matchedCustomerCount: number;
+  called: number;
+  warm: number;
+  converted: number;
+  reachable: number;
+  notOnWhatsapp: number;
+  unknownState: number;
+  optedOut: number;
+  messaged: number;
+  delivered: number;
+  replied: number;
+  campaigns: number;
+  sends: number;
+  spendPaise: number;
+  reachableRate: number | null;
+  notOnWhatsappRate: number | null;
+  replyRate: number | null;
+  costPerReplyPaise: number | null;
+  costPerConversionPaise: number | null;
+}
+
+export interface GrowthBatchRow {
+  id: string;
+  name: string;
+  phone: string | null;
+  region: string | null;
+  commodityCode: string | null;
+  role: string | null;
+  status: string;
+  attemptCount: number;
+  source: string | null;
+  verificationLevel: number;
+  isHot: boolean;
+  isHoldout: boolean;
+  assignee: string | null;
+  state: string;
+  lastErrorCode: string | null;
+  lastSentAt: string | null;
+  lastDeliveredAt: string | null;
+  lastReadAt: string | null;
+  lastInboundAt: string | null;
+  sendCount: number;
+  optedOut: boolean;
+  isCustomer: boolean;
+  createdAt: string;
+}
+
+export interface GrowthBatchRows {
+  batch: {
+    id: string;
+    label: string;
+    source: string | null;
+    consentBasis: string | null;
+    consentNote: string | null;
+    createdAt: string;
+    createdBy: string | null;
+    holdoutPct: number;
+  };
+  total: number;
+  limit: number;
+  offset: number;
+  rows: GrowthBatchRow[];
+}
+
+export interface GrowthContactTimeline {
+  phone: string;
+  standing: {
+    state: string;
+    lastErrorCode: string | null;
+    lastErrorText: string | null;
+    sendCount: number;
+    failureCount: number;
+    lastSentAt: string | null;
+    lastDeliveredAt: string | null;
+    lastReadAt: string | null;
+    lastInboundAt: string | null;
+    optedOut: boolean;
+    optedOutAt: string | null;
+    optOutSource: string | null;
+    optOutEvidence: string | null;
+  };
+  identity: {
+    leadId: string;
+    name: string;
+    status: string;
+    region: string | null;
+    commodityCode: string | null;
+    batchId: string | null;
+    batchLabel: string | null;
+    userId: string | null;
+    userName: string | null;
+  } | null;
+  events: Array<{
+    at: string | null;
+    kind: string;
+    detail: string | null;
+    body: string | null;
+    status: string | null;
+    errorText: string | null;
+  }>;
+}
+
+export interface GrowthTemplateOption {
+  id: string;
+  name: string;
+  language: string;
+  category: string;
+  status: string;
+  qualityScore: string | null;
+  headerFormat: string | null;
+  bodyVariableCount: number;
+  bodyText: string | null;
+  footerText: string | null;
+  buttons: Array<{ type: string; text: string; hasUrlVariable: boolean }>;
+  ratePaise: number;
+  capExposed: boolean;
+  syncedAt: string;
+}
+
+export interface GrowthSendQuote {
+  template: {
+    name: string;
+    language: string;
+    category: string;
+    status: string;
+    capExposed: boolean;
+    bodyVariableCount: number;
+    headerFormat: string | null;
+  };
+  preview: { header: string | null; body: string; footer: string | null };
+  requested: number;
+  deduplicated: number;
+  sendable: number;
+  skipped: Record<string, number>;
+  windowOpen: number;
+  recentlyMessaged: number;
+  cost: { perMessagePaise: number; exGstPaise: number; incGstPaise: number };
+  warnings: string[];
+  blockers: string[];
+  recipients: Array<{
+    phone: string;
+    name: string | null;
+    state: string;
+    optedOut: boolean;
+    windowOpen: boolean;
+    daysSinceLastSend: number | null;
+    skipReason: string | null;
+  }>;
+}
+
+export interface GrowthSendRequest {
+  templateName: string;
+  templateLanguage: string;
+  phones?: string[];
+  batchId?: string;
+  leadIds?: string[];
+  bodyParams?: string[];
+  headerMediaId?: string | null;
+  headerMediaLink?: string | null;
+  buttonUrlParam?: string | null;
+  campaignName?: string | null;
+  objective?: string | null;
+  confirmCount?: number;
+  testPhone?: string | null;
+  excludeOptedOut?: boolean;
+  excludeNotOnWhatsapp?: boolean;
+  spacingDays?: number | null;
+}
+
+export interface GrowthSendResult {
+  campaignId: string;
+  slug: string;
+  mode: 'test' | 'send';
+  queued: number;
+  sent: number;
+  failed: number;
+  background: boolean;
+}
+
+export interface GrowthSendLogEntry {
+  id: string;
+  admin_name: string | null;
+  mode: string;
+  template_name: string | null;
+  template_category: string | null;
+  requested_count: number;
+  sent_count: number;
+  failed_count: number;
+  skipped_count: number;
+  cost_paise: number;
+  outcome: string;
+  note: string | null;
+  created_at: string;
+  campaign_id: string | null;
+  campaign_slug: string | null;
+}
+
 // ---------------- Growth / campaign analytics ----------------
 
 export interface GrowthFunnel {
@@ -6849,6 +7075,169 @@ class AdminApi {
     } catch (error) {
       console.error("Growth campaign detail failed", error);
       return null;
+    }
+  };
+
+  // ---------------- Growth: data tab ----------------
+
+  public getGrowthDataSummary = async (): Promise<GrowthDataSummary | null> => {
+    try {
+      const response = await this.client.get("/admin/growth/data/summary");
+      return response.data;
+    } catch (error) {
+      console.error("Growth data summary failed", error);
+      return null;
+    }
+  };
+
+  public getGrowthBatches = async (search?: string): Promise<GrowthBatch[]> => {
+    try {
+      const response = await this.client.get("/admin/growth/data/batches", {
+        params: search ? { search } : undefined,
+      });
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      console.error("Growth batches failed", error);
+      return [];
+    }
+  };
+
+  public getGrowthBatchRows = async (
+    batchId: string,
+    params: { search?: string; state?: string; limit?: number; offset?: number } = {},
+  ): Promise<GrowthBatchRows | null> => {
+    try {
+      const response = await this.client.get(
+        `/admin/growth/data/batches/${batchId}/rows`,
+        { params },
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Growth batch rows failed", error);
+      return null;
+    }
+  };
+
+  public getGrowthBatchOverlap = async (
+    batchId: string,
+  ): Promise<Array<{ id: string; label: string; shared: number }>> => {
+    try {
+      const response = await this.client.get(
+        `/admin/growth/data/batches/${batchId}/overlap`,
+      );
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      console.error("Growth batch overlap failed", error);
+      return [];
+    }
+  };
+
+  public updateGrowthBatch = async (
+    batchId: string,
+    patch: {
+      source?: string | null;
+      consentBasis?: string | null;
+      consentNote?: string | null;
+      holdoutPct?: number | null;
+    },
+  ): Promise<void> => {
+    await this.client.patch(`/admin/growth/data/batches/${batchId}`, patch);
+  };
+
+  public assignGrowthHoldout = async (
+    batchId: string,
+    pct: number,
+  ): Promise<{ held: number; pct: number }> => {
+    const response = await this.client.post(
+      `/admin/growth/data/batches/${batchId}/holdout`,
+      { pct },
+    );
+    return response.data;
+  };
+
+  public getGrowthContact = async (
+    phone: string,
+  ): Promise<GrowthContactTimeline | null> => {
+    try {
+      const response = await this.client.get(
+        `/admin/growth/data/contacts/${encodeURIComponent(phone)}`,
+      );
+      return response.data;
+    } catch (error) {
+      console.error("Growth contact failed", error);
+      return null;
+    }
+  };
+
+  public refreshGrowthLedger = async (): Promise<{
+    contacts: number;
+    optOutsAdded: number;
+  }> => {
+    const response = await this.client.post("/admin/growth/data/refresh");
+    return response.data;
+  };
+
+  public setGrowthOptOut = async (
+    phone: string,
+    optedOut: boolean,
+  ): Promise<void> => {
+    await this.client.post(
+      `/admin/growth/data/contacts/${encodeURIComponent(phone)}/${
+        optedOut ? "opt-out" : "opt-in"
+      }`,
+    );
+  };
+
+  // ---------------- Growth: send console ----------------
+
+  public getGrowthCatalog = async (
+    all = false,
+  ): Promise<GrowthTemplateOption[]> => {
+    try {
+      const response = await this.client.get("/admin/growth/catalog", {
+        params: all ? { all: "true" } : undefined,
+      });
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      console.error("Growth catalog failed", error);
+      return [];
+    }
+  };
+
+  public syncGrowthCatalog = async (): Promise<{
+    synced: number;
+    approved: number;
+  }> => {
+    const response = await this.client.post("/admin/growth/catalog/sync");
+    return response.data;
+  };
+
+  /**
+   * Deliberately not wrapped in a try/catch like the read paths above: a quote
+   * that failed must surface, never render as an empty, harmless-looking panel
+   * next to a Send button.
+   */
+  public quoteGrowthSend = async (
+    body: GrowthSendRequest,
+  ): Promise<GrowthSendQuote> => {
+    const response = await this.client.post("/admin/growth/send/quote", body);
+    return response.data;
+  };
+
+  public growthSend = async (
+    body: GrowthSendRequest,
+  ): Promise<GrowthSendResult> => {
+    const response = await this.client.post("/admin/growth/send", body);
+    return response.data;
+  };
+
+  public getGrowthSendLog = async (): Promise<GrowthSendLogEntry[]> => {
+    try {
+      const response = await this.client.get("/admin/growth/send/log");
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      console.error("Growth send log failed", error);
+      return [];
     }
   };
 }
