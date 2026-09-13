@@ -104,6 +104,8 @@ export default function SendConsole({
   const [quoting, setQuoting] = useState(false);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [resultBad, setResultBad] = useState(false);
+  const [mediaNote, setMediaNote] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [catalogLoaded, setCatalogLoaded] = useState(false);
@@ -160,6 +162,32 @@ export default function SendConsole({
     setQuote(null);
   }, [template]);
 
+  // A header template cannot be sent without its media, and nobody can be
+  // expected to know a Meta media id by heart — so offer whatever this
+  // template was last sent with successfully.
+  useEffect(() => {
+    setHeaderMediaId('');
+    setHeaderMediaLink('');
+    setMediaNote(null);
+    const format = String(template?.headerFormat || '').toUpperCase();
+    if (!template || !['IMAGE', 'VIDEO', 'DOCUMENT'].includes(format)) return;
+
+    let cancelled = false;
+    void adminApi
+      .getGrowthTemplateMedia(template.name, template.language)
+      .then((media) => {
+        if (cancelled || !media || (!media.mediaId && !media.mediaLink)) return;
+        if (media.mediaLink) setHeaderMediaLink(media.mediaLink);
+        else if (media.mediaId) setHeaderMediaId(media.mediaId);
+        setMediaNote(
+          `Reusing the ${format.toLowerCase()} last sent with this template (${dateTime(media.usedAt)}).`,
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [template]);
+
   const request = (): GrowthSendRequest => ({
     templateName: template?.name || '',
     templateLanguage: template?.language || 'hi',
@@ -174,11 +202,16 @@ export default function SendConsole({
     spacingDays,
   });
 
+  const report = (text: string | null, bad = false) => {
+    setResult(text);
+    setResultBad(bad);
+  };
+
   const runQuote = async () => {
     if (!template) return;
     setQuoting(true);
     setQuoteError(null);
-    setResult(null);
+    report(null);
     try {
       setQuote(await adminApi.quoteGrowthSend(request()));
     } catch (error) {
@@ -192,13 +225,15 @@ export default function SendConsole({
   const sendTest = async () => {
     if (!template || !testPhone) return;
     setSending(true);
-    setResult(null);
+    report(null);
     try {
       await adminApi.growthSend({ ...request(), testPhone });
-      setResult(`Test message sent to ${phoneNumber(testPhone)}.`);
+      report(
+        `Accepted by Meta for ${phoneNumber(testPhone)}. If it does not arrive, Meta reports why within seconds — check the number's history on the Data tab.`,
+      );
       await loadLog();
     } catch (error) {
-      setResult(`Test failed: ${errorText(error)}`);
+      report(`Test not sent: ${errorText(error)}`, true);
     } finally {
       setSending(false);
     }
@@ -214,22 +249,27 @@ export default function SendConsole({
     if (!confirmed) return;
 
     setSending(true);
-    setResult(null);
+    report(null);
     try {
       const outcome = await adminApi.growthSend({
         ...request(),
         confirmCount: quote.sendable,
       });
-      setResult(
+      report(
         outcome.background
           ? `${outcome.queued} queued as campaign ${outcome.slug} — watch it land on the Campaigns tab.`
-          : `${outcome.sent} sent, ${outcome.failed} failed. Campaign ${outcome.slug}.`,
+          : outcome.failed > 0
+            ? `Not delivered: Meta rejected ${outcome.failed} of ${outcome.queued}` +
+              (outcome.firstError ? ` — ${outcome.firstError}` : '') +
+              '.'
+            : `${outcome.sent} accepted by Meta. Delivery and reads show on the Campaigns tab as receipts arrive.`,
+        !outcome.background && outcome.failed > 0,
       );
       setQuote(null);
       await loadLog();
       onSent();
     } catch (error) {
-      setResult(`Send refused: ${errorText(error)}`);
+      report(`Send refused: ${errorText(error)}`, true);
     } finally {
       setSending(false);
     }
@@ -375,6 +415,16 @@ export default function SendConsole({
           {template?.headerFormat &&
           template.headerFormat !== 'TEXT' &&
           template.headerFormat !== 'NONE' ? (
+            <div className="space-y-2">
+            {!headerMediaId && !headerMediaLink ? (
+              <p className="rounded bg-red-50 px-2 py-1 text-xs text-red-700">
+                This template has a {template.headerFormat.toLowerCase()} header.
+                Meta rejects it without one (error 132012) — add a media id or a
+                public link.
+              </p>
+            ) : mediaNote ? (
+              <p className="text-xs text-gray-500">{mediaNote}</p>
+            ) : null}
             <div className="grid gap-2 sm:grid-cols-2">
               <div>
                 <label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -398,6 +448,7 @@ export default function SendConsole({
                   className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
                 />
               </div>
+            </div>
             </div>
           ) : null}
 
@@ -511,7 +562,13 @@ export default function SendConsole({
           </div>
 
           {result ? (
-            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800">
+            <div
+              className={`rounded-lg border px-3 py-2 text-sm ${
+                resultBad
+                  ? 'border-red-200 bg-red-50 text-red-800'
+                  : 'border-gray-200 bg-gray-50 text-gray-800'
+              }`}
+            >
               {result}
             </div>
           ) : null}
