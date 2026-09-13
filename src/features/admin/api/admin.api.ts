@@ -2118,6 +2118,8 @@ export interface GrowthSendResult {
   sent: number;
   failed: number;
   background: boolean;
+  /** Meta's reason for the first rejected recipient, when the send ran inline. */
+  firstError: string | null;
 }
 
 export interface GrowthSendLogEntry {
@@ -7210,6 +7212,25 @@ class AdminApi {
   }> => {
     const response = await this.client.post("/admin/growth/catalog/sync");
     return response.data;
+  };
+
+  public getGrowthTemplateMedia = async (
+    name: string,
+    language: string,
+  ): Promise<{
+    mediaId: string | null;
+    mediaLink: string | null;
+    usedAt: string | null;
+  } | null> => {
+    try {
+      const response = await this.client.get(
+        `/admin/growth/catalog/${encodeURIComponent(name)}/${encodeURIComponent(language)}/media`,
+      );
+      return response.data || null;
+    } catch (error) {
+      console.error("Growth template media failed", error);
+      return null;
+    }
   };
 
   /**
