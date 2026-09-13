@@ -14,6 +14,19 @@ import {
   YAxis,
 } from 'recharts';
 import { useAdmin } from '@/features/admin/context/AdminContext';
+import DataTab from '@/features/admin/components/growth/DataTab';
+import SendConsole from '@/features/admin/components/growth/SendConsole';
+import {
+  BRAND,
+  CategoryBadge,
+  StatCard,
+  Td,
+  Th,
+  dateTime,
+  phoneNumber,
+  pct,
+  rupees,
+} from '@/features/admin/components/growth/ui';
 import {
   adminApi,
   type GrowthCampaign,
@@ -23,122 +36,6 @@ import {
   type GrowthTemplateStat,
 } from '@/features/admin/api/admin.api';
 
-const BRAND = '#4309ac';
-const IST = 'Asia/Kolkata';
-
-const rupees = (paise: number | null | undefined) => {
-  if (paise === null || paise === undefined) return '—';
-  const value = paise / 100;
-  return `₹${value.toLocaleString('en-IN', {
-    minimumFractionDigits: value < 100 ? 2 : 0,
-    maximumFractionDigits: value < 100 ? 2 : 0,
-  })}`;
-};
-
-const pct = (value: number | null | undefined) =>
-  value === null || value === undefined ? '—' : `${value}%`;
-
-/** Stored as a bare 91XXXXXXXXXX; shown the way it would be dialled. */
-const phoneNumber = (raw: string) => {
-  const digits = (raw || '').replace(/\D/g, '');
-  const local = digits.length > 10 ? digits.slice(-10) : digits;
-  const country = digits.slice(0, digits.length - local.length);
-  const spaced = local.length === 10 ? `${local.slice(0, 5)} ${local.slice(5)}` : local;
-  return country ? `+${country} ${spaced}` : spaced;
-};
-
-const dateTime = (value: string | null) =>
-  value
-    ? new Date(value).toLocaleString('en-IN', {
-        timeZone: IST,
-        day: '2-digit',
-        month: 'short',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    : '—';
-
-function StatCard({
-  label,
-  value,
-  sub,
-  tone = 'default',
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-  tone?: 'default' | 'good' | 'warn' | 'brand';
-}) {
-  const toneClass =
-    tone === 'good'
-      ? 'text-emerald-700'
-      : tone === 'warn'
-        ? 'text-amber-700'
-        : tone === 'brand'
-          ? 'text-[#4309ac]'
-          : 'text-gray-900';
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-        {label}
-      </p>
-      <p className={`mt-1 text-2xl font-bold ${toneClass}`}>{value}</p>
-      {sub ? <p className="mt-1 text-xs text-gray-500">{sub}</p> : null}
-    </div>
-  );
-}
-
-function Th({ children, right }: { children: React.ReactNode; right?: boolean }) {
-  return (
-    <th
-      className={`whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-wide text-gray-500 ${
-        right ? 'text-right' : 'text-left'
-      }`}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  right,
-  muted,
-}: {
-  children: React.ReactNode;
-  right?: boolean;
-  muted?: boolean;
-}) {
-  return (
-    <td
-      className={`whitespace-nowrap px-3 py-2 text-sm ${right ? 'text-right' : ''} ${
-        muted ? 'text-gray-500' : 'text-gray-900'
-      }`}
-    >
-      {children}
-    </td>
-  );
-}
-
-function CategoryBadge({ category }: { category: string }) {
-  const marketing = category?.toUpperCase() === 'MARKETING';
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-        marketing
-          ? 'bg-amber-100 text-amber-800'
-          : 'bg-emerald-100 text-emerald-800'
-      }`}
-      title={
-        marketing
-          ? 'Marketing pricing — roughly ₹0.86 + GST per message'
-          : 'Utility pricing — roughly ₹0.115 + GST per message'
-      }
-    >
-      {category}
-    </span>
-  );
-}
 
 /**
  * Funnel steps are drawn against the step above them, because that is the
@@ -427,10 +324,16 @@ export default function GrowthPage() {
   const router = useRouter();
   const { isAuthenticated, loading: authLoading, canAccessSection } = useAdmin();
 
-  const [tab, setTab] = useState<'campaigns' | 'overview' | 'templates'>(
+  const [tab, setTab] = useState<'campaigns' | 'overview' | 'templates' | 'data' | 'send'>(
     'campaigns',
   );
   const [days, setDays] = useState(30);
+  // A selection made on the Data tab travels to the send console, so a list
+  // can be acted on from the place it is being looked at.
+  const [sendPrefill, setSendPrefill] = useState<{
+    phones: string[];
+    label: string | null;
+  }>({ phones: [], label: null });
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<GrowthOverview | null>(null);
   const [campaigns, setCampaigns] = useState<GrowthCampaign[]>([]);
@@ -560,6 +463,8 @@ export default function GrowthPage() {
               ['campaigns', `Campaigns (${campaigns.length})`],
               ['overview', 'Activity'],
               ['templates', 'Templates'],
+              ['data', 'Data'],
+              ['send', 'Send'],
             ] as const
           ).map(([key, label]) => (
             <button
@@ -576,7 +481,7 @@ export default function GrowthPage() {
           ))}
         </div>
 
-        {loading ? (
+        {loading && tab !== 'data' && tab !== 'send' ? (
           <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
             Loading…
           </div>
@@ -821,6 +726,23 @@ export default function GrowthPage() {
               benchmark a new campaign should be read against.
             </p>
           </div>
+        ) : null}
+
+        {tab === 'data' ? (
+          <DataTab
+            onSend={(phones, label) => {
+              setSendPrefill({ phones, label });
+              setTab('send');
+            }}
+          />
+        ) : null}
+
+        {tab === 'send' ? (
+          <SendConsole
+            prefillPhones={sendPrefill.phones}
+            prefillLabel={sendPrefill.label}
+            onSent={() => void load()}
+          />
         ) : null}
       </div>
     </div>
