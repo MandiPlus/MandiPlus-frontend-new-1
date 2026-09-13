@@ -6,14 +6,25 @@ import { toast } from 'react-toastify';
 import { Upload, FileText, X, RefreshCw, AlertCircle } from 'lucide-react';
 import { adminButtonClasses } from '@/features/admin/utils/adminUi';
 
+type InsuranceUploadInvoice = {
+  id: string;
+  invoiceNumber?: string;
+  insurance?: unknown;
+};
+
+type InsuranceUploadResponse = {
+  data?: unknown;
+  premiumRowRemoved?: boolean;
+};
+
 export default function InsuranceUploadModal({
   invoice,
   onClose,
   onSuccess,
 }: {
-  invoice: any;
+  invoice: InsuranceUploadInvoice;
   onClose: () => void;
-  onSuccess: (updatedInvoice?: any, uploadedFile?: File) => void; // Optional updated invoice
+  onSuccess: (updatedInvoice?: unknown, uploadedFile?: File) => void; // Optional updated invoice
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -73,16 +84,30 @@ export default function InsuranceUploadModal({
 
     try {
       // Note: adminApi.uploadInvoiceInsurance returns response.data (already unwrapped from axios)
-      const response = await adminApi.uploadInvoiceInsurance(invoice.id, file);
-      toast.success('Insurance ' + (isReplace ? 'replaced' : 'uploaded') + ' successfully');
+      const response = (await adminApi.uploadInvoiceInsurance(
+        invoice.id,
+        file,
+      )) as InsuranceUploadResponse;
+      const premiumRowRemoved = Boolean(response.premiumRowRemoved);
+      toast.success(
+        'Insurance ' +
+        (isReplace ? 'replaced' : 'uploaded') +
+        ' successfully' +
+        (premiumRowRemoved ? '. Premium row removed automatically.' : ''),
+      );
       
       // Pass updated invoice data (handles both ApiResponse-wrapped and direct invoice payloads)
-      const updatedInvoice = (response as any)?.data ?? response;
+      const updatedInvoice = response.data ?? response;
       onSuccess(updatedInvoice, file);
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Upload error:', err);
-      toast.error(err.response?.data?.message || 'Upload failed. Please try again.');
+      const uploadError = err as {
+        response?: { data?: { message?: string } };
+      };
+      toast.error(
+        uploadError.response?.data?.message || 'Upload failed. Please try again.',
+      );
     } finally {
       setLoading(false);
     }

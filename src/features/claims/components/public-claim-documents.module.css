@@ -1,0 +1,360 @@
+.shell {
+  --ink: #18202c;
+  --muted: #667080;
+  --line: #e5dfd4;
+  --paper: #fffdf8;
+  --accent: #5a21b6;
+  --accent-deep: #3d1288;
+  --green: #18794e;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px 14px;
+  color: var(--ink);
+  background:
+    radial-gradient(
+      circle at 12% 8%,
+      rgba(90, 33, 182, 0.1),
+      transparent 27rem
+    ),
+    linear-gradient(135deg, #ece8df 0%, #f5f2ec 48%, #e9e5dc 100%);
+}
+
+.paper,
+.stateCard {
+  width: min(100%, 520px);
+  background: var(--paper);
+  border: 1px solid rgba(74, 63, 46, 0.15);
+  box-shadow: 0 24px 70px rgba(40, 32, 19, 0.14);
+}
+
+.paper {
+  position: relative;
+  overflow: hidden;
+  border-radius: 24px;
+}
+
+.paper::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 5px;
+  background: linear-gradient(90deg, var(--accent-deep), #8b5be1, #e0a92f);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px dashed var(--line);
+}
+
+.brandRow,
+.secureLine,
+.titleRow,
+.progressMeta,
+.footer,
+.notice {
+  display: flex;
+  align-items: center;
+}
+
+.brandRow {
+  gap: 11px;
+}
+
+.brandMark {
+  width: 39px;
+  height: 39px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  color: #fff;
+  background: var(--ink);
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+}
+
+.brand {
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+}
+.secureLine {
+  gap: 4px;
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.intro {
+  padding: 24px 24px 12px;
+}
+.eyebrow {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.intro h1,
+.stateCard h1 {
+  margin-top: 8px;
+  font-size: clamp(25px, 7vw, 34px);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  line-height: 1.04;
+}
+.intro > p:last-child {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+}
+.stateCard > p:last-child {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 560;
+  line-height: 1.55;
+}
+
+.progress {
+  margin: 6px 24px 22px;
+  padding: 14px 15px;
+  border-radius: 13px;
+  background: #f3efe7;
+}
+.progressMeta {
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  font-weight: 800;
+}
+.progressMeta span {
+  color: var(--muted);
+}
+.track {
+  height: 6px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #ded6ca;
+}
+.track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-deep), #7a3bd3);
+  transition: width 300ms ease;
+}
+
+.documentList {
+  display: grid;
+  gap: 12px;
+  padding: 0 24px;
+}
+.documentCard {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 13px;
+  padding: 17px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: #fff;
+}
+.documentIcon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--accent);
+  background: #f0e9fb;
+}
+.documentIcon[data-received="true"] {
+  color: var(--green);
+  background: #e4f3ea;
+}
+.documentIcon svg {
+  width: 20px;
+}
+.documentCopy {
+  min-width: 0;
+}
+.titleRow {
+  justify-content: space-between;
+  gap: 8px;
+}
+.titleRow h2 {
+  font-size: 14px;
+  font-weight: 850;
+}
+.titleRow span {
+  flex: none;
+  padding: 4px 7px;
+  border-radius: 99px;
+  color: #946300;
+  background: #fff1c9;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.titleRow span[data-received="true"] {
+  color: var(--green);
+  background: #e4f3ea;
+}
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.uploadButton,
+.replaceButton {
+  min-height: 42px;
+  margin-top: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 11px;
+  padding: 0 15px;
+  font-size: 12px;
+  font-weight: 850;
+  transition:
+    transform 120ms ease,
+    background 120ms ease;
+}
+
+.uploadButton {
+  color: #fff;
+  background: var(--accent-deep);
+  box-shadow: 0 7px 18px rgba(61, 18, 136, 0.2);
+}
+.replaceButton {
+  color: var(--ink);
+  border: 1px solid #d9d2c6;
+  background: #f8f5ef;
+}
+.uploadButton:active,
+.replaceButton:active {
+  transform: translateY(1px);
+}
+.uploadButton:disabled,
+.replaceButton:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.buttonSpinner,
+.spinner {
+  animation: spin 800ms linear infinite;
+}
+
+.notice {
+  gap: 8px;
+  margin: 16px 24px 0;
+  padding: 12px 13px;
+  border-left: 3px solid var(--accent);
+  border-radius: 6px 11px 11px 6px;
+  color: #43345d;
+  background: #f2ecfb;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.notice svg {
+  flex: none;
+  color: var(--green);
+}
+.footer {
+  justify-content: center;
+  gap: 7px;
+  margin-top: 22px;
+  padding: 16px 24px 20px;
+  border-top: 1px dashed var(--line);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  text-align: center;
+}
+
+.stateCard {
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  border-radius: 24px;
+  padding: 34px;
+}
+.stateIcon,
+.spinner {
+  width: 34px;
+  height: 34px;
+  color: var(--accent);
+}
+.errorMark {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 18px;
+  border-radius: 50%;
+  color: #fff;
+  background: #a63535;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 420px) {
+  .shell {
+    padding: 0;
+    place-items: stretch;
+    background: var(--paper);
+  }
+  .paper,
+  .stateCard {
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .header,
+  .intro,
+  .documentList {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  .progress,
+  .notice {
+    margin-left: 18px;
+    margin-right: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .buttonSpinner,
+  .spinner {
+    animation-duration: 1.6s;
+  }
+  .track span,
+  .uploadButton,
+  .replaceButton {
+    transition: none;
+  }
+}

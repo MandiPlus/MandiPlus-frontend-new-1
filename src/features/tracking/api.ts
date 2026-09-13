@@ -1,5 +1,9 @@
 import axios, { AxiosError } from "axios";
 import { getStoredAuthToken } from "@/features/auth/api";
+import type {
+  GatewayProvider,
+  RazorpayCheckoutPayload,
+} from '@/features/payments/gateway-checkout';
 
 /**
  * Backend base URL
@@ -23,6 +27,28 @@ export interface TruckLocation {
 export interface LocationPoint {
   lat: number;
   lng: number;
+}
+
+export type TrackingMotionState =
+  | "AT_START"
+  | "MOVEMENT_CANDIDATE"
+  | "MOVING"
+  | "HOLDING"
+  | "ARRIVED";
+
+export interface TrackingMotionDecision {
+  state: TrackingMotionState;
+  canSimulate: boolean;
+  reason: string;
+  checkpointCount: number;
+  rejectedCheckpointCount?: number;
+  forwardTransitions?: number;
+  progressFromStartKm?: number;
+  observedSpeedKph?: number | null;
+  displaySpeedKph: number;
+  lastObservedAt?: string | null;
+  predictionValidUntil?: string | null;
+  confidence?: "low" | "medium" | "high";
 }
 
 export interface TruckSessionInfo {
@@ -71,22 +97,162 @@ export interface TrackingData {
     timeRecorded?: string;
     distanceRemained?: number;
     timeRemained?: number;
+    distanceTravel?: number;
+    totalDistance?: number;
   };
   origin?: LocationPoint;
   destination?: LocationPoint;
+  originLabel?: string;
+  destinationLabel?: string;
   consentStatus?: string;
   eta?: string;
   shareUrl?: string;
   shareToken?: string;
   session?: TruckSessionInfo;
+  motion?: TrackingMotionDecision | null;
+  locationSource?: "live" | "fastag" | null;
+  fastagUpdatedAt?: string | null;
+  fastagViewsRemaining?: number;
+  fastagUnlocked?: boolean;
+  trackingPack?: TrackingPackEntitlement | null;
   // Allow backend to send extra fields without breaking the UI
   [key: string]: any;
+}
+
+export interface LiveTrackingTrip {
+  id: string;
+  tripId?: string | null;
+  vehicleNumber: string;
+  status: string;
+  route?: string;
+  sourceName?: string | null;
+  destinationName?: string | null;
+  product?: string | null;
+  invoiceNumber?: string | null;
+  eta?: string | null;
+  updatedAt?: string;
+  lastLocation?: {
+    lat?: number | null;
+    lng?: number | null;
+    address?: string | null;
+    timeRecorded?: string | null;
+    distanceRemained?: string | number | null;
+    timeRemained?: string | number | null;
+    distanceTravel?: number | null;
+    totalDistance?: number | null;
+  } | null;
+  origin?: LocationPoint | null;
+  destination?: LocationPoint | null;
+  locationSource?: "live" | "fastag" | null;
+  fastagViewsRemaining?: number;
+  fastagPackActive?: boolean;
+}
+
+export interface TrackingPackEntitlement {
+  active: boolean;
+  expiresAt: string | null;
+  priceInr: number;
+  listPriceInr: number;
+  promoActive: boolean;
+  badge: string | null;
+  packLabel: string | null;
+}
+
+export interface TrackingPackPurchase {
+  id: string;
+  packCode: string;
+  packLabel: string;
+  amountPaid: number;
+  listPriceAmount: number;
+  phonepeUtr: string | null;
+  merchantOrderId: string;
+  status: string;
+  paidAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface TrackingPackMeResponse {
+  success: boolean;
+  entitlement: TrackingPackEntitlement | null;
+  purchases: TrackingPackPurchase[];
+  fastagViewsRemaining: number;
+}
+
+export interface TrackingPackCheckoutResponse {
+  success: boolean;
+  totalPaymentAmount: number;
+  merchantTransactionId: string;
+  merchantOrderId?: string;
+  provider?: GatewayProvider;
+  redirectUrl?: string | null;
+  razorpayCheckout?: RazorpayCheckoutPayload | null;
+  packId?: string;
+  packLabel?: string;
+  expireAt?: number | string | null;
+}
+
+export interface TrackingPackStatusResponse {
+  success: boolean;
+  merchantTransactionId: string;
+  state?: string | null;
+  paid: boolean;
+  amount: number;
+  packId?: string;
+  packLabel?: string;
+  phonepeUtr?: string | null;
+  expiresAt?: string | null;
+  status?: string;
+}
+
+export interface FastagViewResponse {
+  success?: boolean;
+  unlocked?: boolean;
+  viewsRemaining?: number;
+  packActive?: boolean;
+  tracking?: TrackingData;
+}
+
+export interface TrackingRoute {
+  provider: string;
+  generatedAt?: string;
+  origin?: LocationPoint | null;
+  current?: LocationPoint | null;
+  destination?: LocationPoint | null;
+  points: LocationPoint[];
+  distanceMeters?: number | null;
+  durationSeconds?: number | null;
 }
 
 export interface TrackingResponse {
   success: boolean;
   data: TrackingData;
   message?: string;
+}
+
+export interface TrackingLinkContext {
+  vehicleNumber: string;
+  maskedPhone: string;
+  expiresAt?: string;
+}
+
+export interface TrackingLinkOtpResponse {
+  success: boolean;
+  vehicleNumber: string;
+  maskedPhone: string;
+  message?: string;
+}
+
+export interface TrackingLinkVerifyResponse extends TrackingLinkOtpResponse {
+  accessToken: string;
+  expiresIn?: string;
+}
+
+export interface LocalTrackingMotionFixture {
+  scenario: string;
+  scenarios: string[];
+  tracking: TrackingData;
+  route: TrackingRoute;
 }
 
 export interface ApiError {
@@ -104,11 +270,17 @@ export interface ApiError {
  * @param vehicleNumber - The vehicle registration number (e.g. UP32AB1234)
  */
 export const trackVehicle = async (
-  vehicleNumber: string
+  vehicleNumber: string,
+  options?: { accessToken?: string | null }
 ): Promise<TrackingResponse> => {
   try {
-    const token =
-      typeof window !== "undefined" ? getStoredAuthToken() : null;
+    const hasExplicitAccessToken =
+      options && Object.prototype.hasOwnProperty.call(options, "accessToken");
+    const token = hasExplicitAccessToken
+      ? options.accessToken
+      : typeof window !== "undefined"
+        ? getStoredAuthToken()
+        : null;
 
     const response = await axios.get<TrackingResponse>(
       `${API_BASE_URL}/trucks/track/${encodeURIComponent(vehicleNumber)}`,
@@ -135,13 +307,35 @@ export const trackVehicle = async (
         truckId: raw.truckId,
         tripId: raw.tripId,
         tripStatus: raw.tripStatus,
-        status: raw.status === 'tracking' ? 'online' : 'offline',
+        status:
+          raw.status === 'tracking' || raw.status === 'online'
+            ? 'online'
+            : raw.status === 'offline'
+              ? 'offline'
+              : raw.status || 'unknown',
         location: raw.location,
         origin: raw.origin,
         destination: raw.destination,
+        originLabel: raw.originLabel,
+        destinationLabel: raw.destinationLabel,
         consentStatus: raw.consentStatus,
         eta: raw.eta,
         shareUrl: raw.shareUrl ?? raw.shareURL,
+        motion: raw.motion ?? null,
+        locationSource:
+          raw.locationSource === 'live' || raw.locationSource === 'fastag'
+            ? raw.locationSource
+            : null,
+        fastagUpdatedAt: raw.fastagUpdatedAt ?? null,
+        fastagViewsRemaining:
+          typeof raw.fastagViewsRemaining === 'number'
+            ? raw.fastagViewsRemaining
+            : undefined,
+        fastagUnlocked:
+          typeof raw.fastagUnlocked === 'boolean'
+            ? raw.fastagUnlocked
+            : undefined,
+        trackingPack: raw.trackingPack ?? null,
       },
       message: raw.message,
     };
@@ -154,5 +348,170 @@ export const trackVehicle = async (
       (err.response?.data as any)?.error ||
       "Failed to fetch vehicle location";
     throw { message };
+  }
+};
+
+export const getLocalTrackingMotionScenario = async (
+  scenario: string,
+): Promise<LocalTrackingMotionFixture> => {
+  const response = await axios.get<LocalTrackingMotionFixture>(
+    `${API_BASE_URL}/trucks/track/dev-motion/${encodeURIComponent(scenario)}`,
+  );
+  return response.data;
+};
+
+export const getLiveTrackingTrips = async (): Promise<LiveTrackingTrip[]> => {
+  try {
+    const token = typeof window !== "undefined" ? getStoredAuthToken() : null;
+    const response = await axios.get<LiveTrackingTrip[]>(
+      `${API_BASE_URL}/trucks/track/live-trips`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    );
+    const payload = response.data as LiveTrackingTrip[] | { data?: LiveTrackingTrip[] };
+    return Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.data)
+        ? payload.data
+        : [];
+  } catch (error) {
+    const err = error as AxiosError<ApiError | any>;
+    throw new Error(
+      (err.response?.data as any)?.message ||
+        (err.response?.data as any)?.error ||
+        "Unable to load live trips",
+    );
+  }
+};
+
+export const consumeFastagView = async (
+  vehicleNumber: string,
+): Promise<FastagViewResponse> => {
+  const token = typeof window !== "undefined" ? getStoredAuthToken() : null;
+  const response = await axios.post<FastagViewResponse>(
+    `${API_BASE_URL}/trucks/track/${encodeURIComponent(vehicleNumber)}/fastag-view`,
+    {},
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  return response.data;
+};
+
+export const getTrackingPacksMe = async (): Promise<TrackingPackMeResponse> => {
+  const token = typeof window !== "undefined" ? getStoredAuthToken() : null;
+  const response = await axios.get<TrackingPackMeResponse>(
+    `${API_BASE_URL}/tracking-packs/me`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  return response.data;
+};
+
+export const createTrackingPackCheckout = async (): Promise<TrackingPackCheckoutResponse> => {
+  const token = typeof window !== "undefined" ? getStoredAuthToken() : null;
+  const response = await axios.post<TrackingPackCheckoutResponse>(
+    `${API_BASE_URL}/payment/customer/tracking-pack`,
+    {},
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  return response.data;
+};
+
+export const getTrackingPackStatus = async (
+  merchantOrderId: string,
+): Promise<TrackingPackStatusResponse> => {
+  const token = typeof window !== "undefined" ? getStoredAuthToken() : null;
+  const response = await axios.get<TrackingPackStatusResponse>(
+    `${API_BASE_URL}/payment/customer/tracking-pack/${encodeURIComponent(merchantOrderId)}/status`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  return response.data;
+};
+
+export const getTrackingRoute = async (
+  vehicleNumber: string,
+  options?: { accessToken?: string | null },
+): Promise<TrackingRoute> => {
+  try {
+    const hasExplicitAccessToken =
+      options && Object.prototype.hasOwnProperty.call(options, "accessToken");
+    const token = hasExplicitAccessToken
+      ? options.accessToken
+      : typeof window !== "undefined"
+        ? getStoredAuthToken()
+        : null;
+    const response = await axios.get<TrackingRoute>(
+      `${API_BASE_URL}/trucks/track/${encodeURIComponent(vehicleNumber)}/route`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    );
+    return {
+      ...response.data,
+      points: Array.isArray(response.data?.points) ? response.data.points : [],
+    };
+  } catch (error) {
+    const err = error as AxiosError<ApiError | any>;
+    throw new Error(
+      (err.response?.data as any)?.message ||
+        (err.response?.data as any)?.error ||
+        "Unable to load the trip route",
+    );
+  }
+};
+
+export const getTrackingLinkContext = async (
+  token: string
+): Promise<TrackingLinkContext> => {
+  try {
+    const response = await axios.get<TrackingLinkContext>(
+      `${API_BASE_URL}/trucks/track/link/${encodeURIComponent(token)}/context`
+    );
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError<ApiError | any>;
+    if (err.response?.status === 404) {
+      throw new Error(
+        "Tracking unlock is not available right now. Please try again in a few minutes."
+      );
+    }
+    throw new Error(
+      (err.response?.data as any)?.message ||
+        (err.response?.data as any)?.error ||
+        "Tracking link expired or invalid"
+    );
+  }
+};
+
+export const sendTrackingLinkOtp = async (
+  token: string
+): Promise<TrackingLinkOtpResponse> => {
+  try {
+    const response = await axios.post<TrackingLinkOtpResponse>(
+      `${API_BASE_URL}/trucks/track/link/${encodeURIComponent(token)}/send-otp`
+    );
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError<ApiError | any>;
+    throw new Error(
+      (err.response?.data as any)?.message ||
+        (err.response?.data as any)?.error ||
+        "OTP send nahi ho paya"
+    );
+  }
+};
+
+export const verifyTrackingLinkOtp = async (
+  token: string,
+  otp: string
+): Promise<TrackingLinkVerifyResponse> => {
+  try {
+    const response = await axios.post<TrackingLinkVerifyResponse>(
+      `${API_BASE_URL}/trucks/track/link/${encodeURIComponent(token)}/verify-otp`,
+      { otp }
+    );
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError<ApiError | any>;
+    throw new Error(
+      (err.response?.data as any)?.message ||
+        (err.response?.data as any)?.error ||
+        "Invalid OTP"
+    );
   }
 };

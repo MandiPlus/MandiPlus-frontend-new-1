@@ -1,336 +1,715 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import ProtectedRoute from "@/features/auth/components/ProtectedRoute";
 import {
-  exportMyWalletStatementExcel,
+  ArrowDownLeft,
+  ArrowLeft,
+  ArrowUpRight,
+  CheckCircle2,
+  ChevronRight,
+  ClipboardList,
+  Landmark,
+  LoaderCircle,
+  Plus,
+  RefreshCw,
+  Search,
+  TicketPercent,
+  WalletCards,
+  X,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { CustomerAppShell } from "@/features/customer-app/CustomerAppShell";
+import styles from "@/features/customer-app/customer-app.module.css";
+import {
+  createCustomerWalletTopupWebCheckout,
+  getCustomerDashboardInvoices,
+  getCustomerWalletPacks,
   getMyWalletStatement,
   getMyWalletSummary,
-  WalletStatementItem,
-  WalletSummary,
+  quoteCustomerWalletCoupon,
+  type WalletCouponQuote,
+  type WalletCreditPack,
+  type WalletStatementItem,
+  type WalletSummary,
 } from "./api";
+import {
+  defaultWalletPackCode,
+  fallbackWalletPacks,
+  reconcileWalletCreditPacks,
+} from "./wallet-catalog";
+import { startGatewayCheckout } from "@/features/payments/gateway-checkout";
 
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-IN", {
+type WalletView = "home" | "add" | "confirm" | "transactions";
+type WalletOwnership = "loading" | "owned" | "unowned" | "error";
+
+const money = (value: number) =>
+  new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
-    maximumFractionDigits: 2,
-  }).format(value || 0);
-}
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
 
-function formatDate(dateStr?: string) {
-  if (!dateStr) return "-";
-  const date = new Date(dateStr);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
+const shortDate = (value: string) =>
+  new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "long",
+  }).format(new Date(value));
 
-function formatTime(dateStr?: string) {
-  if (!dateStr) return "-";
-  const date = new Date(dateStr);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleTimeString("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+const errorText = (error: unknown, fallback: string) => {
+  const payload = (
+    error as {
+      response?: { data?: { message?: string | string[] } };
+      message?: string;
+    }
+  )?.response?.data?.message;
+  if (Array.isArray(payload)) return payload.join(", ");
+  return payload || (error as Error)?.message || fallback;
+};
 
-function isUuidLike(value?: string) {
-  if (!value) return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value.trim(),
-  );
-}
+const transactionTitle = (
+  item: WalletStatementItem,
+  invoiceVehicles: Record<string, string>,
+) => {
+  const type = String(item.type || "").toUpperCase();
+  if (type === "INVOICE_DEBIT" || type === "INVOICE_REFUND") {
+    const vehicleNumber =
+      item.invoiceVehicleNumber ||
+      invoiceVehicles[String(item.referenceId || "")];
+    if (vehicleNumber) return compactVehicleNumber(vehicleNumber);
+  }
+  return item.narration || item.remark || item.type.replaceAll("_", " ");
+};
+
+const compactVehicleNumber = (value: string) =>
+  value.toUpperCase().replace(/[^A-Z0-9]/g, "");
 
 export default function CustomerWalletPage() {
   const router = useRouter();
+  const [view, setView] = useState<WalletView>("home");
   const [wallet, setWallet] = useState<WalletSummary | null>(null);
+  const [walletOwnership, setWalletOwnership] =
+    useState<WalletOwnership>("loading");
   const [statement, setStatement] = useState<WalletStatementItem[]>([]);
-  const [walletError, setWalletError] = useState<string | null>(null);
-  const [exportingStatement, setExportingStatement] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [activeFilter, setActiveFilter] = useState<"ALL" | "CREDIT" | "DEBIT">(
-    "ALL",
-  );
+  const [invoiceVehicles, setInvoiceVehicles] = useState<
+    Record<string, string>
+  >({});
+  const [packs, setPacks] = useState<WalletCreditPack[]>(() => [
+    ...fallbackWalletPacks,
+  ]);
+  const [selectedPackId, setSelectedPackId] = useState(defaultWalletPackCode);
+  const [quote, setQuote] = useState<WalletCouponQuote | null>(null);
+  const [couponNotice, setCouponNotice] = useState("");
+  const [applyingCoupon, setApplyingCoupon] = useState(false);
+  const [offersOpen, setOffersOpen] = useState(false);
+  const offersDialogRef = useRef<HTMLElement | null>(null);
+  const offersTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [paying, setPaying] = useState(false);
+  const [notice, setNotice] = useState("");
 
-  const loadWalletData = useCallback(async () => {
-    setWalletError(null);
-    try {
-      const [walletData, statementData] = await Promise.all([
+  const loadWallet = useCallback(async () => {
+    setLoading(true);
+    setWalletOwnership("loading");
+    setNotice("");
+    const [walletResult, statementResult, packsResult, invoicesResult] =
+      await Promise.allSettled([
         getMyWalletSummary(),
         getMyWalletStatement(),
+        getCustomerWalletPacks(),
+        getCustomerDashboardInvoices(),
       ]);
-      setWallet(walletData);
-      setStatement(statementData);
-    } catch (err: any) {
-      const message =
-        err?.response?.data?.message ||
-        err?.message ||
-        "Failed to load wallet data";
-      setWalletError(Array.isArray(message) ? message.join(", ") : message);
+
+    if (walletResult.status === "fulfilled") {
+      setWallet(walletResult.value);
+      setWalletOwnership(
+        hasWalletOwnership(walletResult.value) ? "owned" : "unowned",
+      );
+    } else {
       setWallet(null);
-      setStatement([]);
+      setWalletOwnership("error");
     }
+    if (statementResult.status === "fulfilled") {
+      setStatement(statementResult.value);
+    }
+    if (packsResult.status === "fulfilled") {
+      const activePacks = reconcileWalletCreditPacks(
+        packsResult.value.packs,
+        packsResult.value.catalogVersion,
+      );
+      setPacks(activePacks);
+      setSelectedPackId((current) =>
+        activePacks.find(
+          (pack) => pack.id === current || pack.code === current,
+        )?.id ||
+        activePacks.find((pack) => pack.code === defaultWalletPackCode)?.id ||
+        activePacks[0]?.id ||
+        "",
+      );
+    }
+    if (invoicesResult.status === "fulfilled") {
+      const vehicles: Record<string, string> = {};
+      invoicesResult.value.forEach((invoice) => {
+        const vehicle = String(
+          invoice.vehicleNumber || invoice.truckNumber || "",
+        ).trim();
+        if (!vehicle) return;
+        vehicles[invoice.id] = vehicle;
+        if (invoice.invoiceNumber) vehicles[invoice.invoiceNumber] = vehicle;
+      });
+      setInvoiceVehicles(vehicles);
+    }
+    if (
+      walletResult.status === "rejected" &&
+      statementResult.status === "rejected" &&
+      packsResult.status === "rejected"
+    ) {
+      setNotice("Wallet abhi load nahi hua. Dobara try karein.");
+    }
+    setLoading(false);
   }, []);
 
   useEffect(() => {
-    loadWalletData();
-  }, [loadWalletData]);
+    void loadWallet();
+  }, [loadWallet]);
 
-  const totalCredits = useMemo(
+  useEffect(() => {
+    if (!offersOpen) return;
+    const dialog = offersDialogRef.current;
+    const previouslyFocused =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const previousOverflow = document.body.style.overflow;
+    const focusableElements = () =>
+      Array.from(
+        dialog?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) || [],
+      ).filter((element) => element.getClientRects().length > 0);
+    const handleDialogKeys = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOffersOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = focusableElements();
+      if (!focusable.length) {
+        event.preventDefault();
+        dialog?.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleDialogKeys);
+    const focusFrame = window.requestAnimationFrame(() => {
+      focusableElements()[0]?.focus();
+    });
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleDialogKeys);
+      previouslyFocused?.focus();
+    };
+  }, [offersOpen]);
+
+  const selectedPack = useMemo(
+    () => packs.find((pack) => pack.id === selectedPackId) || null,
+    [packs, selectedPackId],
+  );
+  const recommendedPack = useMemo(
     () =>
-      statement.reduce(
-        (sum, item) =>
-          sum + (item.direction === "CREDIT" ? Number(item.amount || 0) : 0),
-        0,
-      ),
-    [statement],
+      packs.find((pack) => pack.code === defaultWalletPackCode) ||
+      packs[0] ||
+      null,
+    [packs],
+  );
+  const otherPacks = useMemo(
+    () =>
+      recommendedPack
+        ? packs.filter((pack) => pack.id !== recommendedPack.id)
+        : packs,
+    [packs, recommendedPack],
   );
 
-  const totalDebits = useMemo(
-    () =>
-      statement.reduce(
-        (sum, item) =>
-          sum + (item.direction === "DEBIT" ? Number(item.amount || 0) : 0),
-        0,
-      ),
-    [statement],
-  );
+  const totalUsed = Number(wallet?.usedBalance || 0);
+  const availableBalance = Number(wallet?.availableBalance || 0);
+  const totalCredit = Number(wallet?.totalBalance || 0);
+  const hasActiveWallet = walletOwnership === "owned";
+  const showPackPicker =
+    view === "add" || (view === "home" && walletOwnership === "unowned");
 
   const filteredStatement = useMemo(() => {
-    return statement.filter((item) => {
-      if (activeFilter !== "ALL" && item.direction !== activeFilter) {
-        return false;
-      }
-      if (!searchTerm.trim()) return true;
-      const haystack = `${item.narration || ""} ${item.type || ""} ${
-        item.referenceId || ""
-      }`.toLowerCase();
-      return haystack.includes(searchTerm.trim().toLowerCase());
-    });
-  }, [statement, activeFilter, searchTerm]);
+    const term = search.trim().toLowerCase();
+    if (!term) return statement;
+    return statement.filter((item) =>
+      `${transactionTitle(item, invoiceVehicles)} ${item.type} ${item.amount} ${item.remark || ""}`
+        .toLowerCase()
+        .includes(term),
+    );
+  }, [invoiceVehicles, search, statement]);
+
+  const goBack = () => {
+    if (view === "home") {
+      router.push("/home");
+      return;
+    }
+    if (view === "confirm") {
+      setView("add");
+      setNotice("");
+      return;
+    }
+    setView("home");
+    setNotice("");
+  };
+
+  const startTopup = async () => {
+    if (!selectedPack || paying) return;
+    setPaying(true);
+    setNotice("");
+    try {
+      const checkout = await createCustomerWalletTopupWebCheckout({
+        packId: selectedPack.id,
+        couponCode: quote?.code || undefined,
+      });
+      await startGatewayCheckout(checkout);
+    } catch (error) {
+      setNotice(errorText(error, "Payment start nahi hua. Dobara try karein."));
+      setPaying(false);
+    }
+  };
+
+  const applySuggestedCoupon = async () => {
+    if (!selectedPackId || applyingCoupon) return;
+    setApplyingCoupon(true);
+    setQuote(null);
+    setCouponNotice("");
+    try {
+      const nextQuote = await quoteCustomerWalletCoupon(
+        selectedPackId,
+        "MANDI500",
+      );
+      setQuote(nextQuote);
+      setCouponNotice(`You save ${money(nextQuote.discountAmount)}`);
+      setOffersOpen(false);
+    } catch (error) {
+      setCouponNotice(errorText(error, "Coupon valid nahi hai."));
+    } finally {
+      setApplyingCoupon(false);
+    }
+  };
+
+  const openPackDetails = (pack: WalletCreditPack) => {
+    setSelectedPackId(pack.id);
+    setQuote(null);
+    setCouponNotice("");
+    setNotice("");
+    setView("confirm");
+  };
+
+  const heading =
+    view === "home"
+      ? walletOwnership === "unowned"
+        ? "Credit pack chunein"
+        : "Mera wallet"
+      : view === "add"
+        ? "Credit pack chunein"
+        : view === "confirm"
+          ? "Confirm pack"
+          : "All transactions";
 
   return (
-    <ProtectedRoute allowedIdentities={["CUSTOMER"]}>
-      <div className="min-h-screen bg-[#e0d7fc] pb-20">
-        <div className="bg-white px-5 py-4 rounded-b-4xl">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-slate-800">Wallet</h2>
-            <button
-              onClick={() => router.push("/customer/dashboard")}
-              className="rounded-xl bg-[#4309ac] px-3 py-2 text-xs font-semibold text-white"
-            >
-              Back
-            </button>
-          </div>
-        </div>
+    <CustomerAppShell activeTab="pay" showBottomNav={false}>
+      <header className={styles.secondaryHeader}>
+        <button
+          type="button"
+          className={styles.secondaryBack}
+          onClick={goBack}
+          aria-label="Back"
+        >
+          <ArrowLeft size={24} strokeWidth={2.4} />
+        </button>
+        <h1 className={styles.secondaryHeading}>{heading}</h1>
+        <span />
+      </header>
 
-        <div className="px-5 mt-5 space-y-4">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-            <div className="rounded-3xl bg-gradient-to-r from-[#0d4fb8] to-[#0d55c7] p-5 text-white shadow-sm lg:col-span-8">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-wider text-blue-100">
-                    Available Balance
-                  </p>
-                  <p className="mt-2 text-3xl font-extrabold leading-none">
-                    {formatCurrency(wallet?.availableBalance ?? 0)}
-                  </p>
-                  <p className="mt-2 text-xs text-blue-100">
-                    Last updated: {formatDate(wallet?.updatedAt)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div className="rounded-xl bg-white/10 px-3 py-2">
-                  <p className="text-[11px] uppercase tracking-wider text-blue-100">
-                    Used Balance
-                  </p>
-                  <p className="mt-1 text-lg font-bold text-white">
-                    {formatCurrency(wallet?.usedBalance ?? 0)}
-                  </p>
-                </div>
-                <div className="rounded-xl bg-white/10 px-3 py-2">
-                  <p className="text-[11px] uppercase tracking-wider text-blue-100">
-                    Total Balance
-                  </p>
-                  <p className="mt-1 text-lg font-bold text-white">
-                    {formatCurrency(wallet?.totalBalance ?? 0)}
-                  </p>
-                </div>
-              </div>
+      {view === "home" && !showPackPicker ? (
+        <main className={styles.walletPageBody}>
+          {loading || walletOwnership === "loading" ? (
+            <div className={`${styles.walletCreditCard} ${styles.skeleton}`}>
+              Wallet
             </div>
-
-            <div className="grid grid-cols-1 gap-3 lg:col-span-4">
-              <div className="rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
-                <p className="text-xs uppercase tracking-wide text-emerald-700">
-                  Total Credits
-                </p>
-                <p className="mt-2 text-2xl font-extrabold text-slate-900">
-                  {formatCurrency(totalCredits)}
-                </p>
+          ) : walletOwnership === "error" ? (
+            <section className={styles.walletLoadError} role="alert">
+              <span aria-hidden="true">
+                <WalletCards size={25} />
+              </span>
+              <div>
+                <strong>Wallet load nahi hua</strong>
+                <p>Internet check karke dobara try karein.</p>
               </div>
-              <div className="rounded-2xl border border-rose-200 bg-white p-4 shadow-sm">
-                <p className="text-xs uppercase tracking-wide text-rose-700">
-                  Total Debits
-                </p>
-                <p className="mt-2 text-2xl font-extrabold text-slate-900">
-                  {formatCurrency(totalDebits)}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {walletError && (
-            <p className="rounded-xl bg-rose-100 px-3 py-2 text-sm text-rose-700">
-              {walletError}
-            </p>
-          )}
-
-          <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-            <div className="border-b border-slate-200 px-4 py-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h4 className="font-semibold text-slate-800">Transaction History</h4>
-                  <p className="text-xs text-slate-500">
-                    {filteredStatement.length} transactions found
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                    <span className="text-slate-500 text-sm mr-2">🔍</span>
-                    <input
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      placeholder="Search transactions..."
-                      className="w-44 bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
-                    />
+              <button
+                type="button"
+                onClick={() => void loadWallet()}
+                disabled={loading}
+              >
+                <RefreshCw size={17} />
+                Retry
+              </button>
+            </section>
+          ) : hasActiveWallet ? (
+            <>
+              <section className={styles.walletCreditCard}>
+                <h2>MandiPlus Credit</h2>
+                <div className={styles.walletBalanceLabel}>Credit balance</div>
+                <strong className={styles.walletBalance}>
+                  {money(availableBalance)}
+                </strong>
+                <div className={styles.walletBalanceMeta}>
+                  <div>
+                    <span>Total credit</span>
+                    <strong>{money(totalCredit)}</strong>
                   </div>
-                  <button
-                    onClick={async () => {
-                      try {
-                        setExportingStatement(true);
-                        const blob = await exportMyWalletStatementExcel();
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = `wallet-statement-${new Date()
-                          .toISOString()
-                          .slice(0, 10)}.xlsx`;
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
-                        window.URL.revokeObjectURL(url);
-                      } finally {
-                        setExportingStatement(false);
-                      }
-                    }}
-                    disabled={exportingStatement}
-                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                  >
-                    {exportingStatement ? "Exporting..." : "Export"}
-                  </button>
+                  <i aria-hidden="true" />
+                  <div>
+                    <span>Used</span>
+                    <strong>{money(totalUsed)}</strong>
+                  </div>
                 </div>
-              </div>
-            </div>
+              </section>
 
-            <div className="border-b border-slate-200 px-4 py-3">
-              <div className="flex items-center gap-2">
-                {(["ALL", "CREDIT", "DEBIT"] as const).map((key) => (
-                  <button
-                    key={key}
-                    onClick={() => setActiveFilter(key)}
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      activeFilter === key
-                        ? "bg-[#0d4fb8] text-white"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    }`}
-                  >
-                    {key === "ALL" ? "All" : key === "CREDIT" ? "Credits" : "Debits"}
-                  </button>
+              <button
+                type="button"
+                className={styles.walletActionRow}
+                onClick={() => setView("add")}
+              >
+                <span className={styles.walletActionIcon}>
+                  <Plus size={22} />
+                </span>
+                <strong>Add money</strong>
+                <ChevronRight size={22} />
+              </button>
+
+              <button
+                type="button"
+                className={styles.walletActionRow}
+                onClick={() => setView("transactions")}
+              >
+                <span className={styles.walletActionIcon}>
+                  <ClipboardList size={21} />
+                </span>
+                <strong>Transactions dekhein</strong>
+                <ChevronRight size={22} />
+              </button>
+            </>
+          ) : null}
+          {notice ? <p className={styles.walletError}>{notice}</p> : null}
+        </main>
+      ) : null}
+
+      {showPackPicker ? (
+        <main className={styles.walletPackBody}>
+          {recommendedPack ? (
+            <section className={styles.walletPackSection}>
+              <h2>Recommended</h2>
+              <WalletPackCard
+                pack={recommendedPack}
+                featured
+                onClick={() => openPackDetails(recommendedPack)}
+              />
+            </section>
+          ) : null}
+
+          {packs.length ? (
+            <section className={styles.walletPackSection}>
+              <h2>Other packs</h2>
+              <div className={styles.walletPackList}>
+                {otherPacks.map((pack) => (
+                  <WalletPackCard
+                    key={pack.id}
+                    pack={pack}
+                    onClick={() => openPackDetails(pack)}
+                  />
                 ))}
               </div>
-            </div>
+            </section>
+          ) : null}
 
-            {filteredStatement.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-gray-500">No wallet transactions yet.</p>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {filteredStatement.map((item) => {
-                  const isCredit = item.direction === "CREDIT";
-                  const readableReference =
-                    item.referenceId && !isUuidLike(item.referenceId)
-                      ? item.referenceId
-                      : null;
-                  return (
-                    <div key={item.id} className="flex items-start justify-between gap-3 px-4 py-4">
-                      <div className="flex items-start gap-3 min-w-0">
-                        <div
-                          className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold ${
-                            isCredit
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-rose-100 text-rose-700"
-                          }`}
-                        >
-                          {isCredit ? "↙" : "↗"}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-slate-900">
-                            {item.narration || item.type}
-                          </p>
-                          {item.remark ? (
-                            <p className="mt-1 text-xs text-slate-500">{item.remark}</p>
-                          ) : null}
-                          {item.attachmentUrl ? (
-                            <a
-                              href={item.attachmentUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-1 inline-block text-xs font-semibold text-blue-600 hover:underline"
-                            >
-                              View image
-                            </a>
-                          ) : null}
-                          <p className="mt-0.5 text-xs text-slate-500">
-                            {formatDate(item.createdAt)}{" "}
-                            <span className="mx-1">|</span>
-                            {formatTime(item.createdAt)}
-                            {readableReference ? (
-                              <>
-                                <span className="mx-1">|</span>
-                                {readableReference}
-                              </>
-                            ) : null}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p
-                          className={`text-lg font-bold ${
-                            isCredit ? "text-emerald-600" : "text-rose-600"
-                          }`}
-                        >
-                          {isCredit ? "+" : "-"}
-                          {formatCurrency(item.amount)}
-                        </p>
-                        <p className="text-[11px] text-slate-500">
-                          {isCredit ? "Credit" : "Debit"}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
+          {!loading && packs.length === 0 ? (
+            <div className={styles.emptyState}>
+              No credit packs available.
+            </div>
+          ) : null}
+
+          {notice ? <p className={styles.walletError}>{notice}</p> : null}
+        </main>
+      ) : null}
+
+      {view === "confirm" && selectedPack ? (
+        <>
+          <main className={styles.walletPackDetailBody}>
+            <section className={styles.walletPackReviewCard}>
+              <div className={styles.walletPackSummary}>
+                <div>
+                  <span>Credit</span>
+                  <strong>{creditLabel(selectedPack.label)}</strong>
+                </div>
+                <i aria-hidden="true" />
+                <div>
+                  <span>Amount</span>
+                  <strong>{money(quote?.finalPrice ?? selectedPack.priceAmount)}</strong>
+                </div>
               </div>
-            )}
+
+              <div className={styles.walletBalancePreview}>
+                <WalletBalanceRow label="Current credit" value={money(availableBalance)} />
+                <i aria-hidden="true" />
+                <WalletBalanceRow
+                  label="New available credit"
+                  value={money(availableBalance + Number(selectedPack.creditAmount || 0))}
+                  strong
+                />
+              </div>
+            </section>
+
+            <section className={styles.walletCouponCard}>
+              <div className={styles.walletCouponHeader}>
+                <h2>Offers &amp; coupons</h2>
+                <button
+                  ref={offersTriggerRef}
+                  type="button"
+                  onClick={() => setOffersOpen(true)}
+                  aria-haspopup="dialog"
+                  aria-expanded={offersOpen}
+                >
+                  View all <ChevronRight size={18} />
+                </button>
+              </div>
+              {quote ? (
+                <div
+                  className={styles.walletCouponApplied}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <CheckCircle2 size={21} />
+                  <div>
+                    <strong>{quote.code} applied</strong>
+                    <small>You save {money(quote.discountAmount)}</small>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+
+            {selectedPack.priceAmount > 100_000 ? (
+              <section className={styles.walletHighValueHint}>
+                <Landmark size={21} />
+                <p>Available payment methods may depend on your bank.</p>
+              </section>
+            ) : null}
+
+            {notice ? <p className={styles.walletError}>{notice}</p> : null}
+          </main>
+          <div className={styles.walletPayDock}>
+            {quote ? (
+              <div className={styles.walletDiscountSummary}>
+                <span>Payable amount</span>
+                <p>
+                  <s>{money(quote.originalPrice)}</s>
+                  <strong>{money(quote.finalPrice)}</strong>
+                </p>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void startTopup()}
+              disabled={!selectedPack || paying}
+            >
+              {paying ? (
+                <LoaderCircle className={styles.walletSpinner} size={22} />
+              ) : (
+                `Pay ${money(quote?.finalPrice ?? selectedPack.priceAmount)} securely`
+              )}
+              {!paying ? <ChevronRight size={23} /> : null}
+            </button>
+            <small>Continue securely with PhonePe</small>
           </div>
-        </div>
-      </div>
-    </ProtectedRoute>
+          {offersOpen ? (
+            <div className={styles.walletOffersOverlay} role="presentation">
+              <button
+                type="button"
+                className={styles.walletOffersBackdrop}
+                onClick={() => setOffersOpen(false)}
+                aria-label="Close offers"
+              />
+              <section
+                ref={offersDialogRef}
+                className={styles.walletOffersSheet}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="wallet-offers-title"
+                tabIndex={-1}
+              >
+                <i className={styles.walletOffersHandle} aria-hidden="true" />
+                <div className={styles.walletOffersHeader}>
+                  <h2 id="wallet-offers-title">Available offers</h2>
+                  <button
+                    type="button"
+                    onClick={() => setOffersOpen(false)}
+                    aria-label="Close offers"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                <div className={styles.walletOfferItem}>
+                  <span><TicketPercent size={23} /></span>
+                  <div>
+                    <strong>Save ₹500 on your credit pack</strong>
+                    <small>Use code MANDI500</small>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={quote?.code === "MANDI500" || applyingCoupon}
+                    onClick={() => void applySuggestedCoupon()}
+                  >
+                    {quote?.code === "MANDI500"
+                      ? "Applied"
+                      : applyingCoupon
+                        ? "Applying…"
+                        : "Apply"}
+                  </button>
+                </div>
+                {couponNotice && !quote ? (
+                  <p
+                    className={styles.walletCouponError}
+                    role="alert"
+                    aria-live="assertive"
+                  >
+                    {couponNotice}
+                  </p>
+                ) : null}
+              </section>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {view === "transactions" ? (
+        <main className={styles.walletTransactionBody}>
+          <label className={styles.walletSearch}>
+            <Search size={21} />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search by amount, type, or note"
+            />
+          </label>
+
+          <div className={styles.walletTransactionList}>
+            {filteredStatement.map((item) => {
+              const isCredit = item.direction === "CREDIT";
+              return (
+                <article key={item.id} className={styles.walletTransaction}>
+                  <span
+                    className={`${styles.walletTransactionIcon} ${
+                      isCredit ? "" : styles.walletTransactionDebit
+                    }`}
+                  >
+                    {isCredit ? (
+                      <ArrowDownLeft size={21} />
+                    ) : (
+                      <ArrowUpRight size={21} />
+                    )}
+                  </span>
+                  <div>
+                    <strong>{transactionTitle(item, invoiceVehicles)}</strong>
+                    <small>{shortDate(item.createdAt)}</small>
+                  </div>
+                  <b className={isCredit ? "" : styles.walletDebitAmount}>
+                    {isCredit ? "+" : "-"}
+                    {money(item.amount)}
+                  </b>
+                </article>
+              );
+            })}
+            {!loading && filteredStatement.length === 0 ? (
+              <div className={styles.emptyState}>No transactions found.</div>
+            ) : null}
+          </div>
+        </main>
+      ) : null}
+    </CustomerAppShell>
+  );
+}
+
+function WalletPackCard({
+  pack,
+  featured = false,
+  onClick,
+}: {
+  pack: WalletCreditPack;
+  featured?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`${styles.walletPackCard} ${
+        featured ? styles.walletPackCardFeatured : ""
+      }`}
+      onClick={onClick}
+      aria-label={`${creditLabel(pack.label)}, ${money(pack.priceAmount)}, view details`}
+    >
+      <span>
+        <small>CREDIT</small>
+        <strong>{creditLabel(pack.label)}</strong>
+      </span>
+      <b>{money(pack.priceAmount)}</b>
+      <ChevronRight size={22} />
+    </button>
+  );
+}
+
+function WalletBalanceRow({
+  label,
+  value,
+  strong = false,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+}) {
+  return (
+    <div className={strong ? styles.walletBalancePreviewStrong : ""}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function creditLabel(label: string) {
+  const normalized = String(label || "").trim();
+  return normalized.startsWith("₹") ? normalized : `₹${normalized}`;
+}
+
+function hasWalletOwnership(wallet: WalletSummary | null) {
+  if (!wallet) return false;
+  if ("walletId" in wallet) {
+    return Boolean(String(wallet.walletId || "").trim());
+  }
+  return (
+    Number(wallet.availableBalance || 0) > 0 ||
+    Number(wallet.usedBalance || 0) > 0 ||
+    Number(wallet.totalBalance || 0) > 0
   );
 }

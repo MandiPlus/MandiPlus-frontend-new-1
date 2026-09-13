@@ -41,17 +41,29 @@ const LAST_SEEN_STORAGE_KEY = 'adminNotificationsLastSeenAt';
 const adminTitles: Record<string, string> = {
     '/admin/dashboard': 'Admin Panel',
     '/admin/users': 'Users',
+    '/admin/app-customers': 'App Customers',
+    '/admin/account-memberships': 'Account Memberships',
+    '/admin/app-invoices': 'App Invoices',
+    '/admin/quick-details': 'Quick Details',
+    '/admin/app-payments': 'App Payments',
+    '/admin/app/tracking-purchases': 'Tracking Packs',
     '/admin/insurance-forms': 'Invoice / Insurance Forms',
     '/admin/claims': 'Claim Requests',
     '/admin/tracking': 'Tracking',
     '/admin/trips': 'Created Trips',
+    '/admin/operations/fasttag': 'Fastag',
+    '/admin/operations/tracking-children': 'Add Children',
     '/admin/agent-commissions': 'Agent Commissions',
     '/admin/insurance-payments': 'Insurance Payments',
     '/admin/arrival-reports': 'Arrival Reports',
     '/admin/field-operations': 'Field Operations',
+    '/admin/fssai-leads': 'FSSAI Leads',
     '/admin/chat-logs': 'WhatsApp Chats',
     '/admin/pdf-editor': 'Edit Insurance PDF',
     '/admin/impersonate': 'Impersonate',
+    '/admin/reports': 'AI Reports',
+    '/admin/analytics': 'Sales Analytics',
+    '/admin/insurance-learning': 'Insurance Learning',
 };
 
 function getTimestampValue(timestamp: string): number {
@@ -207,7 +219,7 @@ export default function AdminHeader() {
                         ? adminApi.getUsers(1, 200)
                         : Promise.resolve({ success: true, data: { users: [] } } as any),
                     canAccessSection('insurance-forms')
-                        ? adminApi.getInsuranceForms(1, 200)
+                        ? adminApi.getInsuranceForms(1, 30, '', 'summary')
                         : Promise.resolve({ success: true, data: { forms: [] } } as any),
                     canAccessSection('claims')
                         ? adminApi.getClaims()

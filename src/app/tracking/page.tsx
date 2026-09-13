@@ -1,5 +1,5 @@
-import Tracking from "@/features/tracking/pages/Tracking";
+import TrackingExperience from "@/features/tracking/pages/TrackingExperience";
 
 export default function TrackingPage() {
-    return <Tracking />;
+    return <TrackingExperience />;
 }

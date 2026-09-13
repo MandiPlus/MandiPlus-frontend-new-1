@@ -2,11 +2,11 @@ export const ADMIN_BRAND_PURPLE = '#4309ac';
 
 export const adminButtonClasses = {
   primary:
-    'inline-flex items-center justify-center rounded-lg border border-[#4309ac]/20 bg-[#4309ac] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#4309ac]/90 focus:outline-none focus:ring-2 focus:ring-[#4309ac] focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed',
+    'inline-flex items-center justify-center rounded-lg border border-violet-300 bg-violet-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition',
   outline:
-    'inline-flex items-center justify-center rounded-lg border border-[#4309ac]/20 bg-white px-4 py-2 text-sm font-semibold text-[#4309ac] hover:bg-[#4309ac]/10 focus:outline-none focus:ring-2 focus:ring-[#4309ac] focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed',
+    'inline-flex items-center justify-center rounded-lg border border-violet-200 bg-white px-4 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition',
   secondary:
-    'inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-[#4309ac] focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed',
+    'inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition',
 };
 
 export const adminChipClasses = {

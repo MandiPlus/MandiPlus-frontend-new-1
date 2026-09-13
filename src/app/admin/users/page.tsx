@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import { formatDate } from '@/features/admin/utils/format';
@@ -16,7 +16,7 @@ import { toast } from 'react-toastify';
 
 type User = AdminLedgerUser;
 
-type UserSection = 'ALL' | 'CUSTOMER' | 'TRANSPORTER' | 'VERIFIED';
+type UserSection = 'ALL' | 'CUSTOMER' | 'TRANSPORTER' | 'VERIFIED' | 'UNPAID_WALLETS';
 type AdminViewSection = UserSection | 'ADMIN_REQUESTS';
 
 const indianStates = [
@@ -77,6 +77,10 @@ type AdminEditUserForm = {
     identity: AdminCreateUserPayload['identity'];
     billingType: 'BULK' | 'PER_POLICY';
     unionMember: boolean;
+    insurancePremiumPerLakh: string;
+    originalInsurancePremiumPerLakh: number;
+    insurancePremiumRateVersion: number;
+    premiumChangeReason: string;
 };
 
 const emptyCreateUserForm: AdminCreateUserForm = {
@@ -87,7 +91,7 @@ const emptyCreateUserForm: AdminCreateUserForm = {
     identity: 'BUYER',
     billingType: 'BULK',
     initialWalletAmount: '',
-    verifyAsMaster: false,
+    verifyAsMaster: true,
     unionMember: false,
 };
 
@@ -100,17 +104,41 @@ const formatIndianMobile = (phone: string | undefined) => {
     return phone;
 };
 
-const normalizeNameForMatch = (value: string | undefined) =>
+const normalizeNameForMatch = (value: string | null | undefined) =>
     (value || '')
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
 
-const normalizePhoneForMatch = (value: string | undefined) => {
+const normalizePhoneForMatch = (value: string | null | undefined) => {
     const digits = (value || '').replace(/\D/g, '');
     if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
     return digits;
+};
+
+const escapeCsvCell = (value: unknown) => {
+    const text = String(value ?? '');
+    const safeText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+    return `"${safeText.replaceAll('"', '""')}"`;
+};
+
+const invoiceDefaultModeLabel = (value?: string | null) => {
+    if (value === 'BUYER_INVOICE') return 'Cash';
+    if (value === 'SUPPLIER_INVOICE') return 'Commission';
+    return '';
+};
+
+const invoiceDefaultsSummary = (user: User) => {
+    const profile = user.invoiceProfile;
+    if (!profile) return null;
+
+    const product = profile.lastProductName || profile.productNames?.[0] || '';
+    return [
+        invoiceDefaultModeLabel(profile.defaultInvoiceType),
+        product,
+        profile.vehicleNumber,
+    ].filter(Boolean).join(' / ');
 };
 
 const getSimilarityScore = (leftRaw: string, rightRaw: string) => {
@@ -161,10 +189,19 @@ export default function UsersPage() {
     const [rebuildLoadingByUser, setRebuildLoadingByUser] = useState<Record<string, boolean>>({});
     const [convertingByUser, setConvertingByUser] = useState<Record<string, boolean>>({});
     const [impersonatingByUser, setImpersonatingByUser] = useState<Record<string, boolean>>({});
+    const [channelPartnerLoadingByUser, setChannelPartnerLoadingByUser] = useState<Record<string, boolean>>({});
     const [walletLogsOpen, setWalletLogsOpen] = useState(false);
     const [walletLogsLoading, setWalletLogsLoading] = useState(false);
     const [walletLogUser, setWalletLogUser] = useState<User | null>(null);
     const [walletLogs, setWalletLogs] = useState<AdminWalletStatementItem[]>([]);
+    const [exportingWalletByUser, setExportingWalletByUser] = useState<Record<string, boolean>>({});
+    const [exportingUnpaidWalletReport, setExportingUnpaidWalletReport] = useState(false);
+    const [exportingUsers, setExportingUsers] = useState(false);
+    const showUnpaidWalletPaymentColumns = walletLogUser?.walletType === 'UNPAID';
+    const getCleanWalletNarration = (tx: AdminWalletStatementItem) => {
+        const narration = tx.narration || tx.type || '-';
+        return narration.replace(/\s*\|\s*Premium\s*₹?[\d,]+(?:\.\d+)?\s*/gi, '').trim() || '-';
+    };
     const [createUserModalOpen, setCreateUserModalOpen] = useState(false);
     const [createUserLoading, setCreateUserLoading] = useState(false);
     const [createUserForm, setCreateUserForm] =
@@ -187,9 +224,31 @@ export default function UsersPage() {
     const [mergeTargetByUser, setMergeTargetByUser] = useState<Record<string, string>>({});
     const ITEMS_PER_PAGE = 10;
     const isVerifiedSection = activeSection === 'VERIFIED';
+    const isUnpaidWalletSection = activeSection === 'UNPAID_WALLETS';
+    const showMasterDetailColumns = isVerifiedSection || isUnpaidWalletSection;
     const showWalletColumns =
-        activeSection === 'CUSTOMER' || activeSection === 'TRANSPORTER';
-    const tableColumnCount = showWalletColumns ? 11 : isVerifiedSection ? 13 : 12;
+        activeSection === 'CUSTOMER' ||
+        activeSection === 'TRANSPORTER' ||
+        activeSection === 'VERIFIED' ||
+        activeSection === 'UNPAID_WALLETS';
+    const showIdentityColumn =
+        activeSection !== 'CUSTOMER' && activeSection !== 'TRANSPORTER';
+    const showBillingAndConvertColumns =
+        activeSection !== 'CUSTOMER' &&
+        activeSection !== 'TRANSPORTER' &&
+        activeSection !== 'UNPAID_WALLETS';
+    const showUserManagementColumns =
+        activeSection !== 'CUSTOMER' && activeSection !== 'UNPAID_WALLETS';
+    const tableColumnCount =
+        5 +
+        (showIdentityColumn ? 1 : 0) +
+        1 +
+        (showBillingAndConvertColumns ? 2 : 0) +
+        (showWalletColumns ? 2 : 0) +
+        (showUserManagementColumns ? 3 : 0) +
+        (showMasterDetailColumns ? 1 : 0) +
+        1 +
+        1;
     const sectionTitle =
         activeSection === 'ADMIN_REQUESTS'
             ? 'Admin Requests'
@@ -200,11 +259,52 @@ export default function UsersPage() {
                 ? 'Transporters'
                 : activeSection === 'VERIFIED'
                     ? 'Verified Users'
+                    : activeSection === 'UNPAID_WALLETS'
+                        ? 'Unpaid Wallet Users'
                 : 'Users';
 
-    const loadAdminUsers = async () => {
-        const walletsRes = await adminApi.getAdminCustomerWallets();
-        const usersRes = await adminApi.getAdminLedgerUsers();
+    const [serverTotal, setServerTotal] = useState(0);
+    const [serverTotalPages, setServerTotalPages] = useState(1);
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [usersRefreshing, setUsersRefreshing] = useState(false);
+    const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const paginatedUsersRequestRef = useRef(0);
+    const usersRefreshStateRef = useRef(0);
+
+    const fetchPaginatedUsers = useCallback(async (pageNum: number, search: string, section: string) => {
+        const requestId = paginatedUsersRequestRef.current + 1;
+        paginatedUsersRequestRef.current = requestId;
+        const response = await adminApi.getAdminUsersPaginated({
+            page: pageNum,
+            limit: ITEMS_PER_PAGE,
+            search,
+            section: section === 'ADMIN_REQUESTS' ? 'ALL' : section,
+        });
+        if (!response.success) {
+            throw new Error(response.message || 'Failed to load users');
+        }
+        const users = (response.data || []).map((u: any) => ({
+            ...u,
+            id: String(u.id || u._id || ''),
+            canonicalUserId: String(u.canonicalUserId || u.id || ''),
+            isLedgerMasterVerified: Boolean(u.isLedgerMasterVerified),
+            duplicateCount: Number(u.duplicateCount || 0),
+            aliasNames: Array.isArray(u.aliasNames) ? u.aliasNames : [],
+            aliasPhones: Array.isArray(u.aliasPhones) ? u.aliasPhones : [],
+        })) as User[];
+        if (requestId === paginatedUsersRequestRef.current) {
+            setFilteredUsers(users);
+            setServerTotal(Number(response.total) || 0);
+            setServerTotalPages(Math.max(1, Number(response.totalPages) || 1));
+        }
+        return users;
+    }, []);
+
+    const loadAllUsersBackground = useCallback(async () => {
+        const [walletsRes, usersRes] = await Promise.all([
+            adminApi.getAdminCustomerWallets(),
+            adminApi.getAdminLedgerUsers(),
+        ]);
 
         const walletsRaw = walletsRes.success && Array.isArray(walletsRes.data)
             ? walletsRes.data
@@ -215,15 +315,9 @@ export default function UsersPage() {
                 .filter(([id]) => Boolean(id))
         );
 
-        let usersRaw: any[] = [];
-        if (usersRes.success && Array.isArray(usersRes.data)) {
-            usersRaw = usersRes.data;
-        } else {
-            const fallbackUsersRes = await adminApi.getUsers(1, 500);
-            usersRaw = fallbackUsersRes.success
-                ? (Array.isArray(fallbackUsersRes.data?.users) ? fallbackUsersRes.data?.users : [])
-                : [];
-        }
+        const usersRaw = usersRes.success && Array.isArray(usersRes.data)
+            ? usersRes.data
+            : [];
 
         const processedUsers = usersRaw.map((u: any) => {
             const resolvedId = String(u.id || u._id || '');
@@ -236,22 +330,18 @@ export default function UsersPage() {
                 duplicateCount: Number(u.duplicateCount || 0),
                 aliasNames: Array.isArray(u.aliasNames) ? u.aliasNames : [],
                 aliasPhones: Array.isArray(u.aliasPhones) ? u.aliasPhones : [],
+                walletId: walletRow?.walletId ?? null,
+                walletType: walletRow?.walletType ?? null,
                 walletBalance: walletRow?.walletBalance ?? 0,
             } as User;
         });
 
-        const sortedData = processedUsers.sort((a: User, b: User) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-
-        setAllUsers(sortedData);
-                setFilteredUsers(sortedData);
-    };
+        setAllUsers(processedUsers);
+    }, []);
 
     const verifiedMasterUsers = allUsers.filter(
         (user) => user.isLedgerMasterVerified && user.id === user.canonicalUserId,
     );
-    const verifiedMasterUserIds = new Set(verifiedMasterUsers.map((user) => user.id));
     const mergedUsersByMasterId = allUsers.reduce((map, user) => {
         if (!user.isMerged || !user.canonicalUserId || user.canonicalUserId === user.id) {
             return map;
@@ -320,18 +410,29 @@ export default function UsersPage() {
             .filter((user) => (
                 user.id !== bulkMergeModalMaster.id &&
                 !user.isMerged &&
-                !user.isLedgerMasterVerified &&
-                user.id === user.canonicalUserId &&
-                !verifiedMasterUserIds.has(user.id)
+                user.id === user.canonicalUserId
             ))
             .filter((user) => {
-                const lowerTerm = bulkMergeSearchTerm.trim().toLowerCase();
-                if (!lowerTerm) return true;
+                const normalizedTerm = normalizeNameForMatch(bulkMergeSearchTerm);
+                const digitTerm = bulkMergeSearchTerm.replace(/\D/g, '');
+                if (!normalizedTerm && !digitTerm) return true;
+
                 return (
-                    (user.name || '').toLowerCase().includes(lowerTerm) ||
-                    (user.mobileNumber || '').toLowerCase().includes(lowerTerm) ||
-                    (user.secondaryMobileNumber || '').toLowerCase().includes(lowerTerm) ||
-                    (user.state || '').toLowerCase().includes(lowerTerm)
+                    normalizeNameForMatch(user.name).includes(normalizedTerm) ||
+                    normalizeNameForMatch(user.state).includes(normalizedTerm) ||
+                    user.aliasNames?.some((name) =>
+                        normalizeNameForMatch(name).includes(normalizedTerm)
+                    ) ||
+                    Boolean(
+                        digitTerm &&
+                        (
+                            normalizePhoneForMatch(user.mobileNumber).includes(digitTerm) ||
+                            normalizePhoneForMatch(user.secondaryMobileNumber).includes(digitTerm) ||
+                            user.aliasPhones?.some((phone) =>
+                                normalizePhoneForMatch(phone).includes(digitTerm)
+                            )
+                        )
+                    )
                 );
             })
             .sort((left, right) => {
@@ -348,6 +449,10 @@ export default function UsersPage() {
     const isAllBulkMergeSelected =
         allBulkMergeCandidateIds.length > 0 &&
         allBulkMergeCandidateIds.every((id) => bulkMergeSelectedUserIds.includes(id));
+    const canSelectAllBulkMergeCandidates =
+        bulkMergeSearchTerm.trim().length >= 2 &&
+        allBulkMergeCandidateIds.length > 0 &&
+        allBulkMergeCandidateIds.length <= 50;
 
     useEffect(() => {
         if (!isAuthenticated) {
@@ -359,7 +464,8 @@ export default function UsersPage() {
             try {
                 setLoading(true);
                 setError('');
-                await loadAdminUsers();
+                await fetchPaginatedUsers(1, '', activeSection);
+                loadAllUsersBackground();
             } catch (err: any) {
                 console.error('Failed to fetch data:', err);
                 const message = err.response?.data?.message || 'Failed to load data';
@@ -379,37 +485,61 @@ export default function UsersPage() {
         }
     }, [activeSection, isFullAdmin]);
 
-    // Search Logic
     useEffect(() => {
-        const bySection = allUsers.filter((user) => {
-            if (activeSection === 'ADMIN_REQUESTS') return false;
-            if (activeSection === 'CUSTOMER') return user.identity === 'CUSTOMER';
-            if (activeSection === 'TRANSPORTER') return user.identity === 'TRANSPORTER';
-            if (activeSection === 'VERIFIED') {
-                return user.isLedgerMasterVerified && user.id === user.canonicalUserId;
-            }
-            return !user.isLedgerMasterVerified;
-        });
-
-        if (!searchTerm) {
-            setFilteredUsers(bySection);
-        } else {
-            const lowerTerm = searchTerm.toLowerCase();
-            const filtered = bySection.filter(user =>
-                (user.name && user.name.toLowerCase().includes(lowerTerm)) ||
-                user.mobileNumber.includes(lowerTerm) ||
-                (user.state && user.state.toLowerCase().includes(lowerTerm))
-            );
-            setFilteredUsers(filtered);
-        }
-    }, [searchTerm, allUsers, activeSection]);
+        if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+        searchTimerRef.current = setTimeout(() => {
+            setDebouncedSearch(searchTerm);
+        }, 650);
+        return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+    }, [searchTerm]);
 
     useEffect(() => {
+        if (!isAuthenticated) return;
+        if (activeSection === 'ADMIN_REQUESTS') return;
         setCurrentPage(1);
-    }, [searchTerm, activeSection]);
+        const loadPage = async () => {
+            const refreshId = usersRefreshStateRef.current + 1;
+            usersRefreshStateRef.current = refreshId;
+            try {
+                setUsersRefreshing(true);
+                setError('');
+                await fetchPaginatedUsers(1, debouncedSearch, activeSection);
+            } catch (err: any) {
+                if (refreshId === usersRefreshStateRef.current) {
+                    setError(err?.message || 'Failed to load users');
+                }
+            } finally {
+                if (refreshId === usersRefreshStateRef.current) {
+                    setUsersRefreshing(false);
+                }
+            }
+        };
+        loadPage();
+    }, [debouncedSearch, activeSection, isAuthenticated, fetchPaginatedUsers]);
 
-    // Pagination Logic
-    const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
+    useEffect(() => {
+        if (!isAuthenticated || currentPage === 1) return;
+        if (activeSection === 'ADMIN_REQUESTS') return;
+        const loadPage = async () => {
+            const refreshId = usersRefreshStateRef.current + 1;
+            usersRefreshStateRef.current = refreshId;
+            try {
+                setUsersRefreshing(true);
+                await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+            } catch (err: any) {
+                if (refreshId === usersRefreshStateRef.current) {
+                    setError(err?.message || 'Failed to load users');
+                }
+            } finally {
+                if (refreshId === usersRefreshStateRef.current) {
+                    setUsersRefreshing(false);
+                }
+            }
+        };
+        loadPage();
+    }, [currentPage]);
+
+    const totalPages = serverTotalPages;
     useEffect(() => {
         if (totalPages === 0) {
             if (currentPage !== 1) {
@@ -423,10 +553,8 @@ export default function UsersPage() {
         }
     }, [currentPage, totalPages]);
 
-    const paginatedUsers = filteredUsers.slice(
-        (currentPage - 1) * ITEMS_PER_PAGE,
-        currentPage * ITEMS_PER_PAGE
-    );
+    const paginatedUsers = filteredUsers;
+    const showUsersRefreshState = activeSection !== 'ADMIN_REQUESTS' && usersRefreshing;
 
     const handleWalletAdjust = async (user: User) => {
         const rawAmount = creditAmounts[user.id];
@@ -549,6 +677,11 @@ export default function UsersPage() {
                     ...u,
                     identity: nextIdentity,
                     billingType: nextIdentity === 'TRANSPORTER' ? (billingType || 'BULK') : null,
+                    walletType:
+                        nextIdentity === 'CUSTOMER' ||
+                        (nextIdentity === 'TRANSPORTER' && (billingType || 'BULK') === 'BULK')
+                            ? 'PAID'
+                            : u.walletType,
                 } : u
             )));
             toast.success('User identity updated');
@@ -587,6 +720,10 @@ export default function UsersPage() {
             identity: (user.identity as AdminCreateUserPayload['identity']) || 'BUYER',
             billingType: user.billingType === 'PER_POLICY' ? 'PER_POLICY' : 'BULK',
             unionMember: String(user.unionMember || '').toUpperCase() === 'GCA',
+            insurancePremiumPerLakh: String(user.insurancePremiumPerLakh ?? 200),
+            originalInsurancePremiumPerLakh: Number(user.insurancePremiumPerLakh ?? 200),
+            insurancePremiumRateVersion: Number(user.insurancePremiumRateVersion || 1),
+            premiumChangeReason: '',
         });
         setEditUserModalOpen(true);
     };
@@ -704,6 +841,13 @@ export default function UsersPage() {
 
                 createdUser.isLedgerMasterVerified = true;
                 createdUser.canonicalUserId = createdUser.id;
+                if (
+                    createdUser.identity !== 'CUSTOMER' &&
+                    !(createdUser.identity === 'TRANSPORTER' && createdUser.billingType !== 'PER_POLICY')
+                ) {
+                    createdUser.walletType = 'UNPAID';
+                    createdUser.walletBalance = 0;
+                }
             }
 
             if (
@@ -785,6 +929,22 @@ export default function UsersPage() {
             return;
         }
 
+        const nextPremiumPerLakh = Number(editUserForm.insurancePremiumPerLakh);
+        const premiumChanged =
+            isFullAdmin &&
+            nextPremiumPerLakh !== editUserForm.originalInsurancePremiumPerLakh;
+        if (
+            isFullAdmin &&
+            (!Number.isFinite(nextPremiumPerLakh) || nextPremiumPerLakh <= 0)
+        ) {
+            toast.error('Premium per ₹1 lakh must be a positive amount');
+            return;
+        }
+        if (premiumChanged && !editUserForm.premiumChangeReason.trim()) {
+            toast.error('Please add a reason for the premium rate change');
+            return;
+        }
+
         setEditUserLoading(true);
         try {
             const payload: AdminUpdateUserPayload = {
@@ -807,31 +967,77 @@ export default function UsersPage() {
             }
             const updatedData = response.data;
 
-            setAllUsers((prev) =>
-                prev.map((user) =>
-                    user.id === editUserForm.id
+            let premiumUpdate = null;
+            if (premiumChanged) {
+                const premiumResponse = await adminApi.updateUserInsurancePremium(
+                    editUserForm.id,
+                    {
+                        premiumPerLakh: nextPremiumPerLakh,
+                        reason: editUserForm.premiumChangeReason.trim(),
+                        expectedVersion: editUserForm.insurancePremiumRateVersion,
+                    },
+                );
+                if (!premiumResponse.success || !premiumResponse.data) {
+                    toast.error(
+                        premiumResponse.message ||
+                        'User details were saved, but the premium rate was not updated',
+                    );
+                    return;
+                }
+                premiumUpdate = premiumResponse.data;
+            }
+
+            const mergeUpdatedUser = (user: User): User => {
+                const isProfileUser = user.id === editUserForm.id;
+                const isPremiumUser = Boolean(
+                    premiumUpdate &&
+                    (user.id === premiumUpdate.userId ||
+                        user.id === premiumUpdate.canonicalUserId ||
+                        user.id === editUserForm.id),
+                );
+                if (!isProfileUser && !isPremiumUser) return user;
+
+                return {
+                    ...user,
+                    ...(isProfileUser ? updatedData : {}),
+                    ...(isPremiumUser && premiumUpdate
                         ? {
-                            ...user,
-                            ...updatedData,
-                            id: String(updatedData.id || user.id),
-                            canonicalUserId: String(
-                                updatedData.canonicalUserId || user.canonicalUserId || user.id,
-                            ),
-                            secondaryMobileNumber:
-                                updatedData.secondaryMobileNumber ?? null,
-                            aliasNames: Array.isArray(updatedData.aliasNames)
-                                ? updatedData.aliasNames
-                                : user.aliasNames,
-                            aliasPhones: Array.isArray(updatedData.aliasPhones)
-                                ? updatedData.aliasPhones
-                                : user.aliasPhones,
+                            insurancePremiumPerLakh:
+                                premiumUpdate.insurancePremiumPerLakh,
+                            insurancePremiumRateVersion:
+                                premiumUpdate.insurancePremiumRateVersion,
                         }
-                        : user,
-                ),
-            );
+                        : {}),
+                    id: String(isProfileUser ? updatedData.id || user.id : user.id),
+                    canonicalUserId: String(
+                        premiumUpdate?.canonicalUserId ||
+                        updatedData.canonicalUserId ||
+                        user.canonicalUserId ||
+                        user.id,
+                    ),
+                    secondaryMobileNumber: isProfileUser
+                        ? updatedData.secondaryMobileNumber ?? null
+                        : user.secondaryMobileNumber,
+                    aliasNames:
+                        isProfileUser && Array.isArray(updatedData.aliasNames)
+                            ? updatedData.aliasNames
+                            : user.aliasNames,
+                    aliasPhones:
+                        isProfileUser && Array.isArray(updatedData.aliasPhones)
+                            ? updatedData.aliasPhones
+                            : user.aliasPhones,
+                };
+            };
+
+            setAllUsers((prev) => prev.map(mergeUpdatedUser));
+            setFilteredUsers((prev) => prev.map(mergeUpdatedUser));
 
             closeEditUserModal();
-            toast.success('User details updated successfully');
+            toast.success(
+                premiumChanged
+                    ? 'User details and future invoice premium rate updated'
+                    : 'User details updated successfully',
+            );
         } catch (err: any) {
             toast.error(err?.message || 'Failed to update user');
         } finally {
@@ -898,6 +1104,140 @@ export default function UsersPage() {
         }
     };
 
+    const handleExportWalletLogs = async (user: User) => {
+        if (!user?.id || exportingWalletByUser[user.id]) return;
+        setExportingWalletByUser((prev) => ({ ...prev, [user.id]: true }));
+        try {
+            const blob = await adminApi.exportAdminUserWalletStatement(user.id);
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            const safeName =
+                (user.name || 'user').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') ||
+                'user';
+            link.href = url;
+            link.download = `wallet-logs-${safeName}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+            document.body.appendChild(link);
+            link.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(link);
+            toast.success('Wallet logs exported');
+        } catch (err: any) {
+            toast.error(err?.response?.data?.message || err?.message || 'Failed to export wallet logs');
+        } finally {
+            setExportingWalletByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
+    };
+
+    const handleExportUnpaidWalletReport = async () => {
+        if (exportingUnpaidWalletReport) return;
+        setExportingUnpaidWalletReport(true);
+        try {
+            const blob = await adminApi.exportUnpaidWalletPaymentPendingReport();
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `unpaid-wallet-payment-pending-report-${new Date().toISOString().slice(0, 10)}.xlsx`;
+            document.body.appendChild(link);
+            link.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(link);
+            toast.success('Unpaid wallet report exported');
+        } catch (err: any) {
+            toast.error(err?.response?.data?.message || err?.message || 'Failed to export unpaid wallet report');
+        } finally {
+            setExportingUnpaidWalletReport(false);
+        }
+    };
+
+    const handleExportUsers = async () => {
+        if (activeSection === 'ADMIN_REQUESTS') return;
+        if (exportingUsers) return;
+
+        setExportingUsers(true);
+        try {
+            const exportLimit = 100;
+            let exportPage = 1;
+            let exportTotalPages = 1;
+            const usersToExport: User[] = [];
+
+            do {
+                const response = await adminApi.getAdminUsersPaginated({
+                    page: exportPage,
+                    limit: exportLimit,
+                    search: debouncedSearch,
+                    section: activeSection,
+                });
+
+                if (!response.success) {
+                    throw new Error(response.message || 'Failed to export users');
+                }
+
+                const users = (response.data || []).map((u: any) => ({
+                    ...u,
+                    id: String(u.id || u._id || ''),
+                    canonicalUserId: String(u.canonicalUserId || u.id || ''),
+                    isLedgerMasterVerified: Boolean(u.isLedgerMasterVerified),
+                    duplicateCount: Number(u.duplicateCount || 0),
+                    aliasNames: Array.isArray(u.aliasNames) ? u.aliasNames : [],
+                    aliasPhones: Array.isArray(u.aliasPhones) ? u.aliasPhones : [],
+                })) as User[];
+
+                usersToExport.push(...users);
+                exportTotalPages = Math.max(1, Number(response.totalPages) || 1);
+                exportPage += 1;
+            } while (exportPage <= exportTotalPages);
+
+            if (usersToExport.length === 0) {
+                toast.info('No users to export');
+                return;
+            }
+
+            const rows = usersToExport.map((user) => ({
+                Name: user.name || '',
+                'Mobile Number': formatIndianMobile(user.mobileNumber),
+                'Alternate Number': user.secondaryMobileNumber
+                    ? formatIndianMobile(user.secondaryMobileNumber)
+                    : '',
+                State: user.state || '',
+                'Registered Date': formatDate(user.createdAt),
+                Identity: user.identity || '',
+                'Billing Type':
+                    user.identity === 'TRANSPORTER'
+                        ? user.billingType === 'PER_POLICY'
+                            ? 'Per Policy'
+                            : 'Bulk'
+                        : '',
+                'Wallet Type': user.walletType || '',
+                'Wallet Balance': Number(user.walletBalance || 0).toFixed(2),
+                'Verified Master': user.isLedgerMasterVerified ? 'Yes' : 'No',
+                'Merged User': user.isMerged ? 'Yes' : 'No',
+                'Master User': user.canonicalMasterName || '',
+                'GCA Member': String(user.unionMember || '').toUpperCase() === 'GCA' ? 'Yes' : 'No',
+            }));
+
+            const headers = Object.keys(rows[0]);
+            const csv = [headers, ...rows.map((row) => headers.map((header) => row[header as keyof typeof row]))]
+                .map((row) => row.map(escapeCsvCell).join(','))
+                .join('\n');
+            const blob = new Blob([`\ufeff${csv}`], {
+                type: 'text/csv;charset=utf-8;',
+            });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `users-${sectionTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(link);
+            toast.success(`Exported ${usersToExport.length} ${sectionTitle.toLowerCase()}`);
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to export users');
+        } finally {
+            setExportingUsers(false);
+        }
+    };
+
     const handleImpersonateUser = async (user: User) => {
         if (!user?.id) return;
         setImpersonatingByUser((prev) => ({ ...prev, [user.id]: true }));
@@ -948,6 +1288,36 @@ export default function UsersPage() {
         }
     };
 
+    const handleEnableChannelPartner = async (user: User) => {
+        setChannelPartnerLoadingByUser((prev) => ({ ...prev, [user.id]: true }));
+        try {
+            const response = await adminApi.enableChannelPartnerForUser(user.id);
+            if (!response.success) {
+                toast.error(response.message || 'Failed to enable channel partner');
+                return;
+            }
+            toast.success('Channel partner enabled');
+            await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+        } finally {
+            setChannelPartnerLoadingByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
+    };
+
+    const handleSuspendChannelPartner = async (user: User) => {
+        setChannelPartnerLoadingByUser((prev) => ({ ...prev, [user.id]: true }));
+        try {
+            const response = await adminApi.disableChannelPartnerForUser(user.id);
+            if (!response.success) {
+                toast.error(response.message || 'Failed to suspend channel partner');
+                return;
+            }
+            toast.success('Channel partner suspended');
+            await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+        } finally {
+            setChannelPartnerLoadingByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
+    };
+
     const handleVerifyMaster = async (user: User) => {
         if (!user?.id) return;
         setVerifyingMasterByUser((prev) => ({ ...prev, [user.id]: true }));
@@ -959,7 +1329,8 @@ export default function UsersPage() {
             if (!response.success) {
                 throw new Error(response.message || 'Failed to verify master user');
             }
-            await loadAdminUsers();
+            await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+            loadAllUsersBackground();
             toast.success(`${user.name || 'User'} is now a verified master user`);
         } catch (err: any) {
             toast.error(err?.message || 'Failed to verify master user');
@@ -979,7 +1350,8 @@ export default function UsersPage() {
             if (!response.success) {
                 throw new Error(response.message || 'Failed to unverify master user');
             }
-            await loadAdminUsers();
+            await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+            loadAllUsersBackground();
             toast.success(`${user.name || 'User'} is no longer a verified master user`);
         } catch (err: any) {
             toast.error(err?.message || 'Failed to unverify master user');
@@ -1019,7 +1391,8 @@ export default function UsersPage() {
             }
 
             setMergeTargetByUser((prev) => ({ ...prev, [user.id]: '' }));
-            await loadAdminUsers();
+            await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+            loadAllUsersBackground();
             toast.success(`${user.name || 'User'} merged into ${targetUser.name || 'verified master'}`);
         } catch (err: any) {
             toast.error(err?.message || 'Failed to merge user');
@@ -1039,7 +1412,8 @@ export default function UsersPage() {
             if (!response.success) {
                 throw new Error(response.message || 'Failed to unmerge user');
             }
-            await loadAdminUsers();
+            await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+            loadAllUsersBackground();
             toast.success(`${user.name || 'User'} was unmerged successfully`);
         } catch (err: any) {
             toast.error(err?.message || 'Failed to unmerge user');
@@ -1049,6 +1423,15 @@ export default function UsersPage() {
     };
 
     const openBulkMergeModal = (masterUser: User) => {
+        if (
+            !masterUser.isLedgerMasterVerified ||
+            masterUser.isMerged ||
+            masterUser.id !== masterUser.canonicalUserId
+        ) {
+            toast.error('Only an active verified master user can receive merged accounts');
+            return;
+        }
+
         setBulkMergeModalMaster(masterUser);
         setBulkMergeSearchTerm('');
         setBulkMergeSelectedUserIds([]);
@@ -1074,7 +1457,7 @@ export default function UsersPage() {
     };
 
     const toggleSelectAllBulkMergeCandidates = () => {
-        if (allBulkMergeCandidateIds.length === 0) {
+        if (!canSelectAllBulkMergeCandidates) {
             return;
         }
 
@@ -1088,8 +1471,13 @@ export default function UsersPage() {
     };
 
     const handleBulkMerge = async () => {
-        if (!bulkMergeModalMaster?.id) {
-            toast.error('Verified master user not found');
+        if (
+            !bulkMergeModalMaster?.id ||
+            !bulkMergeModalMaster.isLedgerMasterVerified ||
+            bulkMergeModalMaster.isMerged ||
+            bulkMergeModalMaster.id !== bulkMergeModalMaster.canonicalUserId
+        ) {
+            toast.error('The selected master user is no longer eligible for merging');
             return;
         }
 
@@ -1098,34 +1486,91 @@ export default function UsersPage() {
             return;
         }
 
+        const selectedSourceUsers = bulkMergeSelectedUserIds
+            .map((userId) => allUsers.find((user) => user.id === userId))
+            .filter((user): user is User => Boolean(user));
+        const invalidSourceUsers = selectedSourceUsers.filter(
+            (user) =>
+                user.id === bulkMergeModalMaster.id ||
+                user.isMerged ||
+                user.id !== user.canonicalUserId,
+        );
+
+        if (
+            selectedSourceUsers.length !== bulkMergeSelectedUserIds.length ||
+            invalidSourceUsers.length > 0
+        ) {
+            toast.error('One or more selected child users are no longer eligible. Refresh and review the selection.');
+            return;
+        }
+
         setBulkMergeLoading(true);
         try {
-            let mergedCount = 0;
+            const failedUsers: Array<{ id: string; message: string }> = [];
 
-            for (const sourceUserId of bulkMergeSelectedUserIds) {
-                const sourceUser = allUsers.find((user) => user.id === sourceUserId);
+            for (const sourceUser of selectedSourceUsers) {
+                let removedMasterStatus = false;
+
+                if (sourceUser.isLedgerMasterVerified) {
+                    const unverifyResponse = await adminApi.unverifyMasterUser(
+                        sourceUser.id,
+                        `Preparing duplicate account for merge into ${bulkMergeModalMaster.name || bulkMergeModalMaster.id}`,
+                    );
+
+                    if (!unverifyResponse.success) {
+                        failedUsers.push({
+                            id: sourceUser.id,
+                            message: unverifyResponse.message || `Could not prepare ${sourceUser.name || 'user'} for merging`,
+                        });
+                        continue;
+                    }
+
+                    removedMasterStatus = true;
+                }
+
                 const response = await adminApi.mergeUsers({
-                    sourceUserId,
+                    sourceUserId: sourceUser.id,
                     targetUserId: bulkMergeModalMaster.id,
                     reason: 'Bulk merge into verified master user',
-                    notes: `Merged ${sourceUser?.name || sourceUserId} into verified master ${bulkMergeModalMaster.name || bulkMergeModalMaster.id} from verified users modal`,
+                    notes: `Merged ${sourceUser.name || sourceUser.id} into verified master ${bulkMergeModalMaster.name || bulkMergeModalMaster.id} from admin users`,
                 });
 
                 if (!response.success) {
-                    throw new Error(
-                        response.message ||
-                            `Failed to merge ${sourceUser?.name || 'selected user'}`,
-                    );
-                }
+                    let failureMessage =
+                        response.message || `Failed to merge ${sourceUser.name || 'selected user'}`;
 
-                mergedCount += 1;
+                    if (removedMasterStatus) {
+                        const restoreResponse = await adminApi.verifyMasterUser(
+                            sourceUser.id,
+                            'Restored verified master status after failed merge',
+                        );
+                        if (!restoreResponse.success) {
+                            failureMessage += '; verified status could not be restored';
+                        }
+                    }
+
+                    failedUsers.push({
+                        id: sourceUser.id,
+                        message: failureMessage,
+                    });
+                }
             }
 
-            await loadAdminUsers();
-            toast.success(
-                `${mergedCount} user${mergedCount === 1 ? '' : 's'} merged into ${bulkMergeModalMaster.name || 'verified master'}`,
-            );
-            resetBulkMergeModalState();
+            await fetchPaginatedUsers(currentPage, debouncedSearch, activeSection);
+            await loadAllUsersBackground();
+
+            const mergedCount = selectedSourceUsers.length - failedUsers.length;
+            if (failedUsers.length > 0) {
+                setBulkMergeSelectedUserIds(failedUsers.map((user) => user.id));
+                toast.error(
+                    `${mergedCount} merged, ${failedUsers.length} failed. ${failedUsers[0].message}`,
+                );
+            } else {
+                toast.success(
+                    `${mergedCount} child account${mergedCount === 1 ? '' : 's'} merged into ${bulkMergeModalMaster.name || 'the master account'}`,
+                );
+                resetBulkMergeModalState();
+            }
         } catch (err: any) {
             toast.error(err?.message || 'Failed to merge selected users');
         } finally {
@@ -1147,13 +1592,43 @@ export default function UsersPage() {
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <h1 className="text-2xl font-semibold text-gray-900">{sectionTitle}</h1>
                     <div className="flex flex-row items-center gap-3 md:justify-end">
-                        <input
-                            type="text"
-                            placeholder={`Search ${sectionTitle.toLowerCase()} by Name or Mobile...`}
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="block min-w-0 flex-1 rounded-md border-gray-300 px-4 py-2 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm md:min-w-[320px] md:max-w-[420px] border"
-                        />
+                        <div className="relative min-w-0 flex-1 md:min-w-[320px] md:max-w-[420px]">
+                            <input
+                                type="text"
+                                placeholder={`Search ${sectionTitle.toLowerCase()} by Name or Mobile...`}
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="block w-full rounded-md border border-gray-300 px-4 py-2 pr-28 shadow-sm transition-colors focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                            />
+                            {showUsersRefreshState ? (
+                                <div
+                                    role="status"
+                                    aria-live="polite"
+                                    className="pointer-events-none absolute inset-y-0 right-3 flex items-center gap-2 text-xs font-medium text-gray-500"
+                                >
+                                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-300 border-t-green-600" />
+                                    Searching
+                                </div>
+                            ) : null}
+                        </div>
+                        {activeSection !== 'ADMIN_REQUESTS' ? (
+                            <button
+                                onClick={handleExportUsers}
+                                disabled={exportingUsers}
+                                className="whitespace-nowrap rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {exportingUsers ? 'Exporting...' : 'Export Excel'}
+                            </button>
+                        ) : null}
+                        {activeSection === 'UNPAID_WALLETS' ? (
+                            <button
+                                onClick={handleExportUnpaidWalletReport}
+                                disabled={exportingUnpaidWalletReport}
+                                className="whitespace-nowrap rounded-md bg-slate-800 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {exportingUnpaidWalletReport ? 'Exporting...' : 'Pending Report'}
+                            </button>
+                        ) : null}
                         {activeSection !== 'ADMIN_REQUESTS' ? (
                             <button
                                 onClick={() => setCreateUserModalOpen(true)}
@@ -1206,6 +1681,16 @@ export default function UsersPage() {
                     >
                         Verified Users
                     </button>
+                    <button
+                        onClick={() => setActiveSection('UNPAID_WALLETS')}
+                        className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+                            activeSection === 'UNPAID_WALLETS'
+                                ? 'bg-green-600 text-white'
+                                : 'bg-white text-gray-700 border border-gray-300'
+                        }`}
+                    >
+                        Unpaid Wallet Users
+                    </button>
                     {isFullAdmin ? (
                         <button
                             onClick={() => setActiveSection('ADMIN_REQUESTS')}
@@ -1256,17 +1741,20 @@ export default function UsersPage() {
                                             <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                 Registered Date
                                             </th>
-                                            {!showWalletColumns && (
+                                            {showIdentityColumn && (
                                                 <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                     Identity
                                                 </th>
                                             )}
-                                            {!showWalletColumns && (
+                                            <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                Invoice Defaults
+                                            </th>
+                                            {showBillingAndConvertColumns && (
                                                 <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                     Billing Type
                                                 </th>
                                             )}
-                                            {!showWalletColumns && (
+                                            {showBillingAndConvertColumns && (
                                                 <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                     Convert
                                                 </th>
@@ -1281,20 +1769,14 @@ export default function UsersPage() {
                                                     Update Wallet
                                                 </th>
                                             )}
-                                            <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                                                GCA Member
-                                            </th>
-                                            <th scope="col" className="px-2 py-3.5 text-left text-sm font-semibold text-gray-900">
-                                                Verify Master
-                                            </th>
-                                            <th scope="col" className="px-2 py-3.5 text-left text-sm font-semibold text-gray-900">
-                                                Merge Into Master
-                                            </th>
-                                            {isVerifiedSection && (
+                                            {showUserManagementColumns && (
                                                 <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                                                    Merged Users
+                                                    GCA Member
                                                 </th>
                                             )}
+                                            <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                                                Channel Partner
+                                            </th>
                                             <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                                                 Access
                                             </th>
@@ -1309,9 +1791,6 @@ export default function UsersPage() {
                                             </tr>
                                         ) : (
                                             paginatedUsers.map((user) => {
-                                                const suggestedMaster = getSuggestedMaster(user);
-                                                const selectedMergeTarget =
-                                                    mergeTargetByUser[user.id] || suggestedMaster?.user.id || '';
                                                 const mergedUsersForMaster =
                                                     mergedUsersByMasterId.get(user.id) || [];
 
@@ -1330,16 +1809,6 @@ export default function UsersPage() {
                                                                 </span>
                                                             ) : null}
                                                         </div>
-                                                        {user.duplicateCount > 0 ? (
-                                                            <p className="mt-1 text-xs font-medium text-amber-600">
-                                                                {user.duplicateCount} pending duplicate{user.duplicateCount > 1 ? 's' : ''}
-                                                            </p>
-                                                        ) : null}
-                                                        {user.isMerged ? (
-                                                            <p className="mt-1 text-xs font-medium text-rose-600">
-                                                                Merged into {user.canonicalMasterName || 'master user'}
-                                                            </p>
-                                                        ) : null}
                                                     </td>
                                                     {/* Mobile Number */}
                                                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
@@ -1358,19 +1827,31 @@ export default function UsersPage() {
                                                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                         {formatDate(user.createdAt)}
                                                     </td>
-                                                    {!showWalletColumns && (
+                                                    {showIdentityColumn && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-gray-700">
                                                             {user.identity || 'N/A'}
                                                         </td>
                                                     )}
-                                                    {!showWalletColumns && (
+                                                    <td className="min-w-[180px] px-3 py-4 text-sm text-gray-500">
+                                                        {invoiceDefaultsSummary(user) ? (
+                                                            <div>
+                                                                <div className="font-medium text-gray-700">{invoiceDefaultsSummary(user)}</div>
+                                                                <div className="text-xs text-gray-400">
+                                                                    {user.invoiceProfile?.buyerName || user.invoiceProfile?.supplierName || ''}
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            'N/A'
+                                                        )}
+                                                    </td>
+                                                    {showBillingAndConvertColumns && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                             {user.identity === 'TRANSPORTER'
                                                                 ? (user.billingType === 'PER_POLICY' ? 'Per Policy' : 'Bulk')
                                                                 : '-'}
                                                         </td>
                                                     )}
-                                                    {!showWalletColumns && (
+                                                    {showBillingAndConvertColumns && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                             <div className="flex items-center gap-2">
                                                                 <button
@@ -1392,9 +1873,18 @@ export default function UsersPage() {
                                                     )}
                                                     {showWalletColumns && (
                                                         <td className="whitespace-nowrap px-3 py-4 text-sm font-semibold text-gray-700">
-                                                            {user.identity === 'TRANSPORTER' && user.billingType === 'PER_POLICY'
+                                                            {activeSection === 'TRANSPORTER' && user.identity === 'TRANSPORTER' && user.billingType === 'PER_POLICY'
                                                                 ? 'Per Policy'
-                                                                : `Rs ${Number(user.walletBalance || 0).toFixed(2)}`}
+                                                                : (
+                                                                    <div>
+                                                                        <span>Rs {Number(user.walletBalance || 0).toFixed(2)}</span>
+                                                                        {user.walletType === 'UNPAID' ? (
+                                                                            <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-slate-600">
+                                                                                Unpaid
+                                                                            </span>
+                                                                        ) : null}
+                                                                    </div>
+                                                                )}
                                                         </td>
                                                     )}
                                                     {showWalletColumns && (
@@ -1403,12 +1893,12 @@ export default function UsersPage() {
                                                                 <span className="text-xs font-medium text-slate-500">
                                                                     Uses master user ledger
                                                                 </span>
-                                                            ) : user.identity === 'TRANSPORTER' && user.billingType === 'PER_POLICY' ? (
+                                                            ) : activeSection === 'TRANSPORTER' && user.identity === 'TRANSPORTER' && user.billingType === 'PER_POLICY' ? (
                                                                 <span className="text-xs font-medium text-gray-500">
                                                                     Wallet not applicable for per-policy transporter
                                                                 </span>
                                                             ) : (
-                                                                <div className="grid min-w-max grid-cols-[7rem_8.5rem_10rem_max-content_max-content_max-content_max-content] items-center gap-2">
+                                                                <div className="grid min-w-max grid-cols-[7rem_8.5rem_10rem_max-content_max-content_max-content_max-content_max-content] items-center gap-2">
                                                                     <input
                                                                         type="number"
                                                                         step="0.01"
@@ -1481,180 +1971,115 @@ export default function UsersPage() {
                                                                     >
                                                                         Logs
                                                                     </button>
+                                                                    <button
+                                                                        onClick={() => handleExportWalletLogs(user)}
+                                                                        disabled={exportingWalletByUser[user.id]}
+                                                                        className="rounded-md bg-blue-700 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
+                                                                    >
+                                                                        {exportingWalletByUser[user.id] ? 'Exporting...' : 'Export'}
+                                                                    </button>
                                                                 </div>
                                                             )}
                                                         </td>
                                                     )}
-                                                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 align-top">
-                                                        {(() => {
-                                                            const isGcaMember =
-                                                                String(user.unionMember || '').toUpperCase() === 'GCA';
-                                                            const isUpdating = Boolean(updatingUnionByUser[user.id]);
+                                                    {showUserManagementColumns && (
+                                                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 align-top">
+                                                            {(() => {
+                                                                const isGcaMember =
+                                                                    String(user.unionMember || '').toUpperCase() === 'GCA';
+                                                                const isUpdating = Boolean(updatingUnionByUser[user.id]);
 
-                                                            return (
-                                                                <div className="inline-flex items-center gap-2">
-                                                                    <button
-                                                                        type="button"
-                                                                        disabled={isUpdating || isGcaMember}
-                                                                        onClick={() => handleToggleUnionMember(user, true)}
-                                                                        title="Mark as GCA member"
-                                                                        className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-sm font-bold transition-colors ${
-                                                                            isGcaMember
-                                                                                ? 'cursor-not-allowed border-emerald-200 bg-emerald-500 text-white'
-                                                                                : 'border-slate-300 bg-white text-emerald-600 hover:border-emerald-300 hover:bg-emerald-50'
-                                                                        } disabled:opacity-60`}
-                                                                    >
-                                                                        ✓
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        disabled={isUpdating || !isGcaMember}
-                                                                        onClick={() => handleToggleUnionMember(user, false)}
-                                                                        title="Remove GCA membership"
-                                                                        className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-sm font-bold transition-colors ${
-                                                                            isGcaMember
-                                                                                ? 'border-slate-300 bg-white text-rose-600 hover:border-rose-300 hover:bg-rose-50'
-                                                                                : 'cursor-not-allowed border-rose-200 bg-rose-500 text-white'
-                                                                        } disabled:opacity-60`}
-                                                                    >
-                                                                        ✕
-                                                                    </button>
-                                                                    <span
-                                                                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                                                                            isGcaMember
-                                                                                ? 'bg-emerald-50 text-emerald-700'
-                                                                                : 'bg-slate-100 text-slate-500'
-                                                                        }`}
-                                                                    >
-                                                                        {isUpdating
-                                                                            ? 'Saving...'
-                                                                            : isGcaMember
-                                                                                ? 'GCA'
-                                                                                : 'Not set'}
-                                                                    </span>
-                                                                </div>
-                                                            );
-                                                        })()}
-                                                    </td>
-                                                    <td className="whitespace-nowrap px-2 py-4 text-sm text-gray-500 align-top">
-                                                        {user.isMerged ? (
-                                                            <span className="text-xs font-medium text-slate-500">Merged child</span>
-                                                        ) : user.isLedgerMasterVerified ? (
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700">
-                                                                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-[11px] font-bold text-white">✓</span>
-                                                                    Verified
-                                                                </span>
-                                                                {isVerifiedSection ? (
-                                                                    <button
-                                                                        onClick={() => handleUnverifyMaster(user)}
-                                                                        disabled={unverifyingMasterByUser[user.id] || mergedUsersForMaster.length > 0}
-                                                                        title={
-                                                                            mergedUsersForMaster.length > 0
-                                                                                ? 'Unmerge all linked users before unverifying'
-                                                                                : 'Remove verified master status'
-                                                                        }
-                                                                        className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
-                                                                    >
-                                                                        {unverifyingMasterByUser[user.id] ? 'Unverifying...' : 'Unverify'}
-                                                                    </button>
-                                                                ) : null}
-                                                            </div>
-                                                        ) : (
-                                                            <button
-                                                                onClick={() => handleVerifyMaster(user)}
-                                                                disabled={verifyingMasterByUser[user.id] || user.id !== user.canonicalUserId}
-                                                                className="rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-60"
-                                                            >
-                                                                {verifyingMasterByUser[user.id] ? 'Verifying...' : 'Verify'}
-                                                            </button>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-2 py-4 text-sm text-gray-500 align-top">
-                                                        {user.isMerged ? (
-                                                            <div className="min-w-[14rem]">
-                                                                <p className="mb-2 text-xs font-medium text-rose-600">
-                                                                    Linked to {user.canonicalMasterName || 'master user'}.
-                                                                </p>
-                                                                <button
-                                                                    onClick={() => handleUnmergeUser(user)}
-                                                                    disabled={unmergingByUser[user.id]}
-                                                                    className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
-                                                                >
-                                                                    {unmergingByUser[user.id] ? 'Unmerging...' : 'Unmerge'}
-                                                                </button>
-                                                            </div>
-                                                        ) : user.isLedgerMasterVerified ? (
-                                                            <div className="min-w-[12rem]">
-                                                                <p className="mb-2 text-xs font-medium text-slate-500">
-                                                                    Master user
-                                                                </p>
-                                                                <button
-                                                                    onClick={() => openBulkMergeModal(user)}
-                                                                    className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700"
-                                                                >
-                                                                    Merge Users
-                                                                </button>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="min-w-[14rem]">
-                                                                {suggestedMaster ? (
-                                                                    <p className="mb-2 text-xs font-medium text-amber-700">
-                                                                        Suggested: {suggestedMaster.user.name || 'Master user'} ({suggestedMaster.score}) - {suggestedMaster.reason}
-                                                                    </p>
-                                                                ) : (
-                                                                    <p className="mb-2 text-xs text-slate-400">
-                                                                        No strong suggestion. Select a verified master manually.
-                                                                    </p>
-                                                                )}
-                                                                <div className="flex items-center gap-2">
-                                                                <select
-                                                                    value={selectedMergeTarget}
-                                                                    onChange={(e) =>
-                                                                        setMergeTargetByUser((prev) => ({
-                                                                            ...prev,
-                                                                            [user.id]: e.target.value,
-                                                                        }))
-                                                                    }
-                                                                    className="w-32 rounded-md border border-gray-300 px-2 py-1 text-xs"
-                                                                >
-                                                                    <option value="">Select verified user</option>
-                                                                    {verifiedMasterUsers
-                                                                        .filter((master) => master.id !== user.id)
-                                                                        .map((master) => (
-                                                                            <option key={master.id} value={master.id}>
-                                                                                {master.name || 'User'} ({formatIndianMobile(master.mobileNumber)})
-                                                                            </option>
-                                                                        ))}
-                                                                </select>
-                                                                <button
-                                                                    onClick={() =>
-                                                                        handleManualMerge(user, selectedMergeTarget)
-                                                                    }
-                                                                    disabled={mergingByUser[user.id] || verifiedMasterUsers.length === 0}
-                                                                    className="rounded-md bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                                                                >
-                                                                    {mergingByUser[user.id] ? 'Merging...' : 'Merge'}
-                                                                </button>
-                                                            </div>
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    {isVerifiedSection && (
-                                                        <td className="px-3 py-4 text-sm text-gray-500">
-                                                            <div className="min-w-[12rem]">
-                                                                <p className="mb-2 text-xs font-medium text-slate-600">
-                                                                    {mergedUsersForMaster.length} merged user{mergedUsersForMaster.length === 1 ? '' : 's'}
-                                                                </p>
-                                                                <button
-                                                                    onClick={() => setMergedUsersModalMaster(user)}
-                                                                    className="rounded-md bg-slate-700 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
-                                                                >
-                                                                    View Merged Users
-                                                                </button>
-                                                            </div>
+                                                                return (
+                                                                    <div className="inline-flex items-center gap-2">
+                                                                        <button
+                                                                            type="button"
+                                                                            disabled={isUpdating || isGcaMember}
+                                                                            onClick={() => handleToggleUnionMember(user, true)}
+                                                                            title="Mark as GCA member"
+                                                                            className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-bold transition-colors ${
+                                                                                isGcaMember
+                                                                                    ? 'cursor-not-allowed border-emerald-200 bg-emerald-500 text-white'
+                                                                                    : 'border-slate-300 bg-white text-emerald-600 hover:border-emerald-300 hover:bg-emerald-50'
+                                                                            } disabled:opacity-60`}
+                                                                            >
+                                                                                &#10003;
+                                                                            </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            disabled={isUpdating || !isGcaMember}
+                                                                            onClick={() => handleToggleUnionMember(user, false)}
+                                                                            title="Remove GCA membership"
+                                                                            className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-bold transition-colors ${
+                                                                                isGcaMember
+                                                                                    ? 'border-slate-300 bg-white text-rose-600 hover:border-rose-300 hover:bg-rose-50'
+                                                                                    : 'cursor-not-allowed border-rose-200 bg-rose-500 text-white'
+                                                                            } disabled:opacity-60`}
+                                                                            >
+                                                                                &#10005;
+                                                                            </button>
+                                                                        <span
+                                                                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                                                                isGcaMember
+                                                                                    ? 'bg-emerald-50 text-emerald-700'
+                                                                                    : 'bg-slate-100 text-slate-500'
+                                                                            }`}
+                                                                        >
+                                                                            {isUpdating
+                                                                                ? 'Saving...'
+                                                                                : isGcaMember
+                                                                                    ? 'GCA'
+                                                                                    : 'Not set'}
+                                                                        </span>
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                         </td>
                                                     )}
+                                                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                                        <div className="flex min-w-[150px] flex-col gap-2">
+                                                            {user.channelPartnerStatus ? (
+                                                                <div>
+                                                                    <span
+                                                                        className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${
+                                                                            user.channelPartnerStatus === 'ACTIVE'
+                                                                                ? 'bg-emerald-50 text-emerald-700'
+                                                                                : user.channelPartnerStatus === 'PENDING'
+                                                                                    ? 'bg-amber-50 text-amber-700'
+                                                                                    : 'bg-rose-50 text-rose-700'
+                                                                        }`}
+                                                                    >
+                                                                        {user.channelPartnerStatus}
+                                                                    </span>
+                                                                    <p className="mt-1 text-xs font-medium text-slate-500">
+                                                                        {user.channelPartnerCode || 'Code pending'}
+                                                                    </p>
+                                                                </div>
+                                                            ) : null}
+                                                            {user.channelPartnerStatus === 'ACTIVE' ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleSuspendChannelPartner(user)}
+                                                                    disabled={channelPartnerLoadingByUser[user.id]}
+                                                                    className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                                                                >
+                                                                    {channelPartnerLoadingByUser[user.id] ? 'Saving...' : 'Suspend'}
+                                                                </button>
+                                                            ) : (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleEnableChannelPartner(user)}
+                                                                    disabled={channelPartnerLoadingByUser[user.id]}
+                                                                    className="rounded-md bg-violet-700 px-3 py-1 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-60"
+                                                                >
+                                                                    {channelPartnerLoadingByUser[user.id]
+                                                                        ? 'Saving...'
+                                                                        : user.channelPartnerStatus
+                                                                            ? 'Approve'
+                                                                            : 'Enable'}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </td>
                                                     <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                                                         <div className="flex items-center gap-2">
                                                             <button
@@ -1670,6 +2095,39 @@ export default function UsersPage() {
                                                             >
                                                                 {impersonatingByUser[user.id] ? 'Opening...' : 'Access Account'}
                                                             </button>
+                                                            {user.isLedgerMasterVerified ? (
+                                                                <>
+                                                                    <button
+                                                                        onClick={() => openBulkMergeModal(user)}
+                                                                        className="rounded-md bg-emerald-700 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-800"
+                                                                    >
+                                                                        Merge Users
+                                                                    </button>
+                                                                    {mergedUsersForMaster.length > 0 ? (
+                                                                        <button
+                                                                            onClick={() => setMergedUsersModalMaster(user)}
+                                                                            className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                                                        >
+                                                                            Merged ({mergedUsersForMaster.length})
+                                                                        </button>
+                                                                    ) : null}
+                                                                    <button
+                                                                        onClick={() => handleUnverifyMaster(user)}
+                                                                        disabled={unverifyingMasterByUser[user.id]}
+                                                                        className="rounded-md bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                                                                    >
+                                                                        {unverifyingMasterByUser[user.id] ? 'Removing...' : 'Unverify'}
+                                                                    </button>
+                                                                </>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => handleVerifyMaster(user)}
+                                                                    disabled={verifyingMasterByUser[user.id]}
+                                                                    className="rounded-md bg-sky-600 px-3 py-1 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-60"
+                                                                >
+                                                                    {verifyingMasterByUser[user.id] ? 'Verifying...' : 'Verify'}
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -1708,9 +2166,9 @@ export default function UsersPage() {
                                 <p className="text-sm text-gray-700">
                                     Showing <span className="font-medium">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to{' '}
                                     <span className="font-medium">
-                                        {Math.min(currentPage * ITEMS_PER_PAGE, filteredUsers.length)}
+                                        {Math.min(currentPage * ITEMS_PER_PAGE, serverTotal)}
                                     </span>{' '}
-                                    of <span className="font-medium">{filteredUsers.length}</span> results
+                                    of <span className="font-medium">{serverTotal}</span> results
                                 </p>
                             </div>
                             <div>
@@ -1744,7 +2202,7 @@ export default function UsersPage() {
 
             {walletLogsOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-3xl rounded-xl bg-white shadow-2xl">
+                    <div className="flex max-h-[92vh] w-[96vw] max-w-7xl flex-col rounded-xl bg-white shadow-2xl">
                         <div className="flex items-center justify-between border-b px-5 py-4">
                             <div>
                                 <h3 className="text-lg font-semibold text-gray-900">Wallet Logs</h3>
@@ -1752,15 +2210,26 @@ export default function UsersPage() {
                                     {walletLogUser?.name || 'User'} ({formatIndianMobile(walletLogUser?.mobileNumber)})
                                 </p>
                             </div>
-                            <button
-                                onClick={() => setWalletLogsOpen(false)}
-                                className="rounded-md border px-3 py-1 text-sm text-gray-600 hover:bg-gray-50"
-                            >
-                                Close
-                            </button>
+                            <div className="flex items-center gap-2">
+                                {walletLogUser ? (
+                                    <button
+                                        onClick={() => handleExportWalletLogs(walletLogUser)}
+                                        disabled={exportingWalletByUser[walletLogUser.id]}
+                                        className="rounded-md bg-blue-700 px-3 py-1 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
+                                    >
+                                        {exportingWalletByUser[walletLogUser.id] ? 'Exporting...' : 'Export Excel'}
+                                    </button>
+                                ) : null}
+                                <button
+                                    onClick={() => setWalletLogsOpen(false)}
+                                    className="rounded-md border px-3 py-1 text-sm text-gray-600 hover:bg-gray-50"
+                                >
+                                    Close
+                                </button>
+                            </div>
                         </div>
 
-                        <div className="max-h-[65vh] overflow-auto">
+                        <div className="flex-1 overflow-auto">
                             {walletLogsLoading ? (
                                 <div className="px-5 py-8 text-sm text-gray-500">Loading wallet logs...</div>
                             ) : walletLogs.length === 0 ? (
@@ -1771,7 +2240,16 @@ export default function UsersPage() {
                                         <tr>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Date</th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Narration</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Vehicle Number</th>
                                             <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Type</th>
+                                            <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Premium</th>
+                                            {showUnpaidWalletPaymentColumns ? (
+                                                <>
+                                                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Status</th>
+                                                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Paid</th>
+                                                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Pending</th>
+                                                </>
+                                            ) : null}
                                             <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Amount</th>
                                             <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700">Balance After</th>
                                         </tr>
@@ -1781,7 +2259,7 @@ export default function UsersPage() {
                                             <tr key={tx.id}>
                                                 <td className="px-4 py-3 text-xs text-gray-600">{formatDate(tx.createdAt)}</td>
                                                 <td className="px-4 py-3 text-sm text-gray-800">
-                                                    <p>{tx.narration || tx.type || '-'}</p>
+                                                    <p>{getCleanWalletNarration(tx)}</p>
                                                     {tx.remark ? (
                                                         <p className="mt-1 text-xs text-gray-500">{tx.remark}</p>
                                                     ) : null}
@@ -1796,11 +2274,36 @@ export default function UsersPage() {
                                                         </a>
                                                     ) : null}
                                                 </td>
+                                                <td className="px-4 py-3 text-xs font-medium text-gray-800">
+                                                    {tx.vehicleNumber || '-'}
+                                                </td>
                                                 <td className="px-4 py-3 text-xs">
                                                     <span className={`rounded-full px-2 py-1 font-semibold ${tx.direction === 'CREDIT' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                                                         {tx.direction}
                                                     </span>
                                                 </td>
+                                                <td className="px-4 py-3 text-right text-sm text-gray-700">
+                                                    {tx.invoicePremiumAmount !== undefined && tx.invoicePremiumAmount !== null
+                                                        ? `₹${Number(tx.invoicePremiumAmount || 0).toFixed(2)}`
+                                                        : '-'}
+                                                </td>
+                                                {showUnpaidWalletPaymentColumns ? (
+                                                    <>
+                                                        <td className="px-4 py-3 text-xs text-gray-700">
+                                                            {tx.invoicePaymentStatus || '-'}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right text-sm text-emerald-700">
+                                                            {tx.invoicePaidAmount !== undefined && tx.invoicePaidAmount !== null
+                                                                ? `₹${Number(tx.invoicePaidAmount || 0).toFixed(2)}`
+                                                                : '-'}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right text-sm text-rose-700">
+                                                            {tx.invoicePendingAmount !== undefined && tx.invoicePendingAmount !== null
+                                                                ? `₹${Number(tx.invoicePendingAmount || 0).toFixed(2)}`
+                                                                : '-'}
+                                                        </td>
+                                                    </>
+                                                ) : null}
                                                 <td className={`px-4 py-3 text-right text-sm font-semibold ${tx.direction === 'CREDIT' ? 'text-emerald-700' : 'text-rose-700'}`}>
                                                     {tx.direction === 'CREDIT' ? '+' : '-'}₹{Number(tx.amount || 0).toFixed(2)}
                                                 </td>
@@ -1817,37 +2320,40 @@ export default function UsersPage() {
 
             {mergedUsersModalMaster && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-4xl rounded-xl bg-white shadow-2xl">
+                    <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-white shadow-xl">
                         <div className="flex items-center justify-between border-b px-5 py-4">
-                            <div>
+                            <div className="flex min-w-0 items-center gap-3">
                                 <h3 className="text-lg font-semibold text-gray-900">Merged Users</h3>
-                                <p className="text-xs text-gray-500">
-                                    {mergedUsersModalMaster.name || 'Verified user'} ({formatIndianMobile(mergedUsersModalMaster.mobileNumber)})
-                                </p>
+                                <span className="rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                                    Master
+                                </span>
+                                <span className="truncate text-sm font-medium text-gray-800">
+                                    {mergedUsersModalMaster.name || 'Verified user'}
+                                </span>
                             </div>
                             <button
                                 onClick={() => setMergedUsersModalMaster(null)}
-                                className="rounded-md border px-3 py-1 text-sm text-gray-600 hover:bg-gray-50"
+                                aria-label="Close merged users"
+                                className="ml-3 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xl text-gray-500 hover:bg-gray-100"
                             >
-                                Close
+                                ×
                             </button>
                         </div>
 
-                        <div className="max-h-[65vh] overflow-auto">
+                        <div className="overflow-auto">
                             {(mergedUsersByMasterId.get(mergedUsersModalMaster.id) || []).length === 0 ? (
-                                <div className="px-5 py-8 text-sm text-gray-500">
-                                    No merged users are linked to this verified user yet.
+                                <div className="px-5 py-10 text-center text-sm text-gray-500">
+                                    No merged users
                                 </div>
                             ) : (
                                 <table className="min-w-full divide-y divide-gray-200">
-                                    <thead className="bg-gray-50">
+                                    <thead className="sticky top-0 bg-gray-50">
                                         <tr>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Name</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Mobile</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Identity</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">State</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Registered</th>
-                                            <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Access</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Name</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Mobile</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Identity</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">State</th>
+                                            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100 bg-white">
@@ -1865,17 +2371,23 @@ export default function UsersPage() {
                                                 <td className="px-4 py-3 text-sm text-gray-600">
                                                     {mergedUser.state || 'N/A'}
                                                 </td>
-                                                <td className="px-4 py-3 text-sm text-gray-600">
-                                                    {formatDate(mergedUser.createdAt)}
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-gray-600">
-                                                    <button
-                                                        onClick={() => handleImpersonateUser(mergedUser)}
-                                                        disabled={impersonatingByUser[mergedUser.id]}
-                                                        className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-                                                    >
-                                                        {impersonatingByUser[mergedUser.id] ? 'Opening...' : 'Access Account'}
-                                                    </button>
+                                                <td className="px-4 py-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            onClick={() => handleImpersonateUser(mergedUser)}
+                                                            disabled={impersonatingByUser[mergedUser.id]}
+                                                            className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                                                        >
+                                                            {impersonatingByUser[mergedUser.id] ? 'Opening...' : 'Access'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleUnmergeUser(mergedUser)}
+                                                            disabled={unmergingByUser[mergedUser.id]}
+                                                            className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                                                        >
+                                                            {unmergingByUser[mergedUser.id] ? 'Unmerging...' : 'Unmerge'}
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -1889,20 +2401,27 @@ export default function UsersPage() {
 
             {bulkMergeModalMaster && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-5xl rounded-xl bg-white shadow-2xl">
+                    <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-lg bg-white shadow-xl">
                         <div className="flex items-center justify-between border-b px-5 py-4">
-                            <div>
-                                <h3 className="text-lg font-semibold text-gray-900">Merge Into Master</h3>
-                                <p className="text-xs text-gray-500">
-                                    {bulkMergeModalMaster.name || 'Verified user'} ({formatIndianMobile(bulkMergeModalMaster.mobileNumber)})
-                                </p>
+                            <div className="flex min-w-0 items-center gap-3">
+                                <h3 className="text-lg font-semibold text-gray-900">Merge Users</h3>
+                                <span className="rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                                    Master
+                                </span>
+                                <span className="truncate text-sm font-medium text-gray-800">
+                                    {bulkMergeModalMaster.name || 'Verified user'}
+                                </span>
+                                <span className="hidden text-sm text-gray-500 sm:inline">
+                                    {formatIndianMobile(bulkMergeModalMaster.mobileNumber)}
+                                </span>
                             </div>
                             <button
                                 onClick={closeBulkMergeModal}
                                 disabled={bulkMergeLoading}
-                                className="rounded-md border px-3 py-1 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                                aria-label="Close merge users"
+                                className="ml-3 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xl text-gray-500 hover:bg-gray-100 disabled:opacity-50"
                             >
-                                Close
+                                ×
                             </button>
                         </div>
 
@@ -1910,62 +2429,72 @@ export default function UsersPage() {
                             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                                 <input
                                     type="text"
-                                    placeholder="Search users by name, mobile, alternate number, or state"
+                                    placeholder="Search by name, mobile, alternate number, or state"
                                     value={bulkMergeSearchTerm}
                                     onChange={(e) => setBulkMergeSearchTerm(e.target.value)}
-                                    className="w-full rounded-md border border-gray-300 px-4 py-2 text-sm md:max-w-md"
+                                    disabled={bulkMergeLoading}
+                                    className="w-full rounded-md border border-gray-300 px-4 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:bg-gray-100 md:max-w-lg"
                                 />
-                                <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-4">
                                     <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
                                         <input
                                             type="checkbox"
                                             checked={isAllBulkMergeSelected}
                                             onChange={toggleSelectAllBulkMergeCandidates}
-                                            className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                            disabled={bulkMergeLoading || !canSelectAllBulkMergeCandidates}
+                                            title={
+                                                canSelectAllBulkMergeCandidates
+                                                    ? 'Select every user in these search results'
+                                                    : 'Enter at least 2 search characters and narrow the results to 50 or fewer'
+                                            }
+                                            className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                                         />
-                                        Select all
+                                        Select results
                                     </label>
-                                    <span className="text-sm text-gray-500">
+                                    <span className="text-sm font-medium text-gray-600">
                                         {bulkMergeSelectedUserIds.length} selected
                                     </span>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="max-h-[60vh] overflow-auto">
+                        <div className="overflow-auto">
                             <table className="min-w-full divide-y divide-gray-200">
                                 <thead className="sticky top-0 bg-gray-50">
                                     <tr>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Select</th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Name</th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Mobile</th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Alternate</th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">State</th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Identity</th>
-                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700">Suggestion</th>
+                                        <th className="w-12 px-4 py-3">
+                                            <span className="sr-only">Select</span>
+                                        </th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Name</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Mobile</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">Alternate</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">State</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 bg-white">
                                     {bulkMergeCandidates.length === 0 ? (
                                         <tr>
-                                            <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-500">
-                                                No mergeable users found for this search.
+                                            <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-500">
+                                                No users found
                                             </td>
                                         </tr>
                                     ) : (
                                         bulkMergeCandidates.map((candidate) => {
-                                            const suggestedMaster = getSuggestedMaster(candidate);
-                                            const isSuggestedForThisMaster =
-                                                suggestedMaster?.user.id === bulkMergeModalMaster.id;
+                                            const isSelected = bulkMergeSelectedUserIds.includes(candidate.id);
 
                                             return (
-                                                <tr key={candidate.id}>
-                                                    <td className="px-4 py-3 text-sm text-gray-700">
+                                                <tr
+                                                    key={candidate.id}
+                                                    className={isSelected ? 'bg-emerald-50/70' : undefined}
+                                                >
+                                                    <td className="px-4 py-3">
                                                         <input
                                                             type="checkbox"
-                                                            checked={bulkMergeSelectedUserIds.includes(candidate.id)}
+                                                            checked={isSelected}
                                                             onChange={() => toggleBulkMergeSelection(candidate.id)}
-                                                            className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                                                            disabled={bulkMergeLoading}
+                                                            aria-label={`Select ${candidate.name || 'user'}`}
+                                                            className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
                                                         />
                                                     </td>
                                                     <td className="px-4 py-3 text-sm font-medium text-gray-900">
@@ -1982,18 +2511,6 @@ export default function UsersPage() {
                                                     <td className="px-4 py-3 text-sm text-gray-600">
                                                         {candidate.state || 'N/A'}
                                                     </td>
-                                                    <td className="px-4 py-3 text-sm text-gray-600">
-                                                        {candidate.identity || 'N/A'}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-sm text-gray-600">
-                                                        {isSuggestedForThisMaster ? (
-                                                            <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700">
-                                                                Suggested match
-                                                            </span>
-                                                        ) : (
-                                                            <span className="text-xs text-gray-400">Manual selection</span>
-                                                        )}
-                                                    </td>
                                                 </tr>
                                             );
                                         })
@@ -2002,28 +2519,23 @@ export default function UsersPage() {
                             </table>
                         </div>
 
-                        <div className="flex items-center justify-between border-t px-5 py-4">
-                            <p className="text-sm text-gray-500">
-                                Selected users will be merged into this verified master user.
-                            </p>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={closeBulkMergeModal}
-                                    disabled={bulkMergeLoading}
-                                    className="rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleBulkMerge}
-                                    disabled={bulkMergeLoading || bulkMergeSelectedUserIds.length === 0}
-                                    className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                                >
-                                    {bulkMergeLoading
-                                        ? 'Merging...'
-                                        : `Merge Selected (${bulkMergeSelectedUserIds.length})`}
-                                </button>
-                            </div>
+                        <div className="flex justify-end gap-2 border-t bg-gray-50 px-5 py-4">
+                            <button
+                                onClick={closeBulkMergeModal}
+                                disabled={bulkMergeLoading}
+                                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleBulkMerge}
+                                disabled={bulkMergeLoading || bulkMergeSelectedUserIds.length === 0}
+                                className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {bulkMergeLoading
+                                    ? 'Merging...'
+                                    : `Merge selected (${bulkMergeSelectedUserIds.length})`}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -2218,27 +2730,6 @@ export default function UsersPage() {
                                 </label>
                             </div>
 
-                            <div className="sm:col-span-2">
-                                <label className="flex items-start gap-3 rounded-md border px-4 py-3 text-sm text-gray-700">
-                                    <input
-                                        type="checkbox"
-                                        checked={createUserForm.verifyAsMaster}
-                                        onChange={(e) =>
-                                            setCreateUserForm((prev) => ({
-                                                ...prev,
-                                                verifyAsMaster: e.target.checked,
-                                            }))
-                                        }
-                                        className="mt-1"
-                                    />
-                                    <div>
-                                        <p className="font-medium text-gray-900">Verify user</p>
-                                        <p className="text-xs text-gray-500">
-                                            The newly created user will be added as a verified user and will show the blue tick.
-                                        </p>
-                                    </div>
-                                </label>
-                            </div>
                         </div>
 
                         <div className="flex justify-end gap-3 border-t px-5 py-4">
@@ -2263,11 +2754,11 @@ export default function UsersPage() {
 
             {editUserModalOpen && editUserForm && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl">
+                    <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl">
                         <div className="border-b px-5 py-4">
                             <h3 className="text-lg font-semibold text-gray-900">Edit User Details</h3>
                             <p className="mt-1 text-sm text-gray-500">
-                                Update name, role, mobile number, alternate number, and state from the dashboard.
+                                Update profile details and the pricing used for this user's future invoices.
                             </p>
                         </div>
 
@@ -2406,6 +2897,81 @@ export default function UsersPage() {
                                         </label>
                                     </div>
                                 </div>
+                            ) : null}
+
+                            {isFullAdmin ? (
+                                <>
+                                    <div>
+                                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                                            Premium per ₹1 lakh
+                                        </label>
+                                        <div className="relative">
+                                            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-500">
+                                                ₹
+                                            </span>
+                                            <input
+                                                type="number"
+                                                inputMode="decimal"
+                                                min="0.01"
+                                                step="0.01"
+                                                value={editUserForm.insurancePremiumPerLakh}
+                                                onChange={(e) =>
+                                                    setEditUserForm((prev) => (
+                                                        prev
+                                                            ? {
+                                                                ...prev,
+                                                                insurancePremiumPerLakh: e.target.value,
+                                                            }
+                                                            : prev
+                                                    ))
+                                                }
+                                                className="block w-full rounded-md border border-gray-300 py-2 pl-8 pr-3 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="mb-1 block text-sm font-medium text-gray-700">
+                                            Premium rate
+                                        </label>
+                                        <input
+                                            type="text"
+                                            readOnly
+                                            value={`${Number.isFinite(Number(editUserForm.insurancePremiumPerLakh))
+                                                ? Number(
+                                                    (Number(editUserForm.insurancePremiumPerLakh) / 1000)
+                                                        .toFixed(5),
+                                                )
+                                                : 0}%`}
+                                            className="block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-700 shadow-sm"
+                                        />
+                                    </div>
+
+                                    {Number(editUserForm.insurancePremiumPerLakh) !==
+                                    editUserForm.originalInsurancePremiumPerLakh ? (
+                                        <div className="sm:col-span-2">
+                                            <label className="mb-1 block text-sm font-medium text-gray-700">
+                                                Reason for change
+                                            </label>
+                                            <input
+                                                type="text"
+                                                maxLength={500}
+                                                value={editUserForm.premiumChangeReason}
+                                                onChange={(e) =>
+                                                    setEditUserForm((prev) => (
+                                                        prev
+                                                            ? {
+                                                                ...prev,
+                                                                premiumChangeReason: e.target.value,
+                                                            }
+                                                            : prev
+                                                    ))
+                                                }
+                                                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                            />
+                                        </div>
+                                    ) : null}
+                                </>
                             ) : null}
 
                             <div className="sm:col-span-2">

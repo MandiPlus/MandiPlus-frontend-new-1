@@ -9,6 +9,8 @@ import {
     setAuthToken,
 } from "@/features/auth/api";
 import { usePathname, useRouter } from "next/navigation";
+import { disableWebPushForCurrentBrowser } from "@/features/notifications/webPush";
+import { isPublicStandaloneRoute } from "@/shared/routing/publicStandaloneRoutes";
 
 interface AuthContextType {
     user: any;
@@ -22,6 +24,7 @@ const AuthContext = createContext<AuthContextType>({} as AuthContextType);
 const WARNING_WINDOW_MS = 15 * 60 * 1000;
 const IMPERSONATION_ACTIVE_KEY = "impersonationActive";
 const IMPERSONATION_ADMIN_TOKEN_KEY = "impersonationAdminToken";
+const IMPERSONATION_ACCESS_TOKEN_KEY = "impersonationAccessToken";
 const IMPERSONATED_USER_NAME_KEY = "impersonatedUserName";
 const IMPERSONATED_USER_ID_KEY = "impersonatedUserId";
 const IMPERSONATION_STARTED_AT_KEY = "impersonationStartedAt";
@@ -59,8 +62,12 @@ function isJwtExpired(token: string): boolean {
 
 function getPostLoginRedirect(identity?: string | null): string {
     if (identity === "AGENT") return "/agent/dashboard";
-    if (identity === "CUSTOMER") return "/customer/dashboard";
-    if (identity === "TRANSPORTER") return "/transporter/dashboard";
+    if (
+        identity === "CUSTOMER" ||
+        identity === "BUYER" ||
+        identity === "SUPPLIER" ||
+        identity === "TRANSPORTER"
+    ) return "/home";
     if (identity === "FIELD_AGENT") return "/home";
     if (identity === "INTERNAL_TEAM") return "/home";
     return "/home";
@@ -87,6 +94,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [impersonatedUserName, setImpersonatedUserName] = useState("");
     const pathname = usePathname();
     const router = useRouter();
+    const canRenderBeforeAuthBootstrap = isPublicStandaloneRoute(pathname);
 
     const syncUserFromStoredToken = async () => {
         const storedToken = getStoredAuthToken();
@@ -119,6 +127,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
         sessionStorage.removeItem("tabAccessToken");
+        sessionStorage.removeItem(IMPERSONATION_ACCESS_TOKEN_KEY);
         setUser(null);
         setAuthToken(null);
         setShowSessionWarning(false);
@@ -131,6 +140,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         impersonationStorage?.removeItem(IMPERSONATED_USER_NAME_KEY);
         impersonationStorage?.removeItem(IMPERSONATED_USER_ID_KEY);
         impersonationStorage?.removeItem(IMPERSONATION_STARTED_AT_KEY);
+        impersonationStorage?.removeItem(IMPERSONATION_ACCESS_TOKEN_KEY);
         setIsImpersonating(false);
         setImpersonatedUserName("");
     };
@@ -267,6 +277,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         const normalizedUser = normalizeUserPayload(finalUser);
         if (normalizedUser) {
+            const mobile = String(
+                normalizedUser.mobileNumber || normalizedUser.phone || "",
+            ).replace(/\D/g, "").slice(-10);
+            if (
+                (mobile === "9000000000" || mobile === "9010101010") &&
+                normalizedUser.id
+            ) {
+                localStorage.removeItem(
+                    `mandiplus:web-onboarding-step:${normalizedUser.id}`,
+                );
+            }
             localStorage.setItem("user", JSON.stringify(normalizedUser));
             setUser(normalizedUser);
         }
@@ -276,6 +297,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     const logout = () => {
+        void disableWebPushForCurrentBrowser().catch(() => {});
         clearImpersonationState();
         forceLogout();
         logoutApi().catch(() => {
@@ -303,6 +325,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         localStorage.setItem("adminToken", adminToken);
         sessionStorage.removeItem("tabAccessToken");
+        sessionStorage.removeItem(IMPERSONATION_ACCESS_TOKEN_KEY);
         localStorage.removeItem("accessToken");
         localStorage.removeItem("user");
         setAuthToken(null, { suppressEvent: true });
@@ -312,7 +335,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     return (
         <AuthContext.Provider value={{ user, loading, login, logout, setUser }}>
-            {!loading && children}
+            {(!loading || canRenderBeforeAuthBootstrap) && children}
             {isImpersonating && (
                 <div className="fixed left-1/2 top-3 z-[101] -translate-x-1/2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 shadow-sm">
                     <div className="flex items-center gap-3">
