@@ -71,6 +71,8 @@ export default function IngestPanel({
   const [role, setRole] = useState("");
   const [source, setSource] = useState("SCRAPED_DATA");
   const [markHot, setMarkHot] = useState(false);
+  const [consentBasis, setConsentBasis] = useState("");
+  const [holdoutPct, setHoldoutPct] = useState(0);
   const [assignMode, setAssignMode] = useState<"AUTO" | "MANUAL" | "UNASSIGNED">(
     "AUTO",
   );
@@ -112,6 +114,8 @@ export default function IngestPanel({
     assignMode,
     assigneeUserIds: assignMode === "MANUAL" ? assignees : undefined,
     markHot,
+    consentBasis: consentBasis || undefined,
+    holdoutPct: holdoutPct > 0 ? holdoutPct : undefined,
     ...defaults(),
   });
 
@@ -462,6 +466,42 @@ export default function IngestPanel({
             {markHot ? "this import calls first" : "tap to mark this import"}
           </span>
         </button>
+
+        {/* Asked at the door: a basis reconstructed months later is a guess,
+            and a control group can only be drawn before anyone is contacted. */}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <label className="text-xs font-medium text-gray-600">
+            Basis for messaging
+            <select
+              value={consentBasis}
+              onChange={(event) => setConsentBasis(event.target.value)}
+              className={`mt-1 w-full rounded-lg border px-2 py-2 text-sm ${
+                consentBasis ? "border-gray-200" : "border-amber-300 bg-amber-50"
+              }`}
+            >
+              <option value="">Not recorded</option>
+              <option value="EXPLICIT_OPT_IN">Explicit opt-in</option>
+              <option value="EXISTING_CUSTOMER">Existing customer</option>
+              <option value="FIELD_VISIT">Met in person</option>
+              <option value="REFERRAL">Referred by a customer</option>
+              <option value="PUBLIC_DIRECTORY">Public directory</option>
+              <option value="SCRAPED">Scraped — no basis</option>
+            </select>
+          </label>
+          <label className="text-xs font-medium text-gray-600">
+            Hold back as control
+            <select
+              value={holdoutPct}
+              onChange={(event) => setHoldoutPct(Number(event.target.value))}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-2 py-2 text-sm"
+            >
+              <option value={0}>None</option>
+              <option value={5}>5%</option>
+              <option value={10}>10%</option>
+              <option value={20}>20%</option>
+            </select>
+          </label>
+        </div>
 
         <div className="mt-3 flex gap-2">
           <button
