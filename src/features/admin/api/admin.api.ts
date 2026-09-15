@@ -992,6 +992,21 @@ export interface AdminAppSettings {
     percent: number;
     active: boolean;
   };
+  vehicleLoadRules?: AdminVehicleLoadRules;
+}
+
+export type AdminVehicleLoadWeighingMethod = 'UNIT_WEIGHT' | 'WEIGHMENT_SLIP';
+
+export interface AdminVehicleLoadRule {
+  commodity: string;
+  method: AdminVehicleLoadWeighingMethod;
+  kgPerUnit: number | null;
+}
+
+export interface AdminVehicleLoadRules {
+  commodities: AdminVehicleLoadRule[];
+  isDefault: boolean;
+  updatedAt: string | null;
 }
 
 export interface UpdateTenderCoconutLogisticsPayload {
@@ -5288,6 +5303,26 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || 'Failed to save the discount',
+        error: error.message,
+      };
+    }
+  };
+
+  updateVehicleLoadRules = async (payload: {
+    commodities: AdminVehicleLoadRule[];
+  }): Promise<ApiResponse<AdminVehicleLoadRules>> => {
+    try {
+      const response = await this.client.patch<{
+        vehicleLoadRules: AdminVehicleLoadRules;
+      }>('/admin/app/settings/vehicle-load-rules', payload);
+      return { success: true, data: response.data.vehicleLoadRules };
+    } catch (error: any) {
+      const message = error.response?.data?.message;
+      return {
+        success: false,
+        message: Array.isArray(message)
+          ? message.join(', ')
+          : message || 'Failed to save the weighing rules',
         error: error.message,
       };
     }

@@ -538,6 +538,94 @@ export const getInvoiceCustomerAccounts = async (): Promise<
   }
 };
 
+export type VehicleLoadVerdict = "NORMAL" | "OVERWEIGHT" | "UNVERIFIED";
+
+export interface VehicleLoadCheckResponse {
+  checkId: string | null;
+  enforced: boolean;
+  /** Overweight, or an RC that is not active, fitness-expired or blacklisted. */
+  blocksInvoice: boolean;
+  verdict: VehicleLoadVerdict;
+  rcIssues: Array<{
+    code: "RC_NOT_ACTIVE" | "FITNESS_EXPIRED" | "RC_BLACKLISTED";
+    detail: string;
+  }>;
+  unverifiedReason: string | null;
+  message: string;
+  vehicleNumber: string | null;
+  weightSource: "QUANTITY_ESTIMATE" | "SLIP_GROSS" | "SLIP_NET" | null;
+  cargoKg: number | null;
+  ladenKg: number | null;
+  permissibleKg: number | null;
+  excessKg: number | null;
+  loadPercent: number | null;
+  tolerancePercent: number;
+  rcGvwKg: number | null;
+  rcUnladenKg: number | null;
+  makerModel: string | null;
+  slipReadStatus: string | null;
+  slipGrossKg: number | null;
+  slipNetKg: number | null;
+  slipVehicleNumber: string | null;
+  vehicleMismatch: boolean;
+  rcStatus: string | null;
+  fitnessUpto: string | null;
+  blacklistStatus: string | null;
+}
+
+/** Tender coconut is weighed from the weighment slip instead of the quantity. */
+export const isSlipWeightProduct = (productName?: string | null) =>
+  String(productName || "").trim().replace(/\s+/g, " ").toLowerCase() ===
+  "tender coconut";
+
+export const checkVehicleLoad = async (payload: {
+  vehicleNumber: string;
+  productName?: string;
+  quantity?: number | string;
+  weighmentSlip?: File | null;
+}): Promise<VehicleLoadCheckResponse> => {
+  try {
+    const token = getInsuranceRequestToken();
+    const quantity =
+      payload.quantity === undefined || payload.quantity === ""
+        ? undefined
+        : Number(payload.quantity);
+
+    let body: FormData | Record<string, unknown>;
+    if (payload.weighmentSlip) {
+      const form = new FormData();
+      form.append("vehicleNumber", payload.vehicleNumber);
+      if (payload.productName) form.append("productName", payload.productName);
+      if (quantity !== undefined && Number.isFinite(quantity)) {
+        form.append("quantity", String(quantity));
+      }
+      form.append("weighmentSlips", payload.weighmentSlip);
+      body = form;
+    } else {
+      body = {
+        vehicleNumber: payload.vehicleNumber,
+        productName: payload.productName || undefined,
+        quantity,
+      };
+    }
+
+    const response = await axios.post(
+      `${API_BASE_URL}/vehicle-compliance/load-check`,
+      body,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError<ApiError>;
+    throw err.response?.data || { message: "Failed to check vehicle load" };
+  }
+};
+
 export const getTruckFlagStatus = async (
   truckNumber: string,
 ): Promise<TruckFlagStatus> => {

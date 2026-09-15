@@ -10,6 +10,9 @@ export const resolveWeighmentSlipForSubmit = <TFile>(
   return fileArgument || weightmentSlipRef.current || weightmentSlip || null;
 };
 
+/** Also recognised by the backend, which skips reading weights from this stand-in. */
+export const CUSTOMER_WILL_UPDATE_LATER_SLIP_NAME = 'customer-will-update-later.jpg';
+
 export const createCustomerWillUpdateLaterSlip = (): Promise<File> =>
   new Promise((resolve, reject) => {
     const canvas = document.createElement('canvas');
@@ -41,7 +44,7 @@ export const createCustomerWillUpdateLaterSlip = (): Promise<File> =>
       }
 
       resolve(
-        new File([blob], 'customer-will-update-later.jpg', {
+        new File([blob], CUSTOMER_WILL_UPDATE_LATER_SLIP_NAME, {
           type: 'image/jpeg',
         }),
       );
