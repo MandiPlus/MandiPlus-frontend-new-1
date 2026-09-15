@@ -25,6 +25,8 @@ import {
     getSupplierHistoricalParties,
     getTruckFlagStatus,
     getVehicleRecentInvoiceStatus,
+    checkVehicleLoad,
+    isSlipWeightProduct,
     getVerifiedSuppliers,
     hasStoredInsuranceAdminSession,
     type SupplierPartyAssistProduct,
@@ -56,6 +58,7 @@ import {
 import {
     createCustomerWillUpdateLaterSlip,
     resolveWeighmentSlipForSubmit,
+    CUSTOMER_WILL_UPDATE_LATER_SLIP_NAME,
 } from '../weighmentSlipSubmit';
 import { canUseInternalRateCalculator } from '../creationAccessPolicy';
 
@@ -1089,6 +1092,19 @@ const Insurance = () => {
                 );
             }
 
+            // Overweight trucks and RCs that are not active, fitness-expired or
+            // blacklisted cannot be invoiced. A failed check never blocks here;
+            // the server re-checks on create and has the final say. A tender
+            // coconut load is weighed again from its slip when that is uploaded.
+            const loadCheck = await checkVehicleLoad({
+                vehicleNumber,
+                productName: formData.itemName,
+                quantity: formData.quantity,
+            }).catch(() => null);
+            if (loadCheck?.enforced && loadCheck.blocksInvoice) {
+                return loadCheck.message;
+            }
+
             return null;
         } catch (error: unknown) {
             const apiError = error as { message?: string | string[] };
@@ -1096,6 +1112,29 @@ const Insurance = () => {
                 ? apiError.message.join(', ')
                 : apiError?.message || 'Unable to verify vehicle number right now.';
         }
+    };
+
+    // Tender coconut is weighed from the weighment slip, so its load is checked
+    // against the RC when the slip is uploaded. A failed check never blocks.
+    const checkSlipLoad = async (slip: File): Promise<string | null> => {
+        if (
+            !isSlipWeightProduct(formData.itemName) ||
+            slip.name === CUSTOMER_WILL_UPDATE_LATER_SLIP_NAME ||
+            !formData.vehicleNumber
+        ) {
+            return null;
+        }
+        setMessages(prev => [...prev, {
+            text: language === 'hi' ? 'कांटा पर्ची का वजन जांचा जा रहा है...' : 'Checking the weighment slip weight...',
+            sender: 'bot',
+        }]);
+        const loadCheck = await checkVehicleLoad({
+            vehicleNumber: formData.vehicleNumber,
+            productName: formData.itemName,
+            quantity: formData.quantity,
+            weighmentSlip: slip,
+        }).catch(() => null);
+        return loadCheck?.enforced && loadCheck.blocksInvoice ? loadCheck.message : null;
     };
 
     const goToNextQuestion = (answerForCurrentQuestion?: string, latestNotes?: string, fileForSubmit?: File | null) => {
@@ -1857,6 +1896,14 @@ const Insurance = () => {
             sender: 'user',
             field: 'weightmentSlip'
         }]);
+
+        const slipLoadBlockMessage = await checkSlipLoad(selectedSlip);
+        if (slipLoadBlockMessage) {
+            setError(slipLoadBlockMessage);
+            setMessages(prev => [...prev, { text: slipLoadBlockMessage, sender: 'bot' }]);
+            updateWeightmentSlip(null);
+            return;
+        }
 
         setMessages(prev => [
             ...prev,
