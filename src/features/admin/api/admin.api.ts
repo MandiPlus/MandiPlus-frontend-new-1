@@ -1009,6 +1009,29 @@ export interface AdminVehicleLoadRules {
   updatedAt: string | null;
 }
 
+export type AdminUlipTestApi = 'VAHAN_04' | 'VAHAN_01';
+
+export interface AdminUlipApiTrace {
+  api: AdminUlipTestApi;
+  environment: 'PRODUCTION' | 'STAGING' | 'OTHER';
+  startedAt: string;
+  durationMs: number;
+  sessionReused: boolean;
+  request: {
+    method: 'POST';
+    url: string;
+    headers: Record<string, string>;
+    body: Record<string, unknown>;
+  };
+  response: {
+    status: number | null;
+    statusText: string;
+    contentType: string | null;
+    body: unknown;
+    error?: string;
+  };
+}
+
 export interface UpdateTenderCoconutLogisticsPayload {
   amount20Ton?: number;
   amount25Ton: number;
@@ -5323,6 +5346,28 @@ class AdminApi {
         message: Array.isArray(message)
           ? message.join(', ')
           : message || 'Failed to save the weighing rules',
+        error: error.message,
+      };
+    }
+  };
+
+  runUlipApiTest = async (payload: {
+    api: AdminUlipTestApi;
+    vehicleNumber: string;
+  }): Promise<ApiResponse<AdminUlipApiTrace>> => {
+    try {
+      const response = await this.client.post<AdminUlipApiTrace>(
+        '/vehicle-compliance/ulip-test',
+        payload,
+      );
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      const message = error.response?.data?.message;
+      return {
+        success: false,
+        message: Array.isArray(message)
+          ? message.join(', ')
+          : message || 'The ULIP test call failed',
         error: error.message,
       };
     }
