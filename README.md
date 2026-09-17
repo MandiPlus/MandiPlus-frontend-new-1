@@ -2,14 +2,14 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Prerequisites
 
-- Node.js 18+ installed
-- npm, yarn, pnpm, or bun package manager
+- Node.js 18+ installed  
+- npm, yarn, pnpm, or bun package manager    
 
 ## Installation  
-
+  
 1. Clone the repository
-2. Install dependencies:
-   
+2. Install dependencies:   
+      
 ```bash
 npm install
 # or
@@ -80,7 +80,7 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Learn more
+# Learn more
 
 To learn more about Next.js, take a look at the following resources:
 
