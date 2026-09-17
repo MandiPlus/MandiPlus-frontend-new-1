@@ -1009,7 +1009,20 @@ export interface AdminVehicleLoadRules {
   updatedAt: string | null;
 }
 
-export type AdminUlipTestApi = 'VAHAN_04' | 'VAHAN_01';
+export type AdminUlipTestApi = string;
+
+export interface AdminUlipTestField {
+  key: string;
+  label: string;
+  placeholder: string;
+  normalize?: 'identifier';
+}
+
+export interface AdminUlipTestApiDefinition {
+  api: AdminUlipTestApi;
+  title: string;
+  fields: AdminUlipTestField[];
+}
 
 export interface AdminUlipApiTrace {
   api: AdminUlipTestApi;
@@ -5351,9 +5364,24 @@ class AdminApi {
     }
   };
 
+  getUlipTestApis = async (): Promise<ApiResponse<AdminUlipTestApiDefinition[]>> => {
+    try {
+      const response = await this.client.get<{ apis: AdminUlipTestApiDefinition[] }>(
+        '/vehicle-compliance/ulip-test/apis',
+      );
+      return { success: true, data: response.data.apis };
+    } catch (error: any) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'ULIP APIs could not be loaded',
+        error: error.message,
+      };
+    }
+  };
+
   runUlipApiTest = async (payload: {
     api: AdminUlipTestApi;
-    vehicleNumber: string;
+    input: Record<string, string>;
   }): Promise<ApiResponse<AdminUlipApiTrace>> => {
     try {
       const response = await this.client.post<AdminUlipApiTrace>(
