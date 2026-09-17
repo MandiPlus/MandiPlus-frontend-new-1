@@ -1015,7 +1015,7 @@ export interface AdminUlipTestField {
   key: string;
   label: string;
   placeholder: string;
-  normalize?: 'identifier';
+  normalize?: 'identifier' | 'uppercase';
 }
 
 export interface AdminUlipTestApiDefinition {

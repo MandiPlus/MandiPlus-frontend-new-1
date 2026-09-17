@@ -15,24 +15,20 @@ const codeClass =
   "overflow-auto whitespace-pre-wrap break-all rounded-md bg-slate-950 p-3 font-mono text-[12px] leading-5 text-slate-100";
 
 // ULIP's production-access test cases. Inputs that identify a person or a
-// shipment (licence, chassis/engine, e-way bill) are left blank on purpose:
-// they are typed in at test time and never kept in code.
+// shipment (licence, e-way bill) are left blank on purpose: they are typed in
+// at test time and never kept in code.
 const PRESETS: { title: string; api: string; input: Record<string, string> }[] = [
   { title: "TC-01 · Registered goods vehicle", api: "VAHAN_04", input: { vehiclenumber: "RJ11GC6350" } },
   { title: "TC-02 · Registered goods vehicle", api: "VAHAN_01", input: { vehiclenumber: "RJ11GC6350" } },
-  { title: "TC-03 · Vehicle by chassis number", api: "VAHAN_02", input: {} },
-  { title: "TC-04 · Vehicle by engine number", api: "VAHAN_03", input: {} },
-  { title: "TC-05 · Vehicle by chassis number", api: "VAHAN_05", input: {} },
-  { title: "TC-06 · Vehicle by engine number", api: "VAHAN_06", input: {} },
-  { title: "TC-07 · FASTag details", api: "FASTAG_01", input: { vehiclenumber: "RJ11GC6350" } },
-  { title: "TC-08 · FASTag toll transactions", api: "FASTAG_02", input: { vehiclenumber: "RJ11GC6350" } },
-  { title: "TC-09 · Driver licence with date of birth", api: "SARATHI_01", input: {} },
-  { title: "TC-10 · Driver licence", api: "SARATHI_02", input: {} },
-  { title: "TC-11 · e-Challans for a truck", api: "ECHALLAN_01", input: { vehicleNumber: "RJ11GC6350" } },
-  { title: "TC-12 · Toll plazas in a state", api: "TOLL_01", input: { stateName: "Rajasthan" } },
-  { title: "TC-13 · e-Way Bill details", api: "EWAYBILL_01", input: {} },
-  { title: "TC-14 · Vehicle not on VAHAN", api: "VAHAN_04", input: { vehiclenumber: "RJ99ZZ9999" } },
-  { title: "TC-15 · Malformed vehicle number", api: "VAHAN_04", input: { vehiclenumber: "RJ11-GC" } },
+  { title: "TC-03 · FASTag details", api: "FASTAG_01", input: { vehiclenumber: "RJ11GC6350" } },
+  { title: "TC-04 · FASTag toll transactions", api: "FASTAG_02", input: { vehiclenumber: "RJ11GC6350" } },
+  { title: "TC-05 · Driver licence with date of birth", api: "SARATHI_01", input: {} },
+  { title: "TC-06 · Driver licence", api: "SARATHI_02", input: {} },
+  { title: "TC-07 · e-Challans for a truck", api: "ECHALLAN_01", input: { vehicleNumber: "RJ11GC6350" } },
+  { title: "TC-08 · Toll plazas in a state", api: "TOLL_01", input: { stateName: "Rajasthan" } },
+  { title: "TC-09 · e-Way Bill details", api: "EWAYBILL_01", input: {} },
+  { title: "TC-10 · Vehicle not on VAHAN", api: "VAHAN_04", input: { vehiclenumber: "RJ99ZZ9999" } },
+  { title: "TC-11 · Malformed vehicle number", api: "VAHAN_04", input: { vehiclenumber: "RJ11-GC" } },
 ];
 
 type Run = {
@@ -41,8 +37,22 @@ type Run = {
   trace: AdminUlipApiTrace;
 };
 
-const pretty = (value: unknown) =>
-  typeof value === "string" ? value : JSON.stringify(value, null, 2);
+// SARATHI returns the licence photo and signature as encoded blobs of up to
+// 40 KB with no whitespace, so there are no lines to clip; they are shortened
+// in place. XML and prose always contain whitespace and are left alone.
+const ENCODED_BLOB = /^\S{1000,}$/;
+
+const pretty = (value: unknown, expanded = false) =>
+  typeof value === "string"
+    ? value
+    : JSON.stringify(
+        value,
+        (_key, item) =>
+          !expanded && typeof item === "string" && ENCODED_BLOB.test(item)
+            ? `${item.slice(0, 48)}… [${item.length.toLocaleString("en-IN")} characters]`
+            : item,
+        2,
+      );
 
 /** Finds the XML string VAHAN/01 wraps inside its JSON envelope. */
 const findXml = (value: unknown): string | null => {
@@ -240,7 +250,7 @@ export default function UlipApiTestPage() {
               <label key={field.key} className={labelClass}>
                 {field.label}
                 <input
-                  className={`${fieldClass} ${field.normalize === "identifier" ? "font-mono uppercase" : ""}`}
+                  className={`${fieldClass} ${field.normalize ? "font-mono uppercase" : ""}`}
                   aria-label={field.label}
                   value={input[field.key] ?? ""}
                   placeholder={field.placeholder}
@@ -272,7 +282,7 @@ export default function UlipApiTestPage() {
           const xml = findXml(trace.response.body);
           const responseText = trace.response.error
             ? trace.response.error
-            : `${trace.response.contentType ? `Content-Type: ${trace.response.contentType}\n\n` : ""}${pretty(trace.response.body)}`;
+            : `${trace.response.contentType ? `Content-Type: ${trace.response.contentType}\n\n` : ""}${pretty(trace.response.body, Boolean(expandedRuns[run.id]))}`;
           const responseView = clip(responseText, Boolean(expandedRuns[run.id]));
           return (
             <section
