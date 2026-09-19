@@ -1,3 +1,9 @@
+import type {
+  CommodityPremiumOverrides,
+  CommodityPremiumRates,
+  CommodityPremiumRatesConfig,
+  PremiumRateCommodity,
+} from '@/features/pricing/commodityPremiumRates';
 import axios, {
   AxiosError,
   AxiosInstance,
@@ -58,6 +64,7 @@ interface User {
   channelPartnerStatus?: "PENDING" | "ACTIVE" | "SUSPENDED" | null;
   channelPartnerCode?: string | null;
   insurancePremiumPerLakh?: number;
+  insurancePremiumCommodityRates?: Record<string, number> | null;
   insurancePremiumRateVersion?: number;
 }
 
@@ -408,8 +415,10 @@ export interface AdminUpdateUserPayload {
   unionMember?: string | null;
 }
 
+/** Sets, or with premiumPerLakh null clears, one commodity's negotiated rate. */
 export interface UpdateUserInsurancePremiumPayload {
-  premiumPerLakh: number;
+  commodity: PremiumRateCommodity;
+  premiumPerLakh: number | null;
   reason: string;
   expectedVersion?: number;
 }
@@ -417,8 +426,8 @@ export interface UpdateUserInsurancePremiumPayload {
 export interface UserInsurancePremiumUpdate {
   userId: string;
   canonicalUserId: string;
-  insurancePremiumPerLakh: number;
-  insurancePremiumPercentage: number;
+  commodity: PremiumRateCommodity;
+  insurancePremiumCommodityRates: CommodityPremiumOverrides;
   insurancePremiumRateVersion: number;
   changed: boolean;
 }
@@ -993,6 +1002,8 @@ export interface AdminAppSettings {
     active: boolean;
   };
   vehicleLoadRules?: AdminVehicleLoadRules;
+  // Optional because an older backend does not send the rate card yet.
+  premiumRates?: CommodityPremiumRatesConfig;
 }
 
 export type AdminVehicleLoadWeighingMethod = 'UNIT_WEIGHT' | 'WEIGHMENT_SLIP';
@@ -5339,6 +5350,26 @@ class AdminApi {
       return {
         success: false,
         message: error.response?.data?.message || 'Failed to save the discount',
+        error: error.message,
+      };
+    }
+  };
+
+  updateCommodityPremiumRates = async (
+    rates: Partial<CommodityPremiumRates>,
+  ): Promise<ApiResponse<CommodityPremiumRatesConfig>> => {
+    try {
+      const response = await this.client.patch<{
+        premiumRates: CommodityPremiumRatesConfig;
+      }>('/admin/app/settings/premium-rates', { rates });
+      return { success: true, data: response.data.premiumRates };
+    } catch (error: any) {
+      const message = error.response?.data?.message;
+      return {
+        success: false,
+        message: Array.isArray(message)
+          ? message.join(', ')
+          : message || 'Failed to save the premium rates',
         error: error.message,
       };
     }

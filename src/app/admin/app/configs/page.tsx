@@ -9,6 +9,12 @@ import {
   adminApi,
 } from "@/features/admin/api/admin.api";
 import { itemsData } from "@/features/insurance/productCatalog";
+import {
+  DEFAULT_COMMODITY_PREMIUM_RATES,
+  PREMIUM_RATE_COMMODITIES,
+  PREMIUM_RATE_COMMODITY_LABELS,
+  type PremiumRateCommodity,
+} from "@/features/pricing/commodityPremiumRates";
 
 const fieldClass =
   "h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-slate-500";
@@ -35,6 +41,16 @@ const toLoadRuleDraft = (rule: AdminVehicleLoadRule): LoadRuleDraft => ({
       : String(rule.kgPerUnit),
 });
 
+const toRateDrafts = (
+  rates: Record<PremiumRateCommodity, number>,
+): Record<PremiumRateCommodity, string> =>
+  Object.fromEntries(
+    PREMIUM_RATE_COMMODITIES.map((commodity) => [
+      commodity,
+      String(rates[commodity]),
+    ]),
+  ) as Record<PremiumRateCommodity, string>;
+
 function money(value: number) {
   return `₹${Number(value || 0).toLocaleString("en-IN")}`;
 }
@@ -52,6 +68,10 @@ export default function AppConfigsPage() {
   const [savingDiscount, setSavingDiscount] = useState(false);
   const [loadRules, setLoadRules] = useState<LoadRuleDraft[]>([]);
   const [savingLoadRules, setSavingLoadRules] = useState(false);
+  const [premiumRates, setPremiumRates] = useState<
+    Record<PremiumRateCommodity, string>
+  >(() => toRateDrafts(DEFAULT_COMMODITY_PREMIUM_RATES));
+  const [savingPremiumRates, setSavingPremiumRates] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -84,6 +104,9 @@ export default function AppConfigsPage() {
       setDiscountPercent(String(data.premiumDiscount.percent));
       setDiscountActive(data.premiumDiscount.active);
       setLoadRules((data.vehicleLoadRules?.commodities || []).map(toLoadRuleDraft));
+      setPremiumRates(
+        toRateDrafts(data.premiumRates?.rates || DEFAULT_COMMODITY_PREMIUM_RATES),
+      );
     }
   }, []);
 
@@ -119,6 +142,34 @@ export default function AppConfigsPage() {
       setSavedNote("Logistics pricing saved.");
     }
     setSavingLogistics(false);
+  };
+
+  const savePremiumRates = async (event: FormEvent) => {
+    event.preventDefault();
+    const rates = Object.fromEntries(
+      PREMIUM_RATE_COMMODITIES.map((commodity) => [
+        commodity,
+        Number(premiumRates[commodity]),
+      ]),
+    ) as Record<PremiumRateCommodity, number>;
+    if (Object.values(rates).some((rate) => !Number.isFinite(rate) || rate <= 0)) {
+      setError("Every commodity needs a premium above ₹0 per lakh.");
+      return;
+    }
+    setSavingPremiumRates(true);
+    setError("");
+    setSavedNote("");
+    const response = await adminApi.updateCommodityPremiumRates(rates);
+    if (!response.success || !response.data) {
+      setError(response.message || "The premium rates could not be saved.");
+    } else {
+      setSettings((current) =>
+        current ? { ...current, premiumRates: response.data! } : current,
+      );
+      setPremiumRates(toRateDrafts(response.data.rates));
+      setSavedNote("Premium rates saved. New invoices use them now.");
+    }
+    setSavingPremiumRates(false);
   };
 
   const saveDiscount = async (event: FormEvent) => {
@@ -215,6 +266,63 @@ export default function AppConfigsPage() {
           {savedNote}
         </p>
       ) : null}
+
+      <form onSubmit={savePremiumRates} className={cardClass}>
+        <div className="grid gap-1">
+          <h2 className="text-sm font-semibold text-slate-950">
+            Insurance premium by commodity
+          </h2>
+          <p className="text-xs text-slate-600">
+            ₹ per lakh of invoice value, for every invoice from every surface —
+            admin console, customer web and mobile app, and the WhatsApp bot. A
+            customer&apos;s own negotiated rate for a commodity (set on the
+            Users page) wins over this card. Existing invoices keep the rate
+            they were created with.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-5">
+          {PREMIUM_RATE_COMMODITIES.map((commodity) => (
+            <label key={commodity} className={labelClass}>
+              {PREMIUM_RATE_COMMODITY_LABELS[commodity]}
+              <input
+                className={fieldClass}
+                inputMode="decimal"
+                value={premiumRates[commodity]}
+                onChange={(event) =>
+                  setPremiumRates((current) => ({
+                    ...current,
+                    [commodity]: event.target.value,
+                  }))
+                }
+              />
+              <span className="text-[11px] font-normal text-slate-500">
+                {Number(premiumRates[commodity]) > 0
+                  ? `${(Number(premiumRates[commodity]) / 1000).toFixed(3)}% · ${money(Number(premiumRates[commodity]) * 10)} on ₹10 lakh`
+                  : "Enter a rate"}
+              </span>
+            </label>
+          ))}
+        </div>
+        {settings?.premiumRates?.isDefault ? (
+          <p className="text-xs text-slate-600">
+            Showing the built-in rates; nothing has been saved here yet.
+          </p>
+        ) : null}
+        <div>
+          <button
+            type="submit"
+            disabled={savingPremiumRates}
+            className="inline-flex h-10 items-center gap-2 rounded-md bg-slate-900 px-4 text-sm font-medium text-white disabled:opacity-60"
+          >
+            {savingPremiumRates ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Save premium rates
+          </button>
+        </div>
+      </form>
 
       <form onSubmit={saveLogistics} className={cardClass}>
         <div className="grid gap-1">
