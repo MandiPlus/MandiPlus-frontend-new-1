@@ -1,3 +1,4 @@
+import type { CommodityPremiumRatesConfig } from "@/features/pricing/commodityPremiumRates";
 import axios, { type AxiosRequestConfig } from "axios";
 
 import {
@@ -312,6 +313,8 @@ export function applyPremiumDiscount(
 
 export type CustomerAppPricing = {
   premiumDiscount?: PremiumDiscount;
+  // Optional because an older backend does not send the rate card yet.
+  premiumRates?: CommodityPremiumRatesConfig;
   tenderCoconut: {
     pricingVersion: number;
     // Generic tier list. Truck sizes render from this, so a new tonnage added

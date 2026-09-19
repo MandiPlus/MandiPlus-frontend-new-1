@@ -107,6 +107,7 @@ export interface InsuranceForm {
   amount: number;
   premiumAmount?: number;
   insurancePremiumPerLakh?: number;
+  insurancePremiumCommodityRates?: Record<string, number> | null;
   insurancePremiumRateVersion?: number;
   premiumPricedUserId?: string | null;
   vehicleNumber?: string;

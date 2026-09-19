@@ -9,8 +9,18 @@ import {
     AdminLedgerUser,
     AdminUpdateUserPayload,
     AdminWalletStatementItem,
+    UserInsurancePremiumUpdate,
     adminApi,
 } from '@/features/admin/api/admin.api';
+import {
+    type CommodityPremiumRates,
+    DEFAULT_COMMODITY_PREMIUM_RATES,
+    PREMIUM_RATE_COMMODITIES,
+    PREMIUM_RATE_COMMODITY_LABELS,
+    type PremiumRateCommodity,
+    normalizeCommodityPremiumOverrides,
+    normalizeCommodityPremiumRates,
+} from '@/features/pricing/commodityPremiumRates';
 import AdminAccountApprovals from '@/features/admin/components/AdminAccountApprovals';
 import { toast } from 'react-toastify';
 
@@ -77,10 +87,23 @@ type AdminEditUserForm = {
     identity: AdminCreateUserPayload['identity'];
     billingType: 'BULK' | 'PER_POLICY';
     unionMember: boolean;
-    insurancePremiumPerLakh: string;
-    originalInsurancePremiumPerLakh: number;
+    // Negotiated ₹/lakh per commodity; blank means the commodity rate card.
+    premiumOverrides: Record<PremiumRateCommodity, string>;
+    originalPremiumOverrides: Record<PremiumRateCommodity, string>;
     insurancePremiumRateVersion: number;
     premiumChangeReason: string;
+};
+
+const toOverrideDrafts = (
+    value: unknown,
+): Record<PremiumRateCommodity, string> => {
+    const overrides = normalizeCommodityPremiumOverrides(value);
+    return Object.fromEntries(
+        PREMIUM_RATE_COMMODITIES.map((commodity) => [
+            commodity,
+            overrides[commodity] === undefined ? '' : String(overrides[commodity]),
+        ]),
+    ) as Record<PremiumRateCommodity, string>;
 };
 
 const emptyCreateUserForm: AdminCreateUserForm = {
@@ -172,6 +195,24 @@ export default function UsersPage() {
     const router = useRouter();
     const { isAuthenticated, accessProfile } = useAdmin();
     const isFullAdmin = Boolean(accessProfile?.isFullAdmin);
+    // Placeholders only: the backend reads the live card when it prices.
+    const [premiumRateCard, setPremiumRateCard] = useState<CommodityPremiumRates>(
+        DEFAULT_COMMODITY_PREMIUM_RATES,
+    );
+    useEffect(() => {
+        if (!isAuthenticated || !isFullAdmin) return;
+        let active = true;
+        void adminApi.getAppSettings().then((response) => {
+            if (active && response.success && response.data?.premiumRates?.rates) {
+                setPremiumRateCard(
+                    normalizeCommodityPremiumRates(response.data.premiumRates.rates),
+                );
+            }
+        });
+        return () => {
+            active = false;
+        };
+    }, [isAuthenticated, isFullAdmin]);
 
     const [allUsers, setAllUsers] = useState<User[]>([]);
     const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
@@ -720,8 +761,10 @@ export default function UsersPage() {
             identity: (user.identity as AdminCreateUserPayload['identity']) || 'BUYER',
             billingType: user.billingType === 'PER_POLICY' ? 'PER_POLICY' : 'BULK',
             unionMember: String(user.unionMember || '').toUpperCase() === 'GCA',
-            insurancePremiumPerLakh: String(user.insurancePremiumPerLakh ?? 200),
-            originalInsurancePremiumPerLakh: Number(user.insurancePremiumPerLakh ?? 200),
+            premiumOverrides: toOverrideDrafts(user.insurancePremiumCommodityRates),
+            originalPremiumOverrides: toOverrideDrafts(
+                user.insurancePremiumCommodityRates,
+            ),
             insurancePremiumRateVersion: Number(user.insurancePremiumRateVersion || 1),
             premiumChangeReason: '',
         });
@@ -929,15 +972,26 @@ export default function UsersPage() {
             return;
         }
 
-        const nextPremiumPerLakh = Number(editUserForm.insurancePremiumPerLakh);
-        const premiumChanged =
-            isFullAdmin &&
-            nextPremiumPerLakh !== editUserForm.originalInsurancePremiumPerLakh;
+        const premiumChanges = isFullAdmin
+            ? PREMIUM_RATE_COMMODITIES.filter(
+                (commodity) =>
+                    editUserForm.premiumOverrides[commodity].trim() !==
+                    editUserForm.originalPremiumOverrides[commodity].trim(),
+            ).map((commodity) => {
+                const text = editUserForm.premiumOverrides[commodity].trim();
+                return { commodity, premiumPerLakh: text ? Number(text) : null };
+            })
+            : [];
+        const premiumChanged = premiumChanges.length > 0;
         if (
-            isFullAdmin &&
-            (!Number.isFinite(nextPremiumPerLakh) || nextPremiumPerLakh <= 0)
+            premiumChanges.some(
+                (change) =>
+                    change.premiumPerLakh !== null &&
+                    (!Number.isFinite(change.premiumPerLakh) ||
+                        change.premiumPerLakh <= 0),
+            )
         ) {
-            toast.error('Premium per ₹1 lakh must be a positive amount');
+            toast.error('Premium per ₹1 lakh must be a positive amount, or blank for the rate card');
             return;
         }
         if (premiumChanged && !editUserForm.premiumChangeReason.trim()) {
@@ -967,24 +1021,28 @@ export default function UsersPage() {
             }
             const updatedData = response.data;
 
-            let premiumUpdate = null;
-            if (premiumChanged) {
+            let premiumUpdate: UserInsurancePremiumUpdate | null = null;
+            // One audited change per commodity; each bumps the rate version,
+            // so the next call expects the version the last one returned.
+            let expectedVersion = editUserForm.insurancePremiumRateVersion;
+            for (const change of premiumChanges) {
                 const premiumResponse = await adminApi.updateUserInsurancePremium(
                     editUserForm.id,
                     {
-                        premiumPerLakh: nextPremiumPerLakh,
+                        ...change,
                         reason: editUserForm.premiumChangeReason.trim(),
-                        expectedVersion: editUserForm.insurancePremiumRateVersion,
+                        expectedVersion,
                     },
                 );
                 if (!premiumResponse.success || !premiumResponse.data) {
                     toast.error(
                         premiumResponse.message ||
-                        'User details were saved, but the premium rate was not updated',
+                        `User details were saved, but the ${PREMIUM_RATE_COMMODITY_LABELS[change.commodity]} rate was not updated`,
                     );
                     return;
                 }
                 premiumUpdate = premiumResponse.data;
+                expectedVersion = premiumUpdate.insurancePremiumRateVersion;
             }
 
             const mergeUpdatedUser = (user: User): User => {
@@ -1002,8 +1060,8 @@ export default function UsersPage() {
                     ...(isProfileUser ? updatedData : {}),
                     ...(isPremiumUser && premiumUpdate
                         ? {
-                            insurancePremiumPerLakh:
-                                premiumUpdate.insurancePremiumPerLakh,
+                            insurancePremiumCommodityRates:
+                                premiumUpdate.insurancePremiumCommodityRates,
                             insurancePremiumRateVersion:
                                 premiumUpdate.insurancePremiumRateVersion,
                         }
@@ -2901,54 +2959,61 @@ export default function UsersPage() {
 
                             {isFullAdmin ? (
                                 <>
-                                    <div>
+                                    <div className="sm:col-span-2">
                                         <label className="mb-1 block text-sm font-medium text-gray-700">
-                                            Premium per ₹1 lakh
+                                            Negotiated premium per ₹1 lakh
                                         </label>
-                                        <div className="relative">
-                                            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-500">
-                                                ₹
-                                            </span>
-                                            <input
-                                                type="number"
-                                                inputMode="decimal"
-                                                min="0.01"
-                                                step="0.01"
-                                                value={editUserForm.insurancePremiumPerLakh}
-                                                onChange={(e) =>
-                                                    setEditUserForm((prev) => (
-                                                        prev
-                                                            ? {
-                                                                ...prev,
-                                                                insurancePremiumPerLakh: e.target.value,
+                                        <p className="mb-2 text-xs text-gray-500">
+                                            Leave a commodity blank to charge the rate card (App Config).
+                                            A rate here applies only to that commodity, for this customer
+                                            and its merged accounts.
+                                        </p>
+                                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                                            {PREMIUM_RATE_COMMODITIES.map((commodity) => (
+                                                <label key={commodity} className="grid gap-1 text-xs text-gray-600">
+                                                    {PREMIUM_RATE_COMMODITY_LABELS[commodity]}
+                                                    <div className="relative">
+                                                        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-500">
+                                                            ₹
+                                                        </span>
+                                                        <input
+                                                            type="number"
+                                                            inputMode="decimal"
+                                                            min="0.01"
+                                                            step="0.01"
+                                                            placeholder={String(premiumRateCard[commodity])}
+                                                            value={editUserForm.premiumOverrides[commodity]}
+                                                            onChange={(e) =>
+                                                                setEditUserForm((prev) => (
+                                                                    prev
+                                                                        ? {
+                                                                            ...prev,
+                                                                            premiumOverrides: {
+                                                                                ...prev.premiumOverrides,
+                                                                                [commodity]: e.target.value,
+                                                                            },
+                                                                        }
+                                                                        : prev
+                                                                ))
                                                             }
-                                                            : prev
-                                                    ))
-                                                }
-                                                className="block w-full rounded-md border border-gray-300 py-2 pl-8 pr-3 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
-                                            />
+                                                            className="block w-full rounded-md border border-gray-300 py-2 pl-7 pr-2 text-sm shadow-sm focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+                                                        />
+                                                    </div>
+                                                    <span className="text-[11px] text-gray-400">
+                                                        {editUserForm.premiumOverrides[commodity].trim()
+                                                            ? 'Negotiated'
+                                                            : `Rate card ₹${premiumRateCard[commodity]}`}
+                                                    </span>
+                                                </label>
+                                            ))}
                                         </div>
                                     </div>
 
-                                    <div>
-                                        <label className="mb-1 block text-sm font-medium text-gray-700">
-                                            Premium rate
-                                        </label>
-                                        <input
-                                            type="text"
-                                            readOnly
-                                            value={`${Number.isFinite(Number(editUserForm.insurancePremiumPerLakh))
-                                                ? Number(
-                                                    (Number(editUserForm.insurancePremiumPerLakh) / 1000)
-                                                        .toFixed(5),
-                                                )
-                                                : 0}%`}
-                                            className="block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-700 shadow-sm"
-                                        />
-                                    </div>
-
-                                    {Number(editUserForm.insurancePremiumPerLakh) !==
-                                    editUserForm.originalInsurancePremiumPerLakh ? (
+                                    {PREMIUM_RATE_COMMODITIES.some(
+                                        (commodity) =>
+                                            editUserForm.premiumOverrides[commodity].trim() !==
+                                            editUserForm.originalPremiumOverrides[commodity].trim(),
+                                    ) ? (
                                         <div className="sm:col-span-2">
                                             <label className="mb-1 block text-sm font-medium text-gray-700">
                                                 Reason for change

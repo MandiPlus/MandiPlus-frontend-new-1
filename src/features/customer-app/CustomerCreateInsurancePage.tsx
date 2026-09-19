@@ -1,6 +1,12 @@
 "use client";
 
 import {
+  type CommodityPremiumRates,
+  DEFAULT_COMMODITY_PREMIUM_RATES,
+  normalizeCommodityPremiumRates,
+  resolveCommodityPremiumPerLakh,
+} from "@/features/pricing/commodityPremiumRates";
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -482,11 +488,16 @@ function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft 
 export default function CustomerCreateInsurancePage() {
   const router = useRouter();
   const { user } = useAuth();
-  const parsedPremiumPerLakh = Number(user?.insurancePremiumPerLakh);
-  const premiumPerLakh =
-    Number.isFinite(parsedPremiumPerLakh) && parsedPremiumPerLakh > 0
-      ? parsedPremiumPerLakh
-      : 200;
+  const [premiumRates, setPremiumRates] = useState<CommodityPremiumRates>(
+    DEFAULT_COMMODITY_PREMIUM_RATES,
+  );
+  const premiumRateCard = useMemo<PremiumRateCard>(
+    () => ({
+      rates: premiumRates,
+      overrides: user?.insurancePremiumCommodityRates,
+    }),
+    [premiumRates, user?.insurancePremiumCommodityRates],
+  );
   const cameraRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const extractionTasksRef = useRef<Map<string, InvoiceExtractionTask>>(new Map());
@@ -607,12 +618,12 @@ export default function CustomerCreateInsurancePage() {
         paymentDrafts
           .reduce(
             (sum, paymentDraft) =>
-              sum + customerInvoicePremium(paymentDraft, pricing, premiumPerLakh),
+              sum + customerInvoicePremium(paymentDraft, pricing, premiumRateCard),
             0,
           )
           .toFixed(2),
       ),
-    [paymentDrafts, premiumPerLakh, pricing],
+    [paymentDrafts, premiumRateCard, pricing],
   );
   const totalInvoiceValue = useMemo(
     () =>
@@ -926,6 +937,14 @@ export default function CustomerCreateInsurancePage() {
           pricingResult.value?.tenderCoconut
         ) {
           setPricing(pricingResult.value.tenderCoconut);
+        }
+        if (
+          pricingResult.status === "fulfilled" &&
+          pricingResult.value?.premiumRates?.rates
+        ) {
+          setPremiumRates(
+            normalizeCommodityPremiumRates(pricingResult.value.premiumRates.rates),
+          );
         }
       },
     );
@@ -1784,7 +1803,7 @@ export default function CustomerCreateInsurancePage() {
             sum +
             (Number.isFinite(storedPremium) && storedPremium >= 0
               ? storedPremium
-              : customerInvoicePremium(item, pricing, premiumPerLakh))
+              : customerInvoicePremium(item, pricing, premiumRateCard))
           );
         }, 0);
         router.replace(
@@ -1813,9 +1832,7 @@ export default function CustomerCreateInsurancePage() {
                 ? storedPremium
                 : customerInvoicePremium(
                     paymentDrafts[draftIndex],
-                    pricing,
-                    premiumPerLakh,
-                  );
+                    pricing, premiumRateCard);
             })()
           : sum;
       }, 0);
@@ -2411,7 +2428,7 @@ export default function CustomerCreateInsurancePage() {
                         <span className={styles.invoiceReceiptAmounts}>
                           <strong>
                             {itemTotal > 0
-                              ? money(customerInvoicePremium(item, pricing, premiumPerLakh))
+                              ? money(customerInvoicePremium(item, pricing, premiumRateCard))
                               : "—"}
                           </strong>
                           <span>
@@ -3603,11 +3620,18 @@ function paymentAttemptReferences(
   return attempt.invoiceId ? [{ id: attempt.invoiceId }] : [];
 }
 
+type PremiumRateCard = { rates: CommodityPremiumRates; overrides?: unknown };
+
 function customerInvoicePremium(
   draft: CustomerInvoiceDraft,
   pricing: CustomerAppPricing["tenderCoconut"],
-  premiumPerLakh = 200,
+  rateCard: PremiumRateCard,
 ) {
+  const premiumPerLakh = resolveCommodityPremiumPerLakh({
+    productName: draft.product,
+    rates: rateCard.rates,
+    overrides: rateCard.overrides,
+  });
   return Number(
     (
       (resolveInvoiceAmountBreakdown(draft, pricing).totalAmount *
