@@ -11,7 +11,7 @@ import 'cropperjs/dist/cropper.css';
 import Cropper, { ReactCropperElement } from "react-cropper";
 import { ArrowPathIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { Menu, Transition } from '@headlessui/react';
-import { FileText, RefreshCw, Upload, Eye, CheckCircle, AlertCircle, X, XCircle, Pencil, ChevronDown, ChevronRight, MoreVertical, Link as LinkIcon, RotateCcw, Monitor } from 'lucide-react';
+import { FileText, RefreshCw, Upload, Eye, CheckCircle, AlertCircle, X, XCircle, Pencil, ChevronDown, ChevronRight, MoreVertical, Link as LinkIcon, RotateCcw, Monitor, Download } from 'lucide-react';
 
 import InsuranceUploadModal from '@/features/admin/components/InsuranceUploadModal';
 import { BlacklistOverrideOtpModal } from '@/features/admin/components/BlacklistOverrideOtpModal';
@@ -26,6 +26,7 @@ import type { HistoricalPartyOption } from '@/features/insurance/api';
 import { resolveInsuranceCreationAudience } from '@/features/insurance/creationAccessPolicy';
 import DesktopRequiredNotice from '@/shared/components/DesktopRequiredNotice';
 import { useDesktopCreationAccess } from '@/shared/hooks/useDesktopCreationAccess';
+import { buildInvoiceDownloadFileName, downloadInvoicePdf } from '@/shared/invoices/invoiceFileName';
 
 function useDebounce<T>(value: T, delay: number): T {
     const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -1680,6 +1681,24 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         window.open(`${fullUrl}${separator}v=${refreshKey}`, '_blank');
     };
 
+    const handleDownloadPdf = (inv: Invoice) => {
+        const url = inv.pdfUrl || inv.pdfURL;
+        if (!url) return;
+
+        const fullUrl = toFullFileUrl(url);
+        const invoiceId = getInvoiceId(inv);
+        const refreshKey = invoiceId ? (pdfRefreshKeys[invoiceId] || Date.now()) : Date.now();
+        const separator = fullUrl.includes('?') ? '&' : '?';
+        void downloadInvoicePdf(`${fullUrl}${separator}v=${refreshKey}`, inv);
+    };
+
+    // "SRT_Katni_9477.pdf" for the buyers on the custom-name list, otherwise the
+    // stored file name.
+    const downloadPdfTitle = (inv: Invoice) => {
+        const fileName = buildInvoiceDownloadFileName(inv);
+        return fileName ? `Download as ${fileName}.pdf` : 'Download Invoice PDF';
+    };
+
     const handleEditClick = (invoice: Invoice) => {
         const initialVehicleNumber = normalizeVehicleText(
             invoice.vehicleNumber || invoice.truckNumber || ''
@@ -2892,13 +2911,22 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                                     </td>
                                                     <td className={`px-2 py-3 xl:py-2 text-center align-top ${expandedInvoiceId === inv.id ? 'bg-slate-50' : 'bg-white'}`}>
                                                         {(inv.pdfUrl || inv.pdfURL) ? (
-                                                            <button
-                                                                onClick={() => handleViewPdf(inv)}
-                                                                className="inline-flex items-center justify-center w-9 h-9 text-[#4309ac] hover:bg-[#4309ac]/10 rounded-lg border border-[#4309ac]/20"
-                                                                title="View Invoice PDF"
-                                                            >
-                                                                <FileText className="w-4 h-4" />
-                                                            </button>
+                                                            <div className="inline-flex items-center gap-1">
+                                                                <button
+                                                                    onClick={() => handleViewPdf(inv)}
+                                                                    className="inline-flex items-center justify-center w-9 h-9 text-[#4309ac] hover:bg-[#4309ac]/10 rounded-lg border border-[#4309ac]/20"
+                                                                    title="View Invoice PDF"
+                                                                >
+                                                                    <FileText className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleDownloadPdf(inv)}
+                                                                    className="inline-flex items-center justify-center w-9 h-9 text-[#4309ac] hover:bg-[#4309ac]/10 rounded-lg border border-[#4309ac]/20"
+                                                                    title={downloadPdfTitle(inv)}
+                                                                >
+                                                                    <Download className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
                                                         ) : (
                                                             <span className="text-gray-300 text-xs">Pending</span>
                                                         )}
@@ -3304,13 +3332,23 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                                                             <div className="flex items-center justify-between gap-3">
                                                                                 <p className="text-xs font-semibold text-slate-500">Invoice PDF</p>
                                                                                 {(inv.pdfUrl || inv.pdfURL) ? (
-                                                                                    <button
-                                                                                        onClick={() => handleViewPdf(inv)}
-                                                                                        className="inline-flex items-center gap-2 rounded-lg border border-[#4309ac]/20 px-3 py-2 text-sm font-semibold text-[#4309ac] hover:bg-[#4309ac]/10"
-                                                                                    >
-                                                                                        <FileText className="w-4 h-4" />
-                                                                                        View
-                                                                                    </button>
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <button
+                                                                                            onClick={() => handleViewPdf(inv)}
+                                                                                            className="inline-flex items-center gap-2 rounded-lg border border-[#4309ac]/20 px-3 py-2 text-sm font-semibold text-[#4309ac] hover:bg-[#4309ac]/10"
+                                                                                        >
+                                                                                            <FileText className="w-4 h-4" />
+                                                                                            View
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => handleDownloadPdf(inv)}
+                                                                                            className="inline-flex items-center gap-2 rounded-lg border border-[#4309ac]/20 px-3 py-2 text-sm font-semibold text-[#4309ac] hover:bg-[#4309ac]/10"
+                                                                                            title={downloadPdfTitle(inv)}
+                                                                                        >
+                                                                                            <Download className="w-4 h-4" />
+                                                                                            Download
+                                                                                        </button>
+                                                                                    </div>
                                                                                 ) : (
                                                                                     <span className="text-sm text-slate-600">Pending</span>
                                                                                 )}
@@ -3376,13 +3414,22 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                         </div>
                                         <div className="flex items-center gap-1.5 sm:gap-2 ml-2">
                                             {(inv.pdfUrl || inv.pdfURL) && (
-                                                <button
-                                                    onClick={() => handleViewPdf(inv)}
-                                                    className="p-1.5 sm:p-2 text-green-600 hover:bg-green-50 rounded-lg border border-green-200"
-                                                    title="View PDF"
-                                                >
-                                                    <FileText className="w-4 h-4" />
-                                                </button>
+                                                <>
+                                                    <button
+                                                        onClick={() => handleViewPdf(inv)}
+                                                        className="p-1.5 sm:p-2 text-green-600 hover:bg-green-50 rounded-lg border border-green-200"
+                                                        title="View PDF"
+                                                    >
+                                                        <FileText className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDownloadPdf(inv)}
+                                                        className="p-1.5 sm:p-2 text-green-600 hover:bg-green-50 rounded-lg border border-green-200"
+                                                        title={downloadPdfTitle(inv)}
+                                                    >
+                                                        <Download className="w-4 h-4" />
+                                                    </button>
+                                                </>
                                             )}
 
                                             <div className="flex items-center gap-2">
