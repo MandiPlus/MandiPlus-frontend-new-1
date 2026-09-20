@@ -2911,7 +2911,10 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                                     </td>
                                                     <td className={`px-2 py-3 xl:py-2 text-center align-top ${expandedInvoiceId === inv.id ? 'bg-slate-50' : 'bg-white'}`}>
                                                         {(inv.pdfUrl || inv.pdfURL) ? (
-                                                            <div className="inline-flex items-center gap-1">
+                                                            <div className="flex flex-col items-center gap-1">
+                                                                {/* Stacked, not side by side: the table is table-fixed and
+                                                                    this column is narrow, so a second button on the same
+                                                                    row spills over the Verify column. */}
                                                                 <button
                                                                     onClick={() => handleViewPdf(inv)}
                                                                     className="inline-flex items-center justify-center w-9 h-9 text-[#4309ac] hover:bg-[#4309ac]/10 rounded-lg border border-[#4309ac]/20"
