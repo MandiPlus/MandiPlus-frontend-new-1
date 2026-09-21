@@ -99,6 +99,16 @@ interface Question {
     options?: string[];
 }
 
+// An overweight truck with an otherwise valid RC can still be invoiced, but
+// only for approval in Invoices › Overload; the admin opts in per invoice.
+type OverloadOffer =
+    | { kind: 'vehicle'; vehicle: string }
+    | { kind: 'slip'; slip: File }
+    | { kind: 'submit'; vehicle: string; file: File | null; overrides: Partial<FormData> };
+
+const normalizeOverloadVehicle = (value: unknown) =>
+    String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
 interface Message {
     text: string;
     sender: 'bot' | 'user';
@@ -347,6 +357,12 @@ const Insurance = () => {
     ]);
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
     const [error, setError] = useState<string>('');
+    // The vehicle the admin chose to generate for overload approval, if any.
+    const overloadApprovalVehicleRef = useRef<string | null>(null);
+    const [overloadOffer, setOverloadOffer] = useState<OverloadOffer | null>(null);
+    const isOverloadApproved = (vehicle: unknown) =>
+        Boolean(overloadApprovalVehicleRef.current) &&
+        overloadApprovalVehicleRef.current === normalizeOverloadVehicle(vehicle);
     const [isInvoiceDatePickerOpen, setIsInvoiceDatePickerOpen] = useState(false);
     const [viewportHeight, setViewportHeight] = useState<string>('100vh');
     const [editingMessageIndex, setEditingMessageIndex] = useState<number | null>(null);
@@ -952,7 +968,34 @@ const Insurance = () => {
                 activeQuestionCount: activeQuestions.length,
             })));
 
+            const approvalVehicle = normalizeOverloadVehicle(
+                resolvedFormData.vehicleNumber,
+            );
+            if (approvalVehicle && isOverloadApproved(approvalVehicle)) {
+                submitData.append('overloadApprovalRequested', 'true');
+            }
+
             const invoice = await createInsuranceForm(submitData);
+            if (invoice?.overloadApprovalStatus === 'PENDING') {
+                overloadApprovalVehicleRef.current = null;
+                setMessages(prev => [...prev, {
+                    text: language === 'hi'
+                        ? `Invoice ${invoice.invoiceNumber || ''} ban gaya, lekin gaadi overweight hai. Yeh Invoices › Overload mein admin@mandiplus.com ki approval ka intezaar karega aur approval tak Insurance Forms mein nahi dikhega.`
+                        : `Invoice ${invoice.invoiceNumber || ''} created for an overweight vehicle. It is waiting for admin@mandiplus.com to approve it in Invoices › Overload, and won't appear in Insurance Forms until then.`,
+                    sender: 'bot',
+                }]);
+                setIsSubmitting(false);
+                const isEmbedded =
+                    typeof window !== 'undefined' &&
+                    window.self !== window.top &&
+                    new URLSearchParams(window.location.search).get('embedBot') === '1';
+                if (isEmbedded) {
+                    window.parent.postMessage({ type: 'MANDI_BOT_INVOICE_CREATED' }, '*');
+                } else {
+                    setTimeout(() => router.push('/admin/invoices/overload'), 2500);
+                }
+                return;
+            }
             const rawPdfUrl = invoice.pdfUrl || invoice.pdfURL;
             const isBotEmbed =
                 typeof window !== 'undefined' &&
@@ -983,6 +1026,18 @@ const Insurance = () => {
 
         } catch (err: any) {
             console.error(err);
+            if (
+                err?.code === 'VEHICLE_OVERWEIGHT' &&
+                err?.approvalAvailable &&
+                !isOverloadApproved(formOverrides.vehicleNumber ?? formData.vehicleNumber)
+            ) {
+                setOverloadOffer({
+                    kind: 'submit',
+                    vehicle: String(formOverrides.vehicleNumber ?? formData.vehicleNumber ?? ''),
+                    file: fileArgument,
+                    overrides: formOverrides,
+                });
+            }
             let errorMsg = 'Submission failed.';
             if (err.message) errorMsg = Array.isArray(err.message) ? err.message.join(', ') : err.message;
             setError(errorMsg);
@@ -1102,6 +1157,10 @@ const Insurance = () => {
                 quantity: formData.quantity,
             }).catch(() => null);
             if (loadCheck?.enforced && loadCheck.blocksInvoice) {
+                if (loadCheck.approvalAvailable) {
+                    if (isOverloadApproved(vehicleNumber)) return null;
+                    setOverloadOffer({ kind: 'vehicle', vehicle: vehicleNumber });
+                }
                 return loadCheck.message;
             }
 
@@ -1134,7 +1193,12 @@ const Insurance = () => {
             quantity: formData.quantity,
             weighmentSlip: slip,
         }).catch(() => null);
-        return loadCheck?.enforced && loadCheck.blocksInvoice ? loadCheck.message : null;
+        if (!(loadCheck?.enforced && loadCheck.blocksInvoice)) return null;
+        if (loadCheck.approvalAvailable) {
+            if (isOverloadApproved(formData.vehicleNumber)) return null;
+            setOverloadOffer({ kind: 'slip', slip });
+        }
+        return loadCheck.message;
     };
 
     const goToNextQuestion = (answerForCurrentQuestion?: string, latestNotes?: string, fileForSubmit?: File | null) => {
@@ -1913,6 +1977,29 @@ const Insurance = () => {
         goToNextQuestion(undefined, undefined, selectedSlip);
     };
 
+    const acceptOverloadApproval = async () => {
+        const offer = overloadOffer;
+        if (!offer) return;
+        const vehicle =
+            offer.kind === 'slip' ? formData.vehicleNumber : offer.vehicle;
+        overloadApprovalVehicleRef.current = normalizeOverloadVehicle(vehicle);
+        setOverloadOffer(null);
+        setError('');
+        setMessages(prev => [...prev, {
+            text: language === 'hi'
+                ? 'Admin approval ke liye invoice banayein (Invoices › Overload)'
+                : 'Generate for admin approval (Invoices › Overload)',
+            sender: 'user',
+        }]);
+        if (offer.kind === 'vehicle') {
+            await processInput(offer.vehicle);
+        } else if (offer.kind === 'slip') {
+            await handleFileSubmit(offer.slip);
+        } else {
+            await submitInsuranceForm(offer.file, offer.overrides);
+        }
+    };
+
     const handleCustomerWillUpdateLater = async () => {
         try {
             const placeholderSlip = await createCustomerWillUpdateLaterSlip();
@@ -2521,6 +2608,32 @@ const Insurance = () => {
                                 </svg>
                                 {error}
                             </p>
+                        </div>
+                    )}
+                    {overloadOffer && (
+                        <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+                            <p className="text-xs text-amber-900">
+                                {language === 'hi'
+                                    ? 'Gaadi apni permitted weight se zyada bhari hai. Aap phir bhi invoice bana sakte hain — yeh Invoices › Overload mein admin@mandiplus.com ki approval tak rukega aur tab tak Insurance Forms mein nahi dikhega.'
+                                    : 'This truck is over its permitted weight. You can still generate the invoice — it will wait in Invoices › Overload until admin@mandiplus.com approves it, and won’t appear in Insurance Forms before then.'}
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => void acceptOverloadApproval()}
+                                    disabled={isSubmitting}
+                                    className="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+                                >
+                                    {language === 'hi' ? 'Approval ke liye banayein' : 'Generate for admin approval'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setOverloadOffer(null)}
+                                    className="rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900"
+                                >
+                                    {language === 'hi' ? 'Details badlein' : 'Change details'}
+                                </button>
+                            </div>
                         </div>
                     )}
 

@@ -92,6 +92,8 @@ const getInsuranceRequestToken = (): string | null => {
 export interface InsuranceForm {
   id: string;
   invoiceNumber: string;
+  /** Set on an overweight invoice generated for admin approval. */
+  overloadApprovalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED' | null;
   invoiceDate: string;
   supplierName: string;
   supplierAddress: string[];
@@ -546,6 +548,8 @@ export interface VehicleLoadCheckResponse {
   enforced: boolean;
   /** Overweight, or an RC that is not active, fitness-expired or blacklisted. */
   blocksInvoice: boolean;
+  /** Overweight with a valid RC: the admin may generate it for overload approval. */
+  approvalAvailable?: boolean;
   verdict: VehicleLoadVerdict;
   rcIssues: Array<{
     code: "RC_NOT_ACTIVE" | "FITNESS_EXPIRED" | "RC_BLACKLISTED";

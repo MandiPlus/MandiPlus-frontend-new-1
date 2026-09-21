@@ -988,6 +988,57 @@ export interface AdminAppTonnageTier {
   amount: number;
 }
 
+export type OverloadApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface OverloadInvoice {
+  id: string;
+  invoiceNumber: string;
+  createdAt: string;
+  invoiceDate: string | null;
+  productName: string | string[] | null;
+  quantity: number | null;
+  amount: number | null;
+  premiumAmount: number | null;
+  vehicleNumber: string | null;
+  supplierName: string | null;
+  billToName: string | null;
+  invoiceType: string | null;
+  pdfUrl: string | null;
+  weighmentSlipUrls: string[] | null;
+  isVerified: boolean;
+  isRejected: boolean;
+  rejectionReason: string | null;
+  overloadApprovalStatus: OverloadApprovalStatus;
+  overloadDecidedAt: string | null;
+  overloadDecidedBy: string | null;
+  overloadDecisionNote: string | null;
+  createdByName: string | null;
+  verdict: string | null;
+  weightSource: string | null;
+  cargoKg: number | null;
+  ladenKg: number | null;
+  permissibleKg: number | null;
+  excessKg: number | null;
+  loadPercent: number | null;
+  rcGvwKg: number | null;
+  rcUnladenKg: number | null;
+  kgPerUnit: number | null;
+  tolerancePercent: number | null;
+  slipGrossKg: number | null;
+  slipNetKg: number | null;
+}
+
+export interface OverloadInvoicesResponse {
+  status: OverloadApprovalStatus;
+  data: OverloadInvoice[];
+  page: number;
+  limit: number;
+  total: number;
+  counts: Record<OverloadApprovalStatus, number>;
+  /** Only admin@mandiplus.com may approve or reject. */
+  canApprove: boolean;
+}
+
 export interface AdminAppSettings {
   tenderCoconut: {
     pricingVersion: number;
@@ -3078,6 +3129,48 @@ class AdminApi {
       return { success: true, ...response.data };
     } catch (error: any) {
       return { success: false };
+    }
+  };
+
+  public listOverloadInvoices = async (params: {
+    status: OverloadApprovalStatus;
+    page?: number;
+    limit?: number;
+  }): Promise<{ success: boolean; data?: OverloadInvoicesResponse; message?: string }> => {
+    try {
+      const response = await this.client.get<OverloadInvoicesResponse>(
+        "/invoices/admin/overload",
+        { params },
+      );
+      return { success: true, data: response.data };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to load overweight invoices",
+      };
+    }
+  };
+
+  public decideOverloadInvoice = async (
+    invoiceId: string,
+    decision: "approve" | "reject",
+    text?: string,
+  ): Promise<{ success: boolean; message?: string }> => {
+    try {
+      await this.client.post(
+        `/invoices/admin/overload/${invoiceId}/${decision}`,
+        decision === "approve" ? { note: text } : { reason: text },
+      );
+      return { success: true };
+    } catch (error: any) {
+      const message = error.response?.data?.message;
+      return {
+        success: false,
+        message: Array.isArray(message)
+          ? message.join(", ")
+          : message || `Could not ${decision} the invoice`,
+      };
     }
   };
 

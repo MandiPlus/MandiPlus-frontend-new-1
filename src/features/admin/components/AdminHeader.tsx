@@ -48,6 +48,7 @@ const adminTitles: Record<string, string> = {
     '/admin/app-payments': 'App Payments',
     '/admin/app/tracking-purchases': 'Tracking Packs',
     '/admin/insurance-forms': 'Invoice / Insurance Forms',
+    '/admin/invoices/overload': 'Overload Approvals',
     '/admin/claims': 'Claim Requests',
     '/admin/tracking': 'Tracking',
     '/admin/trips': 'Created Trips',
