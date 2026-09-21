@@ -1,10 +1,10 @@
 /**
  * Download file names for invoice PDFs.
  *
- * SRT wants their invoices to land on disk as
- * `BuyerName_BuyerAddress_VehicleLast4` (e.g. `SRT_Katni_9477.pdf`) instead of
- * the stored object name (`invoice-INV-2026-010189.pdf`). Every other buyer
- * keeps the stored name.
+ * SRT (supplier SRI RUDRA TRADERS) wants their invoices to land on disk as
+ * `BUYER-ADDRESS-VEHICLELAST4`, all caps (e.g. `ARR-LUCKNOW-9299.pdf`) instead
+ * of the stored object name (`invoice-INV-2026-010189.pdf`). Invoices from any
+ * other supplier keep the stored name.
  *
  * Nothing is renamed in storage: the name is applied at download time through
  * Cloudinary's `fl_attachment` flag, so it works for invoices that already
@@ -13,14 +13,15 @@
  */
 
 export interface InvoiceFileNameSource {
+    supplierName?: string | null;
     billToName?: string | null;
     billToAddress?: string[] | string | null;
     vehicleNumber?: string | null;
     truckNumber?: string | null;
 }
 
-/** Buyers (bill-to names, upper-cased) that get the custom file name. */
-const CUSTOM_FILE_NAME_BUYERS = new Set(['SRT']);
+/** Suppliers (upper-cased, single-spaced) whose invoices get the custom file name. */
+const CUSTOM_FILE_NAME_SUPPLIERS = new Set(['SRI RUDRA TRADERS', 'SRT']);
 
 const CLOUDINARY_UPLOAD_MARKER = '/upload/';
 
@@ -39,27 +40,33 @@ const firstAddressLine = (address?: string[] | string | null): string => {
 };
 
 /**
- * `SRT_Katni_9477` for buyers on the custom-name list, otherwise `null`
- * (meaning: keep whatever the stored file is called). Returns `null` too when
- * the address or vehicle number is missing, so a half-built name is never used.
+ * `ARR-LUCKNOW-9299` for invoices from a supplier on the custom-name list,
+ * otherwise `null` (meaning: keep whatever the stored file is called). Returns
+ * `null` too when the buyer, address or vehicle number is missing, so a
+ * half-built name is never used.
  */
 export function buildInvoiceDownloadFileName(
     invoice: InvoiceFileNameSource,
 ): string | null {
-    // Canonical spelling, so "Srt" and "SRT" produce the same file name.
-    const buyerName = sanitizePart(String(invoice.billToName || '')).toUpperCase();
-    if (!buyerName || !CUSTOM_FILE_NAME_BUYERS.has(buyerName)) return null;
+    // Stored supplier names carry stray spaces ("SRI RUDRA TRADERS ").
+    const supplier = String(invoice.supplierName || '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .toUpperCase();
+    if (!CUSTOM_FILE_NAME_SUPPLIERS.has(supplier)) return null;
+
+    const buyerName = sanitizePart(String(invoice.billToName || ''));
+    if (!buyerName) return null;
 
     const address = sanitizePart(firstAddressLine(invoice.billToAddress));
     if (!address) return null;
 
     const vehicle = String(invoice.vehicleNumber || invoice.truckNumber || '')
-        .replace(/[^A-Za-z0-9]/g, '')
-        .toUpperCase();
+        .replace(/[^A-Za-z0-9]/g, '');
     const vehicleLast4 = vehicle.slice(-4);
     if (vehicleLast4.length < 4) return null;
 
-    return `${buyerName}_${address}_${vehicleLast4}`;
+    return `${buyerName}-${address}-${vehicleLast4}`.toUpperCase();
 }
 
 /**

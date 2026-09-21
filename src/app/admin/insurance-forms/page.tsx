@@ -1692,8 +1692,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         void downloadInvoicePdf(`${fullUrl}${separator}v=${refreshKey}`, inv);
     };
 
-    // "SRT_Katni_9477.pdf" for the buyers on the custom-name list, otherwise the
-    // stored file name.
+    // "ARR-LUCKNOW-9299.pdf" for SRT's invoices, otherwise the stored file name.
     const downloadPdfTitle = (inv: Invoice) => {
         const fileName = buildInvoiceDownloadFileName(inv);
         return fileName ? `Download as ${fileName}.pdf` : 'Download Invoice PDF';
