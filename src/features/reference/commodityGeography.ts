@@ -7,6 +7,7 @@ export const STATES_BY_COMMODITY: Record<string, readonly string[]> = {
   POMEGRANATE: ["MAHARASHTRA"],
   APPLE: ["JAMMU_AND_KASHMIR", "HIMACHAL_PRADESH"],
   PINEAPPLE: ["DELHI", "KERALA", "WEST_BENGAL", "ASSAM"],
+  GRAPES: ["MAHARASHTRA", "KARNATAKA"],
 };
 
 /**
@@ -16,7 +17,7 @@ export const STATES_BY_COMMODITY: Record<string, readonly string[]> = {
 export const SUGGESTED_MANDIS_BY_STATE: Record<string, readonly string[]> = {
   DELHI: ["Azadpur Mandi"],
   KARNATAKA: ["Kolar", "Chamrajnagar"],
-  MAHARASHTRA: ["Indapur", "Solapur"],
+  MAHARASHTRA: ["Indapur", "Solapur", "Nashik"],
   ANDHRA_PRADESH: ["Anantapur"],
   JAMMU_AND_KASHMIR: ["Sopore"],
   HIMACHAL_PRADESH: ["Shimla"],

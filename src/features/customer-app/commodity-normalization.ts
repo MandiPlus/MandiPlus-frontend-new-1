@@ -27,7 +27,7 @@ const COMMODITIES: readonly CommodityDefinition[] = [
   { name: "Ginger (Fresh)", aliases: ["ginger", "fresh ginger", "adrak"] },
   { name: "Sweet Potato", aliases: ["shakarkand"] },
   { name: "Mosambi (Sweet Lime)", aliases: ["mosambi", "sweet lime"] },
-  { name: "Grapes", aliases: ["grape", "angoor"] },
+  { name: "Grapes", aliases: ["grape", "angoor", "angur"] },
 ];
 
 function normalizeLookup(value: unknown): string {

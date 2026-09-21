@@ -720,6 +720,8 @@ function commodityCodeFromLabel(value: unknown) {
   if (normalized.includes("pomegranate") || normalized.includes("anar")) {
     return "POMEGRANATE";
   }
+  // Word-boundary match — never treat grapefruit as Grapes.
+  if (/(^| )(grapes?|angoor|angur)( |$)/.test(normalized)) return "GRAPES";
   return "OTHER";
 }
 
