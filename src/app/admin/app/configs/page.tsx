@@ -10,10 +10,10 @@ import {
 } from "@/features/admin/api/admin.api";
 import { itemsData } from "@/features/insurance/productCatalog";
 import {
+  type CommodityPremiumRatesConfig,
   DEFAULT_COMMODITY_PREMIUM_RATES,
   PREMIUM_RATE_COMMODITIES,
   PREMIUM_RATE_COMMODITY_LABELS,
-  type PremiumRateCommodity,
 } from "@/features/pricing/commodityPremiumRates";
 
 const fieldClass =
@@ -41,15 +41,41 @@ const toLoadRuleDraft = (rule: AdminVehicleLoadRule): LoadRuleDraft => ({
       : String(rule.kgPerUnit),
 });
 
+type PremiumRateRow = { code: string; label: string };
+
+const FALLBACK_PREMIUM_RATE_ROWS: PremiumRateRow[] = PREMIUM_RATE_COMMODITIES.map(
+  (code) => ({ code, label: PREMIUM_RATE_COMMODITY_LABELS[code] }),
+);
+
+// The launch card, used until the backend answers.
+const DEFAULT_PREMIUM_RATES_CONFIG: CommodityPremiumRatesConfig = {
+  rates: DEFAULT_COMMODITY_PREMIUM_RATES,
+  explicit: { TOMATO: 399, POMEGRANATE: 250, PINEAPPLE: 250, TENDER_COCONUT: 200, OTHER: 250 },
+  isDefault: true,
+  updatedAt: null,
+};
+
+/** One draft per commodity: its own rate, or "" when it follows OTHER. */
 const toRateDrafts = (
-  rates: Record<PremiumRateCommodity, number>,
-): Record<PremiumRateCommodity, string> =>
-  Object.fromEntries(
-    PREMIUM_RATE_COMMODITIES.map((commodity) => [
-      commodity,
-      String(rates[commodity]),
+  config: CommodityPremiumRatesConfig,
+  rows: PremiumRateRow[],
+): Record<string, string> => {
+  // An older backend sends only the effective rates of its five commodities.
+  const explicit: Record<string, number | undefined> =
+    config.explicit || config.rates;
+  return Object.fromEntries(
+    rows.map(({ code }) => [
+      code,
+      explicit[code] === undefined ? "" : String(explicit[code]),
     ]),
-  ) as Record<PremiumRateCommodity, string>;
+  );
+};
+
+function rateHint(value: unknown) {
+  const rate = Number(value);
+  if (!(rate > 0)) return "Enter a rate";
+  return `${(rate / 1000).toFixed(3)}% · ₹${(rate * 10).toLocaleString("en-IN")} on ₹10 lakh`;
+}
 
 function money(value: number) {
   return `₹${Number(value || 0).toLocaleString("en-IN")}`;
@@ -68,10 +94,21 @@ export default function AppConfigsPage() {
   const [savingDiscount, setSavingDiscount] = useState(false);
   const [loadRules, setLoadRules] = useState<LoadRuleDraft[]>([]);
   const [savingLoadRules, setSavingLoadRules] = useState(false);
-  const [premiumRates, setPremiumRates] = useState<
-    Record<PremiumRateCommodity, string>
-  >(() => toRateDrafts(DEFAULT_COMMODITY_PREMIUM_RATES));
+  const [premiumRateRows, setPremiumRateRows] = useState<PremiumRateRow[]>(
+    FALLBACK_PREMIUM_RATE_ROWS,
+  );
+  const [premiumRates, setPremiumRates] = useState<Record<string, string>>(
+    () => toRateDrafts(DEFAULT_PREMIUM_RATES_CONFIG, FALLBACK_PREMIUM_RATE_ROWS),
+  );
   const [savingPremiumRates, setSavingPremiumRates] = useState(false);
+
+  function applyPremiumRates(config: CommodityPremiumRatesConfig) {
+    const rows = config.commodities?.length
+      ? config.commodities
+      : FALLBACK_PREMIUM_RATE_ROWS;
+    setPremiumRateRows(rows);
+    setPremiumRates(toRateDrafts(config, rows));
+  }
 
   useEffect(() => {
     let active = true;
@@ -104,9 +141,7 @@ export default function AppConfigsPage() {
       setDiscountPercent(String(data.premiumDiscount.percent));
       setDiscountActive(data.premiumDiscount.active);
       setLoadRules((data.vehicleLoadRules?.commodities || []).map(toLoadRuleDraft));
-      setPremiumRates(
-        toRateDrafts(data.premiumRates?.rates || DEFAULT_COMMODITY_PREMIUM_RATES),
-      );
+      applyPremiumRates(data.premiumRates || DEFAULT_PREMIUM_RATES_CONFIG);
     }
   }, []);
 
@@ -144,17 +179,26 @@ export default function AppConfigsPage() {
     setSavingLogistics(false);
   };
 
+  const otherPremiumRate = Number(premiumRates.OTHER);
   const savePremiumRates = async (event: FormEvent) => {
     event.preventDefault();
-    const rates = Object.fromEntries(
-      PREMIUM_RATE_COMMODITIES.map((commodity) => [
-        commodity,
-        Number(premiumRates[commodity]),
-      ]),
-    ) as Record<PremiumRateCommodity, number>;
-    if (Object.values(rates).some((rate) => !Number.isFinite(rate) || rate <= 0)) {
-      setError("Every commodity needs a premium above ₹0 per lakh.");
+    if (!(otherPremiumRate > 0)) {
+      setError("All other commodities needs a premium above ₹0 per lakh.");
       return;
+    }
+    const rates: Record<string, number | null> = {};
+    for (const { code, label } of premiumRateRows) {
+      const text = String(premiumRates[code] ?? "").trim();
+      if (!text) {
+        rates[code] = null;
+        continue;
+      }
+      const rate = Number(text);
+      if (!Number.isFinite(rate) || rate <= 0) {
+        setError(`${label} needs a premium above ₹0 per lakh, or blank to follow All other commodities.`);
+        return;
+      }
+      rates[code] = rate;
     }
     setSavingPremiumRates(true);
     setError("");
@@ -166,7 +210,7 @@ export default function AppConfigsPage() {
       setSettings((current) =>
         current ? { ...current, premiumRates: response.data! } : current,
       );
-      setPremiumRates(toRateDrafts(response.data.rates));
+      applyPremiumRates(response.data);
       setSavedNote("Premium rates saved. New invoices use them now.");
     }
     setSavingPremiumRates(false);
@@ -276,32 +320,55 @@ export default function AppConfigsPage() {
             ₹ per lakh of invoice value, for every invoice from every surface —
             admin console, customer web and mobile app, and the WhatsApp bot. A
             customer&apos;s own negotiated rate for a commodity (set on the
-            Users page) wins over this card. Existing invoices keep the rate
+            Users page) wins over this card. Leave a commodity blank to charge
+            it the All other commodities rate. Existing invoices keep the rate
             they were created with.
           </p>
         </div>
-        <div className="grid gap-3 sm:grid-cols-5">
-          {PREMIUM_RATE_COMMODITIES.map((commodity) => (
-            <label key={commodity} className={labelClass}>
-              {PREMIUM_RATE_COMMODITY_LABELS[commodity]}
-              <input
-                className={fieldClass}
-                inputMode="decimal"
-                value={premiumRates[commodity]}
-                onChange={(event) =>
-                  setPremiumRates((current) => ({
-                    ...current,
-                    [commodity]: event.target.value,
-                  }))
-                }
-              />
-              <span className="text-[11px] font-normal text-slate-500">
-                {Number(premiumRates[commodity]) > 0
-                  ? `${(Number(premiumRates[commodity]) / 1000).toFixed(3)}% · ${money(Number(premiumRates[commodity]) * 10)} on ₹10 lakh`
-                  : "Enter a rate"}
-              </span>
-            </label>
-          ))}
+        <label className={`${labelClass} max-w-xs`}>
+          All other commodities
+          <input
+            className={fieldClass}
+            inputMode="decimal"
+            value={premiumRates.OTHER ?? ""}
+            onChange={(event) =>
+              setPremiumRates((current) => ({
+                ...current,
+                OTHER: event.target.value,
+              }))
+            }
+          />
+          <span className="text-[11px] font-normal text-slate-500">
+            {rateHint(premiumRates.OTHER)} · used by every commodity below left blank,
+            and by anything not in the list
+          </span>
+        </label>
+        <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {premiumRateRows
+            .filter(({ code }) => code !== "OTHER")
+            .map(({ code, label }) => {
+              const own = String(premiumRates[code] ?? "").trim();
+              return (
+                <label key={code} className={labelClass}>
+                  {label}
+                  <input
+                    className={fieldClass}
+                    inputMode="decimal"
+                    placeholder={otherPremiumRate > 0 ? String(otherPremiumRate) : ""}
+                    value={premiumRates[code] ?? ""}
+                    onChange={(event) =>
+                      setPremiumRates((current) => ({
+                        ...current,
+                        [code]: event.target.value,
+                      }))
+                    }
+                  />
+                  <span className="text-[11px] font-normal text-slate-500">
+                    {own ? rateHint(own) : "Follows All other commodities"}
+                  </span>
+                </label>
+              );
+            })}
         </div>
         {settings?.premiumRates?.isDefault ? (
           <p className="text-xs text-slate-600">
