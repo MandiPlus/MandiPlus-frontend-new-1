@@ -32,6 +32,7 @@ export function invoiceHsnCodeForSubmit(product: string): string {
     Onion: "07031010",
     Potato: "07019000",
     "Mosambi (Sweet Lime)": "08059000",
+    Grapes: "08061000",
   };
   return byName[canonical] || "";
 }

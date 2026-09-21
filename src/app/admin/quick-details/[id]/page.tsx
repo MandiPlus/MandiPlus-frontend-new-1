@@ -244,6 +244,7 @@ function onboardingProduct(code: unknown) {
     POTATO: "Potato",
     APPLE: "Apple",
     PINEAPPLE: "Pineapple",
+    GRAPES: "Grapes",
     POMEGRANATE: "Pomegranate (Anar)",
   };
   return canonicalProduct(names[String(code || "")] || String(code || ""), "");
