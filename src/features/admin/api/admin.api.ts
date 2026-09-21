@@ -5356,7 +5356,7 @@ class AdminApi {
   };
 
   updateCommodityPremiumRates = async (
-    rates: Partial<CommodityPremiumRates>,
+    rates: Record<string, number | null>,
   ): Promise<ApiResponse<CommodityPremiumRatesConfig>> => {
     try {
       const response = await this.client.patch<{
