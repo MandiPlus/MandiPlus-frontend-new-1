@@ -229,6 +229,7 @@ export default function UsersPage() {
     const [creditLoadingByUser, setCreditLoadingByUser] = useState<Record<string, boolean>>({});
     const [rebuildLoadingByUser, setRebuildLoadingByUser] = useState<Record<string, boolean>>({});
     const [convertingByUser, setConvertingByUser] = useState<Record<string, boolean>>({});
+    const [deletingWalletByUser, setDeletingWalletByUser] = useState<Record<string, boolean>>({});
     const [impersonatingByUser, setImpersonatingByUser] = useState<Record<string, boolean>>({});
     const [channelPartnerLoadingByUser, setChannelPartnerLoadingByUser] = useState<Record<string, boolean>>({});
     const [walletLogsOpen, setWalletLogsOpen] = useState(false);
@@ -695,6 +696,53 @@ export default function UsersPage() {
             toast.error(err?.message || 'Failed to rebuild wallet');
         } finally {
             setRebuildLoadingByUser((prev) => ({ ...prev, [user.id]: false }));
+        }
+    };
+
+    const handleDeleteUnpaidWallet = async (user: User) => {
+        if (!user?.id || user.walletType !== 'UNPAID') return;
+        const balance = Number(user.walletBalance || 0).toFixed(2);
+        const reason = window.prompt(
+            `Delete the unpaid wallet of ${user.name || user.mobileNumber} (balance Rs ${balance}) and all its logs?\n\n` +
+                'Invoices are not touched and the logs are kept in the removal audit. ' +
+                'After this the user can be converted to customer and starts from Rs 0.\n\n' +
+                'Type a reason to confirm:',
+        );
+        if (reason === null) return;
+        if (reason.trim().length < 3) {
+            toast.error('Please enter a reason (at least 3 characters)');
+            return;
+        }
+
+        setError('');
+        setDeletingWalletByUser((prev) => ({ ...prev, [user.id]: true }));
+        try {
+            const response = await adminApi.deleteUnpaidWallet(user.id, reason.trim());
+            if (!response.success) {
+                toast.error(response.message || 'Failed to delete unpaid wallet');
+                return;
+            }
+
+            const clearWallet = (u: User) =>
+                u.id === user.id
+                    ? { ...u, walletId: null, walletType: null, walletBalance: 0 }
+                    : u;
+            setAllUsers((prev) => prev.map(clearWallet));
+            setFilteredUsers((prev) =>
+                activeSection === 'UNPAID_WALLETS'
+                    ? prev.filter((u) => u.id !== user.id)
+                    : prev.map(clearWallet),
+            );
+            if (walletLogUser?.id === user.id) {
+                setWalletLogs([]);
+            }
+            toast.success(
+                `Unpaid wallet deleted (${response.data?.removedTransactionCount ?? 0} logs archived)`,
+            );
+        } catch (err: any) {
+            toast.error(err?.message || 'Failed to delete unpaid wallet');
+        } finally {
+            setDeletingWalletByUser((prev) => ({ ...prev, [user.id]: false }));
         }
     };
 
@@ -1956,7 +2004,7 @@ export default function UsersPage() {
                                                                     Wallet not applicable for per-policy transporter
                                                                 </span>
                                                             ) : (
-                                                                <div className="grid min-w-max grid-cols-[7rem_8.5rem_10rem_max-content_max-content_max-content_max-content_max-content] items-center gap-2">
+                                                                <div className="grid min-w-max grid-cols-[7rem_8.5rem_10rem_max-content_max-content_max-content_max-content_max-content_max-content] items-center gap-2">
                                                                     <input
                                                                         type="number"
                                                                         step="0.01"
@@ -2029,6 +2077,16 @@ export default function UsersPage() {
                                                                     >
                                                                         Logs
                                                                     </button>
+                                                                    {user.walletType === 'UNPAID' && user.walletId ? (
+                                                                        <button
+                                                                            onClick={() => handleDeleteUnpaidWallet(user)}
+                                                                            disabled={deletingWalletByUser[user.id]}
+                                                                            className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                                                                            title="Delete this unpaid wallet and its logs (archived) so the user can be converted to customer"
+                                                                        >
+                                                                            {deletingWalletByUser[user.id] ? 'Deleting...' : 'Delete Wallet'}
+                                                                        </button>
+                                                                    ) : null}
                                                                     <button
                                                                         onClick={() => handleExportWalletLogs(user)}
                                                                         disabled={exportingWalletByUser[user.id]}
