@@ -2906,6 +2906,38 @@ class AdminApi {
     }
   };
 
+  public deleteUnpaidWallet = async (
+    userId: string,
+    reason: string,
+  ): Promise<
+    ApiResponse<{
+      userId: string;
+      walletId: string;
+      deletedBalance: number;
+      removedTransactionCount: number;
+      message: string;
+    }>
+  > => {
+    try {
+      const response = await this.client.post(
+        `/wallet/admin/users/${userId}/delete-unpaid-wallet`,
+        { reason },
+      );
+      const payload = response.data;
+      if (payload && typeof payload === "object" && "success" in payload) {
+        return payload;
+      }
+      return { success: true, data: payload };
+    } catch (error: any) {
+      return {
+        success: false,
+        message:
+          error.response?.data?.message || "Failed to delete unpaid wallet",
+        error: error.message,
+      };
+    }
+  };
+
   public convertUserIdentity = async (
     userId: string,
     identity: UserIdentity,
