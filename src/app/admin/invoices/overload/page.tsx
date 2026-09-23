@@ -22,10 +22,25 @@ import {
 
 const ITEMS_PER_PAGE = 20;
 
+/**
+ * TEMPORARY (Om, 2026-09-23): show each decided invoice under the opposite
+ * decision word — an approved invoice reads "Rejected" and a rejected one
+ * reads "Approved".
+ *
+ * Labels only. The stored decision, the API, and the approve/reject buttons
+ * are untouched, so a click still does what its own label says. Revert by
+ * setting this to false.
+ */
+const TEMPORARY_SWAP_DECISION_LABELS = true;
+
+/** Whether a decision is *shown* as an approval, after the temporary swap. */
+const shownAsApproved = (approved: boolean) =>
+  TEMPORARY_SWAP_DECISION_LABELS ? !approved : approved;
+
 const TABS: Array<{ status: OverloadApprovalStatus; label: string }> = [
   { status: 'PENDING', label: 'Waiting for approval' },
-  { status: 'APPROVED', label: 'Approved' },
-  { status: 'REJECTED', label: 'Rejected' },
+  { status: 'APPROVED', label: shownAsApproved(true) ? 'Approved' : 'Rejected' },
+  { status: 'REJECTED', label: shownAsApproved(false) ? 'Approved' : 'Rejected' },
 ];
 
 const kg = (value: number | null | undefined) =>
@@ -68,7 +83,7 @@ function LoadSummary({ invoice }: { invoice: OverloadInvoice }) {
 
 function Decision({ invoice }: { invoice: OverloadInvoice }) {
   if (invoice.overloadApprovalStatus === 'PENDING') return null;
-  const approved = invoice.overloadApprovalStatus === 'APPROVED';
+  const approved = shownAsApproved(invoice.overloadApprovalStatus === 'APPROVED');
   return (
     <p className="text-xs text-slate-600">
       <span className={approved ? 'font-semibold text-emerald-700' : 'font-semibold text-rose-700'}>
@@ -222,7 +237,7 @@ export default function OverloadInvoicesPage() {
         <div className="rounded-lg bg-white px-4 py-10 text-center text-sm text-slate-500 shadow">
           {status === 'PENDING'
             ? 'No overweight invoices are waiting for approval.'
-            : `No ${status.toLowerCase()} overweight invoices yet.`}
+            : `No ${shownAsApproved(status === 'APPROVED') ? 'approved' : 'rejected'} overweight invoices yet.`}
         </div>
       ) : (
         <div className="space-y-3">
