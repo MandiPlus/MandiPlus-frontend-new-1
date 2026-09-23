@@ -2,7 +2,15 @@
 
 import { useEffect, useMemo } from 'react';
 import L, { type LatLngBoundsExpression, type LatLngExpression } from 'leaflet';
-import { MapContainer, Marker, TileLayer, Tooltip, useMap } from 'react-leaflet';
+import {
+  CircleMarker,
+  MapContainer,
+  Marker,
+  Polyline,
+  TileLayer,
+  Tooltip,
+  useMap,
+} from 'react-leaflet';
 
 export type MapCoord = { lat: number; lng: number };
 
@@ -14,6 +22,8 @@ type TripLeafletMapProps = {
   currentLabel?: string;
   sourceLabel?: string;
   destinationLabel?: string;
+  /** Recorded trail, oldest first — drawn as a polyline with a dot per checkpoint. */
+  path?: Array<MapCoord & { label?: string | null }> | null;
   zoom?: number;
   className?: string;
 };
@@ -32,14 +42,32 @@ const DEFAULT_ATTRIBUTION =
     ? '&copy; <a href="https://www.maptiler.com/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>');
 
+function normalizeMapCoord(value?: MapCoord | null): MapCoord | null {
+  if (!value) return null;
+  let lat = Number(value.lat);
+  let lng = Number(value.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) {
+    return null;
+  }
+
+  // Repair inverted [lng, lat]
+  // In India / South Asia: Longitude is ~50-140 and Latitude is ~(-10)-45.
+  if (lat >= 50 && lat <= 140 && lng >= -10 && lng <= 45) {
+    return { lat: lng, lng: lat };
+  }
+
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    if (lng >= -90 && lng <= 90 && lat >= -180 && lat <= 180) {
+      return { lat: lng, lng: lat };
+    }
+    return null;
+  }
+
+  return { lat, lng };
+}
+
 function isCoord(value?: MapCoord | null): value is MapCoord {
-  return (
-    Boolean(value) &&
-    typeof value?.lat === 'number' &&
-    typeof value?.lng === 'number' &&
-    Number.isFinite(value.lat) &&
-    Number.isFinite(value.lng)
-  );
+  return normalizeMapCoord(value) !== null;
 }
 
 function toLatLng(coord: MapCoord): LatLngExpression {
@@ -131,17 +159,47 @@ export default function TripLeafletMap({
   currentLabel = 'Current location',
   sourceLabel = 'Source',
   destinationLabel = 'Destination',
+  path,
   zoom = 11,
   className,
 }: TripLeafletMapProps) {
   const truckIcon = useMemo(() => createTruckIcon(), []);
   const sourceIcon = useMemo(() => createFlagIcon('source'), []);
   const destinationIcon = useMemo(() => createFlagIcon('destination'), []);
-  const points = useMemo(
-    () => [current, source, destination].filter(isCoord),
-    [current, source, destination],
+
+  const normalizedCurrent = useMemo(() => normalizeMapCoord(current), [current]);
+  const normalizedSource = useMemo(() => normalizeMapCoord(source), [source]);
+  const normalizedDestination = useMemo(() => normalizeMapCoord(destination), [destination]);
+  const normalizedCenter = useMemo(() => normalizeMapCoord(center), [center]);
+
+  const normalizedPath = useMemo(
+    () =>
+      (path || [])
+        .map((point) => {
+          const coord = normalizeMapCoord(point);
+          return coord ? { ...coord, label: point.label ?? null } : null;
+        })
+        .filter((point): point is MapCoord & { label: string | null } =>
+          point !== null,
+        ),
+    [path],
   );
-  const mapCenter = isCoord(center) ? center : { lat: 22.9734, lng: 78.6569 };
+
+  const points = useMemo(
+    () =>
+      [
+        normalizedCurrent,
+        normalizedSource,
+        normalizedDestination,
+        ...normalizedPath,
+      ].filter((p): p is MapCoord => p !== null),
+    [normalizedCurrent, normalizedSource, normalizedDestination, normalizedPath],
+  );
+  const mapCenter =
+    normalizedCenter ||
+    normalizedCurrent ||
+    normalizedDestination ||
+    normalizedSource || { lat: 22.9734, lng: 78.6569 };
   const usesSubdomains = DEFAULT_TILE_URL.includes('{s}');
 
   return (
@@ -160,24 +218,51 @@ export default function TripLeafletMap({
       />
       <MapViewport center={mapCenter} points={points} zoom={zoom} />
 
-      {isCoord(source) ? (
-        <Marker position={toLatLng(source)} icon={sourceIcon}>
+      {normalizedPath.length > 1 ? (
+        <Polyline
+          positions={normalizedPath.map(toLatLng)}
+          pathOptions={{ color: '#4309ac', weight: 3, opacity: 0.75 }}
+        />
+      ) : null}
+
+      {normalizedPath.map((point, index) => (
+        <CircleMarker
+          key={`${point.lat},${point.lng},${index}`}
+          center={toLatLng(point)}
+          radius={4}
+          pathOptions={{
+            color: '#4309ac',
+            weight: 2,
+            fillColor: '#ffffff',
+            fillOpacity: 1,
+          }}
+        >
+          {point.label ? (
+            <Tooltip direction="top" offset={[0, -6]}>
+              {point.label}
+            </Tooltip>
+          ) : null}
+        </CircleMarker>
+      ))}
+
+      {normalizedSource ? (
+        <Marker position={toLatLng(normalizedSource)} icon={sourceIcon}>
           <Tooltip direction="top" offset={[0, -24]}>
             {sourceLabel}
           </Tooltip>
         </Marker>
       ) : null}
 
-      {isCoord(destination) ? (
-        <Marker position={toLatLng(destination)} icon={destinationIcon}>
+      {normalizedDestination ? (
+        <Marker position={toLatLng(normalizedDestination)} icon={destinationIcon}>
           <Tooltip direction="top" offset={[0, -24]}>
             {destinationLabel}
           </Tooltip>
         </Marker>
       ) : null}
 
-      {isCoord(current) ? (
-        <Marker position={toLatLng(current)} icon={truckIcon}>
+      {normalizedCurrent ? (
+        <Marker position={toLatLng(normalizedCurrent)} icon={truckIcon}>
           <Tooltip direction="top" offset={[0, -28]}>
             {currentLabel}
           </Tooltip>
