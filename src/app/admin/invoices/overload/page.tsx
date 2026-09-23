@@ -41,15 +41,21 @@ function LoadSummary({ invoice }: { invoice: OverloadInvoice }) {
     return <span className="text-slate-500">Load check not linked</span>;
   }
   const fromSlip = invoice.weightSource && invoice.weightSource !== 'QUANTITY_ESTIMATE';
+  // The overload is how far the load is past the RC's GVW, not the load as a
+  // share of it: 29,500 kg on a 28,000 kg GVW is 5.4% overweight, not 105.4%.
+  const percentOverGvw = invoice.loadPercent - 100;
+  const weighedKg = invoice.ladenKg ?? invoice.cargoKg;
+  const kgOverGvw =
+    weighedKg != null && invoice.rcGvwKg != null ? weighedKg - invoice.rcGvwKg : null;
   return (
     <div className="space-y-0.5">
       <p className="font-semibold text-rose-700">
-        {invoice.loadPercent.toFixed(1)}% of GVW
-        {invoice.excessKg ? ` · ${kg(invoice.excessKg)} over` : ''}
+        {percentOverGvw > 0 ? `${percentOverGvw.toFixed(1)}% over GVW` : 'Within GVW'}
+        {kgOverGvw != null && kgOverGvw > 0 ? ` · ${kg(kgOverGvw)} over` : ''}
       </p>
       <p className="text-xs text-slate-600">
-        Laden {kg(invoice.ladenKg)} vs allowed {kg(invoice.permissibleKg)} (RC GVW{' '}
-        {kg(invoice.rcGvwKg)} + {invoice.tolerancePercent ?? 5}%)
+        Laden {kg(weighedKg)} vs RC GVW {kg(invoice.rcGvwKg)} · allowed{' '}
+        {kg(invoice.permissibleKg)} (GVW + {invoice.tolerancePercent ?? 5}% tolerance)
       </p>
       <p className="text-xs text-slate-500">
         {fromSlip
