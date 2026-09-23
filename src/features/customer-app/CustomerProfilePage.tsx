@@ -28,6 +28,11 @@ import {
   statesForCommodities,
 } from "@/features/reference/commodityGeography";
 import { updateCustomerUser } from "./api";
+import {
+  CUSTOMER_LANGUAGE_OPTIONS,
+  DEFAULT_CUSTOMER_LANGUAGE,
+  customerCopy,
+} from "./i18n";
 import { CustomerAppShell } from "./CustomerAppShell";
 import { initials, readableError } from "./utils";
 import styles from "./customer-app.module.css";
@@ -41,19 +46,12 @@ type NotificationPreferences = {
   walletUpdates: boolean;
 };
 
-const languageOptions = [
-  ["hi", "हिन्दी"],
-  ["en", "English"],
-  ["te", "తెలుగు"],
-  ["kn", "ಕನ್ನಡ"],
-  ["mr", "मराठी"],
-  ["ta", "தமிழ்"],
-] as const;
+const languageOptions = CUSTOMER_LANGUAGE_OPTIONS;
 
 const profileRoles = [
-  ["SUPPLIER", "Loading vala"],
-  ["BUYER", "Unloading vala"],
-  ["TRANSPORTER", "Transporter"],
+  ["SUPPLIER", "roleSupplier"],
+  ["BUYER", "roleBuyer"],
+  ["TRANSPORTER", null],
 ] as const;
 
 const businessSizeOptions = [
@@ -86,8 +84,9 @@ export default function CustomerProfilePage() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [language, setLanguage] = useState(
-    String(user?.preferredLanguage || "hi"),
+    String(user?.preferredLanguage || DEFAULT_CUSTOMER_LANGUAGE),
   );
+  const t = customerCopy(language);
   const [profile, setProfile] = useState(() => profileFromUser(user, commodities));
   const [notifications, setNotifications] = useState<NotificationPreferences>(
     () => {
@@ -171,11 +170,11 @@ export default function CustomerProfilePage() {
         ...payload,
         ...updated,
       }));
-      setNotice("Profile save ho gaya.");
+      setNotice(t("profileSaved"));
       setSection("main");
       router.replace("/profile?section=main");
     } catch (error) {
-      setNotice(readableError(error, "Profile save nahi ho saka."));
+      setNotice(readableError(error, t("profileSaveFailed")));
     } finally {
       setSaving(false);
     }
@@ -198,7 +197,7 @@ export default function CustomerProfilePage() {
       }));
     } catch (error) {
       setLanguage(previous);
-      setNotice(readableError(error, "Language update nahi ho saki."));
+      setNotice(readableError(error, t("profileLanguageFailed")));
     } finally {
       setSaving(false);
     }
@@ -259,7 +258,7 @@ export default function CustomerProfilePage() {
             <section className={styles.settingsCard}>
               <SettingsRow
                 icon={<UserRound size={21} />}
-                title="Aapki details"
+                title={t("profileYourDetails")}
                 onClick={() => setSection("details")}
               />
               <SettingsRow
@@ -267,7 +266,7 @@ export default function CustomerProfilePage() {
                 title="Language"
                 sub={
                   languageOptions.find(([code]) => code === language)?.[1] ||
-                  "हिन्दी"
+                  "Hinglish"
                 }
                 onClick={() => setSection("language")}
               />
@@ -331,7 +330,7 @@ export default function CustomerProfilePage() {
             <div className={styles.profileField}>
               <span>I am a</span>
               <div className={styles.profileRoleSelector}>
-                {profileRoles.map(([value, label]) => {
+                {profileRoles.map(([value, labelKey]) => {
                   const active = profile.identity === value;
                   return (
                     <button
@@ -343,7 +342,7 @@ export default function CustomerProfilePage() {
                         setProfile({ ...profile, identity: value })
                       }
                     >
-                      {label}
+                      {labelKey ? t(labelKey) : "Transporter"}
                     </button>
                   );
                 })}
@@ -698,7 +697,7 @@ function businessSizeFromUser(value: unknown) {
 }
 
 function sectionLabel(section: ProfileSection) {
-  if (section === "details") return "Aapki details";
+  if (section === "details") return "Your details";
   if (section === "language") return "Language";
   if (section === "notifications") return "Notifications";
   if (section === "security") return "Security";

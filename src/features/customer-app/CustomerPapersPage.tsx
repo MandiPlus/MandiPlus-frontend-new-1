@@ -17,6 +17,7 @@ import {
 
 import { createCustomerWebPaymentCheckout } from "@/features/customer/api";
 import { CustomerAppShell } from "./CustomerAppShell";
+import { useCustomerCopy } from "./useCustomerCopy";
 import { useCustomerAppData } from "./useCustomerAppData";
 import {
   getInsuranceUrl,
@@ -42,6 +43,7 @@ export default function CustomerPapersPage({
 }: {
   defaultTab?: PaperTab;
 }) {
+  const t = useCustomerCopy();
   const router = useRouter();
   const params = useSearchParams();
   const data = useCustomerAppData();
@@ -297,7 +299,7 @@ export default function CustomerPapersPage({
               onClick={() => void pay()}
             >
               {paying ? <RefreshCw size={18} className="animate-spin" /> : null}
-              Pay karein
+              {t("papersPay")}
             </button>
           </div>
         </section>
@@ -316,7 +318,7 @@ export default function CustomerPapersPage({
           </div>
         ) : !data.invoicesLoaded ? (
           <div className={styles.emptyState}>
-            Payment details load nahi ho paaye. Please retry.
+            {t("papersPaymentLoadFailed")}
           </div>
         ) : groups.length ? (
           groups.map(([date, invoices]) => (
@@ -342,7 +344,7 @@ export default function CustomerPapersPage({
                     >
                       <Check size={14} />
                     </span>
-                    Sab chunein
+                    {t("papersSelectAll")}
                   </button>
                 ) : null}
               </div>
@@ -421,7 +423,7 @@ export default function CustomerPapersPage({
                         <span className={styles.documentPending}>
                           <strong>Insurance ban raha hai</strong>
                           <small>
-                            {invoiceUrl ? "Invoice dekhein" : "Jald milega"}
+                            {invoiceUrl ? t("papersViewInvoice") : t("papersInvoiceComing")}
                           </small>
                         </span>
                       ) : selectable ? (
@@ -447,7 +449,7 @@ export default function CustomerPapersPage({
           <div className={styles.emptyState}>
             <div>
               <ShieldCheck size={34} style={{ margin: "0 auto 10px" }} />
-              Is range mein koi record nahi mila.
+              {t("papersNoRecords")}
             </div>
           </div>
         )}

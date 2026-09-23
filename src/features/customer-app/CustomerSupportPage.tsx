@@ -14,11 +14,13 @@ import {
 
 import { askCustomerAssistant } from "./api";
 import { CustomerAppShell } from "./CustomerAppShell";
+import { useCustomerCopy } from "./useCustomerCopy";
 import styles from "./customer-app.module.css";
 
 type Message = { text: string; mine: boolean };
 
 export default function CustomerSupportPage() {
+  const t = useCustomerCopy();
   const router = useRouter();
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -44,7 +46,7 @@ export default function CustomerSupportPage() {
         ...current,
         {
           mine: false,
-          text: response.answer || "Help abhi available nahi hai. Thodi der baad try karein.",
+          text: response.answer || t("supportUnavailable"),
         },
       ]);
     } catch {
@@ -52,7 +54,7 @@ export default function CustomerSupportPage() {
         ...current,
         {
           mine: false,
-          text: "Help abhi available nahi hai. Thodi der baad try karein.",
+          text: t("supportUnavailable"),
         },
       ]);
     } finally {
@@ -63,7 +65,7 @@ export default function CustomerSupportPage() {
   const suggestions = [
     {
       label: "Wallet balance",
-      sub: "Available credit check karein",
+      sub: t("supportCheckCredit"),
       icon: WalletCards,
       action: () => void send("Mera wallet balance kitna hai?"),
     },
@@ -80,8 +82,8 @@ export default function CustomerSupportPage() {
       action: () => void send("Kaunse claim documents pending hain?"),
     },
     {
-      label: "Vehicle track karein",
-      sub: "Live trip status dekhein",
+      label: t("supportTrackVehicle"),
+      sub: t("supportTrackVehicleSub"),
       icon: Truck,
       action: () => router.push("/tracking"),
     },
@@ -98,7 +100,7 @@ export default function CustomerSupportPage() {
         >
           <ArrowLeft size={24} strokeWidth={2.4} />
         </button>
-        <h1 className={styles.secondaryHeading}>Sahayata</h1>
+        <h1 className={styles.secondaryHeading}>{t("supportTitle")}</h1>
         <span />
       </header>
 
@@ -124,7 +126,7 @@ export default function CustomerSupportPage() {
 
           {!hasAsked ? (
             <section className={styles.assistantStarter}>
-              <h2>Aapko kis cheez mein help chahiye?</h2>
+              <h2>{t("supportStarter")}</h2>
               <div className={styles.assistantGrid}>
                 {suggestions.map((item) => {
                   const Icon = item.icon;
