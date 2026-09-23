@@ -7,9 +7,11 @@ import toast from 'react-hot-toast';
 import { useAdmin } from '@/features/admin/context/AdminContext';
 import {
   AdminTripRow,
+  TripRouteHistory,
   TruckTrackingResponse,
   closeTrip,
   editTrip,
+  getTripRouteHistory,
   getTruckTracking,
   listTrips,
   sendCurrentPositionAlertsForActiveTrips,
@@ -58,6 +60,30 @@ function normalizeSearchValue(value?: string | null): string {
   return (value || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 }
 
+type LocationSourceKey = 'live' | 'fastag' | 'none';
+type LocationSourceFilter = 'all' | LocationSourceKey;
+
+const LOCATION_SOURCE_FILTERS: Array<{ key: LocationSourceFilter; label: string }> = [
+  { key: 'all', label: 'All sources' },
+  { key: 'live', label: 'Live (Traqo SIM)' },
+  { key: 'fastag', label: 'FASTag' },
+  { key: 'none', label: 'No location' },
+];
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
+
+/**
+ * A trip without a Traqo trip id can never be SIM-tracked, so a `live` stamp on
+ * one of those rows is really a FASTag read left behind by the old alerts
+ * evaluator. The badge and the filter share this so they never disagree.
+ */
+function resolveLocationSource(trip: AdminTripRow): LocationSourceKey {
+  const source = trip.lastLocation?.locationSource;
+  if (source === 'live') return trip.traqoTripId ? 'live' : 'fastag';
+  if (source === 'fastag') return 'fastag';
+  return 'none';
+}
+
 function normalizeCoordValue(value?: string | null): string | null {
   if (!value) return null;
   const normalized = value
@@ -72,17 +98,56 @@ function toMapCoord(
   lat?: number | string | null,
   lng?: number | string | null,
 ): Coord | null {
-  const parsedLat = typeof lat === 'number' ? lat : Number(lat);
-  const parsedLng = typeof lng === 'number' ? lng : Number(lng);
-  if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng)) return null;
+  if (lat === null || lat === undefined || lat === '' || lng === null || lng === undefined || lng === '') return null;
+  let parsedLat = typeof lat === 'number' ? lat : Number(lat);
+  let parsedLng = typeof lng === 'number' ? lng : Number(lng);
+  if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng) || (parsedLat === 0 && parsedLng === 0)) return null;
+
+  // Repair inverted [lng, lat] (common in GeoJSON / MongoDB payloads e.g. from Traqo)
+  // In India / South Asia: Longitude is ~50-140 and Latitude is ~(-10)-45.
+  if (parsedLat >= 50 && parsedLat <= 140 && parsedLng >= -10 && parsedLng <= 45) {
+    const temp = parsedLat;
+    parsedLat = parsedLng;
+    parsedLng = temp;
+  } else if (parsedLat < -90 || parsedLat > 90 || parsedLng < -180 || parsedLng > 180) {
+    if (parsedLng >= -90 && parsedLng <= 90 && parsedLat >= -180 && parsedLat <= 180) {
+      const temp = parsedLat;
+      parsedLat = parsedLng;
+      parsedLng = temp;
+    } else {
+      return null;
+    }
+  }
+
   return { lat: parsedLat, lng: parsedLng };
 }
 
+function parseCoordUnknown(value: unknown): Coord | null {
+  if (!value) return null;
+  if (Array.isArray(value) && value.length >= 2) {
+    return toMapCoord(value[0], value[1]);
+  }
+  if (typeof value === 'object') {
+    const obj = value as Record<string, any>;
+    if (Array.isArray(obj.loc) && obj.loc.length >= 2) {
+      return toMapCoord(obj.loc[0], obj.loc[1]);
+    }
+    if (Array.isArray(obj.coordinates) && obj.coordinates.length >= 2) {
+      return toMapCoord(obj.coordinates[0], obj.coordinates[1]);
+    }
+    return toMapCoord(obj.lat ?? obj.latitude, obj.lng ?? obj.lon ?? obj.longitude);
+  }
+  if (typeof value === 'string') {
+    const parts = value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      return toMapCoord(parts[0], parts[1]);
+    }
+  }
+  return null;
+}
+
 function parseCoordPair(value?: string | null): Coord | null {
-  const normalized = normalizeCoordValue(value);
-  if (!normalized) return null;
-  const [lat, lng] = normalized.split(',');
-  return toMapCoord(lat, lng);
+  return parseCoordUnknown(value);
 }
 
 async function reverseGeocodeWithGoogle(
@@ -123,9 +188,15 @@ export default function AdminTripsPage() {
     driverPhone: '',
     vehicleNumber: '',
   });
+  const [locationSourceFilter, setLocationSourceFilter] =
+    useState<LocationSourceFilter>('all');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [phoneOverrides, setPhoneOverrides] = useState<Record<string, string>>({});
   const [routeLabels, setRouteLabels] = useState<Record<string, string>>({});
   const [trackModal, setTrackModal] = useState<TrackModalState | null>(null);
+  const [routeHistory, setRouteHistory] = useState<TripRouteHistory | null>(null);
+  const [routeHistoryError, setRouteHistoryError] = useState<string | null>(null);
   const [detailsTrip, setDetailsTrip] = useState<AdminTripRow | null>(null);
   const [editingTrip, setEditingTrip] = useState<AdminTripRow | null>(null);
   const [editForm, setEditForm] = useState({ truck_number: '', tel: '', srcname: '', destname: '' });
@@ -136,6 +207,7 @@ export default function AdminTripsPage() {
     track: false,
     manualAlert: false,
     sendAllPositions: false,
+    routeHistory: false,
   });
 
   useEffect(() => {
@@ -266,6 +338,8 @@ export default function AdminTripsPage() {
           destinationCoords
         : getTripDestinationLabel(trip);
 
+      setRouteHistory(null);
+      setRouteHistoryError(null);
       setTrackModal({
         trip,
         tracking: {
@@ -328,6 +402,25 @@ export default function AdminTripsPage() {
 
     toast.error(response.message || 'Failed to fetch tracking data.');
     setBusyFlag('track', false);
+  };
+
+  // Route history costs a Traqo call, so it is fetched on demand rather than
+  // with every Track click.
+  const handleLoadRouteHistory = async () => {
+    if (!trackModal) return;
+    setBusyFlag('routeHistory', true);
+    setRouteHistoryError(null);
+    const response = await getTripRouteHistory(trackModal.trip.id);
+    if (response.success && response.data) {
+      setRouteHistory(response.data);
+      if (!response.data.checkpoints.length) {
+        setRouteHistoryError('Traqo returned no recorded checkpoints for this trip.');
+      }
+    } else {
+      setRouteHistory(null);
+      setRouteHistoryError(response.message || 'Failed to fetch route history.');
+    }
+    setBusyFlag('routeHistory', false);
   };
 
   const openEditModal = (trip: AdminTripRow) => {
@@ -472,14 +565,59 @@ export default function AdminTripsPage() {
       );
       const matchesPhone = !phoneQuery || normalizedPhone.includes(phoneQuery);
       const matchesVehicle = !vehicleQuery || normalizedVehicle.includes(vehicleQuery);
+      const matchesSource =
+        locationSourceFilter === 'all' ||
+        resolveLocationSource(trip) === locationSourceFilter;
 
-      return matchesPhone && matchesVehicle;
+      return matchesPhone && matchesVehicle && matchesSource;
     });
-  }, [searchFilters.driverPhone, searchFilters.vehicleNumber, trips]);
+  }, [
+    locationSourceFilter,
+    searchFilters.driverPhone,
+    searchFilters.vehicleNumber,
+    trips,
+  ]);
+
+  const locationSourceCounts = useMemo(() => {
+    const counts: Record<LocationSourceFilter, number> = {
+      all: trips.length,
+      live: 0,
+      fastag: 0,
+      none: 0,
+    };
+    for (const trip of trips) counts[resolveLocationSource(trip)] += 1;
+    return counts;
+  }, [trips]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredTrips.length / pageSize));
+
+  // Filters can shrink the list under the current page — snap back into range.
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+
+  const currentPage = Math.min(page, totalPages);
+  const pageStartIndex = (currentPage - 1) * pageSize;
+
+  const pagedTrips = useMemo(
+    () => filteredTrips.slice(pageStartIndex, pageStartIndex + pageSize),
+    [filteredTrips, pageStartIndex, pageSize],
+  );
+
+  const pageNumbers = useMemo(() => {
+    // Show a sliding window of 5 pages around the current one.
+    const windowSize = 5;
+    let start = Math.max(1, currentPage - Math.floor(windowSize / 2));
+    const end = Math.min(totalPages, start + windowSize - 1);
+    start = Math.max(1, end - windowSize + 1);
+    return Array.from({ length: end - start + 1 }, (_, index) => start + index);
+  }, [currentPage, totalPages]);
 
   const trackCurrent = useMemo<Coord | null>(() => {
     if (!trackModal) return null;
     return (
+      parseCoordUnknown(trackModal.tracking.location) ||
+      parseCoordUnknown(trackModal.trip.lastLocation) ||
       toMapCoord(
         trackModal.tracking.location?.lat,
         trackModal.tracking.location?.lng,
@@ -491,22 +629,28 @@ export default function AdminTripsPage() {
   const trackDestination = useMemo<Coord | null>(() => {
     if (!trackModal) return null;
     return (
-      toMapCoord(
-        trackModal.tracking.destination?.lat,
-        trackModal.tracking.destination?.lng,
-      ) || parseCoordPair(trackModal.trip.dest)
+      parseCoordUnknown(trackModal.tracking.destination) ||
+      parseCoordUnknown(trackModal.trip.dest)
     );
   }, [trackModal]);
 
   const trackSource = useMemo<Coord | null>(() => {
     if (!trackModal) return null;
     return (
-      toMapCoord(
-        trackModal.tracking.origin?.lat,
-        trackModal.tracking.origin?.lng,
-      ) || parseCoordPair(trackModal.trip.src)
+      parseCoordUnknown(trackModal.tracking.origin) ||
+      parseCoordUnknown(trackModal.trip.src)
     );
   }, [trackModal]);
+
+  const trackPath = useMemo(
+    () =>
+      (routeHistory?.checkpoints || []).map((checkpoint) => ({
+        lat: checkpoint.lat,
+        lng: checkpoint.lng,
+        label: checkpoint.address || checkpoint.timeRecorded || null,
+      })),
+    [routeHistory],
+  );
 
   const trackCenter = useMemo<Coord>(
     () => trackCurrent || trackDestination || trackSource || { lat: 22.9734, lng: 78.6569 },
@@ -567,12 +711,13 @@ export default function AdminTripsPage() {
                 id="trip-driver-phone-search"
                 type="text"
                 value={searchFilters.driverPhone}
-                onChange={(e) =>
+                onChange={(e) => {
+                  setPage(1);
                   setSearchFilters((prev) => ({
                     ...prev,
                     driverPhone: e.target.value,
-                  }))
-                }
+                  }));
+                }}
                 placeholder="Enter driver phone number"
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800"
               />
@@ -588,12 +733,13 @@ export default function AdminTripsPage() {
                 id="trip-vehicle-number-search"
                 type="text"
                 value={searchFilters.vehicleNumber}
-                onChange={(e) =>
+                onChange={(e) => {
+                  setPage(1);
                   setSearchFilters((prev) => ({
                     ...prev,
                     vehicleNumber: e.target.value,
-                  }))
-                }
+                  }));
+                }}
                 placeholder="Enter vehicle number"
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm uppercase text-gray-800"
               />
@@ -618,8 +764,58 @@ export default function AdminTripsPage() {
             </div>
           </div>
         </div>
+        <div className="mb-4 flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <label
+              htmlFor="trip-location-source"
+              className="text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+            >
+              Location source
+            </label>
+            <select
+              id="trip-location-source"
+              value={locationSourceFilter}
+              onChange={(e) => {
+                setPage(1);
+                setLocationSourceFilter(e.target.value as LocationSourceFilter);
+              }}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800"
+            >
+              {LOCATION_SOURCE_FILTERS.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label} ({locationSourceCounts[option.key]})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label
+              htmlFor="trip-page-size"
+              className="text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+            >
+              Rows per page
+            </label>
+            <select
+              id="trip-page-size"
+              value={pageSize}
+              onChange={(e) => {
+                setPage(1);
+                setPageSize(Number(e.target.value));
+              }}
+              className="rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-800"
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
         <div className="mb-3 text-xs text-slate-500">
-          Showing {filteredTrips.length} of {trips.length} trips
+          {filteredTrips.length === 0
+            ? `Showing 0 of ${trips.length} trips`
+            : `Showing ${pageStartIndex + 1}-${pageStartIndex + pagedTrips.length} of ${filteredTrips.length} matching trips (${trips.length} total)`}
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -645,7 +841,7 @@ export default function AdminTripsPage() {
                   </td>
                 </tr>
               ) : (
-                filteredTrips.map((trip) => (
+                pagedTrips.map((trip) => (
                   <tr key={trip.id}>
                     <td className="px-3 py-3 align-top font-medium text-gray-900">
                       <div className="flex flex-col gap-1">
@@ -689,7 +885,7 @@ export default function AdminTripsPage() {
                     </td>
                     <td className="px-3 py-3 align-top">
                       {(() => {
-                        const source = trip.lastLocation?.locationSource;
+                        const source = resolveLocationSource(trip);
                         if (source === 'live') {
                           return (
                             <span className="rounded bg-sky-100 px-2 py-1 text-xs font-semibold text-sky-800">
@@ -910,6 +1106,61 @@ export default function AdminTripsPage() {
             </tbody>
           </table>
         </div>
+        {filteredTrips.length > 0 ? (
+          <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xs text-slate-500">
+              Page {currentPage} of {totalPages}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPage(1)}
+                disabled={currentPage === 1}
+                className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 disabled:opacity-40"
+              >
+                First
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 disabled:opacity-40"
+              >
+                Prev
+              </button>
+              {pageNumbers.map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  onClick={() => setPage(pageNumber)}
+                  className={`min-w-[32px] rounded-md border px-2.5 py-1.5 text-xs font-semibold ${
+                    pageNumber === currentPage
+                      ? 'border-[#4309ac] bg-[#4309ac] text-white'
+                      : 'border-slate-300 bg-white text-slate-600'
+                  }`}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 disabled:opacity-40"
+              >
+                Next
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 disabled:opacity-40"
+              >
+                Last
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {detailsTrip ? (
@@ -1016,6 +1267,7 @@ export default function AdminTripsPage() {
                   }
                   sourceLabel={trackModal.sourceName || 'Source'}
                   destinationLabel={trackModal.destinationName || 'Destination'}
+                  path={trackPath}
                   zoom={6}
                   className="h-full w-full"
                 />
@@ -1141,6 +1393,89 @@ export default function AdminTripsPage() {
                     {trackModal.tracking.location?.timeRemained || 'Time not available'}
                   </div>
                 </div>
+              </div>
+
+              <div className="border-t border-slate-200 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">
+                      Route history
+                    </div>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {trackModal.trip.traqoTripId
+                        ? 'Traqo SIM trail for this trip.'
+                        : 'No SIM trip — FASTag toll crossings will be shown.'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleLoadRouteHistory()}
+                    disabled={busy.routeHistory}
+                    className="shrink-0 rounded-md border border-[#4309ac] bg-white px-3 py-1.5 text-xs font-semibold text-[#4309ac] disabled:opacity-60"
+                  >
+                    {busy.routeHistory
+                      ? 'Loading...'
+                      : routeHistory
+                        ? 'Reload'
+                        : 'Load route history'}
+                  </button>
+                </div>
+
+                {routeHistoryError ? (
+                  <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    {routeHistoryError}
+                  </div>
+                ) : null}
+
+                {routeHistory && routeHistory.checkpoints.length > 0 ? (
+                  <>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                      <span
+                        className={`rounded px-2 py-1 font-semibold ${
+                          routeHistory.source === 'live'
+                            ? 'bg-sky-100 text-sky-800'
+                            : 'bg-violet-100 text-violet-800'
+                        }`}
+                      >
+                        {routeHistory.source === 'live'
+                          ? 'Traqo SIM trail'
+                          : 'FASTag tolls'}
+                      </span>
+                      <span className="text-slate-500">
+                        {routeHistory.checkpoints.length} checkpoints
+                      </span>
+                      {routeHistory.totalDistanceKm != null ? (
+                        <span className="text-slate-500">
+                          ~{routeHistory.totalDistanceKm} KM point-to-point
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <ol className="mt-3 max-h-[320px] space-y-0 overflow-y-auto border-l-2 border-slate-200 pl-4">
+                      {routeHistory.checkpoints.map((checkpoint, index) => (
+                        <li
+                          key={`${checkpoint.timeRecorded}-${index}`}
+                          className="relative py-2"
+                        >
+                          <span className="absolute -left-[21px] top-3.5 h-2 w-2 rounded-full bg-[#4309ac]" />
+                          <div className="text-xs font-medium text-slate-900">
+                            {checkpoint.address ||
+                              `${checkpoint.lat.toFixed(4)}, ${checkpoint.lng.toFixed(4)}`}
+                          </div>
+                          <div className="mt-0.5 text-[11px] text-slate-500">
+                            {checkpoint.timeRecorded}
+                            {checkpoint.distanceFromPreviousKm != null
+                              ? ` · +${checkpoint.distanceFromPreviousKm} KM`
+                              : ''}
+                            {checkpoint.minutesFromPrevious != null
+                              ? ` · +${checkpoint.minutesFromPrevious} min`
+                              : ''}
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  </>
+                ) : null}
               </div>
 
               <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4">

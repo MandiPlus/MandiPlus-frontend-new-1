@@ -161,6 +161,27 @@ export interface AdminTripRow {
   } | null;
 }
 
+export interface TripRouteCheckpoint {
+  lat: number;
+  lng: number;
+  address: string | null;
+  timeRecorded: string;
+  distanceFromPreviousKm: number | null;
+  minutesFromPrevious: number | null;
+}
+
+export interface TripRouteHistory {
+  tripId: string;
+  traqoTripId: string | null;
+  vehicleNumber: string | null;
+  source: "live" | "fastag" | null;
+  checkpoints: TripRouteCheckpoint[];
+  totalDistanceKm: number | null;
+  firstRecordedAt: string | null;
+  lastRecordedAt: string | null;
+  trip: Record<string, unknown> | null;
+}
+
 export interface ManualTripAlertPayload {
   alertKind: "reached" | "delayed" | "current_position";
   phoneOverride?: string;
@@ -503,6 +524,23 @@ export async function listTrips(): Promise<
     return {
       success: false,
       message: getErrorMessage(error, "Failed to fetch trips"),
+    };
+  }
+}
+
+export async function getTripRouteHistory(
+  tripId: string,
+): Promise<AdminTrackingApiResponse<TripRouteHistory>> {
+  try {
+    const res = await axios.get<TripRouteHistory>(
+      `${API_BASE_URL}/traqo/trips/${encodeURIComponent(tripId)}/route-history`,
+      { headers: getAuthHeaders() },
+    );
+    return { success: true, data: res.data };
+  } catch (error) {
+    return {
+      success: false,
+      message: getErrorMessage(error, "Failed to fetch route history"),
     };
   }
 }
