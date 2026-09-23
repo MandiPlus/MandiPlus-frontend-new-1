@@ -38,6 +38,20 @@ const COMMODITIES: readonly CommodityDefinition[] = [
   { name: "Plum", aliases: ["plums", "alubukhara"] },
 ];
 
+/**
+ * Words that appear inside several catalog names and mean nothing alone.
+ * Keep this set in step with the backend, bot and app copies.
+ */
+const GENERIC_COMMODITY_WORDS = new Set([
+  "fruit",
+  "fruits",
+  "lime",
+  "sweet",
+  "fresh",
+  "green",
+  "red",
+]);
+
 function normalizeLookup(value: unknown): string {
   return String(value ?? "")
     .normalize("NFKD")
@@ -99,12 +113,10 @@ export function canonicalizeCommodityLabel(value: unknown): string {
       if (candidate === "pineapple" && !wanted.includes("pineapple")) {
         return false;
       }
-      // "dragon fruit" / "dragonfruit" both contain "fruit" — a bare "fruit"
-      // must stay unmatched rather than becoming Dragon Fruit.
-      if (
-        (candidate === "dragon fruit" || candidate === "dragonfruit") &&
-        !wanted.includes("dragon")
-      ) {
+      // A generic word must not carry a match on its own: "Dragon Fruit"
+      // contains "fruit", "Mosambi (Sweet Lime)" contains "lime", and
+      // "Ginger (Fresh)" contains "fresh".
+      if (GENERIC_COMMODITY_WORDS.has(wanted) && candidate !== wanted) {
         return false;
       }
       return (
