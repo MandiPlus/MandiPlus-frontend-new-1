@@ -51,6 +51,12 @@ const getInvoiceKey = (inv: { id?: string; _id?: string; invoiceNumber?: string 
     inv?.id || inv?._id || inv?.invoiceNumber || '';
 const getInvoiceId = (inv: { id?: string; _id?: string }) => inv?.id || inv?._id || '';
 const normalizePhoneInput = (value: string) => value.replace(/[^\d+]/g, '').trim();
+
+const formatDriverPhone = (value?: string | null) => {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!digits) return '';
+    return digits.length > 10 ? digits.slice(-10) : digits;
+};
 const isValidIndianPhone = (value: string) => INDIAN_PHONE_REGEX.test(value.trim());
 
 /** Collapse sourceSurface into Admin / App / Web for insurance-forms clarity. */
@@ -126,6 +132,8 @@ interface Invoice {
     paymentLinkSentAt?: string | null;
     paymentLinkSentCount?: number | null;
     insuredPartyPhone?: string | null;
+    driverPhone?: string | null;
+    driverSecondaryPhone?: string | null;
     insurance?: {
         fileUrl: string;
         fileType: string;
@@ -2829,6 +2837,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
 
                                         <th className="w-32 bg-slate-50 px-3 py-3 xl:px-2 xl:py-2 text-left text-xs xl:text-[11px] font-semibold text-slate-600 uppercase tracking-wider pl-4">Product</th>
                                         <th className="w-28 bg-slate-50 px-3 py-3 xl:px-2 xl:py-2 text-left text-xs xl:text-[11px] font-semibold text-slate-600 uppercase tracking-wider pl-4">Vehicle</th>
+                                        <th className="w-32 bg-slate-50 px-3 py-3 xl:px-2 xl:py-2 text-left text-xs xl:text-[11px] font-semibold text-slate-600 uppercase tracking-wider pl-4">Driver Number</th>
                                         <th className="w-20 bg-slate-50 px-2 py-3 xl:py-2 text-center text-xs xl:text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Source</th>
                                         <th className="bg-slate-50 px-2 py-3 xl:py-2 text-center text-xs xl:text-[11px] font-semibold text-slate-600 uppercase tracking-wider">PDF</th>
                                         <th className="bg-slate-50 px-2 py-3 xl:py-2 text-center text-xs xl:text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Verify</th>
@@ -2843,7 +2852,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                 <tbody className="divide-y divide-gray-200">
                                     {paginatedInvoices.length === 0 ? (
                                         <tr>
-                                            <td colSpan={15} className="px-6 py-12 text-center text-sm text-gray-500">
+                                            <td colSpan={16} className="px-6 py-12 text-center text-sm text-gray-500">
                                                 {loading ? 'Loading...' : 'No invoices found matching criteria.'}
                                             </td>
                                         </tr>
@@ -2902,6 +2911,14 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                                     </td>
                                                     <td className={`w-28 px-3 py-3 xl:px-2 xl:py-2 text-sm xl:text-[13px] text-slate-700 align-top pl-4 ${expandedInvoiceId === inv.id ? 'bg-slate-50' : 'bg-white'}`}>
                                                         <div className="break-words leading-snug">{inv.vehicleNumber || '-'}</div>
+                                                    </td>
+                                                    <td className={`w-32 px-3 py-3 xl:px-2 xl:py-2 text-sm xl:text-[13px] text-slate-700 align-top pl-4 ${expandedInvoiceId === inv.id ? 'bg-slate-50' : 'bg-white'}`}>
+                                                        <div className="break-words leading-snug">{formatDriverPhone(inv.driverPhone) || '-'}</div>
+                                                        {formatDriverPhone(inv.driverSecondaryPhone) ? (
+                                                            <div className="mt-0.5 text-xs text-slate-500 break-words leading-snug">
+                                                                {formatDriverPhone(inv.driverSecondaryPhone)}
+                                                            </div>
+                                                        ) : null}
                                                     </td>
                                                     <td className={`w-20 px-2 py-3 xl:py-2 text-center align-top ${expandedInvoiceId === inv.id ? 'bg-slate-50' : 'bg-white'}`}>
                                                         <span className="inline-flex items-center justify-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
@@ -3219,7 +3236,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
 
                                                 {expandedInvoiceId === inv.id && (
                                                     <tr className="bg-slate-50/60">
-                                                        <td colSpan={15} className="px-4 pb-4">
+                                                        <td colSpan={16} className="px-4 pb-4">
                                                             <div className="sticky left-0 z-10 mt-3 w-full max-w-[min(100%,calc(100vw-18rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                                                                 <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                                                                     <div className="min-w-0">
@@ -3606,6 +3623,15 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                         <div>
                                             <p className="text-xs text-gray-500 mb-0.5">Vehicle</p>
                                             <p className="text-sm font-medium text-gray-900">{inv.vehicleNumber || '-'}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-gray-500 mb-0.5">Driver Number</p>
+                                            <p className="text-sm font-medium text-gray-900">
+                                                {formatDriverPhone(inv.driverPhone) || '-'}
+                                                {formatDriverPhone(inv.driverSecondaryPhone)
+                                                    ? ` / ${formatDriverPhone(inv.driverSecondaryPhone)}`
+                                                    : ''}
+                                            </p>
                                         </div>
                                         <div>
                                             <p className="text-xs text-gray-500 mb-0.5">Source</p>
