@@ -54,6 +54,7 @@ const adminTitles: Record<string, string> = {
     '/admin/trips': 'Created Trips',
     '/admin/operations/fasttag': 'Fastag',
     '/admin/operations/tracking-children': 'Add Children',
+    '/admin/operations/rc-search': 'RC Search',
     '/admin/agent-commissions': 'Agent Commissions',
     '/admin/insurance-payments': 'Insurance Payments',
     '/admin/arrival-reports': 'Arrival Reports',
