@@ -20,6 +20,10 @@ import {
   useReferenceStates,
 } from "@/features/reference";
 import {
+  commodityCodeFromLabel,
+  normalizeCommodityCode,
+} from "@/features/reference/commodityCodes";
+import {
   nextMandiForStateChange,
   statesForCommodities,
 } from "@/features/reference/commodityGeography";
@@ -675,7 +679,7 @@ function commodityCodesFromUser(
   );
   const products = Array.isArray(user?.products) ? user.products : [];
   const fromProducts = products
-    .map((product) => commodityCodeFromLabel(product))
+    .map((product) => commodityCodeFromLabel(product, commodities))
     .filter(Boolean);
   return [
     ...new Set([
@@ -684,45 +688,6 @@ function commodityCodesFromUser(
       ...fromProducts,
     ]),
   ];
-}
-
-function normalizeCommodityCode(
-  value: unknown,
-  commodities: Array<{ code: string }> = [],
-) {
-  const normalized = String(value || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_");
-  if (!normalized) return "";
-  if (!commodities.length) return normalized;
-  return commodities.some((item) => item.code === normalized) ? normalized : "";
-}
-
-function commodityCodeFromLabel(value: unknown) {
-  const normalized = String(value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-  if (!normalized) return "";
-  if (
-    normalized.includes("tender coconut") ||
-    normalized === "coconut" ||
-    normalized === "green coconut"
-  ) {
-    return "TENDER_COCONUT";
-  }
-  if (normalized.includes("tomato")) return "TOMATO";
-  if (normalized.includes("mango")) return "MANGO";
-  if (normalized.includes("banana")) return "BANANA";
-  if (normalized.includes("onion")) return "ONION";
-  if (normalized.includes("potato")) return "POTATO";
-  if (normalized.includes("pomegranate") || normalized.includes("anar")) {
-    return "POMEGRANATE";
-  }
-  // Word-boundary match — never treat grapefruit as Grapes.
-  if (/(^| )(grapes?|angoor|angur)( |$)/.test(normalized)) return "GRAPES";
-  return "OTHER";
 }
 
 function businessSizeFromUser(value: unknown) {

@@ -16,6 +16,7 @@ import {
   useReferenceCommodities,
   useReferenceStates,
 } from "@/features/reference";
+import { commodityCodeFromLabel } from "@/features/reference/commodityCodes";
 import {
   nextMandiForStateChange,
   reconcileStateAndMandi,
@@ -545,25 +546,11 @@ function readProfile(
     ? user.products.map((item) => String(item || "").trim()).filter(Boolean)
     : [];
   const productCommodityCodes = products
-    .map((product) => {
-      const normalized = normalize(product);
-      const fromCatalog = commodities.find(
-        (item) => normalize(item.label) === normalized,
-      )?.code;
-      if (fromCatalog) return fromCatalog;
-      if (
-        normalized.includes("pomegranate") ||
-        normalized.includes("anar") ||
-        normalized.includes("dalimb")
-      ) {
-        return "POMEGRANATE";
-      }
-      if (normalized && normalized !== "other") {
-        // Free-text Other crop (Garlic, Pineapple, etc.)
-        return "OTHER";
-      }
-      return "";
-    })
+    .map((product) =>
+      normalize(product) === "other"
+        ? ""
+        : commodityCodeFromLabel(product, commodities),
+    )
     .filter(Boolean) as string[];
   const fromUserCodes = Array.isArray(user?.commodityCodes)
     ? user.commodityCodes
@@ -594,22 +581,13 @@ function readProfile(
       ...(products.length && !productCommodityCodes.length ? ["OTHER"] : []),
     ]),
   ];
-  const catalogLabels = new Set(
-    commodities.map((item) => normalize(item.label)),
-  );
+  // The free-text crop typed under Other — anything products[] names that is
+  // not a commodity in its own right.
   const otherCommodityText =
     products.find((product) => {
       const normalized = normalize(product);
       if (!normalized || normalized === "other") return false;
-      if (catalogLabels.has(normalized)) return false;
-      if (
-        normalized.includes("pomegranate") ||
-        normalized.includes("anar") ||
-        normalized.includes("dalimb")
-      ) {
-        return false;
-      }
-      return true;
+      return commodityCodeFromLabel(product, commodities) === "OTHER";
     }) || "";
   const mandiName = String(user?.mandiName || "").trim();
   const state = normalizeState(user?.state);

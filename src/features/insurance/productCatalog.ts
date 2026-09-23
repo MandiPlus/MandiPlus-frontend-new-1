@@ -20,6 +20,9 @@ export const itemsData = [
     { name: "Sweet Potato", hsn: "07142000" },
     { name: "Mosambi (Sweet Lime)", hsn: "08059000" },
     { name: "Grapes", hsn: "08061000" },
+    { name: "Dragon Fruit", hsn: "08109090" },
+    { name: "Peaches", hsn: "08093000" },
+    { name: "Plum", hsn: "08094010" },
 ] as const;
 
 export const getHsnForProduct = (productName: string) =>

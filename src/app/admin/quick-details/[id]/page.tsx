@@ -236,16 +236,26 @@ function canonicalProduct(value: unknown, hsn: unknown) {
 
 function onboardingProduct(code: unknown) {
   const names: Record<string, string> = {
-    TENDER_COCONUT: "Tender Coconut",
     TOMATO: "Tomato",
-    MANGO: "Mango",
+    POMEGRANATE: "Pomegranate (Anar)",
+    TENDER_COCONUT: "Tender Coconut",
+    APPLE: "Apple",
+    GRAPES: "Grapes",
     BANANA: "Banana",
+    KIWI: "Kiwi",
+    DRAGON_FRUIT: "Dragon Fruit",
+    MOSAMBI: "Mosambi (Sweet Lime)",
+    GUAVA: "Guava (Amrood)",
+    PINEAPPLE: "Pineapple",
+    MANGO: "Mango",
+    PEACHES: "Peaches",
+    PLUM: "Plum",
+    WATERMELON: "Watermelon (Tarbooj)",
+    PAPAYA: "Papaya (Papita)",
+    ORANGE: "Oranges",
     ONION: "Onion",
     POTATO: "Potato",
-    APPLE: "Apple",
-    PINEAPPLE: "Pineapple",
-    GRAPES: "Grapes",
-    POMEGRANATE: "Pomegranate (Anar)",
+    GINGER: "Ginger (Fresh)",
   };
   return canonicalProduct(names[String(code || "")] || String(code || ""), "");
 }

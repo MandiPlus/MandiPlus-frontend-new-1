@@ -28,6 +28,14 @@ const COMMODITIES: readonly CommodityDefinition[] = [
   { name: "Sweet Potato", aliases: ["shakarkand"] },
   { name: "Mosambi (Sweet Lime)", aliases: ["mosambi", "sweet lime"] },
   { name: "Grapes", aliases: ["grape", "angoor", "angur"] },
+  {
+    // Kamalam / pitaya has no tariff line of its own; it sits in 0810 90 "other".
+    name: "Dragon Fruit",
+    aliases: ["dragonfruit", "kamalam", "pitaya", "pitahaya"],
+  },
+  { name: "Peaches", aliases: ["peach", "nectarine", "aadu", "aaru"] },
+  // No "aloo bukhara" — it would steal the Potato lookup for "aloo".
+  { name: "Plum", aliases: ["plums", "alubukhara"] },
 ];
 
 function normalizeLookup(value: unknown): string {
@@ -89,6 +97,14 @@ export function canonicalizeCommodityLabel(value: unknown): string {
       // "pineapple" contains "apple" — keep the two from swallowing each other.
       if (candidate === "apple" && wanted.includes("pineapple")) return false;
       if (candidate === "pineapple" && !wanted.includes("pineapple")) {
+        return false;
+      }
+      // "dragon fruit" / "dragonfruit" both contain "fruit" — a bare "fruit"
+      // must stay unmatched rather than becoming Dragon Fruit.
+      if (
+        (candidate === "dragon fruit" || candidate === "dragonfruit") &&
+        !wanted.includes("dragon")
+      ) {
         return false;
       }
       return (

@@ -39,8 +39,10 @@ const customerIdentities = [
 ];
 
 const commonCommodities = [
-  "Tomato", "Potato", "Onion", "Garlic", "Ginger", "Lemon", "Apple", "Banana", 
-  "Mango", "Tender Coconut", "Pineapple", "Mosambi", "Coconut", "Paddy", "Wheat", "Rice"
+  "Tomato", "Pomegranate", "Tender Coconut", "Apple", "Grapes", "Banana",
+  "Kiwi", "Dragon Fruit", "Mosambi", "Guava", "Pineapple", "Mango",
+  "Peaches", "Plum", "Watermelon", "Papaya", "Orange",
+  "Onion", "Potato", "Ginger"
 ];
 
 function formatCurrency(value: number) {

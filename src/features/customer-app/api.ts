@@ -6,6 +6,7 @@ import {
   refreshAccessToken,
 } from "@/features/auth/api";
 import type { InsuranceForm } from "@/features/insurance/api";
+import { getHsnForProduct } from "@/features/insurance/productCatalog";
 import { canonicalizeCommodityLabel } from "./commodity-normalization";
 
 /** Canonical invoice/PDF product name. UI may show Anar; invoices store Pomegranate. */
@@ -18,23 +19,13 @@ export function invoiceProductNameForSubmit(product: string): string {
   return cleaned;
 }
 
-/** Catalog HSN used when customer create/update omits hsnCode. */
+/**
+ * Catalog HSN used when customer create/update omits hsnCode.
+ * Derived from the invoice catalog rather than hand-copied, so a commodity
+ * added there cannot go out with a blank code.
+ */
 export function invoiceHsnCodeForSubmit(product: string): string {
-  const canonical = canonicalizeCommodityLabel(product);
-  const byName: Record<string, string> = {
-    "Pomegranate (Anar)": "08109010",
-    "Tender Coconut": "08011910",
-    Tomato: "07020000",
-    Mango: "08045020",
-    Banana: "08039010",
-    Apple: "08081000",
-    Pineapple: "08043000",
-    Onion: "07031010",
-    Potato: "07019000",
-    "Mosambi (Sweet Lime)": "08059000",
-    Grapes: "08061000",
-  };
-  return byName[canonical] || "";
+  return getHsnForProduct(canonicalizeCommodityLabel(product));
 }
 
 const API_BASE_URL =

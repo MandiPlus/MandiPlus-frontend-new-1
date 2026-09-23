@@ -63,17 +63,27 @@ export const FALLBACK_INDIA_STATES: ReferenceStateOption[] = [
 ];
 
 export const FALLBACK_COMMODITIES: ReferenceCommodityOption[] = [
-  { code: "TENDER_COCONUT", label: "Tender Coconut", emoji: "🥥", sortOrder: 10 },
-  { code: "TOMATO", label: "Tomato", emoji: "🍅", sortOrder: 20 },
-  { code: "POMEGRANATE", label: "Anar", emoji: "🍎", sortOrder: 25 },
-  { code: "MANGO", label: "Mango", emoji: "🥭", sortOrder: 30 },
-  { code: "APPLE", label: "Apple", emoji: "🍎", sortOrder: 35 },
-  { code: "BANANA", label: "Banana", emoji: "🍌", sortOrder: 40 },
-  { code: "PINEAPPLE", label: "Pineapple", emoji: "🍍", sortOrder: 45 },
-  { code: "GRAPES", label: "Grapes", emoji: "🍇", sortOrder: 47 },
-  { code: "ONION", label: "Onion", emoji: "🧅", sortOrder: 50 },
-  { code: "POTATO", label: "Potato", emoji: "🥔", sortOrder: 60 },
-  { code: "OTHER", label: "Other", emoji: "🌾", sortOrder: 80 },
+  { code: "TOMATO", label: "Tomato", emoji: "🍅", sortOrder: 10 },
+  { code: "POMEGRANATE", label: "Anar", emoji: "🍎", sortOrder: 20 },
+  { code: "TENDER_COCONUT", label: "Tender Coconut", emoji: "🥥", sortOrder: 30 },
+  { code: "APPLE", label: "Apple", emoji: "🍎", sortOrder: 40 },
+  { code: "GRAPES", label: "Grapes", emoji: "🍇", sortOrder: 50 },
+  { code: "BANANA", label: "Banana", emoji: "🍌", sortOrder: 60 },
+  { code: "KIWI", label: "Kiwi", emoji: "🥝", sortOrder: 70 },
+  { code: "DRAGON_FRUIT", label: "Dragon Fruit", emoji: "🐉", sortOrder: 80 },
+  { code: "MOSAMBI", label: "Mosambi", emoji: "🍋", sortOrder: 90 },
+  { code: "GUAVA", label: "Guava", emoji: "🍐", sortOrder: 100 },
+  { code: "PINEAPPLE", label: "Pineapple", emoji: "🍍", sortOrder: 110 },
+  { code: "MANGO", label: "Mango", emoji: "🥭", sortOrder: 120 },
+  { code: "PEACHES", label: "Peaches", emoji: "🍑", sortOrder: 130 },
+  { code: "PLUM", label: "Plum", emoji: "🍑", sortOrder: 140 },
+  { code: "WATERMELON", label: "Watermelon", emoji: "🍉", sortOrder: 150 },
+  { code: "PAPAYA", label: "Papaya", emoji: "🧡", sortOrder: 160 },
+  { code: "ORANGE", label: "Orange", emoji: "🍊", sortOrder: 170 },
+  { code: "ONION", label: "Onion", emoji: "🧅", sortOrder: 180 },
+  { code: "POTATO", label: "Potato", emoji: "🥔", sortOrder: 190 },
+  { code: "GINGER", label: "Ginger", emoji: "🫚", sortOrder: 200 },
+  { code: "OTHER", label: "Other", emoji: "🌾", sortOrder: 999 },
 ];
 
 /** Onboarding always shows the vernacular name, even in English UI. */
