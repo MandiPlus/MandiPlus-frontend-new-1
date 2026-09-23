@@ -39,15 +39,19 @@ import {
 import Lottie from "lottie-react";
 import { INDIA_STATES } from "./indiaStates";
 
-const PARTY_UI_LABELS = {
-  shipper: "Loading vala",
-  shipperAddress: "Loading vala address",
-  consignee: "Unloading vala",
-  consigneeAddress: "Unloading vala address",
-  consigneeMobile: "Unloading vala mobile",
-} as const;
+/** Party labels in the customer's language; the keys live in ./i18n. */
+function partyLabels(t: ReturnType<typeof customerCopy>) {
+  return {
+    shipper: t("roleSupplier"),
+    shipperAddress: t("roleSupplierAddress"),
+    consignee: t("roleBuyer"),
+    consigneeAddress: t("roleBuyerAddress"),
+    consigneeMobile: t("roleBuyerMobile"),
+  } as const;
+}
 
 import { useAuth } from "@/features/auth/context/AuthContext";
+import { customerCopy } from "./i18n";
 import {
   createCustomerWebPaymentCheckout,
   getCustomerPaymentCheckoutStatus,
@@ -127,9 +131,14 @@ type VoicePhase =
 type CachedLiveTranscriptionToken = CustomerLiveTranscriptionToken & {
   expiresAt: number;
 };
+/**
+ * Voice-prompt copy per language. `en` is proper English and "hi-Latn" is the
+ * Hinglish that used to sit under `en`, so neither audience is read the
+ * other's phrasing.
+ */
 type QuestionLabelMap = Partial<
-  Record<"en" | "hi" | "kn" | "mr" | "ta" | "te", string>
-> & { en: string };
+  Record<"en" | "hi-Latn" | "hi" | "kn" | "mr" | "ta" | "te", string>
+> & { en: string; "hi-Latn": string };
 
 type InvoiceExtractionTask = {
   key: string;
@@ -152,9 +161,26 @@ const DEFAULT_TENDER_COCONUT_PRICING: CustomerAppPricing["tenderCoconut"] = {
 const LIVE_TRANSCRIPTION_TOKEN_MIN_TTL_MS = 5000;
 const QUESTIONNAIRE_PRE_SPEECH_CHUNK_COUNT = 15;
 
+/** Match a stored language to a QuestionLabelMap key, case-insensitively. */
+function normalizeQuestionLanguage(language: unknown): keyof QuestionLabelMap {
+  const wanted = String(language || "").toLowerCase();
+  const known: Array<keyof QuestionLabelMap> = [
+    "en",
+    "hi-Latn",
+    "hi",
+    "kn",
+    "mr",
+    "ta",
+    "te",
+  ];
+  return known.find((code) => code.toLowerCase() === wanted) || "hi-Latn";
+}
+
 function questionnaireSpeechLocale(language: unknown) {
   const locales: Record<string, string> = {
     en: "en-IN",
+    // A Hinglish speaker is speaking Hindi — recognise it as Hindi.
+    "hi-latn": "hi-IN",
     hi: "hi-IN",
     kn: "kn-IN",
     mr: "mr-IN",
@@ -200,7 +226,8 @@ const POMEGRANATE_QUESTION_LABELS: Partial<
   Record<MissingDetailKey, QuestionLabelMap>
 > = {
   buyerAddress: {
-    en: "Mal kidhar ja raha hai?",
+    en: "Where is the consignment going?",
+    "hi-Latn": "Mal kidhar ja raha hai?",
     hi: "माल किधर जा रहा है?",
     mr: "माल कुठे जात आहे?",
     kn: "ಮಾಲ್ ಎಲ್ಲಿಗೆ ಹೋಗುತ್ತಿದೆ?",
@@ -208,7 +235,8 @@ const POMEGRANATE_QUESTION_LABELS: Partial<
     te: "సరుకు ఎక్కడికి వెళ్తోంది?",
   },
   buyerName: {
-    en: "Kiske paas ja raha hai?",
+    en: "Who is it going to?",
+    "hi-Latn": "Kiske paas ja raha hai?",
     hi: "किसके पास जा रहा है?",
     mr: "कोणाकडे जात आहे?",
     kn: "ಯಾರ ಬಳಿಗೆ ಹೋಗುತ್ತಿದೆ?",
@@ -216,7 +244,8 @@ const POMEGRANATE_QUESTION_LABELS: Partial<
     te: "ఎవరి దగ్గరికి వెళ్తోంది?",
   },
   quantity: {
-    en: "Anar ke kitne dabbe hain?",
+    en: "How many boxes of pomegranate?",
+    "hi-Latn": "Anar ke kitne dabbe hain?",
     hi: "अनार के कितने डब्बे हैं?",
     mr: "डाळिंबाचे किती डबे आहेत?",
     kn: "ಅನಾರ್‌ನ ಎಷ್ಟು ಡಬ್ಬಗಳಿವೆ?",
@@ -224,7 +253,8 @@ const POMEGRANATE_QUESTION_LABELS: Partial<
     te: "దానిమ్మ ఎన్ని పెట్టెలు?",
   },
   rate: {
-    en: "Ek dabbe ka kitna rate hai?",
+    en: "What is the rate per box?",
+    "hi-Latn": "Ek dabbe ka kitna rate hai?",
     hi: "एक डब्बे का कितना रेट है?",
     mr: "एका डब्याचा किती रेट आहे?",
     kn: "ಒಂದು ಡಬ್ಬದ ರೇಟ್ ಎಷ್ಟು?",
@@ -232,7 +262,8 @@ const POMEGRANATE_QUESTION_LABELS: Partial<
     te: "ఒక పెట్టె రేటు ఎంత?",
   },
   vehicleNumber: {
-    en: "Gaadi number kya hai?",
+    en: "What is the vehicle number?",
+    "hi-Latn": "Gaadi number kya hai?",
     hi: "गाड़ी नंबर क्या है?",
     mr: "गाडी नंबर काय आहे?",
     kn: "ವಾಹನ ನಂಬರ್ ಏನು?",
@@ -246,6 +277,12 @@ function questionVoiceUrl(fileName: string) {
   return `/customer-app/voices/${fileName}?v=${QUESTION_VOICE_CACHE}`;
 }
 
+/**
+ * Deliberately Hinglish in every language: each label is the caption for a
+ * pre-recorded Hinglish prompt (questionVoiceUrl), so translating the text
+ * alone would caption the audio wrongly. Translate these when the prompts are
+ * re-recorded.
+ */
 const MISSING_QUESTIONS: Record<
   MissingDetailKey,
   { label: string; audio: string; target?: InvoiceVoiceTargetField }
@@ -353,8 +390,10 @@ function resolveLocalizedMissingLabel(
   labels: QuestionLabelMap,
   language: unknown,
 ) {
-  const code = String(language || "en").toLowerCase() as keyof QuestionLabelMap;
-  return labels[code] || labels.en;
+  // 'hi-Latn' must survive the lowercase fold, and anything unknown falls
+  // back to Hinglish before English — same chain as the mobile app.
+  const code = normalizeQuestionLanguage(language);
+  return labels[code] || labels["hi-Latn"] || labels.en;
 }
 
 function resolveMissingQuestion(
@@ -488,6 +527,8 @@ function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft 
 export default function CustomerCreateInsurancePage() {
   const router = useRouter();
   const { user } = useAuth();
+  const t = customerCopy(user?.preferredLanguage);
+  const party = partyLabels(t);
   const [premiumRates, setPremiumRates] = useState<CommodityPremiumRates>(
     DEFAULT_COMMODITY_PREMIUM_RATES,
   );
@@ -645,14 +686,14 @@ export default function CustomerCreateInsurancePage() {
     (state) => state === "processing",
   ).length;
   const firstIncompleteInvoiceIndex = paymentDrafts.findIndex((item) =>
-    Boolean(validateDraft(item)),
+    Boolean(validateDraft(item, t)),
   );
   const incompleteInvoiceCount = paymentDrafts.filter((item) =>
-    Boolean(validateDraft(item)),
+    Boolean(validateDraft(item, t)),
   ).length;
   const validationIssue =
     firstIncompleteInvoiceIndex >= 0
-      ? validateDraft(paymentDrafts[firstIncompleteInvoiceIndex])
+      ? validateDraft(paymentDrafts[firstIncompleteInvoiceIndex], t)
       : "";
   const activeMissingKey = missingOpen ? missingKeys[missingIndex] : undefined;
   const activeQuestion = activeMissingKey
@@ -1062,7 +1103,7 @@ export default function CustomerCreateInsurancePage() {
         }
         setInvoiceStatus(key, "failed");
         if (fileKeysRef.current.length === 1) {
-          setNotice("Details fetch nahi hui. Manually add karein.");
+          setNotice(t("insuranceDetailsNotFetched"));
         }
       })
       .finally(() => {
@@ -1189,7 +1230,7 @@ export default function CustomerCreateInsurancePage() {
       setReviewView(nextFiles.length > 1 ? "overview" : "detail");
       setStage("review");
       if (optimized.length > appendFiles.length) {
-        setNotice("Kuch invoices duplicate ya limit ke baad the, isliye add nahi hue.");
+        setNotice(t("insuranceSomeSkipped"));
       }
       appendFiles.forEach((file, index) => {
         runInvoiceExtraction(file, appendKeys[index], startingDrafts[index]);
@@ -1197,7 +1238,7 @@ export default function CustomerCreateInsurancePage() {
     } catch (error) {
       if (extractionGenerationRef.current !== generation) return;
       setExtractionState(filesRef.current.length ? "ready" : "idle");
-      setNotice(readableError(error, "Invoices add nahi hue. Dobara try karein."));
+      setNotice(readableError(error, t("insuranceAddFailed")));
     }
   };
 
@@ -1345,7 +1386,13 @@ export default function CustomerCreateInsurancePage() {
         }));
         if (activeFileIndexRef.current === invoiceIndex) {
           setNotice(
-            `${resolveMissingQuestion(key, product, user?.preferredLanguage).label} samajh nahi aaya. Dobara boliye.`,
+            t("voiceNotUnderstood", {
+              question: resolveMissingQuestion(
+                key,
+                product,
+                user?.preferredLanguage,
+              ).label,
+            }),
           );
         }
         return false;
@@ -1388,7 +1435,7 @@ export default function CustomerCreateInsurancePage() {
       !navigator.mediaDevices?.getUserMedia ||
       typeof MediaRecorder === "undefined"
     ) {
-      setNotice("Voice input is browser mein available nahi hai.");
+      setNotice(t("voiceUnsupported"));
       return false;
     }
     if (recorderRef.current?.state === "recording") {
@@ -1432,7 +1479,7 @@ export default function CustomerCreateInsurancePage() {
       recorder.onerror = () => {
         stopQuestionnaireVoiceSession();
         setVoicePhase("failed");
-        setNotice("Voice save nahi hui. Ek baar phir boliye.");
+        setNotice(t("voiceSaveFailed"));
       };
       recorder.onstop = () => {
         stopQuestionnaireVoiceSession();
@@ -1456,7 +1503,7 @@ export default function CustomerCreateInsurancePage() {
 
         if (!stoppedPurpose || blob.size === 0 || duration < 250) {
           setVoicePhase("failed");
-          setNotice("Voice save nahi hui. Ek baar phir boliye.");
+          setNotice(t("voiceSaveFailed"));
           return;
         }
         // Optimistic handoff: advance (or close) as soon as speech is captured.
@@ -1501,7 +1548,7 @@ export default function CustomerCreateInsurancePage() {
       setRecordingPurpose(null);
       setVoicePhase("failed");
       recordingProductRef.current = "";
-      setNotice("Microphone permission allow karke dobara try karein.");
+      setNotice(t("voicePermission"));
       return false;
     }
   };
@@ -1589,12 +1636,12 @@ export default function CustomerCreateInsurancePage() {
       if (!active) return;
       // Prompt couldn't play — still open the mic so the trader can answer.
       if (activeQuestion.target) {
-        setNotice("Question audio play nahi hua. Apna jawab boliye.");
+        setNotice(t("questionAudioFailed"));
         startListeningAfterPrompt();
         return;
       }
       setVoicePhase("idle");
-      setNotice("Question audio play nahi hua.");
+      setNotice(t("questionAudioFailedShort"));
     })();
 
     return () => {
@@ -1616,7 +1663,7 @@ export default function CustomerCreateInsurancePage() {
 
   const submitAndPay = async () => {
     const invalidDraftIndex = paymentDrafts.findIndex((item) =>
-      Boolean(validateDraft(item)),
+      Boolean(validateDraft(item, t)),
     );
     if (invalidDraftIndex >= 0) {
       const invalidDraft = paymentDrafts[invalidDraftIndex];
@@ -1627,8 +1674,8 @@ export default function CustomerCreateInsurancePage() {
       setReviewView("detail");
       setNotice(
         paymentDrafts.length > 1
-          ? `Invoice ${invalidDraftIndex + 1}: ${validateDraft(invalidDraft)}`
-          : validateDraft(invalidDraft),
+          ? `Invoice ${invalidDraftIndex + 1}: ${validateDraft(invalidDraft, t)}`
+          : validateDraft(invalidDraft, t),
       );
       openMissingDetails(invalidDraft, invalidDraftIndex);
       return;
@@ -1700,7 +1747,7 @@ export default function CustomerCreateInsurancePage() {
         .map((_, index) => index)
         .filter((index) => !referenceByIndex.has(index));
       if (missingDraftIndexes.some((index) => !files[index])) {
-        throw new Error("Har invoice ki weighment slip dobara upload karein.");
+        throw new Error(t("insuranceReuploadSlips"));
       }
 
       const creationResults = await Promise.allSettled(
@@ -1770,8 +1817,8 @@ export default function CustomerCreateInsurancePage() {
       ) {
         const firstFailure = creationErrors[0];
         const failureMessage = firstFailure
-          ? readableError(firstFailure.error, "Invoice create nahi ho saka.")
-          : "Invoice create nahi ho saka.";
+          ? readableError(firstFailure.error, t("insuranceCreateFailed"))
+          : t("insuranceCreateFailed");
         const failedInvoiceNumber = firstFailure
           ? firstFailure.index + 1
           : referenceByIndex.size + 1;
@@ -1884,7 +1931,7 @@ export default function CustomerCreateInsurancePage() {
       setNotice(
         readableError(
           paymentError,
-          "Insurance create ya payment start nahi ho saka. Dobara try karein.",
+          t("insuranceStartFailed"),
         ),
       );
       setStage("review");
@@ -1924,8 +1971,8 @@ export default function CustomerCreateInsurancePage() {
     setReviewView("detail");
     setNotice(
       paymentDrafts.length > 1
-        ? `Invoice ${firstIncompleteInvoiceIndex + 1}: ${validateDraft(incompleteDraft)}`
-        : validateDraft(incompleteDraft),
+        ? `Invoice ${firstIncompleteInvoiceIndex + 1}: ${validateDraft(incompleteDraft, t)}`
+        : validateDraft(incompleteDraft, t),
     );
     openMissingDetails(incompleteDraft, firstIncompleteInvoiceIndex);
   };
@@ -1938,7 +1985,7 @@ export default function CustomerCreateInsurancePage() {
     try {
       setStoredDrafts(await listCustomerInvoiceDrafts(invoiceDraftUserId));
     } catch (error) {
-      setNotice(readableError(error, "Drafts load nahi hue."));
+      setNotice(readableError(error, t("draftsLoadFailed")));
     } finally {
       setDraftsLoading(false);
     }
@@ -1983,7 +2030,7 @@ export default function CustomerCreateInsurancePage() {
       router.push("/home");
     } catch (error) {
       setDraftSaveState("idle");
-      setNotice(readableError(error, "Draft save nahi hua. Dobara try karein."));
+      setNotice(readableError(error, t("draftSaveFailed")));
     }
   };
 
@@ -2045,7 +2092,7 @@ export default function CustomerCreateInsurancePage() {
       );
       if (activeStoredDraftId === stored.id) setActiveStoredDraftId(null);
     } catch (error) {
-      setNotice(readableError(error, "Draft delete nahi hua."));
+      setNotice(readableError(error, t("draftDeleteFailed")));
     } finally {
       setDeletingDraftId(null);
     }
@@ -2063,7 +2110,7 @@ export default function CustomerCreateInsurancePage() {
           >
             <ArrowLeft size={24} strokeWidth={2.4} />
           </button>
-          <h1 className={styles.secondaryHeading}>Insurance banao</h1>
+          <h1 className={styles.secondaryHeading}>{t("insuranceCreateTitle")}</h1>
           <button
             type="button"
             className={styles.headerTextAction}
@@ -2114,7 +2161,7 @@ export default function CustomerCreateInsurancePage() {
                     }
                   >
                     <ImagePlus size={17} />
-                    Photo badlein
+                    {t("insuranceChangePhoto")}
                   </button>
                   <button
                     type="button"
@@ -2144,7 +2191,7 @@ export default function CustomerCreateInsurancePage() {
                   )}
                 </span>
                 <span className={styles.captureTitle}>
-                  Weighment slip dalein
+                  {t("insuranceAddWeighment")}
                 </span>
               </button>
             )}
@@ -2284,7 +2331,7 @@ export default function CustomerCreateInsurancePage() {
           <ArrowLeft size={24} strokeWidth={2.4} />
         </button>
         <h1 className={styles.secondaryHeading}>
-          {reviewView === "overview" ? "Review & pay" : "Details check karein"}
+          {reviewView === "overview" ? "Review & pay" : t("insuranceCheckDetails")}
         </h1>
         <button
           type="button"
@@ -2541,23 +2588,23 @@ export default function CustomerCreateInsurancePage() {
         <section className={styles.detailCard}>
           <DetailSection title="Party" icon={<Users size={20} />}>
             <CompactInput
-              label={PARTY_UI_LABELS.shipper}
+              label={party.shipper}
               value={draft.supplierName}
               onChange={(value) => update("supplierName", value)}
             />
             <CompactInput
-              label={PARTY_UI_LABELS.consignee}
+              label={party.consignee}
               value={draft.buyerName}
               onChange={(value) => update("buyerName", value)}
             />
             <CompactInput
-              label={PARTY_UI_LABELS.shipperAddress}
+              label={party.shipperAddress}
               value={draft.supplierAddress}
               multiline
               onChange={(value) => update("supplierAddress", value)}
             />
             <CompactInput
-              label={PARTY_UI_LABELS.consigneeAddress}
+              label={party.consigneeAddress}
               value={draft.buyerAddress}
               multiline
               onChange={(value) => update("buyerAddress", value)}
@@ -2650,7 +2697,7 @@ export default function CustomerCreateInsurancePage() {
 
           <DetailSection title="Contact" icon={<Phone size={20} />}>
             <CompactInput
-              label={PARTY_UI_LABELS.consigneeMobile}
+              label={party.consigneeMobile}
               inputMode="tel"
               value={draft.insuredPartyPhone}
               onChange={(value) =>
@@ -3514,33 +3561,36 @@ function isMissingDetailAnswered(key: MissingDetailKey, value: string) {
   return Boolean(clean);
 }
 
-function validateDraft(draft: CustomerInvoiceDraft) {
-  if (!draft.supplierName.trim())
-    return `${PARTY_UI_LABELS.shipper} ka naam add karein.`;
-  if (!draft.supplierAddress.trim())
-    return `${PARTY_UI_LABELS.shipperAddress} add karein.`;
-  if (!draft.buyerName.trim())
-    return `${PARTY_UI_LABELS.consignee} ka naam add karein.`;
-  if (!draft.buyerAddress.trim())
-    return `${PARTY_UI_LABELS.consigneeAddress} add karein.`;
-  if (!draft.product.trim()) return "Commodity add karein.";
-  if (!(Number(draft.quantity) > 0)) return "Sahi quantity add karein.";
-  if (!(Number(draft.rate) > 0)) return "Sahi rate add karein.";
-  if (!draft.vehicleNumber.trim()) return "Vehicle number add karein.";
+function validateDraft(
+  draft: CustomerInvoiceDraft,
+  t: ReturnType<typeof customerCopy>,
+) {
+  const party = partyLabels(t);
+  const add = (what: string) => t("validationAdd", { field: what });
+  const addName = (who: string) => t("validationAddName", { party: who });
+
+  if (!draft.supplierName.trim()) return addName(party.shipper);
+  if (!draft.supplierAddress.trim()) return add(party.shipperAddress);
+  if (!draft.buyerName.trim()) return addName(party.consignee);
+  if (!draft.buyerAddress.trim()) return add(party.consigneeAddress);
+  if (!draft.product.trim()) return add(t("validationCommodity"));
+  if (!(Number(draft.quantity) > 0)) return add(t("validationQuantity"));
+  if (!(Number(draft.rate) > 0)) return add(t("validationRate"));
+  if (!draft.vehicleNumber.trim()) return add(t("validationVehicleNumber"));
   if (
     isTenderCoconutProduct(draft.product) &&
     !normalizeVehicleTonnage(draft.vehicleTonnage)
   ) {
-    return "Vehicle tonnage chunein.";
+    return t("validationVehicleTonnage");
   }
   if (!/^[6-9]\d{9}$/.test(phone(draft.insuredPartyPhone))) {
-    return `${PARTY_UI_LABELS.consignee} ka 10 digit mobile number add karein.`;
+    return t("validationPartyMobile", { party: partyLabels(t).consignee });
   }
   if (
     draft.driverPhone.trim() &&
     !/^[6-9]\d{9}$/.test(phone(draft.driverPhone))
   ) {
-    return "Driver ka sahi 10 digit mobile number add karein.";
+    return t("validationDriverMobile");
   }
   return "";
 }

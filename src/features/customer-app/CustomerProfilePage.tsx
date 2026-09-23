@@ -20,10 +20,19 @@ import {
   useReferenceStates,
 } from "@/features/reference";
 import {
+  commodityCodeFromLabel,
+  normalizeCommodityCode,
+} from "@/features/reference/commodityCodes";
+import {
   nextMandiForStateChange,
   statesForCommodities,
 } from "@/features/reference/commodityGeography";
 import { updateCustomerUser } from "./api";
+import {
+  CUSTOMER_LANGUAGE_OPTIONS,
+  DEFAULT_CUSTOMER_LANGUAGE,
+  customerCopy,
+} from "./i18n";
 import { CustomerAppShell } from "./CustomerAppShell";
 import { initials, readableError } from "./utils";
 import styles from "./customer-app.module.css";
@@ -37,19 +46,12 @@ type NotificationPreferences = {
   walletUpdates: boolean;
 };
 
-const languageOptions = [
-  ["hi", "हिन्दी"],
-  ["en", "English"],
-  ["te", "తెలుగు"],
-  ["kn", "ಕನ್ನಡ"],
-  ["mr", "मराठी"],
-  ["ta", "தமிழ்"],
-] as const;
+const languageOptions = CUSTOMER_LANGUAGE_OPTIONS;
 
 const profileRoles = [
-  ["SUPPLIER", "Loading vala"],
-  ["BUYER", "Unloading vala"],
-  ["TRANSPORTER", "Transporter"],
+  ["SUPPLIER", "roleSupplier"],
+  ["BUYER", "roleBuyer"],
+  ["TRANSPORTER", null],
 ] as const;
 
 const businessSizeOptions = [
@@ -82,8 +84,9 @@ export default function CustomerProfilePage() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [language, setLanguage] = useState(
-    String(user?.preferredLanguage || "hi"),
+    String(user?.preferredLanguage || DEFAULT_CUSTOMER_LANGUAGE),
   );
+  const t = customerCopy(language);
   const [profile, setProfile] = useState(() => profileFromUser(user, commodities));
   const [notifications, setNotifications] = useState<NotificationPreferences>(
     () => {
@@ -167,11 +170,11 @@ export default function CustomerProfilePage() {
         ...payload,
         ...updated,
       }));
-      setNotice("Profile save ho gaya.");
+      setNotice(t("profileSaved"));
       setSection("main");
       router.replace("/profile?section=main");
     } catch (error) {
-      setNotice(readableError(error, "Profile save nahi ho saka."));
+      setNotice(readableError(error, t("profileSaveFailed")));
     } finally {
       setSaving(false);
     }
@@ -194,7 +197,7 @@ export default function CustomerProfilePage() {
       }));
     } catch (error) {
       setLanguage(previous);
-      setNotice(readableError(error, "Language update nahi ho saki."));
+      setNotice(readableError(error, t("profileLanguageFailed")));
     } finally {
       setSaving(false);
     }
@@ -255,7 +258,7 @@ export default function CustomerProfilePage() {
             <section className={styles.settingsCard}>
               <SettingsRow
                 icon={<UserRound size={21} />}
-                title="Aapki details"
+                title={t("profileYourDetails")}
                 onClick={() => setSection("details")}
               />
               <SettingsRow
@@ -263,7 +266,7 @@ export default function CustomerProfilePage() {
                 title="Language"
                 sub={
                   languageOptions.find(([code]) => code === language)?.[1] ||
-                  "हिन्दी"
+                  "Hinglish"
                 }
                 onClick={() => setSection("language")}
               />
@@ -327,7 +330,7 @@ export default function CustomerProfilePage() {
             <div className={styles.profileField}>
               <span>I am a</span>
               <div className={styles.profileRoleSelector}>
-                {profileRoles.map(([value, label]) => {
+                {profileRoles.map(([value, labelKey]) => {
                   const active = profile.identity === value;
                   return (
                     <button
@@ -339,7 +342,7 @@ export default function CustomerProfilePage() {
                         setProfile({ ...profile, identity: value })
                       }
                     >
-                      {label}
+                      {labelKey ? t(labelKey) : "Transporter"}
                     </button>
                   );
                 })}
@@ -675,7 +678,7 @@ function commodityCodesFromUser(
   );
   const products = Array.isArray(user?.products) ? user.products : [];
   const fromProducts = products
-    .map((product) => commodityCodeFromLabel(product))
+    .map((product) => commodityCodeFromLabel(product, commodities))
     .filter(Boolean);
   return [
     ...new Set([
@@ -686,45 +689,6 @@ function commodityCodesFromUser(
   ];
 }
 
-function normalizeCommodityCode(
-  value: unknown,
-  commodities: Array<{ code: string }> = [],
-) {
-  const normalized = String(value || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_");
-  if (!normalized) return "";
-  if (!commodities.length) return normalized;
-  return commodities.some((item) => item.code === normalized) ? normalized : "";
-}
-
-function commodityCodeFromLabel(value: unknown) {
-  const normalized = String(value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-  if (!normalized) return "";
-  if (
-    normalized.includes("tender coconut") ||
-    normalized === "coconut" ||
-    normalized === "green coconut"
-  ) {
-    return "TENDER_COCONUT";
-  }
-  if (normalized.includes("tomato")) return "TOMATO";
-  if (normalized.includes("mango")) return "MANGO";
-  if (normalized.includes("banana")) return "BANANA";
-  if (normalized.includes("onion")) return "ONION";
-  if (normalized.includes("potato")) return "POTATO";
-  if (normalized.includes("pomegranate") || normalized.includes("anar")) {
-    return "POMEGRANATE";
-  }
-  // Word-boundary match — never treat grapefruit as Grapes.
-  if (/(^| )(grapes?|angoor|angur)( |$)/.test(normalized)) return "GRAPES";
-  return "OTHER";
-}
-
 function businessSizeFromUser(value: unknown) {
   const storedValue = String(value || "");
   return (
@@ -733,7 +697,7 @@ function businessSizeFromUser(value: unknown) {
 }
 
 function sectionLabel(section: ProfileSection) {
-  if (section === "details") return "Aapki details";
+  if (section === "details") return "Your details";
   if (section === "language") return "Language";
   if (section === "notifications") return "Notifications";
   if (section === "security") return "Security";

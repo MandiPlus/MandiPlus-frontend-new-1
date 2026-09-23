@@ -14,6 +14,7 @@ import {
 import { CustomerAppShell, useCustomerAppShell } from "./CustomerAppShell";
 import { ChannelPartnerRequestModal } from "./ChannelPartnerRequestModal";
 import { useCustomerAppData } from "./useCustomerAppData";
+import { useCustomerCopy } from "./useCustomerCopy";
 import {
   getInsuranceUrl,
   isCheckoutReady,
@@ -37,6 +38,7 @@ export default function CustomerHomePage() {
 }
 
 function HomeContent({ data }: { data: ReturnType<typeof useCustomerAppData> }) {
+  const t = useCustomerCopy();
   const { openMenu } = useCustomerAppShell();
   const [partnerRequestOpen, setPartnerRequestOpen] = useState(false);
   const pending = data.invoices.filter(
@@ -85,7 +87,7 @@ function HomeContent({ data }: { data: ReturnType<typeof useCustomerAppData> }) 
           <span className={styles.createIcon}>
             <FilePlus2 size={28} strokeWidth={2.15} />
           </span>
-          <span className={styles.createTitle}>Insurance banao</span>
+          <span className={styles.createTitle}>{t("homeCreateInsurance")}</span>
         </Link>
 
         <div className={styles.actionGrid}>

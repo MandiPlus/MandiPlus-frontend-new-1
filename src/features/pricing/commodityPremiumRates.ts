@@ -29,6 +29,9 @@ const CANONICAL_NAME_TO_COMMODITY = {
   "Sweet Potato": "SWEET_POTATO",
   "Mosambi (Sweet Lime)": "MOSAMBI",
   Grapes: "GRAPES",
+  "Dragon Fruit": "DRAGON_FRUIT",
+  Peaches: "PEACHES",
+  Plum: "PLUM",
 } as const;
 
 export type PremiumRateCommodity =

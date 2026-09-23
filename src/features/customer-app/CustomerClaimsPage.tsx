@@ -23,6 +23,7 @@ import {
   type ClaimRequest,
 } from "@/features/insurance/api";
 import { CustomerAppShell } from "./CustomerAppShell";
+import { useCustomerCopy } from "./useCustomerCopy";
 import { useCustomerAppData } from "./useCustomerAppData";
 import {
   invoiceVehicle,
@@ -34,6 +35,7 @@ import {
 import styles from "./customer-app.module.css";
 
 export default function CustomerClaimsPage() {
+  const t = useCustomerCopy();
   const router = useRouter();
   const data = useCustomerAppData();
   const [creating, setCreating] = useState(false);
@@ -64,7 +66,7 @@ export default function CustomerClaimsPage() {
   const startClaim = async () => {
     const normalized = vehicle.toUpperCase().replace(/[^A-Z0-9]/g, "");
     if (!normalized) {
-      setNotice("Vehicle number select ya enter karein.");
+      setNotice(t("claimsVehicleRequired"));
       return;
     }
     setSubmitting(true);
@@ -75,9 +77,9 @@ export default function CustomerClaimsPage() {
       setExpanded(claim.id);
       setCreating(false);
       setVehicle("");
-      setNotice("Claim successfully register ho gaya. Documents upload karein.");
+      setNotice(t("claimsRegistered"));
     } catch (error) {
-      setNotice(readableError(error, "Claim register nahi ho paya. Please retry."));
+      setNotice(readableError(error, t("claimsRegisterFailed")));
     } finally {
       setSubmitting(false);
     }
@@ -109,7 +111,7 @@ export default function CustomerClaimsPage() {
             : "Proof photo";
       setNotice(`${documentName} ${replacing ? "replaced" : "uploaded"}.`);
     } catch (error) {
-      setNotice(readableError(error, "Document upload nahi ho paya."));
+      setNotice(readableError(error, t("claimsUploadFailed")));
     } finally {
       setUploading(null);
     }
@@ -145,7 +147,7 @@ export default function CustomerClaimsPage() {
                   value={vehicle}
                   onChange={(event) => setVehicle(event.target.value)}
                 >
-                  <option value="">Vehicle choose karein</option>
+                  <option value="">{t("claimsChooseVehicle")}</option>
                   {insuredVehicles.map((item) => (
                     <option key={item} value={item}>
                       {item}
@@ -169,7 +171,7 @@ export default function CustomerClaimsPage() {
               onClick={() => void startClaim()}
             >
               {submitting ? <RefreshCw size={18} className="animate-spin" /> : <ShieldCheck size={19} />}
-              Claim register karein
+              {t("claimsRegister")}
             </button>
             <button
               type="button"
@@ -235,8 +237,8 @@ export default function CustomerClaimsPage() {
               const documentsCopy = documentsComplete
                 ? "Lorry receipt aur damage certificate received."
                 : missingDocuments.length === 1
-                  ? `${missingDocuments[0].label} upload karein.`
-                  : "Lorry receipt aur damage certificate upload karein.";
+                  ? t("claimsUploadOne", { document: missingDocuments[0].label })
+                  : t("claimsUploadBoth");
               return (
                 <article
                   key={claim.id}

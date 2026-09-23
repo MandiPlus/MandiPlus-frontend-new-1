@@ -16,6 +16,12 @@ import {
   useReferenceCommodities,
   useReferenceStates,
 } from "@/features/reference";
+import { commodityCodeFromLabel } from "@/features/reference/commodityCodes";
+import {
+  CUSTOMER_LANGUAGE_OPTIONS,
+  DEFAULT_CUSTOMER_LANGUAGE,
+  customerCopy,
+} from "./i18n";
 import {
   nextMandiForStateChange,
   reconcileStateAndMandi,
@@ -27,19 +33,12 @@ import { updateCustomerUser } from "./api";
 import { readableError } from "./utils";
 import styles from "./customer-app.module.css";
 
-const languages = [
-  ["en", "English"],
-  ["hi", "हिन्दी"],
-  ["kn", "ಕನ್ನಡ"],
-  ["mr", "मराठी"],
-  ["ta", "தமிழ்"],
-  ["te", "తెలుగు"],
-] as const;
+const languages = CUSTOMER_LANGUAGE_OPTIONS;
 
 const roles = [
-  ["SUPPLIER", "Loading vala", Store],
-  ["BUYER", "Unloading vala", ShoppingCart],
-  ["TRANSPORTER", "Transporter", Truck],
+  ["SUPPLIER", "roleSupplier", Store],
+  ["BUYER", "roleBuyer", ShoppingCart],
+  ["TRANSPORTER", null, Truck],
 ] as const;
 
 const STEP_COUNT = 5;
@@ -57,7 +56,8 @@ export function CustomerSetupModal() {
   const commodities = useReferenceCommodities();
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState(0);
-  const [language, setLanguage] = useState("en");
+  const [language, setLanguage] = useState<string>(DEFAULT_CUSTOMER_LANGUAGE);
+  const t = customerCopy(language);
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [selectedCommodities, setSelectedCommodities] = useState<string[]>([]);
@@ -93,7 +93,7 @@ export function CustomerSetupModal() {
   useEffect(() => {
     if (!user?.id) return;
 
-    setLanguage(profile.language || "en");
+    setLanguage(profile.language || DEFAULT_CUSTOMER_LANGUAGE);
     setName(profile.name);
     setRole(profile.role);
     setSelectedCommodities(profile.commodityCodes);
@@ -157,7 +157,7 @@ export function CustomerSetupModal() {
       localStorage.setItem("user", JSON.stringify(next));
       return true;
     } catch (nextError) {
-      setError(readableError(nextError, "Details save nahi ho paaye."));
+      setError(readableError(nextError, t("setupSaveFailed")));
       return false;
     } finally {
       setSaving(false);
@@ -194,7 +194,7 @@ export function CustomerSetupModal() {
       return;
     }
     if (otherSelected && !cleanedOtherCommodity) {
-      setError("Other commodity ka naam likhein");
+      setError(t("setupOtherCommodityRequired"));
       return;
     }
     const selected = commodities.filter((item) =>
@@ -261,7 +261,7 @@ export function CustomerSetupModal() {
           ))}
         </div>
 
-        <h2 className={styles.setupTitle}>{stepTitle(step)}</h2>
+        <h2 className={styles.setupTitle}>{stepTitle(step, t)}</h2>
         {error ? <div className={styles.notice}>{error}</div> : null}
 
         {step === 0 ? (
@@ -294,7 +294,7 @@ export function CustomerSetupModal() {
                 autoFocus
                 autoComplete="name"
                 value={name}
-                placeholder="Apna naam likhein"
+                placeholder={t("setupNamePlaceholder")}
                 onChange={(event) => setName(event.target.value)}
               />
             </label>
@@ -354,7 +354,7 @@ export function CustomerSetupModal() {
                 <input
                   autoFocus
                   value={otherCommodityText}
-                  placeholder="Apni commodity ka naam likhein"
+                  placeholder={t("setupOtherCommodityPlaceholder")}
                   onChange={(event) => {
                     setOtherCommodityText(event.target.value);
                     if (error) setError("");
@@ -372,7 +372,7 @@ export function CustomerSetupModal() {
 
         {step === 3 ? (
           <div className={styles.setupStack}>
-            {roles.map(([value, label, Icon]) => {
+            {roles.map(([value, labelKey, Icon]) => {
               const active = role === value;
               return (
                 <button
@@ -387,7 +387,7 @@ export function CustomerSetupModal() {
                   <span className={styles.setupRowIcon}>
                     <Icon size={22} />
                   </span>
-                  <strong>{label}</strong>
+                  <strong>{labelKey ? t(labelKey) : "Transporter"}</strong>
                   {active ? <Check size={20} /> : <ChevronRight size={18} />}
                 </button>
               );
@@ -478,7 +478,7 @@ export function CustomerSetupModal() {
               <span>Mandi name</span>
               <input
                 value={mandiName}
-                placeholder="Mandi ka naam likhein"
+                placeholder={t("setupMandiPlaceholder")}
                 onChange={(event) => setMandiName(event.target.value)}
               />
             </label>
@@ -518,12 +518,12 @@ function SetupContinue({
   );
 }
 
-function stepTitle(step: number) {
-  if (step === 0) return "Language chunein";
-  if (step === 1) return "Apna naam";
+function stepTitle(step: number, t: ReturnType<typeof customerCopy>) {
+  if (step === 0) return t("setupLanguageTitle");
+  if (step === 1) return "Your name";
   if (step === 2) return "Which commodities do you trade?";
   if (step === 3) return "I'm a ...";
-  return "Aapki mandi kahan hai?";
+  return t("setupMandiTitle");
 }
 
 function progressKey(userId: string) {
@@ -545,25 +545,11 @@ function readProfile(
     ? user.products.map((item) => String(item || "").trim()).filter(Boolean)
     : [];
   const productCommodityCodes = products
-    .map((product) => {
-      const normalized = normalize(product);
-      const fromCatalog = commodities.find(
-        (item) => normalize(item.label) === normalized,
-      )?.code;
-      if (fromCatalog) return fromCatalog;
-      if (
-        normalized.includes("pomegranate") ||
-        normalized.includes("anar") ||
-        normalized.includes("dalimb")
-      ) {
-        return "POMEGRANATE";
-      }
-      if (normalized && normalized !== "other") {
-        // Free-text Other crop (Garlic, Pineapple, etc.)
-        return "OTHER";
-      }
-      return "";
-    })
+    .map((product) =>
+      normalize(product) === "other"
+        ? ""
+        : commodityCodeFromLabel(product, commodities),
+    )
     .filter(Boolean) as string[];
   const fromUserCodes = Array.isArray(user?.commodityCodes)
     ? user.commodityCodes
@@ -594,22 +580,13 @@ function readProfile(
       ...(products.length && !productCommodityCodes.length ? ["OTHER"] : []),
     ]),
   ];
-  const catalogLabels = new Set(
-    commodities.map((item) => normalize(item.label)),
-  );
+  // The free-text crop typed under Other — anything products[] names that is
+  // not a commodity in its own right.
   const otherCommodityText =
     products.find((product) => {
       const normalized = normalize(product);
       if (!normalized || normalized === "other") return false;
-      if (catalogLabels.has(normalized)) return false;
-      if (
-        normalized.includes("pomegranate") ||
-        normalized.includes("anar") ||
-        normalized.includes("dalimb")
-      ) {
-        return false;
-      }
-      return true;
+      return commodityCodeFromLabel(product, commodities) === "OTHER";
     }) || "";
   const mandiName = String(user?.mandiName || "").trim();
   const state = normalizeState(user?.state);

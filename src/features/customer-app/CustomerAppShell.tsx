@@ -28,6 +28,7 @@ import {
 
 import ProtectedRoute from "@/features/auth/components/ProtectedRoute";
 import { useAuth } from "@/features/auth/context/AuthContext";
+import { useCustomerCopy } from "./useCustomerCopy";
 import { getMyChannelPartnerDashboard } from "@/features/channel-partner/api";
 import { initials } from "./utils";
 import { CustomerSetupModal } from "./CustomerSetupModal";
@@ -59,6 +60,7 @@ export function CustomerAppShell({
   children: ReactNode;
 }) {
   const { user, logout } = useAuth();
+  const t = useCustomerCopy();
   const [menuOpen, setMenuOpen] = useState(false);
   const [partnerLookup, setPartnerLookup] = useState<{
     userId: string;
@@ -116,11 +118,11 @@ export function CustomerAppShell({
   const navItems = [
     { key: "home" as const, href: "/home", label: "Home", icon: Home },
     { key: "pay" as const, href: "/pay", label: "Pay", icon: WalletCards },
-    { key: "create" as const, href: "/insurance", label: "Insurance\nbanao", icon: Plus },
+    { key: "create" as const, href: "/insurance", label: t("navCreateInsurance"), icon: Plus },
     { key: "tracking" as const, href: "/tracking", label: "Tracking", icon: Route },
     resolvedPartnerActive
       ? { key: "partner" as const, href: "/partner", label: "Partner", icon: UsersRound }
-      : { key: "partner" as const, href: "/support", label: "Sahayata", icon: Headphones },
+      : { key: "partner" as const, href: "/support", label: t("navSupport"), icon: Headphones },
   ];
 
   return (
@@ -261,7 +263,7 @@ export function CustomerAppShell({
                     <DrawerLink href="/profile?section=language" icon={Languages} label="Language" />
                     <DrawerLink href="/profile?section=notifications" icon={Bell} label="Notifications" />
                     <DrawerLink href="/profile?section=security" icon={ShieldCheck} label="Security" />
-                    <DrawerLink href="/support" icon={Headphones} label="Sahayata" />
+                    <DrawerLink href="/support" icon={Headphones} label={t("navSupport")} />
                     {resolvedPartnerActive ? (
                       <DrawerLink href="/partner" icon={UsersRound} label="Partner portal" />
                     ) : null}
