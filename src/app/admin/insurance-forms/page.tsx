@@ -2145,6 +2145,14 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
         return 'Sent';
     };
 
+    const isInvoicePaid = (inv: Invoice) => String(inv.paymentStatus || '').toUpperCase() === 'PAID';
+
+    // A paid invoice has nothing left to collect, and one settled off-gateway
+    // (wallet, bulk, per-policy) never had a link in the first place — so the
+    // send button can only ever come back as a refusal. Show the state instead.
+    const getPaymentLinkChipLabel = (inv: Invoice) =>
+        isInvoicePaid(inv) ? 'Paid' : getPaymentLinkSentLabel(inv);
+
     const updateInvoiceMenuPlacement = (invoiceId: string, el: HTMLElement | null) => {
         if (!el) return;
         const rect = el.getBoundingClientRect();
@@ -3074,9 +3082,9 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                                     </td>
                                                     <td className={`px-2 py-3 xl:py-2 text-center align-top ${expandedInvoiceId === inv.id ? 'bg-slate-50' : 'bg-white'}`}>
                                                         <div className="flex items-center justify-center gap-2">
-                                                            {getPaymentLinkSentLabel(inv) ? (
+                                                            {getPaymentLinkChipLabel(inv) ? (
                                                                 <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
-                                                                    {getPaymentLinkSentLabel(inv)}
+                                                                    {getPaymentLinkChipLabel(inv)}
                                                                 </span>
                                                             ) : (
                                                                 <button
@@ -3181,7 +3189,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                                                             </Menu.Item>
                                                                         )}
 
-                                                                        {!inv.isRejected && (
+                                                                        {!inv.isRejected && !isInvoicePaid(inv) && (
                                                                             <Menu.Item>
                                                                                 {({ active }) => (
                                                                                     <button
@@ -3452,9 +3460,9 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                             )}
 
                                             <div className="flex items-center gap-2">
-                                                {getPaymentLinkSentLabel(inv) ? (
+                                                {getPaymentLinkChipLabel(inv) ? (
                                                     <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">
-                                                        {getPaymentLinkSentLabel(inv)}
+                                                        {getPaymentLinkChipLabel(inv)}
                                                     </span>
                                                 ) : (
                                                     <button
@@ -3555,7 +3563,7 @@ export function InsuranceFormsPageContent({ appQueueMode = false }: InsuranceFor
                                                                 </Menu.Item>
                                                             )}
 
-                                                            {!inv.isRejected && (
+                                                            {!inv.isRejected && !isInvoicePaid(inv) && (
                                                                 <Menu.Item>
                                                                     {({ active }) => (
                                                                         <button
