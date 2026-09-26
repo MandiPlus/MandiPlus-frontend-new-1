@@ -91,9 +91,9 @@ export default function LookupDropdown({
         ) : options.length === 0 ? (
           <div className="px-4 py-6 text-sm text-slate-500">{emptyMessage}</div>
         ) : (
-          options.map((option) => (
+          options.map((option, index) => (
             <button
-              key={option.id}
+              key={`${option.id}-${index}`}
               type="button"
               onClick={() => onSelect(option)}
               className="flex w-full items-start justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left transition-colors hover:bg-emerald-50"

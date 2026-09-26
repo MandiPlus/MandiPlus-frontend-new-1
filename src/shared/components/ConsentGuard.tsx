@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/features/auth/context/AuthContext";
 import axios from "axios";
 import { toast } from "react-toastify";
+import { usePathname } from "next/navigation";
+import { isPublicStandaloneRoute } from "@/shared/routing/publicStandaloneRoutes";
 
 const CONSENT_STORAGE_KEY = "mandi_plus_insurance_consent";
 
@@ -11,7 +13,7 @@ const consentText = {
     en: (
         <>
             I confirm that I have read, understood, and accepted the terms of the{" "}
-            <a href="/docs/mou.pdf" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">
+            <a href="/docs/mou" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">
                 Memorandum of Understanding (MOU)
             </a>{" "}
             with Mandi Plus (ENP FARMS PVT LTD). I accept the insurance terms and conditions and the guidelines for any loss/damage of my agricultural goods during transit as per the clauses mentioned in the{" "}
@@ -28,7 +30,7 @@ const consentText = {
     hi: (
         <>
             मैं यह पुष्टि करता हूँ कि मैंने Mandi Plus (ENP FARMS PVT LTD) के साथ{" "}
-            <a href="/docs/mou.pdf" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">
+            <a href="/docs/mou" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline font-medium">
                 समझौता ज्ञापन (MOU)
             </a>{" "}
             की शर्तों को पढ़ और समझ लिया है। मैं अपने कृषि सामान (Agri-goods) के ट्रांसपोर्ट के दौरान होने वाले किसी भी नुकसान या डैमेज के लिए{" "}
@@ -46,6 +48,7 @@ const consentText = {
 
 export default function ConsentGuard({ children }: { children: React.ReactNode }) {
     const { user, setUser } = useAuth();
+    const pathname = usePathname();
     const [showModal, setShowModal] = useState(false);
     const [loading, setLoading] = useState(false);
     const [agreed, setAgreed] = useState(false);
@@ -84,9 +87,11 @@ export default function ConsentGuard({ children }: { children: React.ReactNode }
                 ? "Mandi Plus: Insurance Consent Acknowledgment - I confirm that I have read, understood, and accepted the terms of the Memorandum of Understanding (MOU) with Mandi Plus (ENP FARMS PVT LTD). I accept the insurance terms and conditions and the guidelines for any loss/damage of my agricultural goods during transit as per the clauses mentioned in the insurance certificate issued by TATA AIG and the Invoice copy issued by Mandi Plus. In case of any claim request raised by me, I am obliged and responsible to provide all supporting documents related to the consignment (such as FIR, GPS Pictures, Weighment Slips, and Damage Certificate)."
                 : "Mandi Plus: Insurance Consent Acknowledgment (Hindi) - मैं यह पुष्टि करता हूँ कि मैंने Mandi Plus (ENP FARMS PVT LTD) के साथ समझौता ज्ञापन (MOU) की शर्तों को पढ़ और समझ लिया है। मैं अपने कृषि सामान (Agri-goods) के ट्रांसपोर्ट के दौरान होने वाले किसी भी नुकसान या डैमेज के लिए TATA AIG द्वारा जारी इंश्योरेंस सर्टिफिकेट और Mandi Plus के इनवॉइस में दी गई शर्तों को स्वीकार करता हूँ। यदि मैं भविष्य में कोई क्लेम (Claim) डालता हूँ, तो उसकी जिम्मेदारी मेरी होगी कि मैं माल से जुड़े सभी जरूरी दस्तावेज (जैसे FIR, फोटो, कांटे की पर्ची और डैमेज सर्टिफिकेट) उपलब्ध कराऊं।";
 
-            await axios.patch(`${apiUrl}/users/${user.id}/consent`, {
-                consentText: consentPayload,
-            });
+            if (!user.id?.startsWith("demo-user")) {
+                await axios.patch(`${apiUrl}/users/${user.id}/consent`, {
+                    consentText: consentPayload,
+                });
+            }
 
             // Store in localStorage
             localStorage.setItem(CONSENT_STORAGE_KEY, "true");
@@ -94,6 +99,17 @@ export default function ConsentGuard({ children }: { children: React.ReactNode }
             // Update Local State immediately
             if (setUser) {
                 setUser({ ...user, isConsent: true });
+            }
+            if (typeof window !== "undefined") {
+                const stored = localStorage.getItem("user");
+                if (stored) {
+                    try {
+                        const parsed = JSON.parse(stored);
+                        localStorage.setItem("user", JSON.stringify({ ...parsed, isConsent: true }));
+                    } catch {
+                        // no-op
+                    }
+                }
             }
 
             toast.success("Consent recorded successfully");
@@ -107,8 +123,9 @@ export default function ConsentGuard({ children }: { children: React.ReactNode }
         }
     };
 
-    // If no modal needed, just render the app content normally
-    if (!showModal) {
+    // Public legal and service-information pages must remain readable without
+    // waiting for authentication or accepting an account-specific consent.
+    if (isPublicStandaloneRoute(pathname) || !showModal) {
         return <>{children}</>;
     }
 

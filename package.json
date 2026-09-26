@@ -6,7 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:customer-insurance-contract": "node scripts/test-customer-insurance-contract.mjs",
+    "test:customer-insurance-bulk-flow": "node --no-warnings scripts/test-customer-insurance-bulk-flow.mjs",
+    "test:insurance-slip": "node --no-warnings scripts/test-insurance-slip-submit.mjs",
+    "test:desktop-creation-access": "node --no-warnings scripts/test-desktop-creation-access.mjs",
+    "test:rate-calculator": "node --no-warnings --test --experimental-strip-types src/features/insurance/rateCalculator.test.mjs",
+    "test:wallet-catalog": "node --test --experimental-strip-types src/features/customer/wallet-catalog.test.mjs"
   },
   "dependencies": {
     "@headlessui/react": "^2.2.9",
@@ -17,6 +23,9 @@
     "cropperjs": "^1.6.2",
     "dotenv": "^17.3.1",
     "jspdf": "^4.2.0",
+    "leaflet": "^1.9.4",
+    "jszip": "^3.10.1",
+    "lottie-react": "^2.4.1",
     "lucide-react": "^0.562.0",
     "next": "^16.1.6",
     "pdf-lib": "^1.17.1",
@@ -27,11 +36,13 @@
     "react-easy-crop": "^5.5.6",
     "react-hot-toast": "^2.6.0",
     "react-icons": "^5.5.0",
+    "react-leaflet": "^5.0.0",
     "react-toastify": "^11.0.5",
     "recharts": "^3.7.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/leaflet": "^1.9.21",
     "@types/node": "^20.19.27",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
