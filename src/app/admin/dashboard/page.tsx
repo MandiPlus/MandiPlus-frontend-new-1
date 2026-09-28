@@ -400,7 +400,9 @@ export default function AnalyticsDashboardPage() {
                 const headers = token ? { Authorization: `Bearer ${token}` } : {};
                 const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
 
-                const invoiceParams: Record<string, string> = {};
+                // view=dashboard: slim columns. Full invoice rows for the whole
+                // table exhausted the API heap and crashed it (Sep 24-28).
+                const invoiceParams: Record<string, string> = { view: 'dashboard' };
                 if (fromDate) invoiceParams.startDate = fromDate;
                 if (toDate) invoiceParams.endDate = toDate;
                 if (supplier) invoiceParams.supplierName = supplier;
