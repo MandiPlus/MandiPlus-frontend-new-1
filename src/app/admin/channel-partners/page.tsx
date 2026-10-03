@@ -155,9 +155,6 @@ export default function AdminChannelPartnersPage() {
     void loadDetail(selectedPartnerId);
   }, [selectedPartnerId, loadDetail]);
 
-  const commissionToBePaid =
-    (detail?.summary?.commissionPending ?? 0) + (detail?.summary?.commissionPayable ?? 0);
-
   const filteredPartners = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return partners;
@@ -411,10 +408,7 @@ export default function AdminChannelPartnersPage() {
                 <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                   <MiniStat label="Customers" value={partner.summary.customers} />
                   <MiniStat label="Premium" value={formatCurrency(partner.summary.premiumTotal)} />
-                  <MiniStat
-                    label="To Be Paid"
-                    value={formatCurrency(partner.summary.commissionPending + partner.summary.commissionPayable)}
-                  />
+                  <MiniStat label="Pending" value={formatCurrency(partner.summary.commissionOutstanding ?? 0)} />
                 </div>
               </button>
             ))}
@@ -541,14 +535,16 @@ export default function AdminChannelPartnersPage() {
                   </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 2xl:grid-cols-7">
+                <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
                   <Metric icon={Users} label="Customers" value={String(detail.summary?.customers ?? 0)} />
                   <Metric icon={FileText} label="Invoices" value={String(detail.summary?.invoices ?? 0)} />
                   <Metric icon={BadgeIndianRupee} label="Premium" value={formatCurrency(detail.summary?.premiumTotal ?? 0)} />
-                  {/* A payout settles a month's pending and payable commissions alike. */}
-                  <Metric icon={BadgeIndianRupee} label="Total Comm." value={formatCurrency(commissionToBePaid + (detail.summary?.commissionPaid ?? 0))} />
-                  <Metric icon={BadgeIndianRupee} label="Paid Comm." value={formatCurrency(detail.summary?.commissionPaid ?? 0)} />
-                  <Metric icon={BadgeIndianRupee} label="To Be Paid" value={formatCurrency(commissionToBePaid)} />
+                  {/* Total = rate x premium billed; payable = on premiums received;
+                      paid = payouts recorded; pending = payable - paid. */}
+                  <Metric icon={BadgeIndianRupee} label="Total Comm." value={formatCurrency(detail.summary?.commissionTotal ?? 0)} />
+                  <Metric icon={BadgeIndianRupee} label="Comm. Payable" value={formatCurrency(detail.summary?.commissionEarned ?? 0)} />
+                  <Metric icon={BadgeIndianRupee} label="Comm. Paid" value={formatCurrency(detail.summary?.commissionPaidOut ?? 0)} />
+                  <Metric icon={BadgeIndianRupee} label="Comm. Pending" value={formatCurrency(detail.summary?.commissionOutstanding ?? 0)} />
                   <Metric icon={MapPin} label="Active Trips" value={String(detail.summary?.activeTrips ?? 0)} />
                 </div>
 

@@ -1270,6 +1270,14 @@ export interface ChannelPartnerSummary {
   commissionPending: number;
   commissionPayable: number;
   commissionPaid: number;
+  /** Rate x premium billed. */
+  commissionTotal?: number;
+  /** Commission on invoices whose premium has been received. */
+  commissionEarned?: number;
+  /** Sum of payouts recorded for the partner. */
+  commissionPaidOut?: number;
+  /** Earned minus paid out; negative when paid in advance. */
+  commissionOutstanding?: number;
   activeTrips: number;
   pendingPayments: number;
 }
