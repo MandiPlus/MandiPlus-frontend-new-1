@@ -601,6 +601,9 @@ export default function PartnerDetailPage() {
     );
   }, [summary]);
 
+  const commissionToBePaid = dynamicSummary.commissionPending + dynamicSummary.commissionPayable;
+  const commissionTotal = commissionToBePaid + dynamicSummary.commissionPaid;
+
   // Customers rows — names available immediately, stats filled when customerStats resolves
   const customerRows = useMemo(() => {
     const rows = customers;
@@ -996,12 +999,15 @@ export default function PartnerDetailPage() {
         {/* Analytics & Content Layout */}
         <div className="space-y-6">
           {/* Metrics */}
-          <div className={`grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5 transition-opacity duration-200 ${loadingSummary ? 'opacity-65' : ''}`}>
+          <div className={`grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6 transition-opacity duration-200 ${loadingSummary ? 'opacity-65' : ''}`}>
             <Metric icon={Users} label="Customers" value={String(dynamicSummary.customers)} color="blue" />
             <Metric icon={FileText} label="Invoices" value={String(dynamicSummary.invoices)} color="slate" />
             <Metric icon={BadgeIndianRupee} label="Premium Total" value={formatCurrency(dynamicSummary.premiumTotal)} color="emerald" />
-            <Metric icon={BadgeIndianRupee} label="Pending Comm." value={formatCurrency(dynamicSummary.commissionPending)} color="amber" />
+            {/* A payout settles a month's pending and payable commissions alike, so
+                "to be paid" is everything earned that has not been paid out yet. */}
+            <Metric icon={BadgeIndianRupee} label="Total Comm." value={formatCurrency(commissionTotal)} color="indigo" />
             <Metric icon={BadgeIndianRupee} label="Paid Comm." value={formatCurrency(dynamicSummary.commissionPaid)} color="violet" />
+            <Metric icon={BadgeIndianRupee} label="To Be Paid" value={formatCurrency(commissionToBePaid)} color="amber" />
           </div>
 
           {/* Customer Assignment Panel */}
