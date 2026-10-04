@@ -51,6 +51,7 @@ function partyLabels(t: ReturnType<typeof customerCopy>) {
 }
 
 import { useAuth } from "@/features/auth/context/AuthContext";
+import { useReferenceCommodities } from "@/features/reference";
 import { customerCopy } from "./i18n";
 import {
   createCustomerWebPaymentCheckout,
@@ -445,30 +446,6 @@ const QUESTIONNAIRE_AUDIO_CONSTRAINTS = {
   noiseSuppression: true,
 } satisfies MediaTrackConstraints;
 
-const COMMODITY_OPTIONS = [
-  ["Tender Coconut", "🥥"],
-  ["Kiwi", "🥝"],
-  ["Mango", "🥭"],
-  ["Banana", "🍌"],
-  ["Apple", "🍎"],
-  ["Pineapple", "🍍"],
-  ["Papaya (Papita)", "🧡"],
-  ["Anar", "🍎"],
-  ["Oranges", "🍊"],
-  ["Kinnow", "🍊"],
-  ["Guava (Amrood)", "🍐"],
-  ["Muskmelon (Kastoori Tarbooj)", "🍈"],
-  ["Watermelon (Tarbooj)", "🍉"],
-  ["Pista", "🌰"],
-  ["Tomato", "🍅"],
-  ["Onion", "🧅"],
-  ["Potato", "🥔"],
-  ["Ginger (Fresh)", "🫚"],
-  ["Sweet Potato", "🍠"],
-  ["Mosambi (Sweet Lime)", "🍋"],
-  ["Grapes", "🍇"],
-] as const;
-
 function emptyDraft(user: Record<string, unknown> | null): CustomerInvoiceDraft {
   const userName = String(user?.name || user?.fullName || "").trim();
   const userPhone = String(
@@ -538,6 +515,16 @@ export default function CustomerCreateInsurancePage() {
       overrides: user?.insurancePremiumCommodityRates,
     }),
     [premiumRates, user?.insurancePremiumCommodityRates],
+  );
+  // Same live catalog the profile page reads, so every commodity a trader
+  // can register is also one they can bill.
+  const referenceCommodities = useReferenceCommodities();
+  const commodityOptions = useMemo(
+    () =>
+      referenceCommodities
+        .filter((item) => item.code !== "OTHER")
+        .map((item) => item.label),
+    [referenceCommodities],
   );
   const cameraRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -2520,10 +2507,10 @@ export default function CustomerCreateInsurancePage() {
                     <option value="">Commodity chunein</option>
                   ) : null}
                   {draft.product &&
-                  !COMMODITY_OPTIONS.some(([name]) => name === draft.product) ? (
+                  !commodityOptions.includes(draft.product) ? (
                     <option value={draft.product}>{draft.product}</option>
                   ) : null}
-                  {COMMODITY_OPTIONS.map(([name]) => (
+                  {commodityOptions.map((name) => (
                     <option key={name} value={name}>
                       {name}
                     </option>
