@@ -1,0 +1,636 @@
+[00:00:01.164] Server  LOG     
+[00:00:01.164] Server  LOG       We detected TypeScript in your project and reconfigured your tsconfig.json file for you.
+[00:00:01.164] Server  LOG       The following suggested values were added to your tsconfig.json. These values can be changed to fit your project's needs:
+
+[00:00:01.164] Server  LOG       	- include was updated to add '.next-ulip-test/types/**/*.ts'
+[00:00:01.164] Server  LOG       	- include was updated to add '.next-ulip-test/dev/types/**/*.ts'
+[00:00:01.164] Server  LOG     
+[00:00:01.242] Server  LOG     ✓ Ready in 1087ms
+[00:00:04.398] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:04.563] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:00:04.563] Browser WARN    Image with src "/images/landing/hero-claim-received-mobile-bgmatch.webp" has "fill" prop and "sizes" prop of "100vw", but image is not rendered at full viewport width. Please adjust "sizes" to improve page performance. Read more: https://nextjs.org/docs/api-reference/next/image#sizes
+[00:00:13.374] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:13.396] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/admin/login" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:00:14.320] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:14.320] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:00:14.820] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:14.923] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/admin/login" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:00:15.276] Browser WARN    The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[00:00:15.276] Browser WARN    The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[00:00:15.276] Browser WARN    The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[00:00:15.276] Browser WARN    The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[00:00:15.276] Browser WARN    The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[00:00:15.276] Browser WARN    The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[00:00:15.276] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:15.276] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:15.276] Browser WARN    The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[00:00:15.276] Browser WARN    The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[00:00:15.276] Browser WARN    The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[00:00:15.276] Browser WARN    The width(-1) and height(-1) of chart should be greater than 0,
+       please check the style of container, or the props width(100%) and height(100%),
+       or add a minWidth(0) or minHeight(undefined) or use aspect(undefined) to control the
+       height and width.
+[00:00:15.276] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:15.276] Browser LOG     [AdminHeader notifications] sources {"claims":0,"invoices":2,"sampleInvoice":{"createdAt":"2026-09-15T19:45:48.430Z","id":"583fbc11-5bdc-45ce-af5b-aecde756d108","invoiceDate":"2026-09-16","invoiceNumber":"INV-2026-000021","supplierName":"Overweight Test Supplier","updatedAt":"2026-09-15T19:45:48.460Z"},"sampleUser":{"aadhaarNumber":null,"aadhaarPhotoUrl":null,"accountState":"ACTIVE","billingType":null,"canonicalUserId":null,"consentText":null,"createdAt":"2026-09-15T12:14:25.729Z","destinationAddress":null,"destinationShopAddress":null,"id":"23927b1f-87ba-4c03-acc1-efa57273cebd","identity":"SUPPLIER","insurancePremiumPerLakh":"200.00","insurancePremiumRateVersion":1,"isConsent":false,"isCustomer":false,"isLedgerMasterVerified":true,"isMerged":false,"loadingPoint":null,"mandiName":null,"mergeReason":"Local overweight API test","mergedAt":null,"mergedByAdminId":null,"mobileNumber":"9000011111","name":"Overweight Test Supplier","officeAddress":null,"preferredLanguage":null,"primaryCommodityCode":null,"products":null,"route":null,"secondaryMobileNumber":null,"state":null,"tenantId":"0f0f0f0f-0000-4000-8000-0000000000aa","unionMember":null,"updatedAt":"2026-09-15T12:15:11.953Z"},"users":2}
+[00:00:15.491] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:15.596] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/" notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:00:17.665] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:17.854] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/admin/app..." notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:00:17.854] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:17.854] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:17.854] Browser LOG     [AdminHeader notifications] sources {"claims":0,"invoices":2,"sampleInvoice":{"createdAt":"2026-09-15T19:45:48.430Z","id":"583fbc11-5bdc-45ce-af5b-aecde756d108","invoiceDate":"2026-09-16","invoiceNumber":"INV-2026-000021","supplierName":"Overweight Test Supplier","updatedAt":"2026-09-15T19:45:48.460Z"},"sampleUser":{"aadhaarNumber":null,"aadhaarPhotoUrl":null,"accountState":"ACTIVE","billingType":null,"canonicalUserId":null,"consentText":null,"createdAt":"2026-09-15T12:14:25.729Z","destinationAddress":null,"destinationShopAddress":null,"id":"23927b1f-87ba-4c03-acc1-efa57273cebd","identity":"SUPPLIER","insurancePremiumPerLakh":"200.00","insurancePremiumRateVersion":1,"isConsent":false,"isCustomer":false,"isLedgerMasterVerified":true,"isMerged":false,"loadingPoint":null,"mandiName":null,"mergeReason":"Local overweight API test","mergedAt":null,"mergedByAdminId":null,"mobileNumber":"9000011111","name":"Overweight Test Supplier","officeAddress":null,"preferredLanguage":null,"primaryCommodityCode":null,"products":null,"route":null,"secondaryMobileNumber":null,"state":null,"tenantId":"0f0f0f0f-0000-4000-8000-0000000000aa","unionMember":null,"updatedAt":"2026-09-15T12:15:11.953Z"},"users":2}
+[00:00:23.592] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:23.745] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/admin/app..." notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:00:23.745] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:23.745] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:23.745] Browser LOG     [AdminHeader notifications] sources {"claims":0,"invoices":2,"sampleInvoice":{"createdAt":"2026-09-15T19:45:48.430Z","id":"583fbc11-5bdc-45ce-af5b-aecde756d108","invoiceDate":"2026-09-16","invoiceNumber":"INV-2026-000021","supplierName":"Overweight Test Supplier","updatedAt":"2026-09-15T19:45:48.460Z"},"sampleUser":{"aadhaarNumber":null,"aadhaarPhotoUrl":null,"accountState":"ACTIVE","billingType":null,"canonicalUserId":null,"consentText":null,"createdAt":"2026-09-15T12:14:25.729Z","destinationAddress":null,"destinationShopAddress":null,"id":"23927b1f-87ba-4c03-acc1-efa57273cebd","identity":"SUPPLIER","insurancePremiumPerLakh":"200.00","insurancePremiumRateVersion":1,"isConsent":false,"isCustomer":false,"isLedgerMasterVerified":true,"isMerged":false,"loadingPoint":null,"mandiName":null,"mergeReason":"Local overweight API test","mergedAt":null,"mergedByAdminId":null,"mobileNumber":"9000011111","name":"Overweight Test Supplier","officeAddress":null,"preferredLanguage":null,"primaryCommodityCode":null,"products":null,"route":null,"secondaryMobileNumber":null,"state":null,"tenantId":"0f0f0f0f-0000-4000-8000-0000000000aa","unionMember":null,"updatedAt":"2026-09-15T12:15:11.953Z"},"users":2}
+[00:00:27.482] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:27.638] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/admin/app..." notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:00:27.638] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:27.638] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:27.638] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:27.638] Browser LOG     [AdminHeader notifications] sources {"claims":0,"invoices":2,"sampleInvoice":{"createdAt":"2026-09-15T19:45:48.430Z","id":"583fbc11-5bdc-45ce-af5b-aecde756d108","invoiceDate":"2026-09-16","invoiceNumber":"INV-2026-000021","supplierName":"Overweight Test Supplier","updatedAt":"2026-09-15T19:45:48.460Z"},"sampleUser":{"aadhaarNumber":null,"aadhaarPhotoUrl":null,"accountState":"ACTIVE","billingType":null,"canonicalUserId":null,"consentText":null,"createdAt":"2026-09-15T12:14:25.729Z","destinationAddress":null,"destinationShopAddress":null,"id":"23927b1f-87ba-4c03-acc1-efa57273cebd","identity":"SUPPLIER","insurancePremiumPerLakh":"200.00","insurancePremiumRateVersion":1,"isConsent":false,"isCustomer":false,"isLedgerMasterVerified":true,"isMerged":false,"loadingPoint":null,"mandiName":null,"mergeReason":"Local overweight API test","mergedAt":null,"mergedByAdminId":null,"mobileNumber":"9000011111","name":"Overweight Test Supplier","officeAddress":null,"preferredLanguage":null,"primaryCommodityCode":null,"products":null,"route":null,"secondaryMobileNumber":null,"state":null,"tenantId":"0f0f0f0f-0000-4000-8000-0000000000aa","unionMember":null,"updatedAt":"2026-09-15T12:15:11.953Z"},"users":2}
+[00:00:30.664] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:30.820] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/admin/app..." notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:00:30.820] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:30.820] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:30.820] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:30.820] Browser LOG     [AdminHeader notifications] sources {"claims":0,"invoices":2,"sampleInvoice":{"createdAt":"2026-09-15T19:45:48.430Z","id":"583fbc11-5bdc-45ce-af5b-aecde756d108","invoiceDate":"2026-09-16","invoiceNumber":"INV-2026-000021","supplierName":"Overweight Test Supplier","updatedAt":"2026-09-15T19:45:48.460Z"},"sampleUser":{"aadhaarNumber":null,"aadhaarPhotoUrl":null,"accountState":"ACTIVE","billingType":null,"canonicalUserId":null,"consentText":null,"createdAt":"2026-09-15T12:14:25.729Z","destinationAddress":null,"destinationShopAddress":null,"id":"23927b1f-87ba-4c03-acc1-efa57273cebd","identity":"SUPPLIER","insurancePremiumPerLakh":"200.00","insurancePremiumRateVersion":1,"isConsent":false,"isCustomer":false,"isLedgerMasterVerified":true,"isMerged":false,"loadingPoint":null,"mandiName":null,"mergeReason":"Local overweight API test","mergedAt":null,"mergedByAdminId":null,"mobileNumber":"9000011111","name":"Overweight Test Supplier","officeAddress":null,"preferredLanguage":null,"primaryCommodityCode":null,"products":null,"route":null,"secondaryMobileNumber":null,"state":null,"tenantId":"0f0f0f0f-0000-4000-8000-0000000000aa","unionMember":null,"updatedAt":"2026-09-15T12:15:11.953Z"},"users":2}
+[00:00:33.847] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:34.004] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/admin/app..." notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:00:34.004] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:34.004] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:34.004] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:34.004] Browser LOG     [AdminHeader notifications] sources {"claims":0,"invoices":2,"sampleInvoice":{"createdAt":"2026-09-15T19:45:48.430Z","id":"583fbc11-5bdc-45ce-af5b-aecde756d108","invoiceDate":"2026-09-16","invoiceNumber":"INV-2026-000021","supplierName":"Overweight Test Supplier","updatedAt":"2026-09-15T19:45:48.460Z"},"sampleUser":{"aadhaarNumber":null,"aadhaarPhotoUrl":null,"accountState":"ACTIVE","billingType":null,"canonicalUserId":null,"consentText":null,"createdAt":"2026-09-15T12:14:25.729Z","destinationAddress":null,"destinationShopAddress":null,"id":"23927b1f-87ba-4c03-acc1-efa57273cebd","identity":"SUPPLIER","insurancePremiumPerLakh":"200.00","insurancePremiumRateVersion":1,"isConsent":false,"isCustomer":false,"isLedgerMasterVerified":true,"isMerged":false,"loadingPoint":null,"mandiName":null,"mergeReason":"Local overweight API test","mergedAt":null,"mergedByAdminId":null,"mobileNumber":"9000011111","name":"Overweight Test Supplier","officeAddress":null,"preferredLanguage":null,"primaryCommodityCode":null,"products":null,"route":null,"secondaryMobileNumber":null,"state":null,"tenantId":"0f0f0f0f-0000-4000-8000-0000000000aa","unionMember":null,"updatedAt":"2026-09-15T12:15:11.953Z"},"users":2}
+[00:00:40.325] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:40.487] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/admin/app..." notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:00:40.487] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:40.487] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:40.487] Browser LOG     [AdminHeader notifications] sources {"claims":0,"invoices":2,"sampleInvoice":{"createdAt":"2026-09-15T19:45:48.430Z","id":"583fbc11-5bdc-45ce-af5b-aecde756d108","invoiceDate":"2026-09-16","invoiceNumber":"INV-2026-000021","supplierName":"Overweight Test Supplier","updatedAt":"2026-09-15T19:45:48.460Z"},"sampleUser":{"aadhaarNumber":null,"aadhaarPhotoUrl":null,"accountState":"ACTIVE","billingType":null,"canonicalUserId":null,"consentText":null,"createdAt":"2026-09-15T12:14:25.729Z","destinationAddress":null,"destinationShopAddress":null,"id":"23927b1f-87ba-4c03-acc1-efa57273cebd","identity":"SUPPLIER","insurancePremiumPerLakh":"200.00","insurancePremiumRateVersion":1,"isConsent":false,"isCustomer":false,"isLedgerMasterVerified":true,"isMerged":false,"loadingPoint":null,"mandiName":null,"mergeReason":"Local overweight API test","mergedAt":null,"mergedByAdminId":null,"mobileNumber":"9000011111","name":"Overweight Test Supplier","officeAddress":null,"preferredLanguage":null,"primaryCommodityCode":null,"products":null,"route":null,"secondaryMobileNumber":null,"state":null,"tenantId":"0f0f0f0f-0000-4000-8000-0000000000aa","unionMember":null,"updatedAt":"2026-09-15T12:15:11.953Z"},"users":2}
+[00:00:45.043] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:45.204] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/admin/app..." notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:00:45.204] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:45.204] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:45.204] Browser LOG     [AdminHeader notifications] sources {"claims":0,"invoices":2,"sampleInvoice":{"createdAt":"2026-09-15T19:45:48.430Z","id":"583fbc11-5bdc-45ce-af5b-aecde756d108","invoiceDate":"2026-09-16","invoiceNumber":"INV-2026-000021","supplierName":"Overweight Test Supplier","updatedAt":"2026-09-15T19:45:48.460Z"},"sampleUser":{"aadhaarNumber":null,"aadhaarPhotoUrl":null,"accountState":"ACTIVE","billingType":null,"canonicalUserId":null,"consentText":null,"createdAt":"2026-09-15T12:14:25.729Z","destinationAddress":null,"destinationShopAddress":null,"id":"23927b1f-87ba-4c03-acc1-efa57273cebd","identity":"SUPPLIER","insurancePremiumPerLakh":"200.00","insurancePremiumRateVersion":1,"isConsent":false,"isCustomer":false,"isLedgerMasterVerified":true,"isMerged":false,"loadingPoint":null,"mandiName":null,"mergeReason":"Local overweight API test","mergedAt":null,"mergedByAdminId":null,"mobileNumber":"9000011111","name":"Overweight Test Supplier","officeAddress":null,"preferredLanguage":null,"primaryCommodityCode":null,"products":null,"route":null,"secondaryMobileNumber":null,"state":null,"tenantId":"0f0f0f0f-0000-4000-8000-0000000000aa","unionMember":null,"updatedAt":"2026-09-15T12:15:11.953Z"},"users":2}
+[00:00:48.230] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:48.387] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/admin/app..." notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:00:48.387] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:48.387] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:48.387] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:48.387] Browser LOG     [AdminHeader notifications] sources {"claims":0,"invoices":2,"sampleInvoice":{"createdAt":"2026-09-15T19:45:48.430Z","id":"583fbc11-5bdc-45ce-af5b-aecde756d108","invoiceDate":"2026-09-16","invoiceNumber":"INV-2026-000021","supplierName":"Overweight Test Supplier","updatedAt":"2026-09-15T19:45:48.460Z"},"sampleUser":{"aadhaarNumber":null,"aadhaarPhotoUrl":null,"accountState":"ACTIVE","billingType":null,"canonicalUserId":null,"consentText":null,"createdAt":"2026-09-15T12:14:25.729Z","destinationAddress":null,"destinationShopAddress":null,"id":"23927b1f-87ba-4c03-acc1-efa57273cebd","identity":"SUPPLIER","insurancePremiumPerLakh":"200.00","insurancePremiumRateVersion":1,"isConsent":false,"isCustomer":false,"isLedgerMasterVerified":true,"isMerged":false,"loadingPoint":null,"mandiName":null,"mergeReason":"Local overweight API test","mergedAt":null,"mergedByAdminId":null,"mobileNumber":"9000011111","name":"Overweight Test Supplier","officeAddress":null,"preferredLanguage":null,"primaryCommodityCode":null,"products":null,"route":null,"secondaryMobileNumber":null,"state":null,"tenantId":"0f0f0f0f-0000-4000-8000-0000000000aa","unionMember":null,"updatedAt":"2026-09-15T12:15:11.953Z"},"users":2}
+[00:00:53.678] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:53.837] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/admin/app..." notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:00:53.837] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:53.837] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:53.837] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:53.837] Browser LOG     [AdminHeader notifications] sources {"claims":0,"invoices":2,"sampleInvoice":{"createdAt":"2026-09-15T19:45:48.430Z","id":"583fbc11-5bdc-45ce-af5b-aecde756d108","invoiceDate":"2026-09-16","invoiceNumber":"INV-2026-000021","supplierName":"Overweight Test Supplier","updatedAt":"2026-09-15T19:45:48.460Z"},"sampleUser":{"aadhaarNumber":null,"aadhaarPhotoUrl":null,"accountState":"ACTIVE","billingType":null,"canonicalUserId":null,"consentText":null,"createdAt":"2026-09-15T12:14:25.729Z","destinationAddress":null,"destinationShopAddress":null,"id":"23927b1f-87ba-4c03-acc1-efa57273cebd","identity":"SUPPLIER","insurancePremiumPerLakh":"200.00","insurancePremiumRateVersion":1,"isConsent":false,"isCustomer":false,"isLedgerMasterVerified":true,"isMerged":false,"loadingPoint":null,"mandiName":null,"mergeReason":"Local overweight API test","mergedAt":null,"mergedByAdminId":null,"mobileNumber":"9000011111","name":"Overweight Test Supplier","officeAddress":null,"preferredLanguage":null,"primaryCommodityCode":null,"products":null,"route":null,"secondaryMobileNumber":null,"state":null,"tenantId":"0f0f0f0f-0000-4000-8000-0000000000aa","unionMember":null,"updatedAt":"2026-09-15T12:15:11.953Z"},"users":2}
+[00:00:56.880] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:57.037] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/admin/app..." notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:00:57.037] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:57.037] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:00:57.037] Browser LOG     [AdminHeader notifications] sources {"claims":0,"invoices":2,"sampleInvoice":{"createdAt":"2026-09-15T19:45:48.430Z","id":"583fbc11-5bdc-45ce-af5b-aecde756d108","invoiceDate":"2026-09-16","invoiceNumber":"INV-2026-000021","supplierName":"Overweight Test Supplier","updatedAt":"2026-09-15T19:45:48.460Z"},"sampleUser":{"aadhaarNumber":null,"aadhaarPhotoUrl":null,"accountState":"ACTIVE","billingType":null,"canonicalUserId":null,"consentText":null,"createdAt":"2026-09-15T12:14:25.729Z","destinationAddress":null,"destinationShopAddress":null,"id":"23927b1f-87ba-4c03-acc1-efa57273cebd","identity":"SUPPLIER","insurancePremiumPerLakh":"200.00","insurancePremiumRateVersion":1,"isConsent":false,"isCustomer":false,"isLedgerMasterVerified":true,"isMerged":false,"loadingPoint":null,"mandiName":null,"mergeReason":"Local overweight API test","mergedAt":null,"mergedByAdminId":null,"mobileNumber":"9000011111","name":"Overweight Test Supplier","officeAddress":null,"preferredLanguage":null,"primaryCommodityCode":null,"products":null,"route":null,"secondaryMobileNumber":null,"state":null,"tenantId":"0f0f0f0f-0000-4000-8000-0000000000aa","unionMember":null,"updatedAt":"2026-09-15T12:15:11.953Z"},"users":2}
+[00:01:01.066] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:01:01.220] Browser ERROR   A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <HotReload globalError={[...]} webSocket={WebSocket} staticIndicatorState={{pathname:null, ...}}>
+      <AppDevOverlayErrorBoundary globalError={[...]}>
+        <ReplaySsrOnlyErrors>
+        <DevRootHTTPAccessFallbackBoundary>
+          <HTTPAccessFallbackBoundary notFound={<NotAllowedRootHTTPFallbackError>}>
+            <HTTPAccessFallbackErrorBoundary pathname="/admin/app..." notFound={<NotAllowedRootHTTPFallbackError>} ...>
+              <RedirectBoundary>
+                <RedirectErrorBoundary router={{...}}>
+                  <Head>
+                  <__next_root_layout_boundary__>
+                    <SegmentViewNode type="layout" pagePath="layout.tsx">
+                      <SegmentTrieNode>
+                      <link>
+                      <RootLayout>
+                        <html
+                          lang="en"
+-                         data-os="apple"
+                        >
+                  ...
+
+[00:01:01.220] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:01:01.220] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:01:01.220] Browser LOG     [AdminHeader notifications] effect {"isAuthenticated":true}
+[00:01:01.220] Browser LOG     [AdminHeader notifications] sources {"claims":0,"invoices":2,"sampleInvoice":{"createdAt":"2026-09-15T19:45:48.430Z","id":"583fbc11-5bdc-45ce-af5b-aecde756d108","invoiceDate":"2026-09-16","invoiceNumber":"INV-2026-000021","supplierName":"Overweight Test Supplier","updatedAt":"2026-09-15T19:45:48.460Z"},"sampleUser":{"aadhaarNumber":null,"aadhaarPhotoUrl":null,"accountState":"ACTIVE","billingType":null,"canonicalUserId":null,"consentText":null,"createdAt":"2026-09-15T12:14:25.729Z","destinationAddress":null,"destinationShopAddress":null,"id":"23927b1f-87ba-4c03-acc1-efa57273cebd","identity":"SUPPLIER","insurancePremiumPerLakh":"200.00","insurancePremiumRateVersion":1,"isConsent":false,"isCustomer":false,"isLedgerMasterVerified":true,"isMerged":false,"loadingPoint":null,"mandiName":null,"mergeReason":"Local overweight API test","mergedAt":null,"mergedByAdminId":null,"mobileNumber":"9000011111","name":"Overweight Test Supplier","officeAddress":null,"preferredLanguage":null,"primaryCommodityCode":null,"products":null,"route":null,"secondaryMobileNumber":null,"state":null,"tenantId":"0f0f0f0f-0000-4000-8000-0000000000aa","unionMember":null,"updatedAt":"2026-09-15T12:15:11.953Z"},"users":2}

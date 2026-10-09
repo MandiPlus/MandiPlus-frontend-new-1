@@ -1,27 +1,151 @@
 'use client';
 
-import { Fragment, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import {
     XMarkIcon,
+    ChevronLeftIcon,
+    ChevronRightIcon,
+    ArrowLeftOnRectangleIcon,
 } from '@heroicons/react/24/outline';
+import { ChevronDownIcon } from '@heroicons/react/20/solid';
 import { Bars3Icon } from '@heroicons/react/16/solid';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAdmin } from '../context/AdminContext';
-import { ADMIN_NAV_ITEMS } from '../access';
+import { ADMIN_NAV_GROUPS, ADMIN_NAV_ITEMS, AdminNavGroup, AdminNavItem } from '../access';
 
 function classNames(...classes: string[]) {
     return classes.filter(Boolean).join(' ');
 }
 
-export default function AdminSidebar() {
+type VisibleAdminNavGroup = AdminNavGroup & {
+    items: AdminNavItem[];
+};
+
+function GroupedNavigation({
+    groups,
+    pathname,
+    expandedGroupNames,
+    onToggleGroup,
+    onNavigate,
+    itemTextClassName = 'text-sm',
+}: {
+    groups: VisibleAdminNavGroup[];
+    pathname: string;
+    expandedGroupNames: string[];
+    onToggleGroup: (groupName: string) => void;
+    onNavigate?: () => void;
+    itemTextClassName?: string;
+}) {
+    const expandedGroups = new Set(expandedGroupNames);
+
+    return (
+        <nav className="space-y-1.5 px-2">
+            {groups.map((group) => {
+                const isExpanded = expandedGroups.has(group.name);
+                const isGroupActive = group.items.some((item) => pathname === item.href);
+                return (
+                    <div key={group.name} className="rounded-lg">
+                        <button
+                            type="button"
+                            className={classNames(
+                                isGroupActive
+                                    ? 'bg-[#4309ac]/5 text-slate-950 ring-1 ring-[#4309ac]/10'
+                                    : isExpanded
+                                    ? 'bg-slate-50 text-slate-900'
+                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
+                                'flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs font-bold uppercase tracking-[0.08em] transition-colors'
+                            )}
+                            aria-expanded={isExpanded}
+                            onClick={() => onToggleGroup(group.name)}
+                        >
+                            <span className="truncate">{group.name}</span>
+                            <ChevronDownIcon
+                                className={classNames(
+                                    isExpanded ? 'rotate-180' : '',
+                                    isGroupActive ? 'text-[#4309ac]/60' : 'text-slate-400',
+                                    'h-4 w-4 shrink-0 transition-transform'
+                                )}
+                                aria-hidden="true"
+                            />
+                        </button>
+
+                        {isExpanded ? (
+                            <div className="mt-1 space-y-0.5 border-l border-slate-200 pl-2 ml-3">
+                                {group.items.map((item) => {
+                                    const isActive = pathname === item.href;
+
+                                    return (
+                                        <Link
+                                            key={item.name}
+                                            href={item.href}
+                                            className={classNames(
+                                                isActive
+                                                    ? 'bg-[#4309ac]/10 text-[#4309ac] ring-1 ring-[#4309ac]/10'
+                                                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950',
+                                                'group flex min-h-10 items-center rounded-md px-2.5 py-2 font-medium transition-colors',
+                                                itemTextClassName
+                                            )}
+                                            onClick={onNavigate}
+                                        >
+                                            <item.icon
+                                                className={classNames(
+                                                    isActive ? 'text-[#4309ac]' : 'text-slate-400 group-hover:text-slate-600',
+                                                    'mr-2.5 h-5 w-5 shrink-0'
+                                                )}
+                                                aria-hidden="true"
+                                            />
+                                            <span className="min-w-0 truncate">{item.name}</span>
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        ) : null}
+                    </div>
+                );
+            })}
+        </nav>
+    );
+}
+
+export default function AdminSidebar({
+    isCollapsed = false,
+    onToggleCollapse,
+}: {
+    isCollapsed?: boolean;
+    onToggleCollapse?: () => void;
+}) {
     const pathname = usePathname();
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const { logout, accessProfile } = useAdmin();
-    const navigation = ADMIN_NAV_ITEMS.filter((item) =>
-        accessProfile?.allowedSections?.includes(item.section),
-    );
+    const { logout, canAccessSection } = useAdmin();
+    const navigationGroups = useMemo(() => {
+        const visibleItems = ADMIN_NAV_ITEMS.filter((item) => canAccessSection(item.section));
+
+        return ADMIN_NAV_GROUPS
+            .map((group) => ({
+                ...group,
+                items: group.sections
+                    .flatMap((section) =>
+                        visibleItems.filter((item) => item.section === section),
+                    ),
+            }))
+            .filter((group) => group.items.length > 0);
+    }, [canAccessSection]);
+    const activeGroupName = navigationGroups.find((group) =>
+        group.items.some((item) => item.href === pathname),
+    )?.name;
+    const [expandedGroupNames, setExpandedGroupNames] = useState<string[]>(() => [
+        activeGroupName || 'Overview',
+    ]);
+
+    const toggleGroup = (groupName: string) => {
+        setExpandedGroupNames((current) =>
+            current.includes(groupName)
+                ? current.filter((name) => name !== groupName)
+                : [...current, groupName],
+        );
+    };
 
     return (
         <>
@@ -74,40 +198,19 @@ export default function AdminSidebar() {
                                     </Transition.Child>
                                     <div className="shrink-0 items-center px-4">
                                         <h1 className="text-xl font-extrabold tracking-tight">
-                                            <span className="text-slate-900">Mandi</span>
+                                            <span className="text-slate-950">Mandi</span>
                                             <span className="text-[#4309ac]">Plus</span>
                                         </h1>
                                     </div>
-                                    <div className="mt-5 h-0 flex-1 overflow-y-auto">
-                                        <nav className="space-y-1 px-2">
-                                            {navigation.map((item) => {
-                                                const isActive = pathname === item.href;
-
-                                                return (
-                                                    <Link
-                                                        key={item.name}
-                                                        href={item.href}
-                                                        className={classNames(
-                                                            isActive
-                                                                ? 'bg-[#4309ac]/10 text-[#4309ac]'
-                                                                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
-                                                            'group flex items-center rounded-md px-2 py-2 text-base font-medium'
-                                                        )}
-                                                        onClick={() => setSidebarOpen(false)} // Close drawer on link click
-                                                    >
-                                                        <item.icon
-                                                            className={classNames(
-                                                                isActive ? 'text-[#4309ac]' : 'text-gray-400 group-hover:text-gray-500',
-                                                                'mr-4 h-6 w-6 shrink-0'
-                                                            )}
-                                                            aria-hidden="true"
-                                                        />
-                                                        {item.name}
-
-                                                    </Link>
-                                                );
-                                            })}
-                                        </nav>
+                                    <div className="mt-5 h-0 flex-1 overflow-y-auto pb-2">
+                                        <GroupedNavigation
+                                            groups={navigationGroups}
+                                            pathname={pathname}
+                                            expandedGroupNames={expandedGroupNames}
+                                            onToggleGroup={toggleGroup}
+                                            onNavigate={() => setSidebarOpen(false)}
+                                            itemTextClassName="text-base"
+                                        />
                                     </div>
                                 </Dialog.Panel>
                             </Transition.Child>
@@ -118,66 +221,121 @@ export default function AdminSidebar() {
                     </Dialog>
                 </Transition.Root>
 
-                {/* Static sidebar for desktop */}
-                <div className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-64 lg:flex-col">
+                {/* Static Desktop Sidebar */}
+                <div
+                    className={classNames(
+                        isCollapsed ? 'lg:w-20' : 'lg:w-64',
+                        'hidden lg:fixed lg:inset-y-0 lg:flex lg:flex-col transition-all duration-300 ease-in-out z-30'
+                    )}
+                >
                     <div className="flex min-h-0 flex-1 flex-col border-r border-gray-200 bg-white">
-                        <div className="flex flex-1 flex-col overflow-y-auto pt-5 pb-4">
-                            <div className="flex shrink-0 items-center px-4">
+                        {/* Header with Logo & Toggle Button */}
+                        <div className="flex shrink-0 items-center justify-between px-4 pt-5 pb-2">
+                            {!isCollapsed ? (
                                 <h1 className="text-xl font-extrabold tracking-tight">
                                     <span className="text-slate-900">Mandi</span>
                                     <span className="text-[#4309ac]">Plus</span>
                                 </h1>
-                            </div>
-                            <nav className="mt-5 flex-1 space-y-1 bg-white px-2">
-                                {navigation.map((item) => {
-                                    const isActive = pathname === item.href;
-                                    return (
-                                        <Link
-                                            key={item.name}
-                                            href={item.href}
-                                            className={classNames(
-                                                isActive
-                                                    ? 'bg-[#4309ac]/10 text-[#4309ac]'
-                                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
-                                                'group flex items-center rounded-md px-2 py-2 text-sm font-medium'
-                                            )}
-                                        >
-                                            <item.icon
-                                                className={classNames(
-                                                    isActive ? 'text-[#4309ac]' : 'text-gray-400 group-hover:text-gray-500',
-                                                    'mr-3 h-6 w-6 shrink-0'
-                                                )}
-                                                aria-hidden="true"
-                                            />
-                                            {item.name}
+                            ) : (
+                                <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-xl bg-[#4309ac] text-white font-black text-sm shadow-md">
+                                    M+
+                                </div>
+                            )}
 
-                                        </Link>
-                                    );
-                                })}
-                            </nav>
+                            {onToggleCollapse && (
+                                <button
+                                    type="button"
+                                    onClick={onToggleCollapse}
+                                    className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-800 transition"
+                                    title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+                                >
+                                    {isCollapsed ? (
+                                        <ChevronRightIcon className="h-5 w-5" />
+                                    ) : (
+                                        <ChevronLeftIcon className="h-5 w-5" />
+                                    )}
+                                </button>
+                            )}
                         </div>
+
+                        {/* Sidebar Navigation Items */}
+                        <div className="mt-3 flex-1 overflow-y-auto bg-white pb-2">
+                            {!isCollapsed ? (
+                                <GroupedNavigation
+                                    groups={navigationGroups}
+                                    pathname={pathname}
+                                    expandedGroupNames={expandedGroupNames}
+                                    onToggleGroup={toggleGroup}
+                                />
+                            ) : (
+                                /* Collapsed Icon-Only View with Tooltips */
+                                <nav className="flex flex-col items-center space-y-2 px-2 py-1">
+                                    {navigationGroups.map((group, groupIdx) => (
+                                        <div key={group.name} className="flex flex-col items-center space-y-1.5 w-full">
+                                            {groupIdx > 0 && <div className="w-8 border-b border-slate-200 my-1" />}
+                                            {group.items.map((item) => {
+                                                const isActive = pathname === item.href;
+                                                return (
+                                                    <Link
+                                                        key={item.name}
+                                                        href={item.href}
+                                                        className={classNames(
+                                                            isActive
+                                                                ? 'bg-[#4309ac] text-white shadow-md shadow-[#4309ac]/30'
+                                                                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+                                                            'relative flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-150 group'
+                                                        )}
+                                                    >
+                                                        <item.icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+
+                                                        {/* Floating Tooltip */}
+                                                        <div className="pointer-events-none absolute left-full ml-3.5 z-50 hidden whitespace-nowrap rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-bold text-white shadow-2xl group-hover:block animate-in fade-in zoom-in-95 duration-100">
+                                                            {item.name}
+                                                        </div>
+                                                    </Link>
+                                                );
+                                            })}
+                                        </div>
+                                    ))}
+                                </nav>
+                            )}
+                        </div>
+
+                        {/* Footer Profile & Logout */}
                         <div className="flex shrink-0 border-t border-gray-200 p-4">
-                            <button
-                                onClick={logout}
-                                className="group block w-full shrink-0"
-                            >
-                                <div className="flex items-center">
-                                    <div>
-                                        <div className="h-8 w-8 rounded-full bg-[#4309ac]/10 flex items-center justify-center">
-                                            <span className="text-[#4309ac] font-semibold">A</span>
+                            {!isCollapsed ? (
+                                <button
+                                    onClick={logout}
+                                    className="group block w-full shrink-0"
+                                >
+                                    <div className="flex items-center">
+                                        <div>
+                                            <div className="h-8 w-8 rounded-full bg-[#4309ac]/10 flex items-center justify-center">
+                                                <span className="text-[#4309ac] font-semibold">A</span>
+                                            </div>
+                                        </div>
+                                        <div className="ml-3 text-left">
+                                            <p className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
+                                                Admin
+                                            </p>
+                                            <p className="text-xs font-medium text-gray-500 group-hover:text-gray-700">
+                                                Sign out
+                                            </p>
                                         </div>
                                     </div>
-                                    <div className="ml-3 text-left">
-                                        <p className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
-                                            Admin
-
-                                        </p>
-                                        <p className="text-xs font-medium text-gray-500 group-hover:text-gray-700">
-                                            Sign out
-                                        </p>
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={logout}
+                                    className="mx-auto relative flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700 hover:bg-rose-50 hover:text-rose-600 transition group"
+                                    title="Admin - Sign out"
+                                >
+                                    <ArrowLeftOnRectangleIcon className="h-5 w-5 shrink-0" />
+                                    <div className="pointer-events-none absolute left-full ml-3.5 z-50 hidden whitespace-nowrap rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-bold text-white shadow-2xl group-hover:block">
+                                        Admin - Sign out
                                     </div>
-                                </div>
-                            </button>
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -192,9 +350,7 @@ export default function AdminSidebar() {
                         >
                             <span className="sr-only">Open sidebar</span>
                             <Bars3Icon className="h-6 w-6" aria-hidden="true" />
-
                         </button>
-
                     </div>
                 </div>
             </div>

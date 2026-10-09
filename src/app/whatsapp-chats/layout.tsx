@@ -1,5 +1,6 @@
 import { AdminProvider } from '@/features/admin/context/AdminContext';
 import AdminAccessGate from '@/features/admin/components/AdminAccessGate';
+import { WhatsAppCallHandler } from '@/features/admin/components/WhatsAppCallHandler';
 
 export default function WhatsAppChatsLayout({
   children,
@@ -8,7 +9,10 @@ export default function WhatsAppChatsLayout({
 }) {
   return (
     <AdminProvider>
-      <AdminAccessGate>{children}</AdminAccessGate>
+      <AdminAccessGate>
+        {children}
+        <WhatsAppCallHandler />
+      </AdminAccessGate>
     </AdminProvider>
   );
 }

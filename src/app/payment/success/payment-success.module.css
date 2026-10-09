@@ -1,0 +1,722 @@
+.page {
+  min-height: 100dvh;
+  color: #171a16;
+  background: #f5f6fb;
+}
+
+.shell {
+  width: min(100%, 768px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 28px 28px max(104px, calc(84px + env(safe-area-inset-bottom)));
+}
+
+.header {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) minmax(64px, auto);
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.backButton {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border: 0;
+  border-radius: 20px;
+  color: #171a16;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(32, 48, 68, 0.04);
+  cursor: pointer;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(30px, 5vw, 42px);
+  font-weight: 950;
+  line-height: 1.08;
+  letter-spacing: -0.045em;
+  text-align: center;
+}
+
+.insuranceBanner {
+  display: flex;
+  min-height: 100px;
+  align-items: center;
+  border: 1px solid #e2e5ec;
+  border-radius: 28px;
+  padding: 20px 24px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(32, 48, 68, 0.04);
+}
+
+.insuranceBanner strong {
+  font-size: clamp(18px, 3.1vw, 23px);
+  font-weight: 950;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.invoicePicker {
+  margin-top: 18px;
+}
+
+.pickerSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px 10px;
+}
+
+.pickerSummary strong {
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.pickerSummary span {
+  color: #747a72;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.invoiceTabs {
+  display: flex;
+  overflow-x: auto;
+  gap: 10px;
+  padding: 2px 2px 8px;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+}
+
+.invoiceTabs::-webkit-scrollbar {
+  display: none;
+}
+
+.invoiceTab {
+  display: flex;
+  flex: 0 0 auto;
+  min-width: 164px;
+  max-width: 220px;
+  min-height: 70px;
+  align-items: center;
+  gap: 9px;
+  scroll-snap-align: start;
+  border: 1px solid #dfe3ea;
+  border-radius: 20px;
+  padding: 11px 14px;
+  color: #50564e;
+  background: #fff;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.invoiceTab > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.invoiceTab strong,
+.invoiceTab small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invoiceTab strong {
+  color: #171a16;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.invoiceTab small {
+  color: #7b8179;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.invoiceTabActive {
+  border-color: #20344b;
+  color: #fff;
+  background: #20344b;
+  box-shadow: 0 8px 20px rgba(32, 52, 75, 0.14);
+}
+
+.invoiceTabActive strong,
+.invoiceTabActive small {
+  color: #fff;
+}
+
+.invoiceTabStatus {
+  display: grid;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  color: #66706a;
+  background: #eef1ec;
+}
+
+.invoiceTabActive .invoiceTabStatus {
+  color: #20344b;
+  background: #fff;
+}
+
+.invoiceTabStatus svg[class*="lucide-loader"] {
+  animation: spin 900ms linear infinite;
+}
+
+.invoiceCard {
+  margin-top: 24px;
+  border: 1px solid #e2e5ec;
+  border-radius: 30px;
+  padding: 18px;
+  background: #fff;
+  box-shadow: 0 12px 34px rgba(32, 48, 68, 0.05);
+}
+
+.invoiceHeading {
+  display: flex;
+  min-height: 68px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 8px 12px;
+}
+
+.invoiceHeading strong {
+  overflow: hidden;
+  font-size: clamp(24px, 4.5vw, 32px);
+  font-weight: 950;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invoiceHeading span {
+  flex: 0 0 auto;
+  color: #777d75;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.invoiceHeadingActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.editButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #dfe3dc;
+  border-radius: 999px;
+  color: #203044;
+  background: #f8f9fd;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.editBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  align-items: end;
+  background: rgba(12, 18, 14, 0.45);
+  padding: 16px;
+}
+
+.editSheet {
+  width: min(100%, 520px);
+  max-height: min(88dvh, 760px);
+  margin: 0 auto;
+  overflow: auto;
+  border-radius: 22px;
+  background: #fff;
+  padding: 16px 16px max(16px, env(safe-area-inset-bottom));
+  box-shadow: 0 18px 48px rgba(32, 48, 68, 0.18);
+}
+
+.editHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.editHeader strong {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.editClose {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 12px;
+  background: #f5f6fb;
+  cursor: pointer;
+}
+
+.editHint {
+  margin: 0 0 12px;
+  color: #777d75;
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 650;
+}
+
+.editFields {
+  display: grid;
+  gap: 10px;
+}
+
+.editFields label {
+  display: grid;
+  gap: 4px;
+}
+
+.editFields span {
+  color: #777d75;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.editFields input,
+.editFields textarea {
+  width: 100%;
+  border: 1px solid #e7ebf3;
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #171a16;
+  background: #f8f9fd;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.editDateValue {
+  width: 100%;
+  border: 1px solid #e7ebf3;
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #171a16;
+  background: #f8f9fd;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.editError {
+  margin: 0;
+  color: #c84f45;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.editActions {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.editCancel,
+.editSave {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.editCancel {
+  color: #171a16;
+  background: #f5f6fb;
+}
+
+.editSave {
+  color: #fff;
+  background: #203044;
+}
+
+.editSave:disabled,
+.editCancel:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.pdfFrame {
+  position: relative;
+  min-height: min(70vh, 820px);
+  overflow: hidden;
+  border: 1px solid #dfe3dc;
+  border-radius: 22px;
+  background: #e4e7e1;
+}
+
+.pdfFrame iframe {
+  display: block;
+  width: 100%;
+  height: min(70vh, 820px);
+  border: 0;
+  background: #fff;
+}
+
+.pdfLoader {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px;
+  color: #203044;
+  background: #eef0eb;
+  text-align: center;
+}
+
+.pdfLoader svg {
+  animation: spin 900ms linear infinite;
+}
+
+.pdfLoader strong {
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.pdfLoader span {
+  max-width: 290px;
+  color: #777d75;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.statusMessage {
+  margin: 12px 4px 0;
+  color: #777d75;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.actions {
+  position: fixed;
+  z-index: 10;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(100%, 768px);
+  gap: 12px;
+  margin: 0 auto;
+  border-top: 1px solid #e2e5ec;
+  padding: 16px 28px max(16px, env(safe-area-inset-bottom));
+  background: rgba(245, 246, 251, 0.96);
+  backdrop-filter: blur(18px);
+}
+
+.action {
+  display: flex;
+  min-height: 66px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 22px;
+  padding: 0 16px;
+  color: #fff;
+  background: #141814;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 900;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.action[aria-disabled="true"] {
+  pointer-events: none;
+  opacity: 0.38;
+}
+
+.actionSpinner {
+  animation: spin 900ms linear infinite;
+}
+
+.backButton:focus-visible,
+.invoiceTab:focus-visible,
+.action:focus-visible {
+  outline: 3px solid rgba(103, 82, 204, 0.35);
+  outline-offset: 3px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .shell {
+    padding: 22px 18px max(98px, calc(78px + env(safe-area-inset-bottom)));
+  }
+
+  .header {
+    grid-template-columns: 58px minmax(0, 1fr);
+    margin-bottom: 20px;
+  }
+
+  .backButton {
+    width: 54px;
+    height: 54px;
+    border-radius: 18px;
+  }
+
+  .title {
+    padding-right: 18px;
+    font-size: clamp(28px, 8vw, 36px);
+    text-align: left;
+  }
+
+  .insuranceBanner {
+    min-height: 92px;
+    border-radius: 24px;
+    padding: 18px 20px;
+  }
+
+  .invoicePicker {
+    margin-top: 14px;
+  }
+
+  .invoiceTab {
+    min-width: 154px;
+    min-height: 66px;
+    border-radius: 18px;
+    padding: 10px 12px;
+  }
+
+  .invoiceCard {
+    margin-top: 18px;
+    border-radius: 26px;
+    padding: 12px;
+  }
+
+  .invoiceHeading {
+    min-height: 64px;
+    padding: 0 6px 10px;
+  }
+
+  .pdfFrame,
+  .pdfFrame iframe {
+    min-height: 62vh;
+    height: 62vh;
+  }
+
+  .actions {
+    gap: 10px;
+    padding: 14px 18px max(14px, env(safe-area-inset-bottom));
+  }
+
+  .action {
+    min-height: 60px;
+    border-radius: 20px;
+    font-size: 17px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdfLoader svg {
+    animation-duration: 1.8s;
+  }
+}
+
+.redirectChip {
+  justify-self: end;
+  color: #5b6358;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.ceremonyPage {
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(46, 125, 50, 0.12), transparent 42%),
+    #f5f6fb;
+}
+
+.ceremonyShell {
+  width: min(100%, 420px);
+  padding: 48px 28px;
+  text-align: center;
+}
+
+.ceremonyMark {
+  display: grid;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 28px;
+  place-items: center;
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(160deg, #2f9e44, #1b7a32);
+  box-shadow: 0 18px 40px rgba(27, 122, 50, 0.28);
+  animation: ceremonyPop 520ms cubic-bezier(0.2, 0.9, 0.2, 1);
+  transition: width 280ms ease, height 280ms ease, margin 280ms ease;
+}
+
+.ceremonyMarkCompact {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 18px;
+}
+
+.ceremonyCheck {
+  display: grid;
+  place-items: center;
+  animation: ceremonyCheck 420ms ease 180ms both;
+}
+
+.ceremonyTitle {
+  margin: 0;
+  font-size: clamp(28px, 7vw, 36px);
+  font-weight: 950;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+.ceremonyEyebrow {
+  margin: 0 0 8px;
+  color: #2f9e44;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ceremonyReceiptHero {
+  margin: 0 0 8px;
+}
+
+.ceremonyAmount {
+  display: block;
+  font-size: clamp(34px, 8vw, 44px);
+  font-weight: 950;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+}
+
+.ceremonyStatus {
+  margin: 8px 0 0;
+  color: #50564e;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.ceremonyReceipt {
+  display: grid;
+  gap: 12px;
+  margin: 28px 0 20px;
+  padding: 18px 20px;
+  border-radius: 22px;
+  text-align: left;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(32, 48, 68, 0.06);
+}
+
+.ceremonyReceipt div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ceremonyReceipt dt {
+  color: #747a72;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ceremonyReceipt dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 900;
+  text-align: right;
+}
+
+.ceremonyMono {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.ceremonyCountdown {
+  margin: 0 0 12px;
+  color: #747a72;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.ceremonyNext {
+  width: 100%;
+  min-height: 56px;
+  border: 0;
+  border-radius: 18px;
+  color: #fff;
+  background: #1b2430;
+  font-size: 17px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+@keyframes ceremonyPop {
+  from {
+    transform: scale(0.72);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes ceremonyCheck {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ceremonyMark,
+  .ceremonyCheck {
+    animation: none;
+  }
+}

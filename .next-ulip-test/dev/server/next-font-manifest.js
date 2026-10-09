@@ -1,0 +1,1 @@
+self.__NEXT_FONT_MANIFEST="{\"pages\":{},\"app\":{\"/Users/omi/mandi/wt/frontend-overweight/src/app/layout\":[\"static/media/9d5a263311222317-s.p.woff2\",\"static/media/22a5144ee8d83bca-s.p.woff2\",\"static/media/7d4881bb7e1bf84d-s.p.woff2\",\"static/media/4c9affa5bc8f420e-s.p.woff2\"]},\"appUsingSizeAdjust\":true,\"pagesUsingSizeAdjust\":false}"

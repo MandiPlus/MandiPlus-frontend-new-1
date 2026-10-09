@@ -34,6 +34,61 @@ export interface AdminFieldLead {
   createdByUser?: {
     name?: string;
   };
+  leadSource?: 'FIELD_LEAD' | 'MANDI_DATA' | 'FSSAI_LEAD';
+  mandiData?: {
+    commodity: string;
+    mandiName: string;
+    biggestBuyerName: string;
+    transporterName: string;
+    trucksPerDay: number;
+    regionSourceArea: string;
+    todayPrice: number | string;
+  };
+  fssaiData?: {
+    businessName: string;
+    businessAddress: string;
+    kindOfBusiness: string;
+    companyPhone: string;
+    companyEmail: string;
+    aadharFrontPhotoUrl?: string | null;
+    aadharBackPhotoUrl?: string | null;
+    panCardPhotoUrl?: string | null;
+    clientPhotoUrl?: string | null;
+  };
+}
+
+export interface AdminFieldPriorityLead {
+  id: string;
+  commodity: string;
+  mandiName: string;
+  biggestBuyerName: string;
+  transporterName: string;
+  trucksPerDay: number;
+  regionSourceArea: string;
+  todayPrice: number | string;
+  createdAt: string;
+  createdByUser?: {
+    name?: string;
+    mobileNumber?: string;
+  };
+}
+
+export interface AdminFieldFssaiLead {
+  id: string;
+  businessName: string;
+  businessAddress: string;
+  kindOfBusiness: string;
+  companyPhone: string;
+  companyEmail: string;
+  aadharFrontPhotoUrl?: string | null;
+  aadharBackPhotoUrl?: string | null;
+  panCardPhotoUrl?: string | null;
+  clientPhotoUrl?: string | null;
+  createdAt: string;
+  createdByUser?: {
+    name?: string;
+    mobileNumber?: string;
+  };
 }
 
 export interface AdminFieldAppointment {
@@ -169,8 +224,29 @@ export async function upsertFieldAdminTeamMember(payload: {
 }
 
 export async function getUsersForFieldOperations(): Promise<AdminFieldUser[]> {
-  const response = await axios.get(`${API_BASE_URL}/users`, {
-    headers: getAdminHeaders(),
-  });
+  const response = await axios.get(
+    `${API_BASE_URL}/field-operations/admin/users`,
+    {
+      headers: getAdminHeaders(),
+    },
+  );
+  return response.data;
+}
+
+export async function getFieldAdminPriorityLeads(): Promise<
+  AdminFieldPriorityLead[]
+> {
+  const response = await axios.get(
+    `${API_BASE_URL}/field-operations/admin/priority-leads`,
+    { headers: getAdminHeaders() },
+  );
+  return response.data;
+}
+
+export async function getFieldAdminFssaiLeads(): Promise<AdminFieldFssaiLead[]> {
+  const response = await axios.get(
+    `${API_BASE_URL}/field-operations/admin/fssai-leads`,
+    { headers: getAdminHeaders() },
+  );
   return response.data;
 }

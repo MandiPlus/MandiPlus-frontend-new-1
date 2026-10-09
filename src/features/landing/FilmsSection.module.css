@@ -1,0 +1,171 @@
+/*
+ * The film band. Runs on the same --soft-canvas the hero does rather than the old near-black:
+ * the film no longer needs a dark room to stand out — the rounded frame and its shadow do that
+ * on their own, and the band now sits on one continuous ground with the top of the page.
+ * Design tokens (--paper, --ink, --line, ...) are inherited from `.site` in LandingPage.module.css.
+ *
+ * One film, centred under one line of copy.
+ */
+
+.films {
+  padding-block: clamp(64px, 7vw, 104px);
+  background: var(--soft-canvas);
+}
+
+/* ---------- heading ---------- */
+
+.title {
+  /* Tracks the film's own width so the line breaks in step with the frame below it. */
+  width: min(100%, 980px, 129vh);
+  margin-inline: auto;
+  margin-bottom: clamp(26px, 3vw, 42px);
+  color: var(--ink);
+  font-family: var(--font-bricolage), var(--font-geist-sans), sans-serif;
+  /* A shade under the other section heads: it is a full sentence, not a two-word title. */
+  font-size: clamp(1.5rem, 3vw, 2.4rem);
+  font-weight: 660;
+  letter-spacing: -0.045em;
+  /* Two long lines, so they need more air between them than a short section head would. */
+  line-height: 1.16;
+  text-align: center;
+  text-wrap: balance;
+}
+
+/*
+ * Carries the hero's violet, and breaks to its own line so the phrase can never be split
+ * across two — the same two-tone, two-line shape the hero headline uses.
+ */
+.titleAccent {
+  display: block;
+  color: var(--violet);
+}
+
+.inner {
+  width: min(100% - 48px, 1240px);
+  margin-inline: auto;
+}
+
+/* ---------- the screen ---------- */
+
+.frame {
+  position: relative;
+  /*
+   * Capped three ways: the column, a comfortable viewing width, and the viewport itself —
+   * 126vh is 71vh of height once the 16:9 is unwound, so the film can never grow so tall
+   * that a visitor has to scroll to see the bottom of it. At 980px the frame left ~230px of
+   * dead gutter inside the 1240 column; 1080 sits properly in the grid.
+   */
+  width: min(100%, 1080px, 126vh);
+  margin-inline: auto;
+  isolation: isolate;
+  overflow: hidden;
+  /* Reserved up front, so an autoplaying film never shoves the page around as it loads. */
+  aspect-ratio: 16 / 9;
+  border-radius: 20px;
+  /* A quiet plate under the film, a shade off the canvas so the frame reads as an object. */
+  background: #e7e7ea;
+  /* A hairline ring keeps the edge crisp on a light ground, where the drop shadow alone
+     leaves the corners looking soft; the same hairline the team cards use. */
+  box-shadow:
+    0 0 0 1px rgba(23, 23, 21, 0.08),
+    0 28px 64px -34px rgba(23, 23, 21, 0.5);
+}
+
+.film {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* The whole frame is the sound toggle, so make that legible on the way in. */
+  cursor: pointer;
+}
+
+/* ---------- sound control ---------- */
+
+.sound {
+  position: absolute;
+  z-index: 2;
+  right: 14px;
+  bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(16, 15, 14, 0.62);
+  color: #fff;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition:
+    background-color 220ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sound:hover {
+  background: rgba(16, 15, 14, 0.82);
+  transform: translateY(-1px);
+}
+
+.sound:focus-visible {
+  outline: 2px solid var(--violet);
+  outline-offset: 3px;
+}
+
+.soundText {
+  white-space: nowrap;
+}
+
+/*
+ * The first seconds of muted playback: the same button, but centred and unmissable. Once the
+ * viewer has had a fair chance to see it — or sound is on — it settles into the corner.
+ */
+.soundBig {
+  right: 50%;
+  bottom: 50%;
+  transform: translate(50%, 50%) scale(1.35);
+  padding: 12px 20px;
+  font-size: 0.9rem;
+  background: rgba(16, 15, 14, 0.72);
+  box-shadow: 0 18px 44px -16px rgba(0, 0, 0, 0.6);
+}
+
+.soundBig:hover {
+  transform: translate(50%, 50%) scale(1.42);
+}
+
+@media (max-width: 640px) {
+  .inner {
+    width: min(100% - 32px, 1240px);
+  }
+
+  .frame {
+    border-radius: 16px;
+  }
+
+  .sound {
+    right: 10px;
+    bottom: 10px;
+    padding: 8px 12px;
+    font-size: 0.76rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sound {
+    transition: none;
+  }
+
+  .soundBig,
+  .soundBig:hover {
+    transform: translate(50%, 50%);
+  }
+
+  .sound:hover {
+    transform: none;
+  }
+}
