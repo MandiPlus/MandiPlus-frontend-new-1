@@ -19,16 +19,15 @@ const codeClass =
 // at test time and never kept in code.
 const PRESETS: { title: string; api: string; input: Record<string, string> }[] = [
   { title: "TC-01 · Registered goods vehicle", api: "VAHAN_04", input: { vehiclenumber: "RJ11GC6350" } },
-  { title: "TC-02 · Registered goods vehicle", api: "VAHAN_01", input: { vehiclenumber: "RJ11GC6350" } },
-  { title: "TC-03 · FASTag details", api: "FASTAG_01", input: { vehiclenumber: "RJ11GC6350" } },
-  { title: "TC-04 · FASTag toll transactions", api: "FASTAG_02", input: { vehiclenumber: "RJ11GC6350" } },
-  { title: "TC-05 · Driver licence with date of birth", api: "SARATHI_01", input: {} },
-  { title: "TC-06 · Driver licence", api: "SARATHI_02", input: {} },
-  { title: "TC-07 · e-Challans for a truck", api: "ECHALLAN_01", input: { vehicleNumber: "RJ11GC6350" } },
-  { title: "TC-08 · Toll plazas in a state", api: "TOLL_01", input: { stateName: "Rajasthan" } },
-  { title: "TC-09 · e-Way Bill details", api: "EWAYBILL_01", input: {} },
-  { title: "TC-10 · Vehicle not on VAHAN", api: "VAHAN_04", input: { vehiclenumber: "RJ99ZZ9999" } },
-  { title: "TC-11 · Malformed vehicle number", api: "VAHAN_04", input: { vehiclenumber: "RJ11-GC" } },
+  { title: "TC-02 · FASTag details", api: "FASTAG_01", input: { vehiclenumber: "RJ11GC6350" } },
+  { title: "TC-03 · FASTag toll transactions", api: "FASTAG_02", input: { vehiclenumber: "RJ11GC6350" } },
+  { title: "TC-04 · Driver licence with date of birth", api: "SARATHI_01", input: {} },
+  { title: "TC-05 · Driver licence", api: "SARATHI_02", input: {} },
+  { title: "TC-06 · e-Challans for a truck", api: "ECHALLAN_01", input: { vehicleNumber: "RJ11GC6350" } },
+  { title: "TC-07 · Toll plazas in a state", api: "TOLL_01", input: { stateName: "Rajasthan" } },
+  { title: "TC-08 · e-Way Bill details", api: "EWAYBILL_01", input: {} },
+  { title: "TC-09 · Vehicle not on VAHAN", api: "VAHAN_04", input: { vehiclenumber: "RJ99ZZ9999" } },
+  { title: "TC-10 · Malformed vehicle number", api: "VAHAN_04", input: { vehiclenumber: "RJ11-GC" } },
 ];
 
 type Run = {
@@ -39,7 +38,7 @@ type Run = {
 
 // SARATHI returns the licence photo and signature as encoded blobs of up to
 // 40 KB with no whitespace, so there are no lines to clip; they are shortened
-// in place. XML and prose always contain whitespace and are left alone.
+// in place. Prose always contains whitespace and are left alone.
 const ENCODED_BLOB = /^\S{1000,}$/;
 
 const pretty = (value: unknown, expanded = false) =>
@@ -53,24 +52,6 @@ const pretty = (value: unknown, expanded = false) =>
             : item,
         2,
       );
-
-/** Finds the XML string VAHAN/01 wraps inside its JSON envelope. */
-const findXml = (value: unknown): string | null => {
-  if (typeof value === "string") {
-    return value.trim().startsWith("<") ? value : null;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = findXml(item);
-      if (found) return found;
-    }
-    return null;
-  }
-  if (value && typeof value === "object") {
-    return findXml(Object.values(value as Record<string, unknown>));
-  }
-  return null;
-};
 
 // Some staging APIs answer with every record they hold (TOLL_01 sends all
 // ~1,200 plazas); rendering that whole would freeze the page and no screenshot
@@ -90,20 +71,6 @@ const formatBytes = (text: string) => {
   return bytes >= 1024 * 1024
     ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-};
-
-const indentXml = (xml: string) => {
-  let depth = 0;
-  return xml
-    .replace(/>\s*</g, ">\n<")
-    .split("\n")
-    .map((line) => {
-      if (/^<\//.test(line)) depth = Math.max(0, depth - 1);
-      const padded = `${"  ".repeat(depth)}${line}`;
-      if (/^<[^!?/][^>]*[^/]>$/.test(line) && !/<\/[^>]+>$/.test(line)) depth += 1;
-      return padded;
-    })
-    .join("\n");
 };
 
 const formatTime = (iso: string) =>
@@ -279,7 +246,6 @@ export default function UlipApiTestPage() {
 
         {runs.map((run) => {
           const { trace } = run;
-          const xml = findXml(trace.response.body);
           const responseText = trace.response.error
             ? trace.response.error
             : `${trace.response.contentType ? `Content-Type: ${trace.response.contentType}\n\n` : ""}${pretty(trace.response.body, Boolean(expandedRuns[run.id]))}`;
@@ -353,14 +319,6 @@ export default function UlipApiTestPage() {
                         Show full response
                       </button>
                     </p>
-                  ) : null}
-                  {xml ? (
-                    <>
-                      <h3 className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Response XML, indented
-                      </h3>
-                      <pre className={codeClass}>{clip(indentXml(xml), Boolean(expandedRuns[run.id])).text}</pre>
-                    </>
                   ) : null}
                 </div>
               </div>
