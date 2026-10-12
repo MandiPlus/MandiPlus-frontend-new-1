@@ -271,7 +271,7 @@ export default function RcSearchPage() {
             ) : (
               <div className="mt-1 text-sm text-slate-500">
                 {vahanSource?.status === 'NOT_FOUND' ? 'No RC on VAHAN' : 'VAHAN did not answer'}
-                {vahanSource?.status === 'FAILED' && vahanSource.error ? (
+                {(vahanSource?.status === 'FAILED' || vahanSource?.status === 'NOT_FOUND') && vahanSource.error ? (
                   <div className="mt-1 text-xs text-slate-400">{vahanSource.error}</div>
                 ) : null}
               </div>
