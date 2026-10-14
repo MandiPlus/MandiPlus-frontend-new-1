@@ -2,6 +2,7 @@ const PUBLIC_STANDALONE_ROUTES = new Set([
   "/account-deletion",
   "/docs/mou",
   "/mandi",
+  "/pos-app",
   "/pricing",
   "/promo",
   "/privacy-policy",
