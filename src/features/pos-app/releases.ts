@@ -11,3 +11,8 @@ export type PosFlavor = "pos" | "daybook";
 export function apkUrl(flavor: PosFlavor) {
   return `${POS_API_URL}/v1/public/app/download?flavor=${flavor}`;
 }
+
+/** The Tally connector for the shop's Windows laptop (a zip): always the newest build. */
+export function tallyConnectorUrl() {
+  return `${POS_API_URL}/v1/public/app/download?flavor=tally`;
+}
