@@ -1,5 +1,6 @@
 const PUBLIC_STANDALONE_ROUTES = new Set([
   "/account-deletion",
+  "/dashboard-app",
   "/docs/mou",
   "/mandi",
   "/pos-app",

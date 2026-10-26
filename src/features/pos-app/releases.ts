@@ -16,3 +16,8 @@ export function apkUrl(flavor: PosFlavor) {
 export function tallyConnectorUrl() {
   return `${POS_API_URL}/v1/public/app/download?flavor=tally`;
 }
+
+/** MandiPlus Dashboard, the owners' portal as a Windows app (one exe): always the newest build. */
+export function dashboardAppUrl() {
+  return `${POS_API_URL}/v1/public/app/download?flavor=desktop`;
+}
