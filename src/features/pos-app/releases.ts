@@ -21,3 +21,8 @@ export function tallyConnectorUrl() {
 export function dashboardAppUrl() {
   return `${POS_API_URL}/v1/public/app/download?flavor=desktop`;
 }
+
+/** MandiPlus Dashboard New, the same Windows app on the new-look (beta) portal: always the newest build. */
+export function dashboardAppNewUrl() {
+  return `${POS_API_URL}/v1/public/app/download?flavor=desktop-new`;
+}
