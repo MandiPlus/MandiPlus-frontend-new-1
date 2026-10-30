@@ -1,3 +1,7 @@
+import type {
+  GatewayProvider,
+  RazorpayCheckoutPayload,
+} from '@/features/payments/gateway-checkout';
 import axios, { AxiosError } from "axios";
 import type { ClaimRequest, InsuranceForm } from "@/features/insurance/api";
 import { getStoredAuthToken, refreshAccessToken } from "@/features/auth/api";
@@ -6,7 +10,7 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
 
 export interface WalletSummary {
-  walletId?: string;
+  walletId?: string | null;
   availableBalance: number;
   usedBalance?: number;
   holdBalance: number;
@@ -24,7 +28,123 @@ export interface WalletStatementItem {
   narration?: string;
   remark?: string;
   attachmentUrl?: string;
+  invoiceVehicleNumber?: string;
   createdAt: string;
+}
+
+export interface WalletCreditPack {
+  id: string;
+  code: string;
+  label: string;
+  creditAmount: number;
+  priceAmount: number;
+  badge?: string | null;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+export interface WalletCreditPackCatalog {
+  packs: WalletCreditPack[];
+  catalogVersion?: number;
+}
+
+export interface WalletCouponQuote {
+  couponId: string;
+  code: string;
+  name: string;
+  originalPrice: number;
+  discountAmount: number;
+  finalPrice: number;
+}
+
+export interface CustomerWalletTopupCheckout {
+  success: boolean;
+  totalPaymentAmount: number;
+  walletOriginalPriceAmount: number;
+  walletDiscountAmount: number;
+  walletCreditAmount: number;
+  walletPackId: string;
+  walletPackLabel: string;
+  couponCode?: string | null;
+  merchantTransactionId: string;
+  merchantOrderId: string;
+  orderId?: string;
+  provider?: GatewayProvider;
+  redirectUrl?: string | null;
+  razorpayCheckout?: RazorpayCheckoutPayload | null;
+  expireAt?: number | string | null;
+}
+
+export interface CustomerWalletTopupStatus {
+  success: boolean;
+  merchantTransactionId: string;
+  state?: string | null;
+  paid: boolean;
+  amount?: number;
+  paymentAmount?: number;
+  walletCreditAmount?: number;
+  walletBalance?: number;
+  alreadyCredited?: boolean;
+}
+
+export interface CustomerPaymentCheckoutResponse {
+  success: boolean;
+  invoiceCount: number;
+  awaitingApprovalCount?: number;
+  totalPaymentAmount: number;
+  merchantTransactionId: string;
+  merchantOrderId?: string;
+  orderId?: string;
+  provider?: GatewayProvider;
+  redirectUrl?: string | null;
+  razorpayCheckout?: RazorpayCheckoutPayload | null;
+  expireAt?: number | string | null;
+  message?: string;
+  invoices?: Array<{
+    id?: string;
+    invoiceNumber?: string;
+    paymentAmount?: number;
+  }>;
+}
+
+export interface CustomerPaymentCheckoutStatus {
+  success: boolean;
+  merchantTransactionId: string;
+  state?: string | null;
+  invoiceCount: number;
+  paid: boolean;
+  invoices?: CustomerPaymentStatusInvoice[];
+}
+
+export interface CustomerPaymentStatusInvoice {
+  id: string;
+  invoiceNumber?: string;
+  vehicleNumber?: string;
+  paymentStatus?: string;
+  paymentAmount?: number;
+  paymentCompletedAt?: string | null;
+}
+
+export interface CustomerNotification {
+  id: string;
+  title: string;
+  body: string;
+  type: string;
+  payload: Record<string, unknown>;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface CustomerNotificationsResponse {
+  unreadCount: number;
+  items: CustomerNotification[];
+}
+
+export interface WebPushSubscriptionPayload {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: { p256dh: string; auth: string };
+  deviceName?: string;
 }
 
 function getAuthHeader() {
@@ -36,8 +156,65 @@ function handleUnauthorized(err: AxiosError) {
   if (err.response?.status === 401 && typeof window !== "undefined") {
     // Do not force logout on background 401s.
     // Keep session until user explicitly logs out.
-    console.warn("401 received from customer API; preserving local auth state.");
+    console.warn(
+      "401 received from customer API; preserving local auth state.",
+    );
   }
+}
+
+export async function registerCustomerWebPushSubscription(
+  payload: WebPushSubscriptionPayload,
+) {
+  const response = await withAuthRetry(() =>
+    axios.post(`${API_BASE_URL}/notifications/web-subscription`, payload, {
+      headers: getAuthHeader(),
+    }),
+  );
+  return response.data;
+}
+
+export async function removeCustomerWebPushSubscription(endpoint: string) {
+  const response = await withAuthRetry(() =>
+    axios.delete(`${API_BASE_URL}/notifications/web-subscription`, {
+      headers: getAuthHeader(),
+      data: { endpoint },
+    }),
+  );
+  return response.data;
+}
+
+export async function getCustomerNotifications(
+  limit = 50,
+): Promise<CustomerNotificationsResponse> {
+  const response = await withAuthRetry(() =>
+    axios.get(`${API_BASE_URL}/notifications`, {
+      headers: getAuthHeader(),
+      params: { limit },
+    }),
+  );
+  return response.data;
+}
+
+export async function markCustomerNotificationRead(notificationId: string) {
+  const response = await withAuthRetry(() =>
+    axios.patch(
+      `${API_BASE_URL}/notifications/${encodeURIComponent(notificationId)}/read`,
+      {},
+      { headers: getAuthHeader() },
+    ),
+  );
+  return response.data;
+}
+
+export async function markAllCustomerNotificationsRead() {
+  const response = await withAuthRetry(() =>
+    axios.patch(
+      `${API_BASE_URL}/notifications/read-all`,
+      {},
+      { headers: getAuthHeader() },
+    ),
+  );
+  return response.data;
 }
 
 async function withAuthRetry<T>(request: () => Promise<T>): Promise<T> {
@@ -66,13 +243,9 @@ export async function getMyWalletSummary(): Promise<WalletSummary | null> {
   } catch (error) {
     const err = error as AxiosError;
     handleUnauthorized(err);
-    if (err.response?.status === 404) {
+    if (err.response?.status === 400 || err.response?.status === 404) {
       return null;
     }
-    console.error("Wallet summary fetch failed", {
-      status: err.response?.status,
-      url: `${API_BASE_URL}/wallet/me`,
-    });
     throw error;
   }
 }
@@ -88,13 +261,85 @@ export async function getMyWalletStatement(): Promise<WalletStatementItem[]> {
   } catch (error) {
     const err = error as AxiosError;
     handleUnauthorized(err);
-    if (err.response?.status === 404) {
+    if (err.response?.status === 400 || err.response?.status === 404) {
       return [];
     }
-    console.error("Wallet statement fetch failed", {
-      status: err.response?.status,
-      url: `${API_BASE_URL}/wallet/me/statement`,
-    });
+    throw error;
+  }
+}
+
+export async function getCustomerWalletPacks(): Promise<WalletCreditPackCatalog> {
+  try {
+    const response = await withAuthRetry(() =>
+      axios.get(`${API_BASE_URL}/wallet-offers/customer/packs`, {
+        headers: getAuthHeader(),
+      }),
+    );
+    return {
+      packs: Array.isArray(response.data?.packs) ? response.data.packs : [],
+      catalogVersion: Number.isFinite(Number(response.data?.catalogVersion))
+        ? Number(response.data.catalogVersion)
+        : undefined,
+    };
+  } catch (error) {
+    const err = error as AxiosError;
+    handleUnauthorized(err);
+    throw error;
+  }
+}
+
+export async function quoteCustomerWalletCoupon(
+  packId: string,
+  couponCode: string,
+): Promise<WalletCouponQuote> {
+  try {
+    const response = await withAuthRetry(() =>
+      axios.post(
+        `${API_BASE_URL}/wallet-offers/customer/coupon/quote`,
+        { packId, couponCode },
+        { headers: getAuthHeader() },
+      ),
+    );
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError;
+    handleUnauthorized(err);
+    throw error;
+  }
+}
+
+export async function createCustomerWalletTopupWebCheckout(input: {
+  packId: string;
+  couponCode?: string;
+}): Promise<CustomerWalletTopupCheckout> {
+  try {
+    const response = await withAuthRetry(() =>
+      axios.post(`${API_BASE_URL}/payment/customer/wallet-topup/web`, input, {
+        headers: getAuthHeader(),
+      }),
+    );
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError;
+    handleUnauthorized(err);
+    throw error;
+  }
+}
+
+export async function getCustomerWalletTopupStatus(
+  merchantOrderId: string,
+): Promise<CustomerWalletTopupStatus> {
+  try {
+    const response = await withAuthRetry(() =>
+      axios.get(
+        `${API_BASE_URL}/payment/customer/wallet-topup/${encodeURIComponent(merchantOrderId)}/status`,
+        { headers: getAuthHeader() },
+      ),
+    );
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError;
+    handleUnauthorized(err);
     throw error;
   }
 }
@@ -133,8 +378,29 @@ export async function getCustomerDashboardInvoices(): Promise<InsuranceForm[]> {
   }
 }
 
+export async function getCustomerInvoiceById(invoiceId: string): Promise<
+  InsuranceForm & {
+    paymentStatus?: string | null;
+    paymentMethod?: string | null;
+  }
+> {
+  try {
+    const response = await withAuthRetry(() =>
+      axios.get(`${API_BASE_URL}/invoices/${encodeURIComponent(invoiceId)}`, {
+        headers: getAuthHeader(),
+      }),
+    );
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError;
+    handleUnauthorized(err);
+    throw error;
+  }
+}
 
-export async function getTransporterDashboardInvoices(): Promise<InsuranceForm[]> {
+export async function getTransporterDashboardInvoices(): Promise<
+  InsuranceForm[]
+> {
   try {
     const response = await withAuthRetry(() =>
       axios.get(`${API_BASE_URL}/invoices/transporter/dashboard`, {
@@ -176,6 +442,47 @@ export async function getMyUserInvoices(): Promise<InsuranceForm[]> {
   }
 }
 
+export async function createCustomerWebPaymentCheckout(
+  invoiceIds: string[],
+  expectedTotalPaymentAmount?: number,
+): Promise<CustomerPaymentCheckoutResponse> {
+  try {
+    const response = await withAuthRetry(() =>
+      axios.post(
+        `${API_BASE_URL}/payment/customer/web-checkout`,
+        { invoiceIds, expectedTotalPaymentAmount },
+        { headers: getAuthHeader() },
+      ),
+    );
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError;
+    handleUnauthorized(err);
+    throw error;
+  }
+}
+
+export async function getCustomerPaymentCheckoutStatus(
+  merchantOrderId: string,
+): Promise<CustomerPaymentCheckoutStatus> {
+  try {
+    const response = await withAuthRetry(() =>
+      axios.get(
+        `${API_BASE_URL}/payment/customer/checkout/${encodeURIComponent(merchantOrderId)}/status`,
+        {
+          headers: getAuthHeader(),
+          timeout: 12000,
+        },
+      ),
+    );
+    return response.data;
+  } catch (error) {
+    const err = error as AxiosError;
+    handleUnauthorized(err);
+    throw error;
+  }
+}
+
 export async function getCustomerDashboardClaims(): Promise<ClaimRequest[]> {
   try {
     const response = await withAuthRetry(() =>
@@ -193,7 +500,6 @@ export async function getCustomerDashboardClaims(): Promise<ClaimRequest[]> {
     throw error;
   }
 }
-
 
 export async function getTransporterDashboardClaims(): Promise<ClaimRequest[]> {
   try {

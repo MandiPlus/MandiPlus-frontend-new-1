@@ -10,6 +10,7 @@ function classNames(...classes: string[]) {
 
 const nav = [
   { name: "Dashboard", href: "/agent/dashboard" },
+  { name: "Channel Partner", href: "/channel-partner/dashboard" },
 ];
 
 export default function AgentLayout({ children }: { children: React.ReactNode }) {
@@ -63,4 +64,3 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
     </div>
   );
 }
-
