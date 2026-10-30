@@ -60,6 +60,7 @@ const adminTitles: Record<string, string> = {
     '/admin/arrival-reports': 'Arrival Reports',
     '/admin/field-operations': 'Field Operations',
     '/admin/fssai-leads': 'FSSAI Leads',
+    '/admin/pos-machines': 'POS Machines',
     '/admin/chat-logs': 'WhatsApp Chats',
     '/admin/pdf-editor': 'Edit Insurance PDF',
     '/admin/impersonate': 'Impersonate',
