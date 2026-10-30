@@ -34,6 +34,7 @@ import {
   Cog6ToothIcon,
   MegaphoneIcon,
   RocketLaunchIcon,
+  CalculatorIcon,
 } from '@heroicons/react/24/outline';
 
 export const ADMIN_SECTIONS = [
@@ -75,6 +76,7 @@ export const ADMIN_SECTIONS = [
   'crm',
   'promo',
   'growth',
+  'pos-machines',
 ] as const;
 
 export type AdminSection = (typeof ADMIN_SECTIONS)[number];
@@ -149,6 +151,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { name: 'CRM', href: '/crm', icon: PhoneIcon, section: 'crm' },
   { name: 'Promo Links', href: '/promo', icon: MegaphoneIcon, section: 'promo' },
   { name: 'Growth', href: '/admin/growth', icon: RocketLaunchIcon, section: 'growth' },
+  { name: 'POS Machines', href: '/admin/pos-machines', icon: CalculatorIcon, section: 'pos-machines' },
 ];
 
 export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
@@ -184,7 +187,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
   },
   {
     name: 'Operations',
-    sections: ['tracking', 'trips', 'fasttag', 'tracking-children', 'rc-search', 'arrival-reports', 'field-operations', 'fssai-leads'],
+    sections: ['tracking', 'trips', 'fasttag', 'tracking-children', 'rc-search', 'arrival-reports', 'field-operations', 'fssai-leads', 'pos-machines'],
   },
   {
     name: 'Insurance & Claims',
@@ -199,6 +202,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
 export const ADMIN_ROUTE_SECTION_MAP: Record<string, AdminSection> = {
   '/admin/dashboard': 'dashboard',
   '/admin/growth': 'growth',
+  '/admin/pos-machines': 'pos-machines',
   '/admin/users': 'users',
   '/admin/ledger': 'ledger',
   '/admin/app-customers': 'app-customers',
